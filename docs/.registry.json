@@ -1,0 +1,58 @@
+{
+  "features": {
+    "cli": {
+      "doc": "docs/features/cli.md",
+      "type": "feature",
+      "sources": [
+        "src/cli.ts"
+      ],
+      "depends_on": [
+        "commands",
+        "lib"
+      ],
+      "last_updated": "2026-03-29",
+      "status": "current"
+    },
+    "commands": {
+      "doc": "docs/features/commands.md",
+      "type": "feature",
+      "sources": [
+        "src/commands/init.ts",
+        "src/commands/scan.ts",
+        "src/commands/update.ts"
+      ],
+      "depends_on": [
+        "lib"
+      ],
+      "last_updated": "2026-03-29",
+      "status": "current"
+    },
+    "hooks": {
+      "doc": "docs/features/hooks.md",
+      "type": "feature",
+      "sources": [
+        "src/hooks/check-docs.ts"
+      ],
+      "depends_on": [
+        "lib"
+      ],
+      "last_updated": "2026-03-29",
+      "status": "current"
+    },
+    "lib": {
+      "doc": "docs/concepts/lib.md",
+      "type": "concept",
+      "sources": [
+        "src/lib/codemod.ts",
+        "src/lib/detect.ts",
+        "src/lib/markers.ts",
+        "src/lib/registry.ts",
+        "src/lib/scaffold.ts",
+        "src/lib/version.ts"
+      ],
+      "depends_on": [],
+      "last_updated": "2026-03-29",
+      "status": "current"
+    }
+  }
+}
