@@ -1,0 +1,47 @@
+{
+  "name": "codument",
+  "version": "0.1.0",
+  "description": "Automated documentation for JS/TS projects using Claude Code",
+  "type": "module",
+  "bin": {
+    "codument": "./dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "skills",
+    "agents",
+    "rules"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "npx tsx --test tests/*.test.ts"
+  },
+  "keywords": [
+    "claude",
+    "documentation",
+    "claude-code",
+    "ai",
+    "docs"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/prompts": "^2.4.9",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.2"
+  },
+  "dependencies": {
+    "commander": "^13.0.0",
+    "picocolors": "^1.1.0",
+    "prompts": "^2.4.2"
+  }
+}
