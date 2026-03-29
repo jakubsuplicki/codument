@@ -1,3 +1,33 @@
+# Codument
+
+An npm package that automates documentation for JS/TS projects using Claude Code.
+
+## Build & Test
+
+```bash
+npm run build    # tsup — builds to dist/
+npm test         # node:test runner
+npm run typecheck # tsc --noEmit
+```
+
+## Project Structure
+
+- `src/commands/` — CLI commands (init, scan, update)
+- `src/lib/` — Core libraries (registry, scaffold, detect, codemod, markers, version)
+- `src/hooks/` — PostToolUse hook script
+- `skills/` — Claude Code skills shipped with the package
+- `agents/` — Claude Code sub-agent definitions
+- `rules/` — Path-scoped rule template
+- `templates/` — Doc templates copied on init
+- `tests/` — Node test runner tests
+
+## Conventions
+
+- ESM only (`"type": "module"`)
+- TypeScript strict mode
+- Lowercase kebab-case for all doc filenames
+- Tests use temp directories for isolation
+
 <!-- codument:start -->
 ## Documentation Maintenance
 
