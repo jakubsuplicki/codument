@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile, readdir } from "node:fs/promises";
-import { join, relative, dirname, basename, extname } from "node:path";
+import { join, relative, dirname } from "node:path";
 import pc from "picocolors";
 import { readRegistry, writeRegistry } from "../lib/registry.js";
 import { ensureDir } from "../lib/scaffold.js";
@@ -115,10 +115,7 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
 
   if (created > 0) {
     console.log(pc.bold("  Next step:"));
-    console.log(`    Open Claude Code and say:`);
-    console.log(
-      pc.cyan(`    "Fill in the documentation for all features marked needs-review in docs/.registry.json"`),
-    );
+    console.log(`    Open Claude Code and run ${pc.cyan("/update-docs")}`);
     console.log();
   }
 }
@@ -162,8 +159,8 @@ function groupIntoFeatures(
 
     let groupName: string;
     if (srcParts.length === 1) {
-      const name = basename(srcParts[0], extname(srcParts[0]));
-      groupName = name === "index" ? "_root" : name;
+      // Root-level files go to _root (skipped) — they're entry points or configs
+      groupName = "_root";
     } else {
       groupName = srcParts[0];
     }
