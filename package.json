@@ -1,6 +1,6 @@
 {
   "name": "codument",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Automated documentation for JS/TS projects using Claude Code",
   "type": "module",
   "bin": {
