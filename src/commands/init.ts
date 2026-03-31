@@ -100,7 +100,7 @@ export async function init(options: InitOptions): Promise<void> {
 
   // Copy agents
   const agentSource = agentsDir();
-  for (const agent of ["doc-writer.md", "doc-scanner.md"]) {
+  for (const agent of ["doc-writer.md", "doc-scanner.md", "code-reviewer.md"]) {
     const dest = join(claudeDir, "agents", agent);
     if (!existsSync(dest) || options.force) {
       cpSync(join(agentSource, agent), dest);

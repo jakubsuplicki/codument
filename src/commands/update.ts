@@ -49,6 +49,10 @@ function getManagedFiles(): ManagedFile[] {
       relativePath: ".claude/agents/doc-scanner.md",
       upstream: () => readFile(join(agentsDir(), "doc-scanner.md"), "utf-8"),
     },
+    {
+      relativePath: ".claude/agents/code-reviewer.md",
+      upstream: () => readFile(join(agentsDir(), "code-reviewer.md"), "utf-8"),
+    },
   ];
 
   // Dynamically discover all skills
