@@ -23,7 +23,7 @@ This detects your project type (TS/JS, framework, source directory) and creates:
 - `docs/.registry.json` mapping source files to their documentation
 - `.claude/rules/documentation.md` — path-scoped rule that fires when source files are touched
 - `.claude/skills/update-docs/` — documentation workflow skill
-- `.claude/agents/` — doc-writer and doc-scanner sub-agents
+- `.claude/agents/` — doc-writer, doc-scanner, and code-reviewer sub-agents
 - Managed section in `CLAUDE.md` with the Definition of Done
 - PostToolUse hook in `.claude/settings.json`
 
@@ -60,7 +60,7 @@ Codument uses a layered enforcement stack — no single mechanism, but multiple 
 | CLAUDE.md | Definition of Done checklist | Every session |
 | Path-scoped rule | `documentation.md` | When source files are accessed |
 | Skill | `/update-docs` | On demand or auto-matched |
-| Sub-agents | doc-writer, doc-scanner | Spawned per feature to avoid context limits |
+| Sub-agents | doc-writer, doc-scanner, code-reviewer | Spawned per feature to avoid context limits |
 | Hook | PostToolUse on Write/Edit | After file modifications (developer-facing) |
 
 With all layers active, Claude updates docs alongside code ~90-95% of the time. The remaining 5-10%, you say "update the docs" and Claude already knows how.
@@ -103,11 +103,12 @@ When Claude modifies `src/auth/login.ts`, the rule fires, the registry maps it t
 
 ## Skills
 
-Codument installs 6 Claude Code skills. Use them by typing the slash command in Claude Code, or Claude will invoke them automatically when relevant.
+Codument installs 7 Claude Code skills. Use them by typing the slash command in Claude Code, or Claude will invoke them automatically when relevant.
 
 | Skill | Command | When to use |
 |-------|---------|-------------|
 | **update-docs** | `/update-docs` | Fill in scaffold docs after scan, or update docs after code changes |
+| **review-codebase** | `/review-codebase` | Run a full codebase review — spawns code-reviewer agents per feature, reports issues by severity, optionally applies safe fixes |
 | **code-reviewer** | `/code-reviewer` | Review code for bugs, security issues, and quality — outputs structured findings by severity |
 | **senior-frontend** | `/senior-frontend` | Build React/Next.js components, optimize performance, implement accessible UI |
 | **senior-backend** | `/senior-backend` | Design APIs, optimize database queries, implement auth, handle errors |
@@ -145,6 +146,17 @@ For large projects, codument uses a sub-agent architecture to stay within contex
 - Single-feature updates (normal development) are handled inline without agents
 
 This means a project with 40 features and 200 source files works the same as a project with 4 — each feature gets focused attention regardless of total codebase size.
+
+## Codebase review
+
+The `/review-codebase` skill uses the same registry-driven, sub-agent architecture to run a full code review across your project:
+
+1. Reads `docs/.registry.json` to understand feature boundaries
+2. Spawns a **code-reviewer agent per feature**, each with only that feature's source files
+3. Each agent checks for correctness bugs, security issues, performance problems, error handling gaps, and type safety
+4. Findings are compiled into a unified report sorted by severity (Critical → High → Medium → Low)
+
+You can scope the review to specific features (`/review-codebase auth payments`), focus on security (`/review-codebase --security`), or ask it to apply safe, non-breaking fixes (`/review-codebase --fix`) — it will only fix Critical and High issues, never refactor or change public APIs.
 
 ## Requirements
 
