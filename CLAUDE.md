@@ -31,14 +31,20 @@ npm run typecheck # tsc --noEmit
 <!-- codument:start -->
 ## Documentation Maintenance
 
+### Documentation is automatic — not a separate step
+When you write or modify source files, you MUST create or update documentation as part of the same task. Do not ask the user whether to document. Do not defer to a skill. Just do it inline.
+
 ### Definition of Done
 A task is NOT complete until:
 1. Code works and tests pass
 2. `docs/.registry.json` is checked for affected source files
-3. Corresponding docs are updated or created
-4. Registry is updated with new mappings
+3. New source files are registered in `docs/.registry.json`
+4. Corresponding feature docs are created or updated (not scaffolded — real content)
 5. Dependent features flagged if interface changed
-6. `last_updated` set on touched docs
+6. `last_updated` set on all touched docs and registry entries
+
+### Plan → Implement → Document
+When implementing a planned feature, the plan is not "done" until documentation exists. Writing code and writing docs are one action, not two.
 
 ### Documentation Registry
 The file `docs/.registry.json` maps source files to their documentation.

@@ -2,8 +2,10 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
 
 // This hook runs after Write/Edit tool use.
-// It checks if a source file was modified without a corresponding doc update.
-// Output goes to the terminal (developer-facing) — Claude does NOT see this.
+// It checks if a source file was modified and reminds the developer that
+// documentation should be updated as part of the same task.
+// Output goes to the terminal (developer-facing). Claude enforces this via
+// the path-scoped rule in .claude/rules/documentation.md.
 
 const root = process.cwd();
 const registryPath = join(root, "docs", ".registry.json");
@@ -43,7 +45,7 @@ for (const [name, entry] of Object.entries(registry.features)) {
   );
   if (matches) {
     console.log(
-      `⚠️  codument: ${relPath} is documented in "${name}" (${entry.doc}) — verify docs are still accurate`,
+      `⚠️  codument: ${relPath} → documented in "${name}" (${entry.doc}) — doc must be updated in this same task`,
     );
     break;
   }

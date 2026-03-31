@@ -1,21 +1,46 @@
 ---
 paths: ["src/**/*.ts", "src/**/*.tsx", "src/**/*.js", "src/**/*.jsx"]
-description: Enforces documentation updates when source files are modified
+description: Enforces automatic documentation when source files are created or modified
 ---
 
-When you modify any source file, you MUST check documentation before your task is complete.
+## Automatic documentation — no manual step required
 
-1. Open `docs/.registry.json`
-2. Search for the modified file path in any feature's `sources` array
-3. If found:
-   - Open the corresponding doc file
-   - Read through the documentation and verify it is still accurate given your changes
-   - Update any sections that are now outdated — Summary, How It Works, Key Files, API/Interface
-   - Update `last_updated` in both the doc frontmatter and the registry entry
-   - If your change affects the feature's public interface (exported functions, types, or behavior), check `depends_on` in the registry and set dependent features' status to `"stale"`
-4. If NOT found and this file contains significant logic (not just types, configs, or one-line utilities):
-   - Create a new feature doc using the update-docs skill
-   - Add the source-to-doc mapping to the registry
-5. If the registry has entries with `status: "needs-review"`, fill them in when you encounter them
+When you create or modify ANY source file, documentation MUST be handled as part of the same task. Do not ask the user whether to document — just do it. Do not defer to a skill or separate step.
 
-Your task is NOT complete until documentation is verified current. This is part of the Definition of Done.
+### For every source file you touch:
+
+1. Read `docs/.registry.json`
+2. Find the file path in any feature's `sources` array
+
+**If the file IS in the registry:**
+- Read the corresponding doc file
+- Update any sections that no longer match your changes (Summary, How It Works, Key Files, API/Interface)
+- Set `last_updated` to today in both the doc frontmatter and the registry entry
+- If your change affects the public interface (exported functions, types, or behavior), set dependent features' status to `"stale"` via the `depends_on` field
+
+**If the file is NOT in the registry** and contains significant logic (not just types, configs, or one-line re-exports):
+- Determine the feature name from the file's purpose (kebab-case)
+- Create `docs/features/{feature-name}.md` with sections: Summary, How It Works, Key Files, and optionally API/Interface and Gotchas
+- Add the mapping to `docs/.registry.json`:
+  ```json
+  "feature-name": {
+    "doc": "docs/features/feature-name.md",
+    "sources": ["src/path/to/file.ts"],
+    "status": "current",
+    "last_updated": "YYYY-MM-DD",
+    "depends_on": []
+  }
+  ```
+- Populate `depends_on` based on imports from other registered features
+
+**If the registry has entries with `status: "needs-review"`**, fill them in when you encounter them.
+
+### Plan → Implement → Document is ONE action
+
+When you plan a feature (create an ADR, design doc, or implementation plan) and the user asks you to implement it, the implementation is not done until:
+1. Code is written and works
+2. New source files are registered in `docs/.registry.json`
+3. Feature docs are created or updated
+4. `last_updated` is set on all touched docs
+
+Do not stop after writing code and ask whether to document. The documentation is part of writing the code.
