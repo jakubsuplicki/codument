@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile, readFile, mkdir } from "node:fs/promises";
-import { existsSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -10,6 +10,9 @@ import { MARKER_START, MARKER_END } from "../src/lib/markers.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLI = join(__dirname, "..", "dist", "cli.js");
+const PKG_VERSION = JSON.parse(
+  readFileSync(join(__dirname, "..", "package.json"), "utf-8"),
+).version;
 
 let tmp: string;
 
@@ -105,7 +108,7 @@ describe("update command", () => {
     const meta = JSON.parse(
       await readFile(join(tmp, ".codument-meta.json"), "utf-8"),
     );
-    assert.equal(meta.version, "0.4.0");
+    assert.equal(meta.version, PKG_VERSION);
   });
 
   it("creates missing managed files", async () => {

@@ -1,6 +1,6 @@
 {
   "name": "codument",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Docs-backed delivery workflow for AI coding agents",
   "type": "module",
   "bin": {
