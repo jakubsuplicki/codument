@@ -104,6 +104,10 @@ Chat normally. Codument's always-loaded instructions route clear intent into the
 
 Working state should stay compact. Feature docs should capture the durable decisions, current plan, acceptance criteria, verification strategy, gotchas, and key files, not a transcript of every agent turn.
 
+## Acknowledgements
+
+Thanks to Matt Pocock's [mattpocock/skills](https://github.com/mattpocock/skills), especially `/grill-with-docs`, which helped shape Codument's habit of grilling ideas against the docs before coding.
+
 ## Scan Existing Code
 
 ```bash
