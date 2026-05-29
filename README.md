@@ -93,13 +93,14 @@ Codument installs these delivery-loop skills:
 
 ## Daily Workflow
 
-1. Start with `/grill-with-docs`.
-2. Use `/plan-with-docs` to write the durable plan.
-3. Approve the plan explicitly.
-4. Use `/work-step` for the next unchecked step.
-5. Use `/review-work` before committing.
-6. Use `/commit-work` to stage and commit the completed slice.
-7. Repeat from the next unchecked step.
+Chat normally. Codument's always-loaded instructions route clear intent into the right delivery skill; slash commands are just explicit overrides when you want to force a phase.
+
+1. Rough ideas and ambiguous feature requests trigger `grill-with-docs`.
+2. Settled scope triggers `plan-with-docs`, which writes the durable plan and stops for approval.
+3. Approved plans trigger `work-step` for the next unchecked step.
+4. Completed implementation steps trigger `review-work` before any commit.
+5. Clean or explicitly resolved reviews offer `commit-work` as the next gated action.
+6. After commit, the agent offers the next work step, plan review, context compaction, or pause.
 
 Working state should stay compact. Feature docs should capture the durable decisions, current plan, acceptance criteria, verification strategy, gotchas, and key files, not a transcript of every agent turn.
 
