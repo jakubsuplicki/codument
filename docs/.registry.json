@@ -10,13 +10,15 @@
         "commands",
         "lib"
       ],
-      "last_updated": "2026-03-29",
+      "last_updated": "2026-05-29",
       "status": "current"
     },
     "commands": {
       "doc": "docs/features/commands.md",
       "type": "feature",
       "sources": [
+        "src/commands/adopt.ts",
+        "src/commands/benchmark.ts",
         "src/commands/init.ts",
         "src/commands/scan.ts",
         "src/commands/update.ts"
@@ -24,7 +26,7 @@
       "depends_on": [
         "lib"
       ],
-      "last_updated": "2026-03-29",
+      "last_updated": "2026-05-29",
       "status": "current"
     },
     "hooks": {
@@ -36,13 +38,34 @@
       "depends_on": [
         "lib"
       ],
-      "last_updated": "2026-03-29",
+      "last_updated": "2026-05-29",
       "status": "current"
+    },
+    "proof-benchmarks": {
+      "doc": "docs/features/proof-benchmarks.md",
+      "type": "feature",
+      "sources": [
+        "src/commands/benchmark.ts",
+        "src/lib/benchmark-context.ts",
+        "src/lib/benchmark-quality.ts"
+      ],
+      "depends_on": [
+        "cli",
+        "commands",
+        "lib"
+      ],
+      "last_updated": "2026-05-29",
+      "status": "in-progress"
     },
     "lib": {
       "doc": "docs/concepts/lib.md",
       "type": "concept",
       "sources": [
+        "src/index.ts",
+        "src/lib/agent-profiles.ts",
+        "src/lib/benchmark-context.ts",
+        "src/lib/benchmark-quality.ts",
+        "src/lib/claude-settings.ts",
         "src/lib/codemod.ts",
         "src/lib/detect.ts",
         "src/lib/markers.ts",
@@ -51,7 +74,7 @@
         "src/lib/version.ts"
       ],
       "depends_on": [],
-      "last_updated": "2026-03-29",
+      "last_updated": "2026-05-29",
       "status": "current"
     }
   }

@@ -1,8 +1,14 @@
 # codument
 
-Automated documentation for JavaScript/TypeScript projects using [Claude Code](https://claude.ai/code).
+Docs-backed delivery workflow for AI coding agents.
 
-Install codument as a dev dependency and it installs Claude Code skills, rules, and agents that make documentation an automatic byproduct of development. When Claude modifies source files, it checks the documentation registry, finds the corresponding docs, and updates them alongside the code.
+Codument installs a small project operating system for agent-led engineering: docs, source-to-doc mappings, planning guidance, workflow skills, review discipline, and commit hygiene. The core loop is:
+
+```text
+grill -> plan -> approve -> implement -> verify -> document -> review -> commit -> repeat
+```
+
+The docs are not a side quest. They are the durable control plane that lets Claude, Codex, and future agents pick up the next step without relying on chat history.
 
 ## Install
 
@@ -10,158 +16,180 @@ Install codument as a dev dependency and it installs Claude Code skills, rules, 
 npm install -D codument
 ```
 
-## Setup
-
-### 1. Initialize
+## New Projects
 
 ```bash
 npx codument init
 ```
 
-This detects your project type (TS/JS, framework, source directory) and creates:
-- `docs/` directory with the documentation structure (features, concepts, ADRs, guides)
-- `docs/.registry.json` mapping source files to their documentation
-- `.claude/rules/documentation.md` — path-scoped rule that fires when source files are touched
-- `.claude/skills/update-docs/` — documentation workflow skill
-- `.claude/agents/` — doc-writer, doc-scanner, and code-reviewer sub-agents
-- Managed section in `CLAUDE.md` with the Definition of Done
-- PostToolUse hook in `.claude/settings.json`
+Use `init` for fresh projects that do not already have Codument docs. By default, Codument installs the Codex/generic profile:
 
-Works with any JS/TS project structure — `src/` directory or flat layout. Use `--force` to overwrite existing files.
+- `AGENTS.md` with the shared delivery workflow
+- `.agents/skills/` with the core workflow skills
+- `docs/` with feature, concept, guide, and ADR structure
+- `docs/.registry.json` mapping source files to docs
+- `.codument-meta.json` recording installed agent profiles
 
-### 2. Scan existing code (optional)
+Install specific agent profiles with:
+
+```bash
+npx codument init --agents codex
+npx codument init --agents claude
+npx codument init --agents codex,claude
+```
+
+The Claude profile also writes `.claude/skills`, `.claude/agents`, `.claude/rules`, `.claude/settings.json`, and `CLAUDE.md`.
+
+## Existing Projects
+
+Use `adopt` when a project already has Codument docs, an older `.codument-meta.json`, or a legacy registry that uses `mappings` instead of canonical `features`.
+
+```bash
+npx codument adopt --dry-run --agents codex,claude
+npx codument adopt --agents codex,claude
+```
+
+`adopt` is the migration/onboarding path. It:
+
+- migrates legacy `docs/.registry.json` mappings into canonical feature entries
+- keeps the old registry as `docs/.registry.backup.json`
+- refreshes `.codument-meta.json` with current project detection and selected agents
+- installs or updates the selected agent profiles using the same managed-file logic as `update`
+
+When developing Codument itself, you can test a local checkout against another project by building the CLI and running it directly:
+
+```bash
+cd /path/to/codument
+npm run build
+
+cd /path/to/existing-project
+node ../codument/dist/cli.js adopt --dry-run --agents codex,claude
+```
+
+To test hooks that call `node_modules/codument/...`, install a local packed copy of your checkout:
+
+```bash
+cd /path/to/codument
+npm --cache /private/tmp/codument-npm-cache pack
+
+cd /path/to/existing-project
+npm install -D ../codument/codument-0.3.0.tgz
+npx codument adopt --agents codex,claude
+```
+
+## Core Skills
+
+Codument installs these delivery-loop skills:
+
+| Skill | Purpose |
+| --- | --- |
+| `grill-with-docs` | Challenge a request against docs, code, ADRs, terminology, and edge cases before planning |
+| `plan-with-docs` | Turn resolved decisions into a compact feature plan with steps and acceptance criteria |
+| `tdd` | Implement one behavior slice at a time with the strongest practical feedback loop |
+| `work-step` | Execute the next approved plan step without skipping ahead |
+| `review-work` | Review the diff against the approved plan, tests, docs, registry, and architecture |
+| `commit-work` | Verify, stage, and commit focused work with a conventional commit |
+| `update-docs` | Fill scaffold docs or update mapped docs after source changes |
+
+## Daily Workflow
+
+1. Start with `/grill-with-docs`.
+2. Use `/plan-with-docs` to write the durable plan.
+3. Approve the plan explicitly.
+4. Use `/work-step` for the next unchecked step.
+5. Use `/review-work` before committing.
+6. Use `/commit-work` to stage and commit the completed slice.
+7. Repeat from the next unchecked step.
+
+Working state should stay compact. Feature docs should capture the durable decisions, current plan, acceptance criteria, verification strategy, gotchas, and key files, not a transcript of every agent turn.
+
+## Scan Existing Code
 
 ```bash
 npx codument scan
 ```
 
-Analyzes your codebase, groups source files into features, creates doc scaffolds, and populates the registry. For existing projects that need a documentation baseline.
+`scan` groups source files into feature and concept docs, creates scaffolds, and populates `docs/.registry.json`. New entries are marked `needs-review`; run `/update-docs` to fill them with real content.
 
-### 3. Fill in the docs
-
-Open Claude Code and run:
-
-```
-/update-docs
-```
-
-Claude orchestrates **doc-writer sub-agents** — one per feature — so each gets a focused context window with only its source files. Small projects are processed in parallel; larger ones are batched automatically.
-
-### 4. Keep building
-
-That's it. Use Claude Code normally. The path-scoped rule triggers whenever source files are modified, and Claude updates the docs as part of its workflow. For single-feature changes, docs are updated inline. For large refactors, Claude delegates to sub-agents per affected feature.
-
-## How it works
-
-Codument uses a layered enforcement stack — no single mechanism, but multiple reinforcing layers:
-
-| Layer | Mechanism | When it fires |
-|-------|-----------|---------------|
-| CLAUDE.md | Definition of Done checklist | Every session |
-| Path-scoped rule | `documentation.md` | When source files are accessed |
-| Skill | `/update-docs` | On demand or auto-matched |
-| Sub-agents | doc-writer, doc-scanner, code-reviewer | Spawned per feature to avoid context limits |
-| Hook | PostToolUse on Write/Edit | After file modifications (developer-facing) |
-
-With all layers active, Claude updates docs alongside code ~90-95% of the time. The remaining 5-10%, you say "update the docs" and Claude already knows how.
-
-## Documentation structure
-
-Follows the [Diataxis](https://diataxis.fr/) framework:
-
-```
-docs/
-  .registry.json              # Source-to-doc mapping
-  overview.md                 # What this project is
-  getting-started.md          # Setup and first run
-  features/                   # One .md per feature
-  concepts/                   # Cross-cutting concerns
-  architecture/decisions/     # ADRs (Architecture Decision Records)
-  guides/                     # How-to guides
-```
-
-## The registry
-
-`docs/.registry.json` is the single source of truth mapping source files to documentation:
-
-```json
-{
-  "features": {
-    "auth": {
-      "doc": "docs/features/auth.md",
-      "type": "feature",
-      "sources": ["src/auth/login.ts", "src/auth/oauth.ts"],
-      "depends_on": ["database"],
-      "last_updated": "2026-03-29",
-      "status": "current"
-    }
-  }
-}
-```
-
-When Claude modifies `src/auth/login.ts`, the rule fires, the registry maps it to `docs/features/auth.md`, and Claude verifies/updates the doc.
-
-## Skills
-
-Codument installs 7 Claude Code skills. Use them by typing the slash command in Claude Code, or Claude will invoke them automatically when relevant.
-
-| Skill | Command | When to use |
-|-------|---------|-------------|
-| **update-docs** | `/update-docs` | Fill in scaffold docs after scan, or update docs after code changes |
-| **review-codebase** | `/review-codebase` | Run a full codebase review — spawns code-reviewer agents per feature, reports issues by severity, optionally applies safe fixes |
-| **code-reviewer** | `/code-reviewer` | Review code for bugs, security issues, and quality — outputs structured findings by severity |
-| **senior-frontend** | `/senior-frontend` | Build React/Next.js components, optimize performance, implement accessible UI |
-| **senior-backend** | `/senior-backend` | Design APIs, optimize database queries, implement auth, handle errors |
-| **senior-architect** | `/senior-architect` | Design system architecture, evaluate trade-offs, plan migrations |
-| **frontend-design** | `/frontend-design` | Create distinctive, production-grade UI with bold design choices — avoids generic AI aesthetics |
-
-All skills include a documentation reminder — after making code changes, Claude checks `docs/.registry.json` and updates corresponding docs as part of the Definition of Done.
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `npx codument init` | Initialize codument in your project |
-| `npx codument init --force` | Reinitialize, overwriting existing files |
-| `npx codument scan` | Scan codebase and generate doc scaffolds |
-| `npx codument update` | Sync managed files after a package upgrade |
-| `npx codument update --dry-run` | Preview update changes without writing |
-
-## Upgrading
+## Update Managed Files
 
 ```bash
-npm update codument
 npx codument update
+npx codument update --dry-run
 ```
 
-The `update` command uses hash-based three-way merge to non-destructively update managed files (rules, skills, agents, CLAUDE.md section). If you've customized a file and upstream hasn't changed, your changes are preserved. If both sides changed, your version is backed up to `{file}.backup` before applying the upstream version.
+`update` refreshes the managed files for the agent profiles recorded in `.codument-meta.json`. Override the stored profiles when needed:
 
-## Scaling to large codebases
+```bash
+npx codument update --agents codex,claude
+```
 
-For large projects, codument uses a sub-agent architecture to stay within context limits:
+## Proof Benchmarks
 
-- The `/update-docs` skill acts as an **orchestrator** — it reads the registry and spawns a **doc-writer agent per feature**
-- Each agent gets an isolated context with only that feature's source files
-- Small projects (< 6 features) are processed in parallel; larger ones are batched 3-5 at a time
-- Single-feature updates (normal development) are handled inline without agents
+Codument ships self-contained proof benchmarks. They do not call an AI model, require telemetry, or judge work subjectively.
 
-This means a project with 40 features and 200 source files works the same as a project with 4 — each feature gets focused attention regardless of total codebase size.
+The context benchmark compares two deterministic context-selection strategies over a packaged fixture:
 
-## Codebase review
+```bash
+npx codument benchmark context
+npx codument benchmark context --json
+```
 
-The `/review-codebase` skill uses the same registry-driven, sub-agent architecture to run a full code review across your project:
+Current fixture output:
 
-1. Reads `docs/.registry.json` to understand feature boundaries
-2. Spawns a **code-reviewer agent per feature**, each with only that feature's source files
-3. Each agent checks for correctness bugs, security issues, performance problems, error handling gaps, and type safety
-4. Findings are compiled into a unified report sorted by severity (Critical → High → Medium → Low)
+```text
+Naive context:    2,932 estimated file-context tokens (16 files)
+Codument context: 1,610 estimated file-context tokens (8 files)
+Reduction:        45.1%
 
-You can scope the review to specific features (`/review-codebase auth payments`), focus on security (`/review-codebase --security`), or ask it to apply safe, non-breaking fixes (`/review-codebase --fix`) — it will only fix Critical and High issues, never refactor or change public APIs.
+Relevance:
+  Required docs found:       3/3
+  Required source files:     4/4
+  Irrelevant files included: 0/8
+```
+
+These are estimated file-context tokens using `ceil(characters / 4)`. The benchmark proves that the packaged registry can route a known task to a smaller relevant working set. It does not claim every real task will reduce total model tokens; small tasks may spend more on workflow than they save.
+
+The quality benchmark gives any coding agent the same fixture task and scores the final repo deterministically:
+
+```bash
+npx codument benchmark init /tmp/codument-bench --agents codex
+cd /tmp/codument-bench
+# Give BENCHMARK_TASK.md to your agent.
+npm test
+npx codument benchmark score /tmp/codument-bench
+```
+
+`benchmark score` checks the final files for passing tests, required behavior, docs updates, registry coverage, protected fixture metadata, source boundaries, and benchmark-specific shortcuts. It scores the final repo state, not the agent's private reasoning or path to the answer.
+
+Expected scoring shape:
+
+```text
+Fresh fixture:     6/9 FAIL
+Completed fixture: 9/9 PASS
+```
+
+To compare a baseline against Codument, initialize two fixture directories and give both agents the same task. In the baseline run, ask the agent to solve directly without using Codument's installed workflow. In the Codument run, ask it to follow `AGENTS.md` and the skills. Score both directories with the same `benchmark score` command.
+
+## Documentation Structure
+
+```text
+docs/
+  .registry.json
+  overview.md
+  getting-started.md
+  features/
+  concepts/
+  architecture/decisions/
+  guides/
+```
+
+The registry is the source of truth for which docs own which source files. Agents must check it before and after source edits.
 
 ## Requirements
 
 - Node.js >= 18
-- Claude Code (VS Code extension or CLI)
+- An AI coding agent that can read repo instructions and markdown skills
 
 ## License
 

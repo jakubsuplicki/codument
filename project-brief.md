@@ -1,8 +1,10 @@
-# Codument — Project Brief & Specification
+# Codument — Historical Project Brief
+
+> This brief describes Codument's original Claude-centered documentation automation direction. The current product direction is the agent-neutral delivery workflow captured in `docs/features/agent-delivery-workflow.md` and `AGENTS.md`: grill, plan, approve, implement, verify, document, review, commit, repeat.
 
 ## What This Document Is
 
-This is the complete specification for building an open-source npm package that automates documentation for JavaScript/TypeScript projects using Claude Code. It synthesizes decisions from multiple research rounds and design discussions. **Use this as the single source of truth when building the package.**
+This document is retained as historical context for the original implementation. Do not use it as the current source of truth when changing Codument.
 
 ---
 
