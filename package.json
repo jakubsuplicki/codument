@@ -4,7 +4,7 @@
   "description": "Docs-backed delivery workflow for AI coding agents",
   "type": "module",
   "bin": {
-    "codument": "./dist/cli.js"
+    "codument": "dist/cli.js"
   },
   "exports": {
     ".": "./dist/index.js"
