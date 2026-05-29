@@ -1,0 +1,29 @@
+{
+  "fixture": "context-routing",
+  "task": {
+    "id": "meal-plan-skip-day",
+    "title": "Add skip-day support to weekly meal plans",
+    "featureKeys": ["meal-plans"],
+    "requiredDocs": [
+      "docs/features/meal-plans.md",
+      "docs/concepts/date-utils.md",
+      "docs/concepts/timezone-utils.md"
+    ],
+    "requiredSources": [
+      "src/features/meal-plans/plans.ts",
+      "src/features/meal-plans/schedule.ts",
+      "src/lib/date-utils.ts",
+      "src/lib/timezone-utils.ts"
+    ],
+    "irrelevantFiles": [
+      "docs/features/billing.md",
+      "docs/features/recipe-search.md",
+      "docs/concepts/marketing-copy.md",
+      "docs/concepts/telemetry.md",
+      "src/features/billing/invoices.ts",
+      "src/features/recipe-search/search.ts",
+      "src/lib/marketing-copy.ts",
+      "src/lib/telemetry.ts"
+    ]
+  }
+}

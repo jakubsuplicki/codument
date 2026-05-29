@@ -1,7 +1,7 @@
 {
   "name": "codument",
   "version": "0.3.0",
-  "description": "Automated documentation for JS/TS projects using Claude Code",
+  "description": "Docs-backed delivery workflow for AI coding agents",
   "type": "module",
   "bin": {
     "codument": "./dist/cli.js"
@@ -14,7 +14,8 @@
     "templates",
     "skills",
     "agents",
-    "rules"
+    "rules",
+    "fixtures"
   ],
   "engines": {
     "node": ">=18"
@@ -23,12 +24,14 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
-    "test": "npx tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts"
   },
   "keywords": [
+    "ai-agents",
+    "codex",
     "claude",
     "documentation",
-    "claude-code",
+    "delivery-workflow",
     "ai",
     "docs"
   ],
@@ -37,6 +40,7 @@
     "@types/node": "^25.5.0",
     "@types/prompts": "^2.4.9",
     "tsup": "^8.5.1",
+    "tsx": "^4.22.3",
     "typescript": "^6.0.2"
   },
   "dependencies": {

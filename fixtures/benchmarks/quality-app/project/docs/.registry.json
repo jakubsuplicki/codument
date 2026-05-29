@@ -1,0 +1,26 @@
+{
+  "features": {
+    "weekly-plans": {
+      "doc": "docs/features/weekly-plans.md",
+      "type": "feature",
+      "sources": [
+        "src/plans/weekly-plan.js"
+      ],
+      "depends_on": [
+        "meal-catalog"
+      ],
+      "last_updated": "2026-05-29",
+      "status": "current"
+    },
+    "meal-catalog": {
+      "doc": "docs/concepts/meal-catalog.md",
+      "type": "concept",
+      "sources": [
+        "src/domain/menu.js"
+      ],
+      "depends_on": [],
+      "last_updated": "2026-05-29",
+      "status": "current"
+    }
+  }
+}

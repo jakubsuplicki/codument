@@ -1,0 +1,75 @@
+{
+  "features": {
+    "meal-plans": {
+      "doc": "docs/features/meal-plans.md",
+      "type": "feature",
+      "sources": [
+        "src/features/meal-plans/plans.ts",
+        "src/features/meal-plans/schedule.ts"
+      ],
+      "depends_on": ["date-utils"],
+      "last_updated": "2026-05-29",
+      "status": "current"
+    },
+    "recipe-search": {
+      "doc": "docs/features/recipe-search.md",
+      "type": "feature",
+      "sources": [
+        "src/features/recipe-search/search.ts"
+      ],
+      "depends_on": [],
+      "last_updated": "2026-05-29",
+      "status": "current"
+    },
+    "billing": {
+      "doc": "docs/features/billing.md",
+      "type": "feature",
+      "sources": [
+        "src/features/billing/invoices.ts"
+      ],
+      "depends_on": [],
+      "last_updated": "2026-05-29",
+      "status": "current"
+    },
+    "date-utils": {
+      "doc": "docs/concepts/date-utils.md",
+      "type": "concept",
+      "sources": [
+        "src/lib/date-utils.ts"
+      ],
+      "depends_on": ["timezone-utils"],
+      "last_updated": "2026-05-29",
+      "status": "current"
+    },
+    "timezone-utils": {
+      "doc": "docs/concepts/timezone-utils.md",
+      "type": "concept",
+      "sources": [
+        "src/lib/timezone-utils.ts"
+      ],
+      "depends_on": [],
+      "last_updated": "2026-05-29",
+      "status": "current"
+    },
+    "telemetry": {
+      "doc": "docs/concepts/telemetry.md",
+      "type": "concept",
+      "sources": [
+        "src/lib/telemetry.ts"
+      ],
+      "depends_on": [],
+      "last_updated": "2026-05-29",
+      "status": "current"
+    },
+    "marketing-copy": {
+      "doc": "docs/concepts/marketing-copy.md",
+      "type": "concept",
+      "sources": [
+        "src/lib/marketing-copy.ts"
+      ],
+      "depends_on": [],
+      "last_updated": "2026-05-29",
+      "status": "current"
+    }
+  }
+}

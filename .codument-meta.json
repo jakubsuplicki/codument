@@ -1,0 +1,46 @@
+{
+  "version": "0.3.0",
+  "initialized": "2026-03-29",
+  "project": {
+    "language": "typescript",
+    "srcDir": "src",
+    "sourceGlobs": [
+      "src/**/*.ts",
+      "src/**/*.tsx"
+    ],
+    "framework": null
+  },
+  "lastScan": {
+    "date": "2026-05-29",
+    "featuresFound": 3,
+    "docsCreated": 0,
+    "skipped": 3,
+    "sourceFiles": 13
+  },
+  "fileHashes": {
+    ".agents/skills/grill-with-docs/SKILL.md": "0d1e7a98aa70cdea",
+    ".agents/skills/plan-with-docs/SKILL.md": "fe650d1ddc993337",
+    ".agents/skills/tdd/SKILL.md": "121de0703b9f0f25",
+    ".agents/skills/work-step/SKILL.md": "9359c2cc5540f0ed",
+    ".agents/skills/review-work/SKILL.md": "86117f9abac066a8",
+    ".agents/skills/commit-work/SKILL.md": "84069e5f57949549",
+    ".agents/skills/update-docs/SKILL.md": "55028ccc68c10447",
+    ".claude/skills/grill-with-docs/SKILL.md": "0d1e7a98aa70cdea",
+    ".claude/skills/plan-with-docs/SKILL.md": "fe650d1ddc993337",
+    ".claude/skills/tdd/SKILL.md": "121de0703b9f0f25",
+    ".claude/skills/work-step/SKILL.md": "9359c2cc5540f0ed",
+    ".claude/skills/review-work/SKILL.md": "86117f9abac066a8",
+    ".claude/skills/commit-work/SKILL.md": "84069e5f57949549",
+    ".claude/skills/update-docs/SKILL.md": "55028ccc68c10447",
+    ".claude/rules/documentation.md": "992f46bfb6e8c42b",
+    ".claude/agents/doc-writer.md": "aafdbda0721efad1",
+    ".claude/agents/doc-scanner.md": "0dc3127f8fab8276",
+    ".claude/agents/code-reviewer.md": "f499dcaf04d6f571",
+    "AGENTS.md": "53c6877d1c110c0d",
+    "CLAUDE.md": "5d4239620728db75"
+  },
+  "agents": [
+    "codex",
+    "claude"
+  ]
+}

@@ -1,7 +1,16 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import pc from "picocolors";
+import {
+  DELIVERY_SKILLS,
+  getAgentProfiles,
+  resolveAgentIds,
+  type AgentProfile,
+  type AgentProfileId,
+} from "../lib/agent-profiles.js";
+import { ensureClaudeDocsHook } from "../lib/claude-settings.js";
+import { detectProject } from "../lib/detect.js";
 import {
   readMeta,
   writeMeta,
@@ -22,6 +31,7 @@ import { version as pkgVersion } from "../lib/version.js";
 
 interface UpdateOptions {
   dryRun?: boolean;
+  agents?: string;
 }
 
 interface UpdateAction {
@@ -35,39 +45,43 @@ interface ManagedFile {
   upstream: () => Promise<string>;
 }
 
-function getManagedFiles(): ManagedFile[] {
-  const files: ManagedFile[] = [
-    {
-      relativePath: ".claude/rules/documentation.md",
-      upstream: () => readFile(join(rulesDir(), "documentation.md"), "utf-8"),
-    },
-    {
-      relativePath: ".claude/agents/doc-writer.md",
-      upstream: () => readFile(join(agentsDir(), "doc-writer.md"), "utf-8"),
-    },
-    {
-      relativePath: ".claude/agents/doc-scanner.md",
-      upstream: () => readFile(join(agentsDir(), "doc-scanner.md"), "utf-8"),
-    },
-    {
-      relativePath: ".claude/agents/code-reviewer.md",
-      upstream: () => readFile(join(agentsDir(), "code-reviewer.md"), "utf-8"),
-    },
-  ];
+function getManagedFiles(
+  profiles: AgentProfile[],
+  sourceGlobs: string[],
+): ManagedFile[] {
+  const files = new Map<string, ManagedFile>();
 
-  // Dynamically discover all skills
-  const skillsRoot = skillsDir();
-  const skillNames = readdirSync(skillsRoot).filter(
-    (name: string) => existsSync(join(skillsRoot, name, "SKILL.md")),
-  );
-  for (const name of skillNames) {
-    files.push({
-      relativePath: `.claude/skills/${name}/SKILL.md`,
-      upstream: () => readFile(join(skillsRoot, name, "SKILL.md"), "utf-8"),
-    });
+  for (const profile of profiles) {
+    for (const name of DELIVERY_SKILLS) {
+      const source = join(skillsDir(), name, "SKILL.md");
+      if (!existsSync(source)) continue;
+      const relativePath = `${profile.skillsDir}/${name}/SKILL.md`;
+      files.set(relativePath, {
+        relativePath,
+        upstream: () => readFile(source, "utf-8"),
+      });
+    }
+
+    if (profile.rulesDir) {
+      const relativePath = `${profile.rulesDir}/documentation.md`;
+      files.set(relativePath, {
+        relativePath,
+        upstream: () => readRule(sourceGlobs),
+      });
+    }
+
+    if (profile.agentsDir) {
+      for (const agent of ["doc-writer.md", "doc-scanner.md", "code-reviewer.md"]) {
+        const relativePath = `${profile.agentsDir}/${agent}`;
+        files.set(relativePath, {
+          relativePath,
+          upstream: () => readFile(join(agentsDir(), agent), "utf-8"),
+        });
+      }
+    }
   }
 
-  return files;
+  return [...files.values()];
 }
 
 export async function update(options: UpdateOptions): Promise<void> {
@@ -88,10 +102,22 @@ export async function update(options: UpdateOptions): Promise<void> {
     return;
   }
 
+  let agentIds: AgentProfileId[];
+  try {
+    agentIds = resolveAgentIds(root, options.agents ?? meta.agents);
+  } catch (error) {
+    console.log(pc.red(`  ${String((error as Error).message)}`));
+    process.exitCode = 1;
+    return;
+  }
+  const profiles = getAgentProfiles(agentIds);
+  const project = await detectProject(root);
+  const sourceGlobs = project.sourceGlobs;
+
   const actions: UpdateAction[] = [];
 
   // 1. Update managed files (rules, skills, agents)
-  for (const managed of getManagedFiles()) {
+  for (const managed of getManagedFiles(profiles, sourceGlobs)) {
     const absPath = join(root, managed.relativePath);
     const upstreamContent = await managed.upstream();
 
@@ -146,17 +172,33 @@ export async function update(options: UpdateOptions): Promise<void> {
     }
   }
 
-  // 2. Update CLAUDE.md managed section
-  const claudeMdAction = await updateClaudeMd(root, meta, dryRun);
-  actions.push(claudeMdAction);
+  // 2. Update managed instruction sections
+  const instructionFiles = new Set(
+    profiles.flatMap((profile) => profile.instructionFiles),
+  );
+  for (const file of instructionFiles) {
+    const content =
+      file === "CLAUDE.md" ? buildClaudeManagedSection() : buildManagedSection();
+    const action = await updateInstructionFile(root, meta, dryRun, file, content);
+    actions.push(action);
+  }
 
-  // 3. Update .claude/settings.json hook
-  const settingsAction = await updateSettings(root, meta, dryRun);
-  actions.push(settingsAction);
+  // 3. Update profile settings/hooks
+  for (const profile of profiles) {
+    if (!profile.settingsFile) continue;
+    const settingsAction = await updateSettings(
+      root,
+      profile.settingsFile,
+      dryRun,
+    );
+    actions.push(settingsAction);
+  }
 
   // 4. Update meta version
   if (!dryRun) {
     meta.version = pkgVersion;
+    meta.agents = agentIds;
+    meta.project = { ...project };
     await writeMeta(root, meta);
   }
 
@@ -171,73 +213,73 @@ export async function update(options: UpdateOptions): Promise<void> {
   console.log();
 }
 
-async function updateClaudeMd(
+async function updateInstructionFile(
   root: string,
   meta: MetaFile,
   dryRun: boolean,
+  relativePath: string,
+  managedContent: string,
 ): Promise<UpdateAction> {
-  const claudeMdPath = join(root, "CLAUDE.md");
-  const relPath = "CLAUDE.md";
-
-  const managedContent = buildManagedSection();
+  const filePath = join(root, relativePath);
   const fullManaged = `${MARKER_START}\n${managedContent}\n${MARKER_END}`;
 
-  if (!existsSync(claudeMdPath)) {
+  if (!existsSync(filePath)) {
     if (!dryRun) {
-      await upsertManagedSection(claudeMdPath, managedContent);
-      setFileHash(meta, relPath, fullManaged);
+      await upsertManagedSection(filePath, managedContent);
+      setFileHash(meta, relativePath, fullManaged);
     }
-    return { file: relPath, action: "create", reason: "file missing" };
+    return { file: relativePath, action: "create", reason: "file missing" };
   }
 
-  const current = await readFile(claudeMdPath, "utf-8");
+  const current = await readFile(filePath, "utf-8");
   const startIdx = current.indexOf(MARKER_START);
   const endIdx = current.indexOf(MARKER_END);
 
   if (startIdx === -1 || endIdx === -1) {
     // No managed section found — append it
     if (!dryRun) {
-      await upsertManagedSection(claudeMdPath, managedContent);
-      setFileHash(meta, relPath, fullManaged);
+      await upsertManagedSection(filePath, managedContent);
+      setFileHash(meta, relativePath, fullManaged);
     }
-    return { file: relPath, action: "merge", reason: "managed section missing, appending" };
+    return {
+      file: relativePath,
+      action: "merge",
+      reason: "managed section missing, appending",
+    };
   }
 
   // Extract current managed section for comparison
   const currentManaged = current.slice(startIdx, endIdx + MARKER_END.length);
-  const storedHash = meta.fileHashes?.[relPath];
+  const storedHash = meta.fileHashes?.[relativePath];
   const result = decideMergeStrategy(fullManaged, currentManaged, storedHash);
 
   if (!dryRun && result.action !== "skip") {
-    await upsertManagedSection(claudeMdPath, managedContent);
-    setFileHash(meta, relPath, fullManaged);
+    await upsertManagedSection(filePath, managedContent);
+    setFileHash(meta, relativePath, fullManaged);
   } else if (!dryRun && !storedHash) {
-    setFileHash(meta, relPath, currentManaged);
+    setFileHash(meta, relativePath, currentManaged);
   }
 
-  return { file: relPath, action: result.action, reason: result.reason };
+  return { file: relativePath, action: result.action, reason: result.reason };
 }
 
 async function updateSettings(
   root: string,
-  meta: MetaFile,
+  relativePath: string,
   dryRun: boolean,
 ): Promise<UpdateAction> {
-  const settingsPath = join(root, ".claude", "settings.json");
-  const relPath = ".claude/settings.json";
-  const hookCommand = "node node_modules/codument/dist/hooks/check-docs.js";
+  const settingsPath = join(root, relativePath);
 
   if (!existsSync(settingsPath)) {
-    const settings = {
-      hooks: {
-        PostToolUse: [{ matcher: "Write|Edit", command: hookCommand }],
-      },
-    };
+    const result = ensureClaudeDocsHook();
     if (!dryRun) {
-      ensureDir(join(root, ".claude"));
-      await writeFile(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+      ensureDir(dirname(settingsPath));
+      await writeFile(
+        settingsPath,
+        JSON.stringify(result.settings, null, 2) + "\n",
+      );
     }
-    return { file: relPath, action: "create", reason: "file missing" };
+    return { file: relativePath, action: "create", reason: "file missing" };
   }
 
   let current: Record<string, unknown>;
@@ -246,24 +288,40 @@ async function updateSettings(
   } catch {
     current = {};
   }
-  const hooks = (current.hooks ?? {}) as Record<string, unknown[]>;
-  const postToolUse = (hooks.PostToolUse ?? []) as Array<{
-    matcher: string;
-    command: string;
-  }>;
-
-  const hasHook = postToolUse.some((h) => h.command === hookCommand);
-  if (hasHook) {
-    return { file: relPath, action: "skip", reason: "hook already present" };
+  const result = ensureClaudeDocsHook(current);
+  if (!result.changed) {
+    return { file: relativePath, action: "skip", reason: "hook already present" };
   }
 
   if (!dryRun) {
-    postToolUse.push({ matcher: "Write|Edit", command: hookCommand });
-    hooks.PostToolUse = postToolUse;
-    current.hooks = hooks;
-    await writeFile(settingsPath, JSON.stringify(current, null, 2) + "\n");
+    await writeFile(
+      settingsPath,
+      JSON.stringify(result.settings, null, 2) + "\n",
+    );
   }
-  return { file: relPath, action: "merge", reason: "adding missing hook" };
+  return {
+    file: relativePath,
+    action: "merge",
+    reason: result.foundExistingHook
+      ? "updating hook matcher"
+      : "adding missing hook",
+  };
+}
+
+async function readRule(sourceGlobs: string[]): Promise<string> {
+  const ruleTemplate = await readFile(join(rulesDir(), "documentation.md"), "utf-8");
+  return ruleTemplate.replace(
+    /^paths: \[.*\]/m,
+    `paths: ${JSON.stringify(sourceGlobs)}`,
+  );
+}
+
+function buildClaudeManagedSection(): string {
+  return `## Claude Compatibility
+
+Shared agent guidance lives in \`AGENTS.md\`. Follow that file as the canonical Codument workflow contract.
+
+${buildManagedSection()}`;
 }
 
 function printActions(actions: UpdateAction[], dryRun: boolean): void {

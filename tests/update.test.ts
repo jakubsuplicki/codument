@@ -6,7 +6,6 @@ import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { hashContent } from "../src/lib/codemod.js";
 import { MARKER_START, MARKER_END } from "../src/lib/markers.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -34,6 +33,30 @@ function runCli(...args: string[]): { stdout: string; exitCode: number } {
     const e = err as { stdout?: string; status?: number };
     return { stdout: e.stdout ?? "", exitCode: e.status ?? 1 };
   }
+}
+
+function codumentHookEntries(settings: {
+  hooks?: { PostToolUse?: Array<Record<string, unknown>> };
+}): Array<Record<string, unknown>> {
+  return (settings.hooks?.PostToolUse ?? []).filter(hasCodumentHook);
+}
+
+function hasCodumentHook(entry: Record<string, unknown>): boolean {
+  if (
+    typeof entry.command === "string" &&
+    entry.command.includes("check-docs")
+  ) {
+    return true;
+  }
+  return Array.isArray(entry.hooks) && entry.hooks.some((hook) => {
+    return (
+      typeof hook === "object" &&
+      hook !== null &&
+      "command" in hook &&
+      typeof hook.command === "string" &&
+      hook.command.includes("check-docs")
+    );
+  });
 }
 
 /** Run init first to set up a fully initialized project */
@@ -67,53 +90,57 @@ describe("update command", () => {
     await setupInitializedProject();
 
     // Delete a managed file to trigger "create" action
-    const rulesPath = join(tmp, ".claude", "rules", "documentation.md");
-    const existed = existsSync(rulesPath);
+    const skillPath = join(tmp, ".agents", "skills", "tdd", "SKILL.md");
+    const existed = existsSync(skillPath);
     assert.ok(existed);
-    unlinkSync(rulesPath);
+    unlinkSync(skillPath);
 
     const result = runCli("update", "--dry-run");
     assert.ok(result.stdout.includes("dry run"));
 
     // File should still be missing (dry run)
-    assert.ok(!existsSync(rulesPath));
+    assert.ok(!existsSync(skillPath));
 
     // Meta version should not be updated
     const meta = JSON.parse(
       await readFile(join(tmp, ".codument-meta.json"), "utf-8"),
     );
-    assert.equal(meta.version, "0.1.0");
+    assert.equal(meta.version, "0.3.0");
   });
 
   it("creates missing managed files", async () => {
     await setupInitializedProject();
 
-    const agentPath = join(tmp, ".claude", "agents", "doc-writer.md");
-    assert.ok(existsSync(agentPath));
-    unlinkSync(agentPath);
+    const skillPath = join(tmp, ".agents", "skills", "work-step", "SKILL.md");
+    assert.ok(existsSync(skillPath));
+    unlinkSync(skillPath);
 
     runCli("update");
 
     // File should be recreated
-    assert.ok(existsSync(agentPath));
-    const content = await readFile(agentPath, "utf-8");
+    assert.ok(existsSync(skillPath));
+    const content = await readFile(skillPath, "utf-8");
     assert.ok(content.length > 0);
   });
 
-  it("creates missing CLAUDE.md", async () => {
+  it("creates missing AGENTS.md", async () => {
     await setupInitializedProject();
-    unlinkSync(join(tmp, "CLAUDE.md"));
+    unlinkSync(join(tmp, "AGENTS.md"));
 
     runCli("update");
 
-    assert.ok(existsSync(join(tmp, "CLAUDE.md")));
-    const content = await readFile(join(tmp, "CLAUDE.md"), "utf-8");
+    assert.ok(existsSync(join(tmp, "AGENTS.md")));
+    const content = await readFile(join(tmp, "AGENTS.md"), "utf-8");
     assert.ok(content.includes(MARKER_START));
-    assert.ok(content.includes("Documentation Maintenance"));
+    assert.ok(content.includes("Codument Delivery Workflow"));
+    assert.ok(content.includes("Intent routing"));
+    assert.ok(content.includes("use `grill-with-docs` first"));
+    assert.ok(content.includes("use `review-work` before any commit"));
   });
 
-  it("creates missing .claude/settings.json", async () => {
+  it("creates missing Claude settings when Claude profile is stored", async () => {
     await setupInitializedProject();
+    runCli("update", "--agents", "claude");
     unlinkSync(join(tmp, ".claude", "settings.json"));
 
     runCli("update");
@@ -122,14 +149,15 @@ describe("update command", () => {
     assert.ok(existsSync(settingsPath));
     const settings = JSON.parse(await readFile(settingsPath, "utf-8"));
     assert.ok(
-      settings.hooks.PostToolUse.some(
-        (h: { command: string }) => h.command.includes("check-docs"),
+      codumentHookEntries(settings).some(
+        (h) => h.matcher === "Write|Edit|MultiEdit",
       ),
     );
   });
 
-  it("adds missing hook to existing settings.json", async () => {
+  it("adds missing hook to existing Claude settings", async () => {
     await setupInitializedProject();
+    runCli("update", "--agents", "claude");
 
     // Replace settings with one that lacks the hook
     await writeFile(
@@ -143,7 +171,77 @@ describe("update command", () => {
       await readFile(join(tmp, ".claude", "settings.json"), "utf-8"),
     );
     assert.equal(settings.hooks.PostToolUse.length, 1);
-    assert.ok(settings.hooks.PostToolUse[0].command.includes("check-docs"));
+    assert.ok(hasCodumentHook(settings.hooks.PostToolUse[0]));
+    assert.equal(settings.hooks.PostToolUse[0].matcher, "Write|Edit|MultiEdit");
+  });
+
+  it("updates an existing Claude hook matcher", async () => {
+    await setupInitializedProject();
+    runCli("update", "--agents", "claude");
+
+    await writeFile(
+      join(tmp, ".claude", "settings.json"),
+      JSON.stringify(
+        {
+          hooks: {
+            PostToolUse: [
+              {
+                matcher: "Write|Edit",
+                command: "node node_modules/codument/dist/hooks/check-docs.js",
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    runCli("update");
+
+    const settings = JSON.parse(
+      await readFile(join(tmp, ".claude", "settings.json"), "utf-8"),
+    );
+    assert.equal(settings.hooks.PostToolUse.length, 1);
+    assert.equal(settings.hooks.PostToolUse[0].matcher, "Write|Edit|MultiEdit");
+  });
+
+  it("updates an existing nested Claude hook matcher without duplication", async () => {
+    await setupInitializedProject();
+    runCli("update", "--agents", "claude");
+
+    await writeFile(
+      join(tmp, ".claude", "settings.json"),
+      JSON.stringify(
+        {
+          hooks: {
+            PostToolUse: [
+              {
+                matcher: "Write|Edit",
+                hooks: [
+                  {
+                    type: "command",
+                    command: "node node_modules/codument/dist/hooks/check-docs.js",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    runCli("update");
+
+    const settings = JSON.parse(
+      await readFile(join(tmp, ".claude", "settings.json"), "utf-8"),
+    );
+    const hooks = codumentHookEntries(settings);
+    assert.equal(settings.hooks.PostToolUse.length, 1);
+    assert.equal(hooks.length, 1);
+    assert.equal(hooks[0].matcher, "Write|Edit|MultiEdit");
   });
 
   it("updates meta version after update", async () => {
@@ -165,17 +263,17 @@ describe("update command", () => {
     await setupInitializedProject();
 
     // Delete multiple files
-    unlinkSync(join(tmp, ".claude", "agents", "doc-writer.md"));
-    unlinkSync(join(tmp, ".claude", "agents", "doc-scanner.md"));
+    unlinkSync(join(tmp, ".agents", "skills", "review-work", "SKILL.md"));
+    unlinkSync(join(tmp, ".agents", "skills", "commit-work", "SKILL.md"));
 
     const result = runCli("update", "--dry-run");
     assert.ok(result.stdout.includes("dry run"));
-    assert.ok(result.stdout.includes("doc-writer.md"));
-    assert.ok(result.stdout.includes("doc-scanner.md"));
+    assert.ok(result.stdout.includes("review-work"));
+    assert.ok(result.stdout.includes("commit-work"));
 
     // Files should still be missing
-    assert.ok(!existsSync(join(tmp, ".claude", "agents", "doc-writer.md")));
-    assert.ok(!existsSync(join(tmp, ".claude", "agents", "doc-scanner.md")));
+    assert.ok(!existsSync(join(tmp, ".agents", "skills", "review-work", "SKILL.md")));
+    assert.ok(!existsSync(join(tmp, ".agents", "skills", "commit-work", "SKILL.md")));
   });
 
   it("preserves user-modified files when upstream unchanged", async () => {
@@ -185,14 +283,29 @@ describe("update command", () => {
     runCli("update");
 
     // Now simulate: user modifies a file, but upstream hasn't changed
-    const rulesPath = join(tmp, ".claude", "rules", "documentation.md");
-    await writeFile(rulesPath, "# My custom docs rule\nUser modifications here.");
+    const skillPath = join(tmp, ".agents", "skills", "tdd", "SKILL.md");
+    await writeFile(skillPath, "# My custom tdd skill\nUser modifications here.");
 
     // Second update should skip (only local modifications, upstream unchanged)
     runCli("update");
 
     // File should be preserved (user changed, upstream didn't)
-    const content = await readFile(rulesPath, "utf-8");
+    const content = await readFile(skillPath, "utf-8");
     assert.ok(content.includes("User modifications here."));
+  });
+
+  it("uses stored agent profiles on update", async () => {
+    await setupInitializedProject();
+    runCli("update", "--agents", "codex,claude");
+
+    const meta = JSON.parse(
+      await readFile(join(tmp, ".codument-meta.json"), "utf-8"),
+    );
+    assert.deepStrictEqual(meta.agents, ["codex", "claude"]);
+
+    unlinkSync(join(tmp, ".claude", "agents", "doc-writer.md"));
+    runCli("update");
+
+    assert.ok(existsSync(join(tmp, ".claude", "agents", "doc-writer.md")));
   });
 });

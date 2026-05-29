@@ -11,6 +11,7 @@ export interface FileHash {
 export interface MetaFile {
   version: string;
   initialized: string;
+  agents?: string[];
   project: Record<string, unknown>;
   lastScan?: Record<string, unknown>;
   fileHashes?: Record<string, string>;

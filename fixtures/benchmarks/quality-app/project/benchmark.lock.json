@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "fixture": "quality-app",
+  "lockedFiles": [
+    "benchmark.lock.json",
+    ".codument/benchmark.json"
+  ],
+  "note": "The benchmark scorer compares locked files against the packaged fixture. Do not modify locked files during the task."
+}

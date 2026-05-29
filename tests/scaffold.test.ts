@@ -94,9 +94,25 @@ describe("upsertManagedSection", () => {
 });
 
 describe("buildManagedSection", () => {
-  it("returns documentation maintenance section", () => {
+  it("returns delivery workflow section", () => {
     const section = buildManagedSection();
-    assert.ok(section.includes("## Documentation Maintenance"));
+    assert.ok(section.includes("## Codument Delivery Workflow"));
+    assert.ok(section.includes("Core loop"));
+    assert.ok(section.includes("Intent routing"));
+    assert.ok(section.includes("Do not wait for the user to name a skill"));
+    assert.ok(section.includes("use `grill-with-docs` first"));
+    assert.ok(section.includes("use `plan-with-docs`"));
+    assert.ok(section.includes("use `work-step`"));
+    assert.ok(section.includes("use `review-work` before any commit"));
+    assert.ok(section.includes("offer `commit-work`"));
+    assert.ok(section.includes("wait for the user to ask for it"));
+    assert.ok(section.includes("treat it as planning"));
+    assert.ok(section.includes("Step gates"));
+    assert.ok(section.includes("Never move from one implementation step directly into the next"));
+    assert.ok(section.includes("It must not fix findings automatically"));
+    assert.ok(section.includes("Only the user can decide to fix, select, or defer review findings"));
+    assert.ok(section.includes("compact context"));
+    assert.ok(section.includes("native context-compaction command"));
     assert.ok(section.includes("Definition of Done"));
     assert.ok(section.includes("docs/.registry.json"));
     assert.ok(section.includes("Documentation Structure"));

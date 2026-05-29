@@ -1,22 +1,32 @@
-import { existsSync, cpSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, cpSync, readFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import pc from "picocolors";
+import {
+  DELIVERY_SKILLS,
+  getAgentProfiles,
+  resolveAgentIds,
+  type AgentProfile,
+  type AgentProfileId,
+} from "../lib/agent-profiles.js";
+import { ensureClaudeDocsHook } from "../lib/claude-settings.js";
 import { detectProject } from "../lib/detect.js";
 import {
   ensureDir,
-  copyTemplate,
   skillsDir,
   agentsDir,
   rulesDir,
   upsertManagedSection,
   buildManagedSection,
+  copyTemplate,
 } from "../lib/scaffold.js";
 import { writeRegistry } from "../lib/registry.js";
 import type { Registry } from "../lib/registry.js";
+import { version as pkgVersion } from "../lib/version.js";
 
 interface InitOptions {
   force?: boolean;
+  agents?: string;
 }
 
 export async function init(options: InitOptions): Promise<void> {
@@ -24,12 +34,25 @@ export async function init(options: InitOptions): Promise<void> {
   console.log(pc.bold("codument init"));
   console.log();
 
+  let agentIds: AgentProfileId[];
+  try {
+    agentIds = resolveAgentIds(root, options.agents);
+  } catch (error) {
+    console.log(pc.red(`  ${String((error as Error).message)}`));
+    process.exitCode = 1;
+    return;
+  }
+  const profiles = getAgentProfiles(agentIds);
+
   // Detect project
   const project = await detectProject(root);
   console.log(
     `  Detected: ${pc.cyan(project.language)}${project.framework ? ` + ${pc.cyan(project.framework)}` : ""}`,
   );
   console.log(`  Source dir: ${pc.cyan(project.srcDir)}`);
+  console.log(
+    `  Agents: ${profiles.map((profile) => pc.cyan(profile.displayName)).join(", ")}`,
+  );
   console.log();
 
   // Create docs structure
@@ -65,59 +88,22 @@ export async function init(options: InitOptions): Promise<void> {
     console.log(`  ${pc.green("✓")} Created docs/.registry.json`);
   }
 
-  // Set up .claude/ directory
-  const claudeDir = join(root, ".claude");
-  ensureDir(join(claudeDir, "rules"));
-  ensureDir(join(claudeDir, "skills", "update-docs"));
-  ensureDir(join(claudeDir, "agents"));
-
-  // Copy rules — substitute paths based on detected project
-  const rulesDest = join(claudeDir, "rules", "documentation.md");
-  if (!existsSync(rulesDest) || options.force) {
-    const ruleTemplate = readFileSync(join(rulesDir(), "documentation.md"), "utf-8");
-    const pathsJson = JSON.stringify(project.sourceGlobs);
-    const rule = ruleTemplate.replace(
-      /^paths: \[.*\]/m,
-      `paths: ${pathsJson}`,
-    );
-    await writeFile(rulesDest, rule);
-    console.log(`  ${pc.green("✓")} Created .claude/rules/documentation.md`);
+  // Install agent profile assets
+  for (const profile of profiles) {
+    await installProfile(root, profile, project.sourceGlobs, options.force);
   }
 
-  // Copy all skills
-  const skillSource = skillsDir();
-  const skillNames = readdirSync(skillSource).filter(
-    (name: string) => existsSync(join(skillSource, name, "SKILL.md")),
-  );
-  for (const name of skillNames) {
-    const dest = join(claudeDir, "skills", name, "SKILL.md");
-    if (!existsSync(dest) || options.force) {
-      ensureDir(join(claudeDir, "skills", name));
-      cpSync(join(skillSource, name, "SKILL.md"), dest);
-    }
-  }
-  console.log(`  ${pc.green("✓")} Installed ${skillNames.length} skills: ${skillNames.join(", ")}`);
-
-  // Copy agents
-  const agentSource = agentsDir();
-  for (const agent of ["doc-writer.md", "doc-scanner.md", "code-reviewer.md"]) {
-    const dest = join(claudeDir, "agents", agent);
-    if (!existsSync(dest) || options.force) {
-      cpSync(join(agentSource, agent), dest);
-    }
-  }
-  console.log(`  ${pc.green("✓")} Created .claude/agents/`);
-
-  // Update settings.json with hook
-  const settingsPath = join(claudeDir, "settings.json");
-  await writeSettings(settingsPath, options.force);
-  console.log(`  ${pc.green("✓")} Updated .claude/settings.json`);
-
-  // Update CLAUDE.md with managed section
-  const claudeMdPath = join(root, "CLAUDE.md");
+  // Write shared and profile-specific instruction files
   const managedContent = buildManagedSection();
-  await upsertManagedSection(claudeMdPath, managedContent);
-  console.log(`  ${pc.green("✓")} Updated CLAUDE.md`);
+  const instructionFiles = new Set(
+    profiles.flatMap((profile) => profile.instructionFiles),
+  );
+  for (const file of instructionFiles) {
+    const content =
+      file === "CLAUDE.md" ? buildClaudeManagedSection() : managedContent;
+    await upsertManagedSection(join(root, file), content);
+    console.log(`  ${pc.green("✓")} Updated ${file}`);
+  }
 
   // Write meta file
   const metaPath = join(root, ".codument-meta.json");
@@ -125,8 +111,9 @@ export async function init(options: InitOptions): Promise<void> {
     metaPath,
     JSON.stringify(
       {
-        version: "0.1.0",
+        version: pkgVersion,
         initialized: new Date().toISOString().split("T")[0],
+        agents: agentIds,
         project,
       },
       null,
@@ -138,9 +125,73 @@ export async function init(options: InitOptions): Promise<void> {
   console.log(pc.green(pc.bold("Done!")));
   console.log();
   console.log("  Next steps:");
-  console.log(`    ${pc.dim("1.")} Start using Claude Code — documentation happens automatically`);
+  console.log(`    ${pc.dim("1.")} Start with ${pc.cyan("/grill-with-docs")} to shape the next feature`);
   console.log(`    ${pc.dim("2.")} For existing code, run ${pc.cyan("npx codument scan")} to bootstrap docs`);
   console.log();
+}
+
+async function installProfile(
+  root: string,
+  profile: AgentProfile,
+  sourceGlobs: string[],
+  force?: boolean,
+): Promise<void> {
+  const skillSource = skillsDir();
+  for (const name of DELIVERY_SKILLS) {
+    const source = join(skillSource, name, "SKILL.md");
+    if (!existsSync(source)) continue;
+
+    const dest = join(root, profile.skillsDir, name, "SKILL.md");
+    if (!existsSync(dest) || force) {
+      ensureDir(join(root, profile.skillsDir, name));
+      cpSync(source, dest);
+    }
+  }
+  console.log(
+    `  ${pc.green("✓")} Installed ${DELIVERY_SKILLS.length} skills for ${profile.displayName}`,
+  );
+
+  if (profile.rulesDir) {
+    const rulesDest = join(root, profile.rulesDir, "documentation.md");
+    if (!existsSync(rulesDest) || force) {
+      ensureDir(join(root, profile.rulesDir));
+      const ruleTemplate = readFileSync(
+        join(rulesDir(), "documentation.md"),
+        "utf-8",
+      );
+      const rule = ruleTemplate.replace(
+        /^paths: \[.*\]/m,
+        `paths: ${JSON.stringify(sourceGlobs)}`,
+      );
+      await writeFile(rulesDest, rule);
+    }
+    console.log(`  ${pc.green("✓")} Updated ${profile.rulesDir}/`);
+  }
+
+  if (profile.agentsDir) {
+    ensureDir(join(root, profile.agentsDir));
+    const agentSource = agentsDir();
+    for (const agent of ["doc-writer.md", "doc-scanner.md", "code-reviewer.md"]) {
+      const dest = join(root, profile.agentsDir, agent);
+      if (!existsSync(dest) || force) {
+        cpSync(join(agentSource, agent), dest);
+      }
+    }
+    console.log(`  ${pc.green("✓")} Updated ${profile.agentsDir}/`);
+  }
+
+  if (profile.settingsFile) {
+    await writeSettings(join(root, profile.settingsFile), force);
+    console.log(`  ${pc.green("✓")} Updated ${profile.settingsFile}`);
+  }
+}
+
+function buildClaudeManagedSection(): string {
+  return `## Claude Compatibility
+
+Shared agent guidance lives in \`AGENTS.md\`. Follow that file as the canonical Codument workflow contract.
+
+${buildManagedSection()}`;
 }
 
 async function writeSettings(
@@ -156,23 +207,6 @@ async function writeSettings(
     }
   }
 
-  const hooks = (settings.hooks ?? {}) as Record<string, unknown[]>;
-  const postToolUse = (hooks.PostToolUse ?? []) as Array<{
-    matcher: string;
-    command: string;
-  }>;
-
-  const hookCommand = "node node_modules/codument/dist/hooks/check-docs.js";
-  const hasHook = postToolUse.some((h) => h.command === hookCommand);
-  if (!hasHook) {
-    postToolUse.push({
-      matcher: "Write|Edit",
-      command: hookCommand,
-    });
-  }
-
-  hooks.PostToolUse = postToolUse;
-  settings.hooks = hooks;
-
-  await writeFile(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+  const result = ensureClaudeDocsHook(settings);
+  await writeFile(settingsPath, JSON.stringify(result.settings, null, 2) + "\n");
 }

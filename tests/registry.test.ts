@@ -4,7 +4,10 @@ import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  hasLegacyMappings,
+  normalizeRegistry,
   readRegistry,
+  readRegistrySync,
   writeRegistry,
   updateRegistryEntry,
 } from "../src/lib/registry.js";
@@ -45,6 +48,94 @@ describe("readRegistry", () => {
 
     const reg = await readRegistry(path);
     assert.deepStrictEqual(reg, data);
+  });
+
+  it("normalizes legacy mappings into feature entries", async () => {
+    const path = join(tmp, "registry.json");
+    const { writeFile: wf } = await import("node:fs/promises");
+    await wf(
+      path,
+      JSON.stringify({
+        features: {},
+        mappings: {
+          "app/cook/[recipeId].tsx": [
+            "features/cook-mode.md",
+            "features/cook-mode-voice-control.md",
+          ],
+          "services/subscription/subscriptionService.ts": [
+            "features/subscription-and-paywall.md",
+          ],
+        },
+      }),
+    );
+
+    const reg = await readRegistry(path);
+
+    assert.deepStrictEqual(reg.features["cook-mode"].sources, [
+      "app/cook/[recipeId].tsx",
+    ]);
+    assert.equal(reg.features["cook-mode"].doc, "docs/features/cook-mode.md");
+    assert.equal(reg.features["cook-mode"].type, "feature");
+    assert.deepStrictEqual(
+      reg.features["cook-mode-voice-control"].sources,
+      ["app/cook/[recipeId].tsx"],
+    );
+    assert.deepStrictEqual(
+      reg.features["subscription-and-paywall"].sources,
+      ["services/subscription/subscriptionService.ts"],
+    );
+  });
+
+  it("sync read also normalizes legacy mappings", async () => {
+    const path = join(tmp, "registry.json");
+    const { writeFile: wf } = await import("node:fs/promises");
+    await wf(
+      path,
+      JSON.stringify({
+        mappings: {
+          "src/lib/registry.ts": ["concepts/lib.md"],
+        },
+      }),
+    );
+
+    const reg = readRegistrySync(path);
+
+    assert.equal(reg.features.lib.doc, "docs/concepts/lib.md");
+    assert.deepStrictEqual(reg.features.lib.sources, ["src/lib/registry.ts"]);
+  });
+});
+
+describe("normalizeRegistry", () => {
+  it("preserves canonical entries and merges legacy mappings", () => {
+    const reg = normalizeRegistry(
+      {
+        features: {
+          lib: {
+            doc: "docs/concepts/lib.md",
+            type: "concept",
+            sources: ["src/lib/codemod.ts"],
+            depends_on: [],
+            last_updated: "2026-01-01",
+            status: "current",
+          },
+        },
+        mappings: {
+          "src/lib/registry.ts": ["concepts/lib.md"],
+        },
+      },
+      "2026-05-29",
+    );
+
+    assert.deepStrictEqual(reg.features.lib.sources, [
+      "src/lib/codemod.ts",
+      "src/lib/registry.ts",
+    ]);
+    assert.equal(reg.features.lib.last_updated, "2026-01-01");
+  });
+
+  it("detects legacy mappings", () => {
+    assert.equal(hasLegacyMappings({ mappings: {} }), true);
+    assert.equal(hasLegacyMappings({ features: {} }), false);
   });
 });
 

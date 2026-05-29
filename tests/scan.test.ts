@@ -147,7 +147,7 @@ describe("scan command", () => {
     assert.deepStrictEqual(Object.keys(reg.features), []);
   });
 
-  it("ignores node_modules, dist, .git, .claude directories", async () => {
+  it("ignores generated and tool directories", async () => {
     await setupProject({
       "src/app.ts": "export const app = 1;",
       "src/node_modules/dep/index.ts": "export default 1;",
@@ -157,6 +157,8 @@ describe("scan command", () => {
     await writeFile(join(tmp, "src", "dist", "bundle.js"), "");
     await mkdir(join(tmp, "src", ".git"), { recursive: true });
     await writeFile(join(tmp, "src", ".git", "hooks.js"), "");
+    await mkdir(join(tmp, "src", ".agents"), { recursive: true });
+    await writeFile(join(tmp, "src", ".agents", "skill.js"), "");
 
     await scan({ root: tmp });
     const reg = await readRegistry(join(tmp, "docs", ".registry.json"));
@@ -167,6 +169,7 @@ describe("scan command", () => {
     assert.ok(!reg.features["node_modules"]);
     assert.ok(!reg.features["dist"]);
     assert.ok(!reg.features[".git"]);
+    assert.ok(!reg.features[".agents"]);
   });
 
   it("excludes .d.ts files", async () => {

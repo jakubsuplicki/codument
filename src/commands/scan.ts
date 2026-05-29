@@ -62,7 +62,7 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
 
     ensureDir(dirname(fullDocPath));
 
-    // Create minimal scaffold — Claude fills in the content via the skill
+    // Create minimal scaffold — an agent fills in the content via update-docs.
     const docContent = scaffoldDoc(feature, today);
     await writeFile(fullDocPath, docContent);
 
@@ -115,7 +115,7 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
 
   if (created > 0) {
     console.log(pc.bold("  Next step:"));
-    console.log(`    Open Claude Code and run ${pc.cyan("/update-docs")}`);
+    console.log(`    Open your coding agent and run ${pc.cyan("/update-docs")}`);
     console.log();
   }
 }
@@ -132,7 +132,7 @@ async function collectSourceFiles(
   for (const entry of entries) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (["node_modules", "dist", ".git", ".claude"].includes(entry.name))
+      if (["node_modules", "dist", ".git", ".claude", ".agents"].includes(entry.name))
         continue;
       files.push(...(await collectSourceFiles(fullPath, root)));
     } else if (
@@ -208,11 +208,11 @@ last_reviewed: ${date}
 
 ## Summary
 
-<!-- To be filled in by Claude Code using the update-docs skill -->
+<!-- To be filled in by an agent using the update-docs skill -->
 
 ## How it works
 
-<!-- To be filled in by Claude Code using the update-docs skill -->
+<!-- To be filled in by an agent using the update-docs skill -->
 
 ## Key files
 

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "id": "context-routing",
+      "type": "context",
+      "path": "context-routing",
+      "status": "active",
+      "command": "codument benchmark context"
+    },
+    {
+      "id": "quality-app",
+      "type": "quality",
+      "path": "quality-app",
+      "status": "active",
+      "commands": [
+        "codument benchmark init <dir>",
+        "codument benchmark score <dir>"
+      ]
+    }
+  ]
+}

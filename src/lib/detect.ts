@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 export interface ProjectInfo {
@@ -10,7 +10,7 @@ export interface ProjectInfo {
 }
 
 export async function detectProject(root: string): Promise<ProjectInfo> {
-  const hasTs = existsSync(join(root, "tsconfig.json"));
+  const hasTs = await hasTypeScriptProject(root);
   const hasSrc = existsSync(join(root, "src"));
 
   const srcDir = hasSrc ? "src" : ".";
@@ -38,4 +38,61 @@ export async function detectProject(root: string): Promise<ProjectInfo> {
   }
 
   return { language: hasTs ? "typescript" : "javascript", srcDir, sourceGlobs, framework };
+}
+
+const IGNORED_DIRS = new Set([
+  ".agents",
+  ".claude",
+  ".git",
+  ".next",
+  ".wxt",
+  "build",
+  "coverage",
+  "dist",
+  "node_modules",
+]);
+
+async function hasTypeScriptProject(root: string): Promise<boolean> {
+  if (existsSync(join(root, "tsconfig.json"))) {
+    return true;
+  }
+
+  return hasNestedTypeScript(root, 0, 4);
+}
+
+async function hasNestedTypeScript(
+  dir: string,
+  depth: number,
+  maxDepth: number,
+): Promise<boolean> {
+  if (depth > maxDepth) {
+    return false;
+  }
+
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+
+  for (const entry of entries) {
+    if (entry.isFile()) {
+      if (entry.name === "tsconfig.json") {
+        return true;
+      }
+      if (/\.(ts|tsx)$/.test(entry.name) && !entry.name.endsWith(".d.ts")) {
+        return true;
+      }
+      continue;
+    }
+
+    if (entry.isDirectory() && !IGNORED_DIRS.has(entry.name)) {
+      if (await hasNestedTypeScript(join(dir, entry.name), depth + 1, maxDepth)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }

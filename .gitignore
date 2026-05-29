@@ -1,5 +1,4 @@
 node_modules/
 dist/
 *.tsbuildinfo
-.codument-meta.json
 .claude/

@@ -1,11 +1,12 @@
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
+import { readRegistrySync } from "../lib/registry.js";
 
 // This hook runs after Write/Edit tool use.
 // It checks if a source file was modified and reminds the developer that
 // documentation should be updated as part of the same task.
-// Output goes to the terminal (developer-facing). Claude enforces this via
-// the path-scoped rule in .claude/rules/documentation.md.
+// Output goes to the terminal (developer-facing). The Claude profile pairs this
+// with the path-scoped rule in .claude/rules/documentation.md.
 
 const root = process.cwd();
 const registryPath = join(root, "docs", ".registry.json");
@@ -30,23 +31,21 @@ if (!/\.(ts|tsx|js|jsx)$/.test(relPath)) process.exit(0);
 
 if (!existsSync(registryPath)) process.exit(0);
 
-let registry: { features: Record<string, { sources: string[]; doc: string }> } | undefined;
-try {
-  registry = JSON.parse(readFileSync(registryPath, "utf-8"));
-} catch {
-  process.exit(0);
-}
+const registry = readRegistrySync(registryPath);
 
-if (!registry) process.exit(0);
-
+const matches: string[] = [];
 for (const [name, entry] of Object.entries(registry.features)) {
-  const matches = entry.sources.some(
+  const isMatch = entry.sources.some(
     (s) => relPath === s || relPath.startsWith(s + "/"),
   );
-  if (matches) {
-    console.log(
-      `⚠️  codument: ${relPath} → documented in "${name}" (${entry.doc}) — doc must be updated in this same task`,
-    );
-    break;
+  if (isMatch) {
+    matches.push(`"${name}" (${entry.doc})`);
   }
+}
+
+if (matches.length > 0) {
+  const docs = matches.join(", ");
+  console.log(
+    `⚠️  codument: ${relPath} → documented in ${docs} — docs must be updated in this same task`,
+  );
 }
