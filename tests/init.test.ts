@@ -169,7 +169,7 @@ describe("init command", () => {
     const metaPath = join(tmp, ".codument-meta.json");
     assert.ok(existsSync(metaPath));
     const meta = JSON.parse(await readFile(metaPath, "utf-8"));
-    assert.equal(meta.version, "0.3.0");
+    assert.equal(meta.version, "0.4.0");
     assert.ok(meta.initialized);
     assert.deepStrictEqual(meta.agents, ["codex"]);
     assert.ok(meta.project);

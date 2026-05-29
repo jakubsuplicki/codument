@@ -73,7 +73,7 @@ cd /path/to/codument
 npm --cache /private/tmp/codument-npm-cache pack
 
 cd /path/to/existing-project
-npm install -D ../codument/codument-0.3.0.tgz
+npm install -D ../codument/codument-0.4.0.tgz
 npx codument adopt --agents codex,claude
 ```
 

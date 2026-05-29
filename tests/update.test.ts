@@ -105,7 +105,7 @@ describe("update command", () => {
     const meta = JSON.parse(
       await readFile(join(tmp, ".codument-meta.json"), "utf-8"),
     );
-    assert.equal(meta.version, "0.3.0");
+    assert.equal(meta.version, "0.4.0");
   });
 
   it("creates missing managed files", async () => {
