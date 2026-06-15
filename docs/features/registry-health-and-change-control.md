@@ -175,11 +175,11 @@ Once the user approves a plan, the per-step gates (`work-step` stop, `review-wor
 
 ## Delivery Plan
 
-Status: Step 1 implemented and committed; Steps 1a and 1b approved and in progress. Steps 2-9 await approval before source edits.
+Status: Steps 1, 1a, and 1b implemented and committed. Steps 2-9 await approval before source edits.
 
 - [x] Step 1: Harden the generated workflow instructions and delivery skills so every request starts by classifying whether to use `grill-with-docs` first or go straight to `plan-with-docs`, and so compact context is offered after each reviewed-and-committed step loop.
-- [ ] Step 1a: Add an opt-in approved-plan autopilot mode to the generated workflow instructions and delivery skills: after the approval gate, auto-advance `work-step` -> `review-work` -> `commit-work` per step without prompting, run each gate, commit per step, and pause only on a judgment-call review finding, a verification failure, or an out-of-plan change. Off by default; triggered explicitly per run.
-- [ ] Step 1b: Make `commit-work` (all profiles) and the generated `AGENTS.md`/`CLAUDE.md` commit guidance forbid AI co-author attribution, with a test asserting no agent `Co-Authored-By` trailer is generated. Steps 1a and 1b are workflow-surface changes independent of the registry work and can ship before Step 2.
+- [x] Step 1a: Add an opt-in approved-plan autopilot mode to the generated workflow instructions and delivery skills: after the approval gate, auto-advance `work-step` -> `review-work` -> `commit-work` per step without prompting, run each gate, commit per step, and pause only on a judgment-call review finding, a verification failure, or an out-of-plan change. Off by default; triggered explicitly per run.
+- [x] Step 1b: Make `commit-work` (all profiles) and the generated `AGENTS.md`/`CLAUDE.md` commit guidance forbid AI co-author attribution, with a test asserting no agent `Co-Authored-By` trailer is generated. Steps 1a and 1b are workflow-surface changes independent of the registry work and can ship before Step 2.
 - [ ] Step 2: Add a shared registry/docs health analyzer that reads a project root and returns typed warning findings for missing `docs/.registry.json`, missing mapped docs, missing mapped source files, duplicate/high-fanout legacy source mappings, and empty `depends_on` across mature registries.
 - [ ] Step 3: Wire `codument doctor` to the health analyzer with warning-only human output, configurable doc-size thresholds, and CLI tests for success, missing registry, and finding output.
 - [ ] Step 4: Expand `doctor` coverage with source discovery and doc-quality checks: unmapped relevant source files, generated/build-source leakage, oversized docs, and oversized `Definition of Done` or `What Was Built` sections. Include a Peelmeal-shaped fixture.
