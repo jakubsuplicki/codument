@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -65,5 +65,27 @@ describe("agent profiles", () => {
       "commit-work",
       "update-docs",
     ]);
+  });
+
+  it("clarifies when to grill versus plan", async () => {
+    const grillSkill = await readFile(
+      join(process.cwd(), "skills", "grill-with-docs", "SKILL.md"),
+      "utf-8",
+    );
+    const planSkill = await readFile(
+      join(process.cwd(), "skills", "plan-with-docs", "SKILL.md"),
+      "utf-8",
+    );
+
+    assert.match(grillSkill, /Boundary With Plan With Docs/);
+    assert.match(
+      grillSkill,
+      /Do not write a delivery plan while the key boundary is still unsettled/,
+    );
+    assert.match(planSkill, /Boundary With Grill With Docs/);
+    assert.match(
+      planSkill,
+      /Do not use `plan-with-docs` yet if any meaningful decision is still open/,
+    );
   });
 });

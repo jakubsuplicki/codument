@@ -7,7 +7,7 @@ sources: []
 depends_on:
   - commands
   - lib
-last_reviewed: 2026-05-29
+last_reviewed: 2026-06-04
 ---
 
 ## Summary
@@ -24,19 +24,20 @@ Backward compatibility with the current Claude-centered implementation is not re
 
 ## Workflow Shape
 
-1. Grill with docs: challenge the request against the existing overview, registry, feature docs, concept docs, ADRs, and code reality.
-2. Plan with docs: write or update the relevant feature plan with scope, non-goals, acceptance criteria, verification strategy, and implementation steps.
-3. Approval gate: do not start source edits until the user approves the plan.
-4. Work step: pick the next unchecked step and implement only that slice.
-5. Feedback loop: prefer red-green-refactor, but use the strongest practical verification loop for the change.
-6. Docs update: update the registry and mapped docs as part of the same slice.
-7. Review: compare the diff against the approved step, tests, docs, and architecture boundaries.
-8. Commit: create a focused conventional commit after checks, docs, and review are complete.
-9. Continue: move to the next unchecked step.
+1. Route intent: decide whether the request is still rough enough to need `grill-with-docs` with the user, or settled enough to move directly into `plan-with-docs`.
+2. Grill with docs: challenge rough or ambiguous requests against the existing overview, registry, feature docs, concept docs, ADRs, and code reality.
+3. Plan with docs: write or update the relevant feature plan with scope, non-goals, acceptance criteria, verification strategy, and implementation steps.
+4. Approval gate: do not start source edits until the user approves the plan.
+5. Work step: pick the next unchecked step and implement only that slice.
+6. Feedback loop: prefer red-green-refactor, but use the strongest practical verification loop for the change.
+7. Docs update: update the registry and mapped docs as part of the same slice.
+8. Review: compare the diff against the approved step, tests, docs, and architecture boundaries.
+9. Commit: create a focused conventional commit after checks, docs, and review are complete.
+10. Continue: choose the next step, plan review, context compaction, or pause.
 
 Each implementation step has a hard gate: finish one `work-step`, stop for `review-work`, then stop for `commit-work`. The agent should not ask to start the next plan step until the current step has been reviewed and committed. Review findings are a user decision point: the agent lists required fixes, then waits for the user to approve all fixes, select specific fixes, defer specific findings with a reason, or pause.
 
-The always-loaded agent instructions should route intent into that loop without requiring the user to name a skill. Rough ideas, feature concepts, ambiguous changes, and "before we code" discussions start with `grill-with-docs`. Settled scope moves to `plan-with-docs`, which writes the durable plan and stops for explicit approval. Approved plans enter `work-step`, completed steps enter `review-work`, and clean or explicitly deferred reviews offer `commit-work` as the next gated action.
+The always-loaded agent instructions should route intent into that loop without requiring the user to name a skill. The first decision is whether the agent can safely plan from settled context or must grill with the user first. Rough ideas, feature concepts, ambiguous changes, and "before we code" discussions start with `grill-with-docs`. Settled scope moves to `plan-with-docs`, which writes the durable plan and stops for explicit approval. Approved plans enter `work-step`, completed steps enter `review-work`, and clean or explicitly deferred reviews offer `commit-work` as the next gated action.
 
 ## Non-goals
 
@@ -51,7 +52,7 @@ The always-loaded agent instructions should route intent into that loop without 
 - Agent profiles should share one interface but produce agent-specific output. Profiles can be neutral in shape, not neutral in capability.
 - Skills should be grouped around the delivery loop: `grill-with-docs`, `plan-with-docs`, `tdd`, `work-step`, `review-work`, `commit-work`, and `update-docs`.
 - Existing-project adoption should be gentle: scan and map existing docs where possible, create missing docs only where needed, and mark uncertainty instead of pretending the scan is authoritative.
-- Working plan state should be compacted into durable docs before a feature is marked done.
+- Working plan state should stay durable enough that context compaction can be offered after every reviewed-and-committed step, not only after the whole feature is done.
 
 ## Delivery Plan
 
@@ -113,7 +114,7 @@ Commits for this migration must use conventional commit prefixes such as `feat:`
 
 ### Summary
 
-After a reviewed step is committed, Codument should offer context compaction as a first-class continuation option. That point is safe for compaction because code, docs, verification, review state, and the commit are already durable.
+After every reviewed step is committed, Codument should offer context compaction as a first-class continuation option. That point is safe for compaction because code, docs, verification, review state, and the commit are already durable. Compaction is a post-step checkpoint, not only a final feature-completion activity.
 
 ### Current Decision
 
@@ -154,6 +155,60 @@ Status: implemented and verified; awaiting commit.
 
 - Run targeted tests for scaffolded managed instructions and skill installation/update behavior.
 - Run `npm run typecheck`, `npm run build`, and `npm test` if the implementation touches source or tests.
+
+### Open Questions
+
+- None.
+
+## Explicit Next-Step Handoff Update
+
+### Summary
+
+After a reviewed step is committed, the `commit-work` gate should tell the user exactly which delivery-plan step `/work-step` will start. A generic "start the next step" option is too easy for an agent to repeat without re-reading the active plan, especially after context compaction or a long review.
+
+### Current Decision
+
+The post-commit gate's first option should include the next unchecked plan step number and a compact one-line summary copied or faithfully condensed from the active plan. If that next step is the final unchecked step, the option should say so. If no unchecked step remains, the gate should not offer `/work-step` as though work remains; it should instead offer plan review/completion, compact context, or pause.
+
+The next-step option should follow this shape:
+
+```text
+1. Start the next unchecked plan step with /work-step (Step N - <next step summary>)
+```
+
+For the final unchecked step, the parenthetical should follow this shape:
+
+```text
+1. Start the next unchecked plan step with /work-step (Step N - final step: <next step summary>)
+```
+
+### Non-goals
+
+- Do not change the allowed step gate sequence.
+- Do not make agents start the next `work-step` automatically after commit.
+- Do not require generated `AGENTS.md` wording to repeat the full menu template; the detailed behavior belongs in `commit-work`.
+- Do not invent a next-step summary when the active plan is missing or ambiguous; in that case, the agent should offer plan review before continuing.
+
+### Delivery Plan
+
+Status: draft, awaiting approval before source edits.
+
+- [ ] Step 1: Update the reusable and dogfooded `commit-work` skill instructions so the post-commit gate requires the actual next unchecked step number and summary, including final-step and no-unchecked-step handling.
+- [ ] Step 2: Update the workflow documentation and focused tests so initialized/updated skills preserve the explicit next-step handoff requirement.
+
+### Acceptance Criteria
+
+- `commit-work` no longer shows a bare "Start the next unchecked plan step with /work-step" option as the complete required handoff.
+- The next-step option includes `Step N` plus a short summary of the next unchecked plan step.
+- The option explicitly labels the final unchecked step when applicable.
+- If no unchecked step remains, the gate does not offer `/work-step` as a continuation path.
+- Existing compact-context, plan-review, and pause options remain available after commit.
+
+### Verification Strategy
+
+- Add or update targeted tests that assert installed `commit-work` skill text includes the explicit next-step summary requirement.
+- Run the relevant targeted tests for skill installation/update behavior.
+- Run `npm run typecheck`, `npm run build`, and `npm test` if implementation touches source or broad test fixtures.
 
 ### Open Questions
 

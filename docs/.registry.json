@@ -76,6 +76,18 @@
       "depends_on": [],
       "last_updated": "2026-05-29",
       "status": "current"
+    },
+    "registry-health-and-change-control": {
+      "doc": "docs/features/registry-health-and-change-control.md",
+      "type": "feature",
+      "sources": [],
+      "depends_on": [
+        "cli",
+        "commands",
+        "lib"
+      ],
+      "last_updated": "2026-06-04",
+      "status": "current"
     }
   }
 }
