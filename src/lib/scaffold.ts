@@ -60,7 +60,7 @@ Use Codument as the durable control plane for agent-led engineering work:
 5. Build the strongest practical feedback loop, preferring red-green-refactor when it fits.
 6. Update docs and \`docs/.registry.json\` as part of the same step.
 7. Review the diff against the approved plan, tests, docs, and architecture.
-8. Commit focused work with a conventional commit.
+8. Commit focused work with a conventional commit, authored as the user with no AI \`Co-Authored-By\` trailer.
 9. Move to the next unchecked step.
 
 ### Intent routing

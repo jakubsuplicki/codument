@@ -40,6 +40,7 @@ Use this after `review-work` is clean, or after the user has approved/deferred e
 - Do not decide to defer review findings yourself; only the user can defer findings.
 - Do not commit unrelated dirty files.
 - Do not claim verification passed if a command failed or could not run.
+- Commit as the user only. Never add a `Co-Authored-By` trailer for the AI agent (for example Claude or Codex), in any profile.
 - Follow any repository-specific commit timestamp or signing rules from `AGENTS.md`, `CLAUDE.md`, or the active feature plan.
 - Outside autopilot, do not start the next delivery-plan step in the same response as the commit.
 - Do not start the next delivery-plan step as part of compacting context.

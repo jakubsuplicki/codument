@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -131,5 +131,20 @@ describe("buildManagedSection", () => {
     assert.ok(section.includes("stop autopilot"));
     // the binary does not run the agent; autopilot is instruction-only
     assert.ok(section.includes("There is no `codument run` command"));
+  });
+
+  it("commit guidance forbids an AI co-author trailer", () => {
+    const section = buildManagedSection();
+    assert.ok(section.includes("no AI `Co-Authored-By` trailer"));
+    // the generated guidance must not embed an actual agent co-author trailer
+    assert.ok(!/Co-Authored-By:\s/.test(section));
+  });
+});
+
+describe("commit-work skill", () => {
+  it("forbids attributing the AI agent as co-author", () => {
+    const skill = readFileSync("skills/commit-work/SKILL.md", "utf-8");
+    assert.ok(/Never add a `Co-Authored-By` trailer/.test(skill));
+    assert.ok(!/Co-Authored-By:\s/.test(skill));
   });
 });
