@@ -23,7 +23,7 @@ Use this after `review-work` is clean, or after the user has approved/deferred e
    - `test:`
    - `refactor:`
    - `chore:`
-9. Stop after the commit and offer the next-step gate:
+9. Outside autopilot, stop after the commit and offer the next-step gate. In an autopilot run, continue directly to `work-step` for the next unchecked step (or report completion if none remain):
 
    ```text
    Step N is reviewed and committed. Next options:
@@ -41,5 +41,5 @@ Use this after `review-work` is clean, or after the user has approved/deferred e
 - Do not commit unrelated dirty files.
 - Do not claim verification passed if a command failed or could not run.
 - Follow any repository-specific commit timestamp or signing rules from `AGENTS.md`, `CLAUDE.md`, or the active feature plan.
-- Do not start the next delivery-plan step in the same response as the commit.
+- Outside autopilot, do not start the next delivery-plan step in the same response as the commit.
 - Do not start the next delivery-plan step as part of compacting context.

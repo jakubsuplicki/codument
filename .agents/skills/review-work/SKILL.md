@@ -27,7 +27,7 @@ Lead with findings ordered by severity:
 
 Each finding should include the file and line where possible, the concrete risk, and the smallest safe fix.
 
-If there are findings, list them and stop for a user decision. Do not fix findings automatically.
+Outside autopilot, if there are findings, list them and stop for a user decision; do not fix findings automatically. In an autopilot run, auto-apply only safe, obvious fixes and continue, but pause the whole run for any judgment-call finding or one touching public interfaces, security, data loss or deletions, or dependency changes.
 
 End with exactly these next options when findings exist:
 
@@ -53,7 +53,7 @@ Review clean. Next options:
 - Treat extra unplanned scope as a finding.
 - Do not focus on formatting that automated tools should handle.
 - Do not manufacture issues.
-- Do not fix findings automatically; wait for the user to approve all fixes, select specific findings, defer specific findings, or pause.
+- Outside autopilot, do not fix findings automatically; wait for the user to approve all fixes, select specific findings, defer specific findings, or pause. In autopilot, auto-apply only safe, obvious fixes and pause the run for judgment-call findings (see above).
 - Do not mark review complete for commit until approved fixes are made or remaining findings are explicitly deferred by the user.
 - Do not commit until high and critical findings are fixed or explicitly deferred by the user.
 - Do not ask to start the next delivery-plan step after review.

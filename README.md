@@ -104,6 +104,26 @@ Chat normally. Codument's always-loaded instructions route clear intent into the
 
 Working state should stay compact. Feature docs should capture the durable decisions, current plan, acceptance criteria, verification strategy, gotchas, and key files, not a transcript of every agent turn.
 
+## Run the approved plan — "codument it"
+
+Codument never runs your coding agent — your agent does. So you trigger autopilot by telling your agent, not by running a CLI command. There is no `codument run` command, and there never will be: the Codument CLI only does setup and deterministic checks (`init`, `scan`, `adopt`, `update`, `benchmark`).
+
+Once a plan is approved, tell your agent:
+
+> codument, run the plan
+
+(also recognized: "run the plan", "codument this plan", "autopilot", or `/work-step --auto`).
+
+Your agent then works the approved plan end to end: for each remaining step it implements, reviews, and commits without stopping for routine confirmations — one focused commit per step, under your own identity (no AI co-author trailer).
+
+Autopilot is opt-in per run and off by default. The per-step gates still run; autopilot only stops *waiting* for your routine confirmation. It will not start until the plan is approved (look for `Status: approved` in the plan), and it pauses to ask you when something needs a real decision:
+
+- a review finding that needs a human judgment call (and always for changes touching public interfaces, security, data loss, or dependencies),
+- a failing verification, or
+- a change that would fall outside the approved plan.
+
+To stop early, tell your agent **"pause"** or **"stop autopilot"**. To run a single fully-gated step the old way, say **"work the next step"** or `/work-step` without `--auto`.
+
 ## Acknowledgements
 
 Thanks to Matt Pocock's [mattpocock/skills](https://github.com/mattpocock/skills), especially `/grill-with-docs`, which helped shape Codument's habit of grilling ideas against the docs before coding.

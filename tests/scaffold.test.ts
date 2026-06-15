@@ -108,9 +108,11 @@ describe("buildManagedSection", () => {
     assert.ok(section.includes("wait for the user to ask for it"));
     assert.ok(section.includes("treat it as planning"));
     assert.ok(section.includes("Step gates"));
-    assert.ok(section.includes("Never move from one implementation step directly into the next"));
+    assert.ok(section.includes("Outside an explicitly opted-in autopilot run, never move from one implementation step directly into the next"));
+    // guard: the gate rule must stay mode-conditioned, never regress to the bare absolute
+    assert.ok(!section.includes("Never move from one implementation step directly into the next without review and commit in between."));
     assert.ok(section.includes("It must not fix findings automatically"));
-    assert.ok(section.includes("Only the user can decide to fix, select, or defer review findings"));
+    assert.ok(section.includes("Outside autopilot, only the user can decide to fix, select, or defer review findings"));
     assert.ok(section.includes("compact context"));
     assert.ok(section.includes("native context-compaction command"));
     assert.ok(section.includes("Definition of Done"));
@@ -118,5 +120,16 @@ describe("buildManagedSection", () => {
     assert.ok(section.includes("Documentation Structure"));
     assert.ok(section.includes("docs/features/{name}.md"));
     assert.ok(section.includes("docs/concepts/{name}.md"));
+  });
+
+  it("includes opt-in autopilot routing", () => {
+    const section = buildManagedSection();
+    assert.ok(section.includes("Autopilot (opt-in per run)"));
+    assert.ok(section.includes("off by default"));
+    assert.ok(section.includes("codument, run the plan"));
+    assert.ok(section.includes("Status: approved"));
+    assert.ok(section.includes("stop autopilot"));
+    // the binary does not run the agent; autopilot is instruction-only
+    assert.ok(section.includes("There is no `codument run` command"));
   });
 });

@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import pc from "picocolors";
 import { adopt } from "./commands/adopt.js";
 import { createBenchmarkCommand } from "./commands/benchmark.js";
 import { init } from "./commands/init.js";
@@ -47,6 +48,25 @@ program
   )
   .option("--dry-run", "Preview changes without modifying files")
   .action(update);
+
+program
+  .command("run [args...]")
+  .alias("autopilot")
+  .description(
+    "Explain how to run the approved plan (Codument does not run your agent)",
+  )
+  .action(() => {
+    console.log(
+      [
+        "Codument does not run your coding agent — your agent does.",
+        "",
+        `To run an approved plan, tell your agent:  ${pc.bold('"codument, run the plan"')}`,
+        "",
+        "The CLI only does setup and deterministic checks:",
+        `  ${pc.dim("codument init | scan | adopt | update | benchmark")}`,
+      ].join("\n"),
+    );
+  });
 
 program.addCommand(createBenchmarkCommand());
 

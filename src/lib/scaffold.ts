@@ -85,8 +85,21 @@ Required sequence for every delivery-plan step:
 
 When the user chooses compact context after a commit, use the active agent's native context-compaction command if one is available. If no native command is available, provide a concise restart note grounded in \`AGENTS.md\`, the active plan doc, \`docs/.registry.json\`, and \`git status\`, then pause.
 
-Never move from one implementation step directly into the next without review and commit in between.
-Only the user can decide to fix, select, or defer review findings.
+Outside an explicitly opted-in autopilot run, never move from one implementation step directly into the next without review and commit in between.
+Outside autopilot, only the user can decide to fix, select, or defer review findings; in an autopilot run the agent may auto-apply only safe, obvious fixes and must pause for any judgment-call finding.
+
+### Autopilot (opt-in per run)
+Autopilot is off by default and applies to one run only; never assume it from a prior turn.
+
+- Trigger: only when the user explicitly says "codument, run the plan" (also "run the plan", "codument this plan", "autopilot", or a best-effort \`/work-step --auto\` hint). The \`--auto\` flag is a convenience hint your host may ignore; the phrase is the reliable trigger.
+- Precondition: never start autopilot before the plan is approved. Confirm the active plan shows \`Status: approved\` (not draft or awaiting approval). If you cannot confirm approval, do not start; say so and ask the user to approve the plan.
+- While active, for each remaining delivery-plan step run \`work-step\` -> \`review-work\` -> \`commit-work\` without stopping for routine confirmations. Each gate still runs; you simply do not wait for the user to say continue. Commit per step with a focused conventional commit, attributed to the user only.
+- During \`review-work\` in autopilot, auto-apply only safe, obvious fixes, then proceed to \`commit-work\`. Always pause for any finding that needs a judgment call or that touches public interfaces, security, data loss or deletions, or dependency changes.
+- Hard pause conditions (stop the run, report a compact summary, wait for the user): a judgment-call review finding, a verification failure, or any change that falls outside the approved plan.
+- Interrupt: if the user says "pause" or "stop autopilot", immediately return to the manual one-step-at-a-time gated loop.
+- On any pause or on plan completion, report a compact summary of steps done, commits made, and why it stopped.
+
+The Codument CLI does not run your coding agent. There is no \`codument run\` command; autopilot lives entirely in these instructions, which your agent follows.
 
 ### Definition of Done
 A task is NOT complete until:
