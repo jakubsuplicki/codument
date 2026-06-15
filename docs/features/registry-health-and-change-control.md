@@ -8,7 +8,7 @@ depends_on:
   - cli
   - commands
   - lib
-last_reviewed: 2026-06-04
+last_reviewed: 2026-06-15
 ---
 
 ## Summary
@@ -32,12 +32,14 @@ Initial implementation decisions:
 - Agent routing is part of the change-control surface. At the start of a request, the agent should decide whether the scope is settled enough for `plan-with-docs` or whether it must use `grill-with-docs` with the user before planning. The agent should make that routing decision from context when intent is clear instead of asking the user to name the skill.
 - Codument is pre-1.0 and should improve what does not work, even when that means replacing an early data shape. Compatibility is a migration-safety concern, not a reason to preserve a model that makes ownership ambiguous.
 - `doctor` starts warning-only for health findings. It should exit nonzero for unexpected runtime failures, but findings such as stale mappings, bloated docs, and empty dependencies should not fail CI until an explicit strict mode exists later.
-- Existing `sources` and older `mappings` registries should remain readable and importable for `doctor`, `adopt`, and migration commands. New writes can move to the new registry shape once a backup-and-migrate path exists.
+- Codument is pre-1.0 and effectively single-user (the author's own repos: codument, codument-studio, Peelmeal). Do not invest in backwards-compatibility shims, a permanent dual-read layer, or data-loss-proof migration. Prefer the cleanest new shape and convert the author's own repos directly. A one-shot migration that reads legacy `sources`/`mappings` once, with an optional backup, is sufficient; ambiguity-preservation machinery is out of scope.
 - Doc-size and build-log checks should use conservative default thresholds with CLI options so projects can tune noise without editing code.
 - Risk hints should be hand-authored in the new registry shape first. Path-based inference can be limited to obvious generated/build leakage in `doctor`.
 - `review` should inspect the uncommitted working-tree diff by default. Arbitrary ref comparison can be added later without changing the analyzer model.
 - Context compaction is a step-level post-commit option: after one `work-step`, its `review-work`, and its `commit-work` are complete, the user can choose compact context before starting the next step. It should not be reserved only for whole-feature completion.
 - Completed delivery detail in docs should be compacted in place for now. Archival or automated pruning can be a later feature after `doctor` can identify noisy sections reliably.
+- Approved-plan autopilot is an opt-in per-run mode, not the default. It only runs after the approval gate, auto-advances `work-step` -> `review-work` -> `commit-work` per step without prompting, still running each gate and committing per step, and pauses only on a review finding that needs human judgment, a verification failure, or an out-of-plan change. The gates are not removed; the agent simply stops waiting for routine confirmations.
+- `commit-work` and all generated commit guidance must commit with the user's identity only and must never add an AI agent `Co-Authored-By` trailer.
 
 Feature docs should remain the current product and architecture contract. They should not permanently accumulate verbose delivery logs. Completed delivery detail should be compacted, archived, or removed once the durable decision and current behavior are captured.
 
@@ -108,7 +110,7 @@ The future registry entry should support:
 - `depends_on` for explicit feature, concept, ADR, or shared-module dependencies
 - optional `risk` hints for shared infrastructure, auth, payments, data loss, security, generated code, public API, or high-fanout surfaces
 
-Migration rule: legacy `sources` and old `mappings` stay readable/importable until a migration path exists. After that, generated registries and normal command writes should use the new shape. Migration should create a backup, preserve all source/doc relationships, mark ambiguous ownership explicitly, and let `doctor` explain what still needs human promotion into `primary_sources` or `related_sources`.
+Migration rule: provide a single one-shot migration that reads legacy `sources`/`mappings` once and rewrites them into the new shape, with an optional backup. After migration, all writes use the new shape and the legacy read path can be dropped. Because Codument is pre-1.0 and single-user, do not maintain a permanent dual-read compatibility layer or data-loss-proof/ambiguity-preservation machinery; `doctor` can flag entries that still need human promotion into `primary_sources` or `related_sources`.
 
 ## Command Shape
 
@@ -147,6 +149,21 @@ It should report:
 
 `codument watch` can come after `review`. It should continuously refresh the same change-state summary in a second terminal while the agent works. The watcher should reuse the same underlying analyzer as `review`.
 
+## Approved-Plan Autopilot
+
+Once the user approves a plan, the per-step gates (`work-step` stop, `review-work` stop, `commit-work` stop) become friction when the user is only confirming. In practice the user repeatedly selects the first option to keep going. Autopilot removes those routine confirmations without removing the control surface.
+
+- Opt-in per run, off by default; triggered by an explicit instruction to the agent: "codument, run the plan" (also "run the plan", "codument this plan", "autopilot", or a best-effort `/work-step --auto` hint). Interrupt with "pause" or "stop autopilot" to return to the manual gated loop.
+- Never starts before the plan-approval gate. Approval stays a human decision, detected from an explicit `Status: approved` marker in the active plan.
+- Auto-advances `work-step` -> `review-work` -> `commit-work` for each remaining step, committing per step with focused conventional commits.
+- Still runs each gate and produces the same durable artifacts (a per-step commit and review notes) as the manual loop. Machine-readable gate events for a live watcher or Studio land later with the `.codument/events.jsonl` work, not in this step.
+- Pauses and surfaces when a `review-work` finding needs a human judgment call, verification fails, or a change falls outside the approved plan. The agent may auto-apply only safe, obvious fixes; it must always pause for findings touching public interfaces, security, data loss or deletions, or dependency changes, and for anything ambiguous.
+- Reports a compact summary on pause and on plan completion.
+
+## Commit Attribution
+
+`commit-work` must attribute commits to the user only. It must never append an AI agent `Co-Authored-By` trailer in any profile, and the generated `AGENTS.md` and `CLAUDE.md` commit guidance must state this explicitly.
+
 ## Non-goals
 
 - Do not require a daemon for the basic `review` safety gate.
@@ -158,9 +175,11 @@ It should report:
 
 ## Delivery Plan
 
-Status: draft, awaiting approval before source edits.
+Status: Step 1 implemented and committed; Steps 1a and 1b approved and in progress. Steps 2-9 await approval before source edits.
 
-- [ ] Step 1: Harden the generated workflow instructions and delivery skills so every request starts by classifying whether to use `grill-with-docs` first or go straight to `plan-with-docs`, and so compact context is offered after each reviewed-and-committed step loop.
+- [x] Step 1: Harden the generated workflow instructions and delivery skills so every request starts by classifying whether to use `grill-with-docs` first or go straight to `plan-with-docs`, and so compact context is offered after each reviewed-and-committed step loop.
+- [ ] Step 1a: Add an opt-in approved-plan autopilot mode to the generated workflow instructions and delivery skills: after the approval gate, auto-advance `work-step` -> `review-work` -> `commit-work` per step without prompting, run each gate, commit per step, and pause only on a judgment-call review finding, a verification failure, or an out-of-plan change. Off by default; triggered explicitly per run.
+- [ ] Step 1b: Make `commit-work` (all profiles) and the generated `AGENTS.md`/`CLAUDE.md` commit guidance forbid AI co-author attribution, with a test asserting no agent `Co-Authored-By` trailer is generated. Steps 1a and 1b are workflow-surface changes independent of the registry work and can ship before Step 2.
 - [ ] Step 2: Add a shared registry/docs health analyzer that reads a project root and returns typed warning findings for missing `docs/.registry.json`, missing mapped docs, missing mapped source files, duplicate/high-fanout legacy source mappings, and empty `depends_on` across mature registries.
 - [ ] Step 3: Wire `codument doctor` to the health analyzer with warning-only human output, configurable doc-size thresholds, and CLI tests for success, missing registry, and finding output.
 - [ ] Step 4: Expand `doctor` coverage with source discovery and doc-quality checks: unmapped relevant source files, generated/build-source leakage, oversized docs, and oversized `Definition of Done` or `What Was Built` sections. Include a Peelmeal-shaped fixture.
@@ -172,7 +191,7 @@ Status: draft, awaiting approval before source edits.
 
 ## Acceptance Criteria
 
-- Existing registries with `sources` or old `mappings` can be read, diagnosed, backed up, and migrated without data loss.
+- A one-shot migration converts the author's own registries (`sources`/old `mappings`) into the new shape; an optional backup is enough. Permanent dual-read and data-loss-proof migration are out of scope (pre-1.0, single-user).
 - New registry writes use the new ownership-aware shape after migration support exists.
 - Generated workflow instructions make the grill-versus-plan routing decision explicit before planning begins.
 - Compact context is offered after every completed step loop once the step is reviewed and committed, not only after a whole feature is finished.
@@ -185,6 +204,9 @@ Status: draft, awaiting approval before source edits.
 - `codument review` can run against an uncommitted git diff and group changed files by known ownership.
 - `doctor` and `review` separate deterministic evidence from human or agent judgment.
 - README explains both sides of Codument: installed agent workflow routing and deterministic CLI safety checks.
+- Approved-plan autopilot is opt-in per run, never starts before plan approval, auto-advances steps with per-step commits, and pauses on judgment-call review findings, verification failures, or out-of-plan changes.
+- Autopilot runs the same gates and produces the same durable per-step artifacts (a commit and review notes) as the manual loop; machine-readable gate events are deferred to the events-log work.
+- The `commit-work` skill and generated commit guidance never attribute the AI agent as a commit co-author in any profile.
 
 ## Verification Strategy
 
@@ -198,6 +220,7 @@ Status: draft, awaiting approval before source edits.
 - Unit test doc-size and build-log-section detection.
 - Unit test diff snapshot analysis with a temporary git repo.
 - Later CLI-level tests for `review` using a temporary git repo with changed source and docs.
+- Unit test that generated workflow instructions and the `commit-work` skill contain the autopilot routing and pause conditions and contain no agent `Co-Authored-By` trailer.
 - Run `npm run typecheck`, `npm run build`, and `npm test` for implementation steps.
 
 ## Open Questions
