@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { DEFAULT_EXCLUSION_SPEC } from "./analyze.js";
 
 export interface ProjectInfo {
   language: "typescript" | "javascript";
@@ -40,17 +41,8 @@ export async function detectProject(root: string): Promise<ProjectInfo> {
   return { language: hasTs ? "typescript" : "javascript", srcDir, sourceGlobs, framework };
 }
 
-const IGNORED_DIRS = new Set([
-  ".agents",
-  ".claude",
-  ".git",
-  ".next",
-  ".wxt",
-  "build",
-  "coverage",
-  "dist",
-  "node_modules",
-]);
+// Shared with the analyzer so source discovery never disagrees across commands.
+const IGNORED_DIRS = new Set(DEFAULT_EXCLUSION_SPEC.dirs);
 
 async function hasTypeScriptProject(root: string): Promise<boolean> {
   if (existsSync(join(root, "tsconfig.json"))) {

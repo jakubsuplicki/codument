@@ -38,7 +38,7 @@ describe("check-docs hook", () => {
           feature: {
             doc: "docs/features/feature.md",
             type: "feature",
-            sources: ["src/feature.ts"],
+            primary_sources: ["src/feature.ts"],
             depends_on: [],
             last_updated: "2026-05-29",
             status: "current",
@@ -46,7 +46,7 @@ describe("check-docs hook", () => {
           "feature-voice": {
             doc: "docs/features/feature-voice.md",
             type: "feature",
-            sources: ["src/feature.ts"],
+            primary_sources: ["src/feature.ts"],
             depends_on: [],
             last_updated: "2026-05-29",
             status: "current",
@@ -67,9 +67,11 @@ describe("check-docs hook", () => {
     }
   });
 
-  it("normalizes legacy mappings before matching", async () => {
+  it("does not match an un-migrated legacy registry (v2-only read)", async () => {
     const tmp = await createProject();
     try {
+      // Legacy `mappings` are no longer read on the hook path — the registry
+      // must be migrated to v2 first. So an un-migrated registry yields no match.
       await writeFile(
         join(tmp, "docs", ".registry.json"),
         JSON.stringify({
@@ -81,7 +83,7 @@ describe("check-docs hook", () => {
 
       const output = runHook(tmp, join(tmp, "src", "feature.ts"));
 
-      assert.ok(output.includes('"feature" (docs/features/feature.md)'));
+      assert.equal(output.trim(), "");
     } finally {
       await rm(tmp, { recursive: true, force: true });
     }

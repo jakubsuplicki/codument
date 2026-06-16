@@ -10,8 +10,10 @@ import {
 import { readMeta, writeMeta, type MetaFile } from "../lib/codemod.js";
 import { detectProject } from "../lib/detect.js";
 import {
-  hasLegacyMappings,
+  allSources,
+  migrateRegistry,
   normalizeRegistry,
+  registryNeedsMigration,
   writeRegistry,
 } from "../lib/registry.js";
 import { ensureDir } from "../lib/scaffold.js";
@@ -116,7 +118,10 @@ async function adoptRegistry(
     return { action: "skip", entries: 0, sources: 0 };
   }
 
-  const registry = normalizeRegistry(raw, today);
+  const needsMigration = registryNeedsMigration(raw);
+  const registry = needsMigration
+    ? migrateRegistry(raw, today).registry
+    : normalizeRegistry(raw, today);
   const canonical = JSON.stringify(registry, null, 2) + "\n";
   const changed = canonical !== rawText;
   if (!changed) {
@@ -134,7 +139,7 @@ async function adoptRegistry(
   }
 
   return {
-    action: hasLegacyMappings(raw) ? "migrate" : "normalize",
+    action: needsMigration ? "migrate" : "normalize",
     entries: Object.keys(registry.features).length,
     sources: countSources(registry),
   };
@@ -169,7 +174,7 @@ function printRegistryResult(
 function countSources(registry: ReturnType<typeof normalizeRegistry>): number {
   const sources = new Set<string>();
   for (const entry of Object.values(registry.features)) {
-    for (const source of entry.sources) {
+    for (const source of allSources(entry)) {
       sources.add(source);
     }
   }

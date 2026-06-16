@@ -19,7 +19,7 @@ import {
   upsertManagedSection,
 } from "./scaffold.js";
 import { ensureClaudeDocsHook } from "./claude-settings.js";
-import { readRegistry } from "./registry.js";
+import { allSources, readRegistry } from "./registry.js";
 import { version as pkgVersion } from "./version.js";
 
 export interface QualityBenchmarkInitOptions {
@@ -524,13 +524,13 @@ async function checkRegistryCoverage(root: string): Promise<string> {
   if (!mealCatalog) {
     throw new Error("registry is missing meal-catalog");
   }
-  if (!weeklyPlans.sources.includes("src/plans/weekly-plan.js")) {
+  if (!allSources(weeklyPlans).includes("src/plans/weekly-plan.js")) {
     throw new Error("weekly-plans does not map src/plans/weekly-plan.js");
   }
   if (!weeklyPlans.depends_on.includes("meal-catalog")) {
     throw new Error("weekly-plans no longer depends on meal-catalog");
   }
-  if (!mealCatalog.sources.includes("src/domain/menu.js")) {
+  if (!allSources(mealCatalog).includes("src/domain/menu.js")) {
     throw new Error("meal-catalog does not map src/domain/menu.js");
   }
   await readFile(join(root, weeklyPlans.doc), "utf-8");

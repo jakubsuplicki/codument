@@ -3,22 +3,28 @@
     "weekly-plans": {
       "doc": "docs/features/weekly-plans.md",
       "type": "feature",
-      "sources": [
+      "primary_sources": [
         "src/plans/weekly-plan.js"
       ],
+      "related_sources": [],
+      "docs": [],
       "depends_on": [
         "meal-catalog"
       ],
+      "risk": [],
       "last_updated": "2026-05-29",
       "status": "current"
     },
     "meal-catalog": {
       "doc": "docs/concepts/meal-catalog.md",
       "type": "concept",
-      "sources": [
+      "primary_sources": [
         "src/domain/menu.js"
       ],
+      "related_sources": [],
+      "docs": [],
       "depends_on": [],
+      "risk": [],
       "last_updated": "2026-05-29",
       "status": "current"
     }

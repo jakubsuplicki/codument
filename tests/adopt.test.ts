@@ -82,11 +82,11 @@ describe("adopt command", () => {
     const registry = JSON.parse(
       await readFile(join(tmp, "docs", ".registry.json"), "utf-8"),
     );
-    assert.deepStrictEqual(registry.features["cook-mode"].sources, [
+    assert.deepStrictEqual(registry.features["cook-mode"].primary_sources, [
       "app/cook/[recipeId].tsx",
     ]);
     assert.deepStrictEqual(
-      registry.features["cook-mode-voice-control"].sources,
+      registry.features["cook-mode-voice-control"].primary_sources,
       ["app/cook/[recipeId].tsx"],
     );
     assert.ok(!registry.mappings);

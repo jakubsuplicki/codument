@@ -1,6 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import { extname, join, relative } from "node:path";
-import { readRegistry, type Registry } from "./registry.js";
+import { allSources, readRegistry, type Registry } from "./registry.js";
 
 export interface ContextBenchmarkTask {
   id: string;
@@ -197,7 +197,7 @@ function selectCodumentContextFiles(
   for (const key of selectedFeatureKeys) {
     const entry = registry.features[key];
     files.add(entry.doc);
-    for (const source of entry.sources) {
+    for (const source of allSources(entry)) {
       files.add(source);
     }
   }

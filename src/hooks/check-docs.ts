@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
-import { readRegistrySync } from "../lib/registry.js";
+import { allSources, readRegistrySync } from "../lib/registry.js";
 
 // This hook runs after Write/Edit tool use.
 // It checks if a source file was modified and reminds the developer that
@@ -35,7 +35,7 @@ const registry = readRegistrySync(registryPath);
 
 const matches: string[] = [];
 for (const [name, entry] of Object.entries(registry.features)) {
-  const isMatch = entry.sources.some(
+  const isMatch = allSources(entry).some(
     (s) => relPath === s || relPath.startsWith(s + "/"),
   );
   if (isMatch) {

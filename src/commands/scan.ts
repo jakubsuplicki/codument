@@ -3,6 +3,7 @@ import { readFile, writeFile, readdir } from "node:fs/promises";
 import { join, relative, dirname } from "node:path";
 import pc from "picocolors";
 import { readRegistry, writeRegistry } from "../lib/registry.js";
+import { DEFAULT_EXCLUSION_SPEC } from "../lib/analyze.js";
 import { ensureDir } from "../lib/scaffold.js";
 
 interface FeatureGroup {
@@ -69,8 +70,11 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
     registry.features[feature.name] = {
       doc: docPath,
       type: feature.type,
-      sources: feature.sources,
+      primary_sources: feature.sources,
+      related_sources: [],
+      docs: [],
       depends_on: [],
+      risk: [],
       last_updated: today,
       status: "needs-review",
     };
@@ -132,8 +136,8 @@ async function collectSourceFiles(
   for (const entry of entries) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (["node_modules", "dist", ".git", ".claude", ".agents"].includes(entry.name))
-        continue;
+      // Shared with the analyzer so source discovery never disagrees.
+      if (DEFAULT_EXCLUSION_SPEC.dirs.includes(entry.name)) continue;
       files.push(...(await collectSourceFiles(fullPath, root)));
     } else if (
       /\.(ts|tsx|js|jsx)$/.test(entry.name) &&
@@ -191,31 +195,43 @@ function groupIntoFeatures(
 
 function scaffoldDoc(feature: FeatureGroup, date: string): string {
   const sourcesYaml = feature.sources.map((s) => `  - ${s}`).join("\n");
-  const keyFiles = feature.sources
-    .map((s) => `- \`${s}\``)
-    .join("\n");
+  const keyFiles = feature.sources.map((s) => `- \`${s}\``).join("\n");
 
+  // Generated docs carry the audience layers (see docs/concepts/doc-audience-layers.md)
+  // from the start: a plain-language front door, an optional technical dive, and the
+  // durable "why". scan can only guess ownership by directory, so every file is placed
+  // in primary_sources with status needs-review and an explicit ambiguity marker.
   return `---
 title: ${feature.name}
-status: active
+status: needs-review
 type: ${feature.type}
 owner: ""
-sources:
+primary_sources:
 ${sourcesYaml}
+related_sources: []
 depends_on: []
+risk: []
 last_reviewed: ${date}
 ---
 
-## Summary
+# ${feature.name}
 
-<!-- To be filled in by an agent using the update-docs skill -->
+## In plain terms
+
+<!-- Non-technical overview: what this does and why it exists. Fill in during plan-with-docs. -->
 
 ## How it works
 
-<!-- To be filled in by an agent using the update-docs skill -->
+<!-- Optional technical dive-in: architecture, data flow, trade-offs — the "learn it" layer. -->
+
+## Decisions
+
+<!-- The durable "why" (ADR-lite). -->
 
 ## Key files
 
 ${keyFiles}
+
+<!-- codument:ambiguity scan grouped these files by directory and assumed all are primary_sources (owned). Review which belong in related_sources, add depends_on/risk, then set status to current. -->
 `;
 }

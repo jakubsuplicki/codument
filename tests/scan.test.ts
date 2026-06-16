@@ -83,9 +83,14 @@ describe("scan command", () => {
     assert.ok(content.includes("title: auth"));
     assert.ok(content.includes("type: feature"));
     assert.ok(content.includes("src/auth/login.ts"));
-    assert.ok(content.includes("## Summary"));
+    // v2 frontmatter + audience layers (docs/concepts/doc-audience-layers.md)
+    assert.ok(content.includes("primary_sources:"));
+    assert.ok(content.includes("## In plain terms"));
     assert.ok(content.includes("## How it works"));
+    assert.ok(content.includes("## Decisions"));
     assert.ok(content.includes("## Key files"));
+    // explicit ambiguity marker for unverified ownership
+    assert.ok(content.includes("codument:ambiguity"));
   });
 
   it("classifies concept directories correctly", async () => {
@@ -120,8 +125,11 @@ describe("scan command", () => {
         auth: {
           doc: "docs/features/auth.md",
           type: "feature",
-          sources: ["src/auth/login.ts"],
+          primary_sources: ["src/auth/login.ts"],
+          related_sources: [],
+          docs: [],
           depends_on: [],
+          risk: [],
           last_updated: "2025-01-01",
           status: "current",
         },
@@ -183,7 +191,7 @@ describe("scan command", () => {
 
     // types should exist but only with helpers.ts
     if (reg.features.types) {
-      const sources = reg.features.types.sources;
+      const sources = reg.features.types.primary_sources;
       assert.ok(!sources.some((s: string) => s.endsWith(".d.ts")));
     }
   });

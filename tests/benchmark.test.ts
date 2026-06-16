@@ -124,7 +124,7 @@ describe("benchmark command", () => {
       const registry = JSON.parse(
         await readFile(join(target, "docs", ".registry.json"), "utf-8"),
       );
-      assert.deepStrictEqual(registry.features["weekly-plans"].sources, [
+      assert.deepStrictEqual(registry.features["weekly-plans"].primary_sources, [
         "src/plans/weekly-plan.js",
       ]);
 
@@ -383,7 +383,7 @@ describe("benchmark command", () => {
     try {
       const registryPath = join(tmpFixture, "project", "docs", ".registry.json");
       const registry = JSON.parse(await readFile(registryPath, "utf-8"));
-      registry.features["date-utils"].sources = ["src/lib/deleted-date-utils.ts"];
+      registry.features["date-utils"].primary_sources = ["src/lib/deleted-date-utils.ts"];
       await writeFile(registryPath, JSON.stringify(registry, null, 2));
 
       await assert.rejects(
