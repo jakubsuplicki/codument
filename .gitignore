@@ -3,3 +3,6 @@ dist/
 *.tsbuildinfo
 .claude/
 .codument-private/
+
+# Canonical lockfile is package-lock.json (npm); ignore other package managers'
+bun.lock
