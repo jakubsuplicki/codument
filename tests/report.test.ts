@@ -120,6 +120,17 @@ describe("renderReviewReportHtml", () => {
     assert.match(withDemo, /src\/lib\/db\.ts/);
     assert.match(withDemo, /out of plan/);
   });
+
+  it("keeps the coverage percentage visible above the gauge's inner disc", () => {
+    const html = renderReviewReportHtml({
+      review: { version: 1, isGitRepo: true, changedFileCount: 1, plan: null, state: emptyState() },
+      coveragePercent: 39,
+      generatedAt: "t",
+    });
+    assert.match(html, /class="pct">39<sup>%<\/sup>/);
+    // the number layer must stack above the .ring::after donut-hole disc, or it's invisible
+    assert.match(html, /\.ring \.num\{[^}]*z-index:\s*[1-9]/);
+  });
 });
 
 describe("report command (temp git repo)", () => {

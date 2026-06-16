@@ -265,7 +265,7 @@ export function renderReviewReportHtml(data: ReportData): string {
   .gauge.mid .ring{box-shadow:var(--glow) rgba(255,180,84,.30),inset 0 0 0 1px var(--line2)}
   .gauge.hi .ring{box-shadow:var(--glow) rgba(70,224,168,.30),inset 0 0 0 1px var(--line2)}
   .ring::after{content:"";position:absolute;inset:11px;border-radius:50%;background:var(--bg2);box-shadow:inset 0 0 22px rgba(0,0,0,.6)}
-  .ring .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .ring .num{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center}
   .pct{font-family:var(--mono);font-size:27px;font-weight:700}
   .pct sup{font-size:13px;font-weight:600;color:var(--ink2)}
   .gauge.lo .pct{color:#ff8a96;text-shadow:var(--glow) rgba(255,93,108,.45)}
