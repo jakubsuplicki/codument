@@ -11,7 +11,7 @@ sources:
   - src/commands/update.ts
 depends_on:
   - lib
-last_reviewed: 2026-05-29
+last_reviewed: 2026-06-16
 ---
 
 ## Summary
@@ -41,7 +41,7 @@ Migrates an existing Codument project without treating it as a fresh install:
 
 1. Detects the current project instead of trusting stale `.codument-meta.json` source globs
 2. Resolves selected profiles from `--agents`, stored metadata, or existing agent files
-3. Reads `docs/.registry.json` and normalizes legacy `mappings` into canonical `features`
+3. Reads `docs/.registry.json`; if it still holds legacy data (flat `sources` or old `mappings`) it migrates to the v2 ownership shape via `migrateRegistry` (the only legacy reader), otherwise it normalizes the v2 registry in place
 4. Writes `docs/.registry.backup.json` before replacing a migrated registry
 5. Refreshes `.codument-meta.json` with the current package version, detected project, and selected agents
 6. Delegates to `update` so skills, instruction files, Claude hooks, and other managed files are refreshed through the normal merge strategy
@@ -52,10 +52,10 @@ Use `adopt --dry-run` before applying it to a project with customized skills or 
 
 Discovers undocumented source files and creates minimal doc scaffolds:
 
-1. Recursively collects all `.ts/.tsx/.js/.jsx` files (excluding `node_modules`, `dist`, `.git`, `.claude`, `.agents`, and `.d.ts` files)
+1. Recursively collects all `.ts/.tsx/.js/.jsx` files, skipping directories from the shared `DEFAULT_EXCLUSION_SPEC` (so source discovery never disagrees with the analyzer) and `.d.ts` files
 2. Groups files by top-level directory under `src/` — each directory becomes a feature or concept
 3. Directories named `lib`, `utils`, `helpers`, `types`, `shared`, or `common` are typed as concepts; everything else as features
-4. For each group not already in the registry, creates a scaffold doc with frontmatter and empty sections, and adds a `needs-review` registry entry
+4. For each group not already in the registry, creates a **v2** scaffold doc carrying the audience layers (`In plain terms` / `How it works` / `Decisions`) plus a `codument:ambiguity` marker, and adds a `needs-review` v2 registry entry with every file placed in `primary_sources` (scan cannot infer primary vs related ownership)
 5. Records scan stats in `.codument-meta.json`
 
 Root-level files (directly under `src/`) that aren't `index` are grouped by filename but the `_root` group is skipped — these are expected to be entry points handled elsewhere (like `cli.ts`).

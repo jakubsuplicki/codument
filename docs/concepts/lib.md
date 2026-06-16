@@ -6,6 +6,7 @@ owner: ""
 sources:
   - src/index.ts
   - src/lib/agent-profiles.ts
+  - src/lib/analyze.ts
   - src/lib/benchmark-context.ts
   - src/lib/claude-settings.ts
   - src/lib/codemod.ts
@@ -15,7 +16,7 @@ sources:
   - src/lib/scaffold.ts
   - src/lib/version.ts
 depends_on: []
-last_reviewed: 2026-05-29
+last_reviewed: 2026-06-16
 ---
 
 ## Summary
@@ -40,7 +41,36 @@ Normalizes `.claude/settings.json` so Codument has one docs hook for Claude Code
 
 ### Registry (`registry.ts`)
 
-Provides typed read/write for `docs/.registry.json`. The registry maps feature names to their doc paths, source files, dependencies, and status (`current`, `stale`, `needs-review`). Reads normalize legacy registries that contain source-to-doc `mappings`, which lets older Codument projects be adopted without breaking hooks or scans. `updateRegistryEntry` does an in-place read-modify-write using synchronous fs operations — it's designed for simple single-entry updates from hooks or scripts.
+Provides typed read/write for `docs/.registry.json` over the **v2 model** — the single shape the analyzers read. A v2 entry splits the old flat `sources` array into `primary_sources` (files the feature owns) and `related_sources` (files it impacts but does not own), adds durable `docs` and optional `risk` hints, and **preserves the real `status` vocabulary** instead of flattening unknown values like `in-progress` to `current`. `allSources(entry)` unions owned + related (deduped, sorted) for consumers that only need "is this file mentioned anywhere"; `isMatureEntry(entry)` is true when an entry owns a source and its status is not a planned/draft placeholder.
+
+The normal read path is **v2-only**: it does not read the legacy flat `sources` array or the old `mappings` shape. The one-shot `migrateRegistry` (surfaced as `codument migrate-registry`) is the only code that reads those legacy shapes, folding a flat `sources` array into `primary_sources` and each `mappings` source into its doc's feature, with an optional backup; `registryNeedsMigration` detects what still needs converting. A legacy-only entry therefore reads with empty `primary_sources`, which `doctor` surfaces until the registry is migrated. `updateRegistryEntry` does an in-place read-modify-write using synchronous fs operations — it's designed for simple single-entry updates from hooks or scripts.
+
+### Analyzer (`analyze.ts`)
+
+The shared, deterministic registry/docs analyzer behind `doctor` (and later `review`/`watch`). It reads only the v2 model and is a pure function of repo state — filesystem + registry + an optional injected git window — with no wall clock and no randomness, so the same state always yields the same output. It returns **two separate channels that are never blended into one number**:
+
+- **Coverage** — scored ratios with an explicit denominator: ownership (in-scope source files with a documented owner), dependency (mature entries declaring `depends_on`), risk (declared high-risk areas with a durable doc), and freshness/drift (changed sources whose mapped docs also changed; N/A without a git window). The headline score is the equal-weight average of the ratios whose denominator is non-zero; a zero-denominator ratio is excluded, never counted as 0% or 100%.
+- **Lint** — typed warnings reported as counts with evidence, never folded into the score: missing/leaked sources, missing docs, high-fanout files, empty `depends_on` on mature entries, unmapped in-scope sources, and bloated docs. Bloat is measured by three independent signals (whole-doc lines, oversized section, completed-log `[x]` accumulation) with conservative CLI-overridable thresholds (`DEFAULT_BLOAT_THRESHOLDS`), calibrated against `fixtures/benchmarks/doc-bloat`.
+
+`DEFAULT_EXCLUSION_SPEC` is the one canonical exclusion spec (generated/build/test dirs and globs) shared by every analyzer and applied to **both** the numerator and denominator — `detect.ts` and `scan.ts` now derive their ignore lists from it so source discovery never disagrees. All traversal is sorted for reproducible output.
+
+### Change state (`change-state.ts`) and git (`git.ts`)
+
+`computeChangeState` is the shared, deterministic diff analyzer behind both `review` (snapshot) and `watch` (live) — so the two can never disagree. It is a pure function of `(registry, changedFiles, optional planScope)`: no git, no clock, fully sorted. From a list of changed paths it derives changed sources grouped by owning feature, unmapped changes, stale docs (source changed but mapped doc didn't), docs changed without source, high-fanout changed files, risk touches (changes in a risk-tagged feature), dependents (the blast radius of changed features), and out-of-plan changes when a plan scope is supplied.
+
+`git.ts` is the thin git-native data source: `isGitRepo` and `getWorkingTreeChanges` shell out to the already-required `git` CLI with `GIT_OPTIONAL_LOCKS=0` (so polling does not create lock churn that re-triggers the agent), returning sorted repo-relative working-tree changes (deletions excluded). It is kept separate from `computeChangeState` so the analyzer stays pure and testable without a repo.
+
+### Events (`events.ts`)
+
+`appendEvent`/`readRecentEvents` manage the append-only `.codument/events.jsonl` flow-event log that `watch` tails — review summaries, work-step notes, and the review-effectiveness notes from [[review-effectiveness-metric]]. Timestamps here are wall-clock because it is a live log, not the deterministic coverage artifact, so it never feeds any score. Writing is opt-in (e.g. `review --log`) to avoid surprise file writes.
+
+### Report HTML (`report-html.ts`)
+
+`renderReviewReportHtml(data)` renders a self-contained HTML review report — inline CSS, no network, no JavaScript (native `<details>` for the collapsible sections). It uses a dark "control room" theme (high-contrast instrument readout): the verdict leads, a conic coverage ring is the secondary gauge (colour tracks the level; N/A when null), findings triage by severity (risk > warning > info), and the per-file detail is tucked behind toggles. It is a pure function of the data passed in, so the same change renders the same page. It leads with a plain-language **verdict** ("needs a look" vs "looks clean") and the **coverage delta**, shows finding **cards** (counts + chips) for stale docs / unmapped / out-of-plan / risk / fanout / dependents, and tucks the per-file breakdown into a collapsible section — so the value reads at a glance instead of as a wall of filenames. When there are actionable findings it shows a **without/with codument contrast** strip (without it the diff merges with nothing surfaced; with it, here is what to look at) and demotes the coverage delta to a "health gauge, not the verdict" — so the findings, not the percentage, are the headline. Every finding card carries a clickable **"what this checks"** note (a one-sentence explanation of that check), so a report is self-explaining for anyone reading it cold. The optional `data.demo` field (a `DemoExplainer`) adds a collapsible **"How this demo works"** callout — the throwaway-repo framing, the planted scenario, and a per-file table of why each change is flagged; `codument demo` passes it so the showcase report needs no narration. It powers `codument report` and is the natural Studio teaser surface (a deterministic artifact a richer UI can re-skin).
+
+### Badge (`badge.ts`)
+
+`renderCoverageBadge(percent, label?)` renders a flat, shields-like coverage badge as a static SVG string — no network, no package dependency. It is pure and deterministic (same percent → byte-identical SVG), colors the value pill by threshold, and renders `N/A` (never a misleading `0%`) when no ratio is applicable. `doctor --write` persists the deterministic score artifact `.codument/coverage.json` plus `.codument/coverage.svg` via `writeCoverageArtifacts`. The artifact carries no timestamp so it diffs cleanly; the public README badge is only exposed after the Peelmeal git-history backtest confirms the score drops at known drift moments.
 
 ### Scaffold (`scaffold.ts`)
 
@@ -68,8 +98,14 @@ Reads the package version from `package.json` at the package root. Used by the C
 
 ## Key files
 
-- `src/index.ts` — Public package exports for registry and agent-profile helpers
+- `src/index.ts` — Public package exports for registry, analyzer, and agent-profile helpers
 - `src/lib/agent-profiles.ts` — Agent profile definitions, profile detection, agent id parsing, and core delivery skill list
+- `src/lib/analyze.ts` — Shared deterministic coverage + lint analyzer over the v2 registry; canonical exclusion spec and source discovery
+- `src/lib/badge.ts` — No-network static SVG coverage badge renderer
+- `src/lib/change-state.ts` — Shared deterministic diff analyzer (`computeChangeState`) behind review and watch
+- `src/lib/git.ts` — Git-native working-tree change extraction (GIT_OPTIONAL_LOCKS=0)
+- `src/lib/events.ts` — Append-only `.codument/events.jsonl` flow-event log (append/read) for `watch`
+- `src/lib/report-html.ts` — Self-contained HTML review report renderer (verdict + coverage delta + finding cards)
 - `src/lib/benchmark-context.ts` — Deterministic context benchmark scoring and report formatting
 - `src/lib/claude-settings.ts` — Claude hook settings normalization for Codument's docs reminder
 - `src/lib/registry.ts` — Registry I/O: read, write, and update individual entries in `docs/.registry.json`
@@ -100,14 +136,17 @@ function detectAgentIds(root: string): AgentProfileId[]
 function resolveAgentIds(root: string, input?: string | string[]): AgentProfileId[]
 function getAgentProfiles(ids: AgentProfileId[]): AgentProfile[]
 
-// registry.ts
+// registry.ts (v2 model)
 interface RegistryEntry {
   doc: string;
   type: "feature" | "concept";
-  sources: string[];
+  primary_sources: string[];   // files the feature owns
+  related_sources: string[];   // files it impacts but does not own
+  docs: string[];              // durable docs/ADRs/runbooks
   depends_on: string[];
+  risk: string[];              // optional risk hints
   last_updated: string;
-  status: "current" | "stale" | "needs-review";
+  status: string;              // preserved verbatim (not flattened to "current")
 }
 interface Registry { features: Record<string, RegistryEntry> }
 function readRegistry(registryPath: string): Promise<Registry>
@@ -115,7 +154,21 @@ function readRegistrySync(registryPath: string): Registry
 function writeRegistry(registryPath: string, registry: Registry): Promise<void>
 function updateRegistryEntry(registryPath: string, key: string, entry: Partial<RegistryEntry>): Registry
 function normalizeRegistry(input: unknown, date?: string): Registry
+function migrateRegistry(input: unknown, date?: string): { registry: Registry; changed: boolean }
+function registryNeedsMigration(input: unknown): boolean
 function hasLegacyMappings(input: unknown): boolean
+function isLegacyEntry(value: unknown): boolean
+function allSources(entry: RegistryEntry): string[]
+function isMatureEntry(entry: RegistryEntry): boolean
+const PLANNED_STATUSES: Set<string>
+
+// analyze.ts
+function analyze(input: AnalyzeInput): AnalysisResult  // { coverage, lint, inScopeSourceCount }
+function discoverSourceFiles(root: string, srcDir: string, spec?: ExclusionSpec): string[]
+function isExcluded(relPath: string, spec?: ExclusionSpec): boolean
+function isSourceFile(relPath: string, spec?: ExclusionSpec): boolean
+function rollupScore(ratios: CoverageRatio[]): CoverageReport
+const DEFAULT_EXCLUSION_SPEC: ExclusionSpec
 
 // codemod.ts
 interface MetaFile {

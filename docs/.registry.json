@@ -3,91 +3,157 @@
     "cli": {
       "doc": "docs/features/cli.md",
       "type": "feature",
-      "sources": [
+      "primary_sources": [
         "src/cli.ts"
       ],
+      "related_sources": [],
+      "docs": [],
       "depends_on": [
         "commands",
         "lib"
       ],
-      "last_updated": "2026-05-29",
+      "risk": [],
+      "last_updated": "2026-06-16",
       "status": "current"
     },
     "commands": {
       "doc": "docs/features/commands.md",
       "type": "feature",
-      "sources": [
+      "primary_sources": [
         "src/commands/adopt.ts",
         "src/commands/benchmark.ts",
         "src/commands/init.ts",
         "src/commands/scan.ts",
         "src/commands/update.ts"
       ],
+      "related_sources": [],
+      "docs": [],
       "depends_on": [
         "lib"
       ],
-      "last_updated": "2026-05-29",
+      "risk": [],
+      "last_updated": "2026-06-16",
       "status": "current"
     },
     "hooks": {
       "doc": "docs/features/hooks.md",
       "type": "feature",
-      "sources": [
+      "primary_sources": [
         "src/hooks/check-docs.ts"
       ],
+      "related_sources": [],
+      "docs": [],
       "depends_on": [
         "lib"
       ],
-      "last_updated": "2026-05-29",
+      "risk": [],
+      "last_updated": "2026-06-16",
       "status": "current"
     },
     "proof-benchmarks": {
       "doc": "docs/features/proof-benchmarks.md",
       "type": "feature",
-      "sources": [
+      "primary_sources": [
         "src/commands/benchmark.ts",
         "src/lib/benchmark-context.ts",
         "src/lib/benchmark-quality.ts"
       ],
+      "related_sources": [],
+      "docs": [],
       "depends_on": [
         "cli",
         "commands",
         "lib"
       ],
-      "last_updated": "2026-05-29",
+      "risk": [],
+      "last_updated": "2026-06-16",
       "status": "in-progress"
     },
     "lib": {
       "doc": "docs/concepts/lib.md",
       "type": "concept",
-      "sources": [
+      "primary_sources": [
         "src/index.ts",
         "src/lib/agent-profiles.ts",
+        "src/lib/analyze.ts",
+        "src/lib/badge.ts",
         "src/lib/benchmark-context.ts",
         "src/lib/benchmark-quality.ts",
+        "src/lib/change-state.ts",
         "src/lib/claude-settings.ts",
         "src/lib/codemod.ts",
         "src/lib/detect.ts",
+        "src/lib/events.ts",
+        "src/lib/git.ts",
         "src/lib/markers.ts",
         "src/lib/registry.ts",
+        "src/lib/report-html.ts",
         "src/lib/scaffold.ts",
         "src/lib/version.ts"
       ],
+      "related_sources": [],
+      "docs": [],
       "depends_on": [],
-      "last_updated": "2026-05-29",
+      "risk": [],
+      "last_updated": "2026-06-16",
       "status": "current"
     },
     "registry-health-and-change-control": {
       "doc": "docs/features/registry-health-and-change-control.md",
       "type": "feature",
-      "sources": [],
+      "primary_sources": [
+        "src/commands/demo.ts",
+        "src/commands/doctor.ts",
+        "src/commands/migrate.ts",
+        "src/commands/report.ts",
+        "src/commands/review.ts",
+        "src/commands/watch.ts",
+        "src/lib/analyze.ts",
+        "src/lib/badge.ts",
+        "src/lib/change-state.ts",
+        "src/lib/events.ts",
+        "src/lib/git.ts",
+        "src/lib/report-html.ts"
+      ],
+      "related_sources": [],
+      "docs": [],
       "depends_on": [
         "cli",
         "commands",
         "lib"
       ],
-      "last_updated": "2026-06-15",
-      "status": "current"
+      "risk": [
+        "data-loss"
+      ],
+      "last_updated": "2026-06-16",
+      "status": "in-progress"
+    },
+    "doc-audience-layers": {
+      "doc": "docs/concepts/doc-audience-layers.md",
+      "type": "concept",
+      "primary_sources": [],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [
+        "registry-health-and-change-control"
+      ],
+      "risk": [],
+      "last_updated": "2026-06-16",
+      "status": "draft"
+    },
+    "review-effectiveness-metric": {
+      "doc": "docs/concepts/review-effectiveness-metric.md",
+      "type": "concept",
+      "primary_sources": [],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [
+        "proof-benchmarks",
+        "registry-health-and-change-control"
+      ],
+      "risk": [],
+      "last_updated": "2026-06-16",
+      "status": "draft"
     }
   }
 }

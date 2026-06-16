@@ -11,7 +11,7 @@ depends_on:
   - cli
   - commands
   - lib
-last_reviewed: 2026-05-29
+last_reviewed: 2026-06-16
 ---
 
 ## Summary
@@ -187,3 +187,4 @@ Status: approved, Step 5 implemented and awaiting review.
 - Should the context benchmark support scoring the user's current repo later, or stay fixture-only for the first version?
 - Should quality fixtures include both a baseline task and a Codument task, or should Codument only provide the scorer and let users run each mode manually?
 - Should the score file be written to `.codument/benchmark-results.json`, printed only, or both?
+- Planned extension: add a review-loop catch-rate benchmark — seed fixtures with known injected bugs and measure whether the `review-work` step catches them (catch rate + false-positive rate), comparing loop vs no-loop. This is the ground-truth proof behind the per-repo review-effectiveness scorecard. See `docs/concepts/review-effectiveness-metric.md`.

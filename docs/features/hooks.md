@@ -7,7 +7,7 @@ sources:
   - src/hooks/check-docs.ts
 depends_on:
   - lib
-last_reviewed: 2026-05-29
+last_reviewed: 2026-06-16
 ---
 
 ## Summary
@@ -20,7 +20,7 @@ The hook runs as a standalone Node script (not imported as a module). It reads `
 
 1. Extracts `file_path` from the JSON tool input
 2. Filters to source files only (`.ts/.tsx/.js/.jsx`)
-3. Reads `docs/.registry.json`, normalizing legacy mappings if present, and checks if the file matches any feature's `sources` array
+3. Reads the v2 `docs/.registry.json` and checks if the file matches any feature's mapped sources via `allSources` (primary + related). Legacy registries must be migrated first (`codument migrate-registry`); the hook itself is v2-only
 4. If matched, prints a warning listing every mapped doc that may need an update
 
 The output goes to the terminal as developer-facing feedback. This is a nudge, not the portable enforcement mechanism; cross-agent behavior comes from `AGENTS.md`, skills, and the registry-backed workflow.
