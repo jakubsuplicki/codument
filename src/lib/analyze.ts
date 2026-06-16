@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { listIgnoredPaths } from "./git.js";
 import {
   allSources,
   isMatureEntry,
@@ -33,6 +34,8 @@ export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
     ".codument",
     ".git",
     ".next",
+    ".nuxt",
+    ".output",
     ".wxt",
     "__tests__",
     "build",
@@ -109,11 +112,16 @@ export function isSourceFile(
  * List in-scope source files under `srcDir`, returned as sorted root-relative
  * POSIX paths. Excluded dirs are skipped during the walk; excluded files are
  * filtered out, so the result is the coverage denominator's file set.
+ *
+ * `isIgnored` lets the caller prune paths git ignores (generated/build/vendored
+ * trees) without this function depending on git — `analyze` wires in the repo's
+ * real gitignore set; direct callers default to a no-op for pure filesystem scope.
  */
 export function discoverSourceFiles(
   root: string,
   srcDir: string,
   spec: ExclusionSpec = DEFAULT_EXCLUSION_SPEC,
+  isIgnored: (relPosixPath: string) => boolean = () => false,
 ): string[] {
   const base = join(root, srcDir);
   if (!existsSync(base)) return [];
@@ -127,11 +135,13 @@ export function discoverSourceFiles(
       return;
     }
     for (const entry of entries) {
+      const rel = toPosix(relative(root, join(dir, entry.name)));
       if (entry.isDirectory()) {
         if (spec.dirs.includes(entry.name)) continue;
+        if (isIgnored(rel)) continue;
         walk(join(dir, entry.name));
       } else if (entry.isFile()) {
-        const rel = toPosix(relative(root, join(dir, entry.name)));
+        if (isIgnored(rel)) continue;
         if (isSourceFile(rel, spec)) {
           found.push(rel);
         }
@@ -140,6 +150,18 @@ export function discoverSourceFiles(
   };
   walk(base);
   return [...new Set(found)].sort();
+}
+
+/**
+ * Build a gitignore predicate from a repo's ignored-path list. A path is ignored
+ * when it equals, or sits under, any collapsed ignored entry.
+ */
+export function makeIgnoredPredicate(
+  ignoredPaths: string[],
+): (relPosixPath: string) => boolean {
+  if (ignoredPaths.length === 0) return () => false;
+  return (rel) =>
+    ignoredPaths.some((p) => rel === p || rel.startsWith(p + "/"));
 }
 
 // ── Coverage ratios ─────────────────────────────────────────────────────
@@ -296,7 +318,11 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     a < b ? -1 : a > b ? 1 : 0,
   );
 
-  const inScopeFiles = discoverSourceFiles(root, srcDir, exclusion);
+  // Git-ignored trees (generated/build/vendored output) are never hand-maintained
+  // source, so they must not inflate the coverage denominator. Non-git roots get a
+  // no-op predicate and fall back to the static exclusion spec alone.
+  const isIgnored = makeIgnoredPredicate(listIgnoredPaths(root));
+  const inScopeFiles = discoverSourceFiles(root, srcDir, exclusion, isIgnored);
   const inScopeSet = new Set(inScopeFiles);
 
   // Map every source path to the entries that claim it (for ownership + fanout).

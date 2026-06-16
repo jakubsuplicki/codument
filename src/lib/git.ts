@@ -39,6 +39,38 @@ function parsePath(field: string): string {
 }
 
 /**
+ * Paths git ignores, repo-relative and POSIX. Wholly-ignored directories are
+ * collapsed to a single entry (e.g. `node_modules`, `.nuxt`) via `--directory`
+ * instead of listing every file, so this stays cheap even on large trees.
+ * Returns an empty array when `git` is unavailable or the directory is not a repo.
+ *
+ * Used to keep generated/build/vendored files (which are gitignored by
+ * convention and never hand-maintained) out of the documentation-coverage scope.
+ */
+export function listIgnoredPaths(root: string): string[] {
+  if (!isGitRepo(root)) return [];
+  let out: string;
+  try {
+    out = git(root, [
+      "ls-files",
+      "--others",
+      "--ignored",
+      "--exclude-standard",
+      "--directory",
+    ]);
+  } catch {
+    return [];
+  }
+  const paths = new Set<string>();
+  for (const line of out.split("\n")) {
+    if (!line.trim()) continue;
+    // `--directory` appends a trailing slash to collapsed dirs; normalise it off.
+    paths.add(parsePath(line).replace(/\/$/, ""));
+  }
+  return [...paths].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/**
  * Changed paths in the working tree (modified, added, renamed, and untracked),
  * repo-relative and POSIX, sorted and deduped. Deletions are excluded — a deleted
  * file is not a "change to review" for ownership/doc-drift purposes. Returns an

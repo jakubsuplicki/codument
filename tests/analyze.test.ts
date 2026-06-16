@@ -2,15 +2,21 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import {
   analyze,
   discoverSourceFiles,
+  makeIgnoredPredicate,
   isExcluded,
   isSourceFile,
   rollupScore,
+  DEFAULT_EXCLUSION_SPEC,
   type CoverageRatio,
   type LintFinding,
 } from "../src/lib/analyze.js";
+import { listIgnoredPaths } from "../src/lib/git.js";
 import { readRegistry } from "../src/lib/registry.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -77,6 +83,51 @@ describe("discoverSourceFiles", () => {
       "src/notify/email.ts",
       "src/tasks/tasks.ts",
     ]);
+  });
+});
+
+describe("gitignore-aware scope (temp repo)", () => {
+  it("keeps gitignored build/vendored trees out of the coverage denominator", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "codument-scope-"));
+    try {
+      await mkdir(join(tmp, "src"), { recursive: true });
+      await mkdir(join(tmp, "lib"), { recursive: true });
+      await mkdir(join(tmp, "vendored"), { recursive: true });
+      await writeFile(join(tmp, "src", "app.ts"), "export const a = 1;\n");
+      await writeFile(join(tmp, "lib", "compiled.js"), "module.exports = 1;\n");
+      await writeFile(join(tmp, "vendored", "sdk.ts"), "export const v = 1;\n");
+      await writeFile(join(tmp, ".gitignore"), "lib/\nvendored/\n");
+      const run = (args: string[]) =>
+        execFileSync("git", args, {
+          cwd: tmp,
+          stdio: "ignore",
+          env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+        });
+      run(["init"]);
+      run(["config", "user.email", "t@e.com"]);
+      run(["config", "user.name", "T"]);
+
+      // A pure filesystem walk (no predicate) still sees the build/vendor files.
+      const raw = discoverSourceFiles(tmp, ".");
+      assert.ok(raw.includes("lib/compiled.js"));
+      assert.ok(raw.includes("vendored/sdk.ts"));
+
+      // listIgnoredPaths collapses the wholly-ignored dirs to single entries.
+      assert.deepStrictEqual(listIgnoredPaths(tmp), ["lib", "vendored"]);
+
+      // Git-aware discovery drops them, leaving only hand-written source.
+      const ignored = makeIgnoredPredicate(listIgnoredPaths(tmp));
+      const scoped = discoverSourceFiles(tmp, ".", DEFAULT_EXCLUSION_SPEC, ignored);
+      assert.deepStrictEqual(scoped, ["src/app.ts"]);
+
+      // analyze() wires this in: only the one real file is in-scope and unowned.
+      const result = analyze({ root: tmp, registry: { features: {} }, srcDir: "." });
+      assert.equal(result.inScopeSourceCount, 1);
+      const ownership = result.coverage.ratios.find((r) => r.id === "ownership");
+      assert.deepStrictEqual(ownership?.detail?.unowned, ["src/app.ts"]);
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
   });
 });
 

@@ -24,6 +24,7 @@ export type { Registry, RegistryEntry } from "./lib/registry.js";
 export {
   analyze,
   discoverSourceFiles,
+  makeIgnoredPredicate,
   isExcluded,
   isSourceFile,
   rollupScore,
