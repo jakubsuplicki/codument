@@ -1,0 +1,225 @@
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import pc from "picocolors";
+import { readRegistrySync } from "../lib/registry.js";
+import { renderCoverageBadge } from "../lib/badge.js";
+import {
+  analyze,
+  DEFAULT_BLOAT_THRESHOLDS,
+  type BloatThresholds,
+  type CoverageRatio,
+  type CoverageReport,
+  type LintFinding,
+} from "../lib/analyze.js";
+
+interface DoctorOptions {
+  root?: string;
+  json?: boolean;
+  write?: boolean;
+  maxDocLines?: string | number;
+  maxSectionLines?: string | number;
+  maxCompletedLog?: string | number;
+  highFanout?: string | number;
+}
+
+// Deterministic score artifact (no timestamp): the single file a badge, CI, or
+// a future GUI reads. Same repo state → byte-identical file, so it diffs cleanly.
+export interface CoverageArtifact {
+  version: 1;
+  score: number | null;
+  percent: number | null;
+  applicable: string[];
+  ratios: CoverageReport["ratios"];
+}
+
+/** Writes `.codument/coverage.json` and `.codument/coverage.svg`. Returns paths. */
+export function writeCoverageArtifacts(
+  root: string,
+  report: DoctorReport,
+): { jsonPath: string; svgPath: string } {
+  const dir = join(root, ".codument");
+  mkdirSync(dir, { recursive: true });
+
+  const artifact: CoverageArtifact = {
+    version: 1,
+    score: report.coverage.score,
+    percent: report.coverage.percent,
+    applicable: report.coverage.applicable,
+    ratios: report.coverage.ratios,
+  };
+  const jsonPath = join(dir, "coverage.json");
+  const svgPath = join(dir, "coverage.svg");
+  writeFileSync(jsonPath, JSON.stringify(artifact, null, 2) + "\n");
+  writeFileSync(svgPath, renderCoverageBadge(report.coverage.percent));
+  return { jsonPath, svgPath };
+}
+
+interface ReportOptions {
+  bloat?: Partial<BloatThresholds>;
+  highFanoutThreshold?: number;
+}
+
+// Stable machine contract consumed by CI, the badge, and a future GUI.
+export interface DoctorReport {
+  version: 1;
+  registryExists: boolean;
+  inScopeSourceCount: number;
+  coverage: CoverageReport;
+  lint: {
+    count: number;
+    byId: Record<string, number>;
+    findings: LintFinding[];
+  };
+}
+
+function missingRegistryFinding(): LintFinding {
+  return {
+    id: "missing-registry",
+    severity: "warn",
+    file: "docs/.registry.json",
+    message:
+      "docs/.registry.json not found — run `codument init` or `codument scan` first",
+  };
+}
+
+/**
+ * Pure, deterministic doctor report over the v2 registry. Same repo state →
+ * same report (no wall clock, no randomness). When the registry is absent the
+ * analysis still runs (everything is unmapped) and a missing-registry warning
+ * is prepended rather than failing the run.
+ */
+export function buildReport(
+  root: string,
+  opts: ReportOptions = {},
+): DoctorReport {
+  const registryPath = join(root, "docs", ".registry.json");
+  const registryExists = existsSync(registryPath);
+  const registry = readRegistrySync(registryPath);
+
+  const bloat: BloatThresholds = { ...DEFAULT_BLOAT_THRESHOLDS, ...opts.bloat };
+  const result = analyze({
+    root,
+    registry,
+    bloat,
+    highFanoutThreshold: opts.highFanoutThreshold,
+  });
+  const findings = registryExists
+    ? result.lint
+    : [missingRegistryFinding(), ...result.lint];
+
+  const byId: Record<string, number> = {};
+  for (const finding of findings) {
+    byId[finding.id] = (byId[finding.id] ?? 0) + 1;
+  }
+
+  return {
+    version: 1,
+    registryExists,
+    inScopeSourceCount: result.inScopeSourceCount,
+    coverage: result.coverage,
+    lint: { count: findings.length, byId, findings },
+  };
+}
+
+function num(value: string | number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+export async function doctor(options: DoctorOptions = {}): Promise<void> {
+  const root = options.root ?? process.cwd();
+  const bloat: Partial<BloatThresholds> = {};
+  const wholeDocLines = num(options.maxDocLines);
+  const sectionLines = num(options.maxSectionLines);
+  const completedLogItems = num(options.maxCompletedLog);
+  if (wholeDocLines !== undefined) bloat.wholeDocLines = wholeDocLines;
+  if (sectionLines !== undefined) bloat.sectionLines = sectionLines;
+  if (completedLogItems !== undefined) bloat.completedLogItems = completedLogItems;
+
+  const report = buildReport(root, {
+    bloat,
+    highFanoutThreshold: num(options.highFanout),
+  });
+
+  if (options.write) {
+    const { jsonPath, svgPath } = writeCoverageArtifacts(root, report);
+    if (!options.json) {
+      console.log(
+        pc.dim(`  wrote ${relativeTo(root, jsonPath)} and ${relativeTo(root, svgPath)}`),
+      );
+      console.log();
+    }
+  }
+
+  if (options.json) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+
+  printHuman(report);
+}
+
+function relativeTo(root: string, p: string): string {
+  return p.startsWith(root + "/") ? p.slice(root.length + 1) : p;
+}
+
+// ── Human output (warning-only) ─────────────────────────────────────────
+
+function pct(ratio: number | null): string {
+  return ratio === null ? "—" : `${Math.round(ratio * 100)}%`;
+}
+
+function ratioLine(r: CoverageRatio): string {
+  const label = r.id.padEnd(11);
+  if (!r.applicable) {
+    return `    ${label} ${"—".padStart(4)}  ${pc.dim("N/A")}`;
+  }
+  const frac = `${r.numerator}/${r.denominator}`;
+  let suffix = "";
+  if (r.id === "ownership") {
+    const unowned = (r.detail?.unowned as string[] | undefined)?.length ?? 0;
+    if (unowned > 0) {
+      suffix = pc.dim(`  (${unowned} file${unowned === 1 ? "" : "s"} without an owner)`);
+    }
+  }
+  return `    ${label} ${pct(r.ratio).padStart(4)}  ${pc.dim(frac)}${suffix}`;
+}
+
+function printHuman(report: DoctorReport): void {
+  const { coverage, lint } = report;
+
+  console.log(pc.bold("codument doctor"));
+  console.log();
+
+  const headline =
+    coverage.percent === null ? pc.dim("N/A") : pc.bold(`${coverage.percent}%`);
+  console.log(`  Documentation coverage: ${headline}`);
+  for (const r of coverage.ratios) {
+    console.log(ratioLine(r));
+  }
+  console.log();
+
+  if (lint.count === 0) {
+    console.log(`  ${pc.green("✓")} Lint: no findings`);
+  } else {
+    console.log(`  Lint: ${pc.yellow(String(lint.count))} findings`);
+    for (const finding of lint.findings) {
+      console.log(
+        `    ${pc.yellow("⚠")} ${pc.dim(finding.id.padEnd(17))} ${finding.message}`,
+      );
+    }
+  }
+
+  console.log();
+  console.log(
+    pc.dim(
+      "  Coverage is a gap-finder (registry membership + freshness), not a quality score.",
+    ),
+  );
+  console.log(
+    pc.dim(
+      "  Findings are warnings, not failures. They do not change the exit code.",
+    ),
+  );
+}
