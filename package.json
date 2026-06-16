@@ -24,7 +24,9 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "demo": "tsup >/dev/null && node dist/cli.js demo",
+    "demo:live": "tsup >/dev/null && node dist/cli.js demo --live"
   },
   "keywords": [
     "ai-agents",
@@ -35,7 +37,7 @@
     "ai",
     "docs"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@types/node": "^25.5.0",
     "@types/prompts": "^2.4.9",

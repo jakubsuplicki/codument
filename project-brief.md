@@ -24,7 +24,7 @@ JavaScript/TypeScript developers using Claude Code (in VS Code or terminal) who 
 
 ### Distribution
 
-Open source on npm. Free. MIT license. Published as `codument`.
+Open source on npm. Free. Apache 2.0 license. Published as `codument`.
 
 ### Market Gap
 
