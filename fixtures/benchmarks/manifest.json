@@ -17,6 +17,25 @@
         "codument benchmark init <dir>",
         "codument benchmark score <dir>"
       ]
+    },
+    {
+      "id": "change-control",
+      "type": "change-control",
+      "path": "change-control",
+      "status": "active",
+      "commands": [
+        "codument doctor",
+        "codument review"
+      ]
+    },
+    {
+      "id": "doc-bloat",
+      "type": "doc-bloat",
+      "path": "doc-bloat",
+      "status": "active",
+      "commands": [
+        "codument doctor"
+      ]
     }
   ]
 }

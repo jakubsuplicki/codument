@@ -1,0 +1,65 @@
+{
+  "fixture": "change-control",
+  "purpose": "Deterministic golden fixture + live-demo asset for `codument doctor`, `codument review`, and the review catch-rate benchmark. One artifact, three jobs: test fixture, benchmark fixture, demo asset.",
+  "registryShape": "v2 draft (primary_sources, related_sources, docs, depends_on, optional risk, preserved status)",
+  "states": {
+    "baseline": "project/ — the committed clean state doctor runs against",
+    "messyChange": "apply changes/ over project/ as an uncommitted working-tree diff, then run review against it"
+  },
+  "note": "Expected values below are the SEMANTIC golden (which finding must appear). Exact output strings and precise ratios are asserted once `doctor`/`review` are implemented (Steps 2-8); the numbers here are illustrative.",
+
+  "doctorScenarios": {
+    "description": "Run on the baseline state (project/).",
+    "coverage": {
+      "inScopeSourceFiles": ["src/auth/login.ts", "src/auth/session.ts", "src/tasks/tasks.ts", "src/lib/db.ts", "src/lib/validate.ts", "src/notify/email.ts"],
+      "excludedByGeneratedSpec": ["src/generated/api-types.ts"],
+      "ownership": {"owned": 5, "inScope": 6, "ratioApprox": 0.83, "unowned": ["src/lib/validate.ts"]},
+      "dependency": {"withDeps": 2, "mature": 4, "ratioApprox": 0.5},
+      "risk": {"declared": 2, "covered": 2, "ratioApprox": 1.0, "areas": ["auth", "db"]},
+      "freshness": "N/A on the static baseline (no diff); computed over a last-N-commits window when history exists",
+      "scoreApprox": 0.78,
+      "scoreNote": "equal-weight average of defined ratios (freshness excluded as N/A); degraded mode until the Step 5 migration populates more risk/primary data"
+    },
+    "lint": [
+      {"id": "missing-source", "finding": "registry source no longer exists", "evidence": "src/auth/oauth.ts referenced in auth.primary_sources but not on disk"},
+      {"id": "generated-leakage", "finding": "generated file listed as source", "evidence": "src/generated/api-types.ts in notifications.primary_sources"},
+      {"id": "unmapped-source", "finding": "in-scope source not in any entry", "evidence": "src/lib/validate.ts exists, unmapped"},
+      {"id": "empty-depends-on", "finding": "mature feature with empty depends_on", "evidence": "notifications.depends_on is []"},
+      {"id": "high-fanout", "finding": "file mapped across many entries", "evidence": "src/lib/db.ts in auth.related + tasks.related + db.primary (still has a clear primary owner: db)"},
+      {"id": "bloated-doc", "finding": "completed-log accumulation + size", "evidence": "docs/features/tasks.md has ~20 inline [x] items and oversized What Was Built section"}
+    ]
+  },
+
+  "reviewScenarios": {
+    "description": "Run on the messy diff (changes/ applied over project/). Approved plan: docs/plans/add-rate-limiting.md, scope = [src/lib/ratelimit.ts, src/auth/login.ts].",
+    "changedFiles": ["src/auth/login.ts", "src/lib/db.ts", "src/lib/cache.ts", "src/lib/ratelimit.ts", "src/tasks/tasks.ts", "docs/features/tasks.md"],
+    "expected": [
+      {"id": "stale-auth", "finding": "source changed, mapped doc not", "files": ["src/auth/login.ts"], "staleDoc": "docs/features/auth.md"},
+      {"id": "stale-db", "finding": "source changed, mapped doc not", "files": ["src/lib/db.ts"], "staleDoc": "docs/concepts/db.md"},
+      {"id": "clean-tasks", "finding": "source + doc changed together (NOT stale) — positive control", "files": ["src/tasks/tasks.ts", "docs/features/tasks.md"]},
+      {"id": "high-risk-touch", "finding": "change touches a risk-tagged area", "files": ["src/auth/login.ts"], "risk": ["auth", "security"]},
+      {"id": "out-of-plan", "finding": "changed outside approved plan scope", "files": ["src/lib/db.ts", "src/lib/cache.ts", "src/tasks/tasks.ts"]},
+      {"id": "unmapped-change", "finding": "changed file has no registry owner", "files": ["src/lib/cache.ts", "src/lib/ratelimit.ts"]},
+      {"id": "dependents", "finding": "dependents may need re-review", "trigger": "src/lib/db.ts changed", "dependents": ["auth", "tasks"]}
+    ],
+    "freshnessOverDiffApprox": 0.33,
+    "coverageDeltaNote": "score drops vs baseline (new unmapped files + stale docs); review leads with the delta"
+  },
+
+  "seededBugs": [
+    {
+      "id": "session-expiry-dropped",
+      "file": "src/auth/login.ts",
+      "function": "authorize",
+      "bug": "the isSessionExpired check was removed, so expired sessions now authorize",
+      "severity": "correctness/security",
+      "expected": "review-work catches it before commit (counts toward review catch-rate; loop vs no-loop comparison)"
+    }
+  ],
+
+  "comparisons": {
+    "beforeAfter": "doctor on baseline vs after the change is committed clean (score climbs, drift cleared, tasks.md bloat resolved via the compaction in changes/)",
+    "withVsWithoutLoop": "review catch-rate on seededBugs with the review-work step vs straight work->commit",
+    "determinism": "run doctor/review twice on the same state -> byte-identical output"
+  }
+}

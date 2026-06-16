@@ -1,0 +1,74 @@
+{
+  "features": {
+    "auth": {
+      "doc": "docs/features/auth.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/auth/login.ts",
+        "src/auth/session.ts",
+        "src/auth/oauth.ts"
+      ],
+      "related_sources": [
+        "src/lib/db.ts"
+      ],
+      "docs": [],
+      "depends_on": [
+        "db"
+      ],
+      "risk": [
+        "auth",
+        "security"
+      ],
+      "last_updated": "2026-06-10",
+      "status": "current"
+    },
+    "tasks": {
+      "doc": "docs/features/tasks.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/tasks/tasks.ts"
+      ],
+      "related_sources": [
+        "src/auth/session.ts",
+        "src/lib/db.ts"
+      ],
+      "docs": [],
+      "depends_on": [
+        "auth",
+        "db"
+      ],
+      "risk": [],
+      "last_updated": "2026-06-10",
+      "status": "current"
+    },
+    "notifications": {
+      "doc": "docs/features/notifications.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/notify/email.ts",
+        "src/generated/api-types.ts"
+      ],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [],
+      "risk": [],
+      "last_updated": "2026-06-10",
+      "status": "current"
+    },
+    "db": {
+      "doc": "docs/concepts/db.md",
+      "type": "concept",
+      "primary_sources": [
+        "src/lib/db.ts"
+      ],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [],
+      "risk": [
+        "data-loss"
+      ],
+      "last_updated": "2026-06-10",
+      "status": "current"
+    }
+  }
+}

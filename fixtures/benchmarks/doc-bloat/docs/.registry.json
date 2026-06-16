@@ -1,0 +1,62 @@
+{
+  "features": {
+    "huge": {
+      "doc": "docs/features/huge.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/huge.ts"
+      ],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [
+        "clean"
+      ],
+      "risk": [],
+      "last_updated": "2026-06-16",
+      "status": "current"
+    },
+    "bigsection": {
+      "doc": "docs/features/bigsection.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/bigsection.ts"
+      ],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [
+        "clean"
+      ],
+      "risk": [],
+      "last_updated": "2026-06-16",
+      "status": "current"
+    },
+    "logheavy": {
+      "doc": "docs/features/logheavy.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/logheavy.ts"
+      ],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [
+        "clean"
+      ],
+      "risk": [],
+      "last_updated": "2026-06-16",
+      "status": "current"
+    },
+    "clean": {
+      "doc": "docs/features/clean.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/clean.ts"
+      ],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [],
+      "risk": [],
+      "last_updated": "2026-06-16",
+      "status": "current"
+    }
+  }
+}
