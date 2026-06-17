@@ -317,21 +317,31 @@ export function recordToEvents(record: unknown, ctx: FeedContext): RecordResult 
   const usage = msg.usage as Record<string, unknown> | undefined;
   const model = typeof msg.model === "string" ? msg.model : undefined;
   if (usage && model) {
-    events.push({
-      type: "tokens",
-      ts,
-      data: {
-        source: "feed",
-        model: normalizeModelId(model),
-        input: coerceNum(usage.input_tokens),
-        output: coerceNum(usage.output_tokens),
-        cacheRead: coerceNum(usage.cache_read_input_tokens),
-        cacheCreate: coerceNum(usage.cache_creation_input_tokens),
-        ...(feature ? { feature } : {}),
-        ...(session ? { session } : {}),
-        ...(uuid ? { uuid } : {}),
-      },
-    });
+    const input = coerceNum(usage.input_tokens);
+    const output = coerceNum(usage.output_tokens);
+    const cacheRead = coerceNum(usage.cache_read_input_tokens);
+    const cacheCreate = coerceNum(usage.cache_creation_input_tokens);
+    // Skip zero-usage turns: Claude Code emits `<synthetic>` assistant notices
+    // (model-selection errors, "No response requested.") with an all-zero usage
+    // block. They are no real inference — recording them only inflates the event
+    // count and pollutes the "unpriced models" signal with a non-model id.
+    if (input + output + cacheRead + cacheCreate > 0) {
+      events.push({
+        type: "tokens",
+        ts,
+        data: {
+          source: "feed",
+          model: normalizeModelId(model),
+          input,
+          output,
+          cacheRead,
+          cacheCreate,
+          ...(feature ? { feature } : {}),
+          ...(session ? { session } : {}),
+          ...(uuid ? { uuid } : {}),
+        },
+      });
+    }
   }
 
   // Activity events for meaningful tool calls.

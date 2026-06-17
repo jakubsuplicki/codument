@@ -201,6 +201,40 @@ describe("recordToEvents", () => {
       assert.doesNotThrow(() => recordToEvents(bad, ctx()));
     }
   });
+
+  it("skips the token event for a zero-usage turn (e.g. a <synthetic> CLI notice)", () => {
+    const { events } = recordToEvents(
+      {
+        type: "assistant",
+        timestamp: TS,
+        uuid: "u1",
+        sessionId: "s1",
+        message: {
+          role: "assistant",
+          model: "<synthetic>",
+          usage: {
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+          },
+          content: [],
+        },
+      },
+      ctx(),
+    );
+    assert.ok(!events.some((e) => e.type === "tokens"), "zero-usage turn emits no token event");
+  });
+
+  it("still emits a token event when only one bucket is non-zero", () => {
+    const { events } = recordToEvents(
+      assistant({ input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 42 }, []),
+      ctx("auth"),
+    );
+    const tok = events.find((e) => e.type === "tokens");
+    assert.ok(tok, "a cache-read-only turn is real usage and is recorded");
+    assert.equal((tok!.data as Record<string, unknown>).cacheRead, 42);
+  });
 });
 
 describe("resolveSessionLog", () => {
