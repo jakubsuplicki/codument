@@ -52,6 +52,32 @@ describe("codument steps (CLI, temp repo)", () => {
     );
   });
 
+  it("renders an awaiting-approval plan via --plan (the plan-approval summary path)", async () => {
+    // plan-with-docs writes this exact status before the approval gate.
+    const awaiting = `## Delivery Plan
+Status: draft, awaiting approval before source edits.
+
+- [ ] Step 1: red regression test
+- [ ] Step 2: green implementation
+`;
+    await writeFile(join(tmp, "docs", "features", "recipe.md"), awaiting);
+    const { out, code } = runCli(
+      ["steps", "--json", "--plan", "docs/features/recipe.md", "--dir", tmp],
+      tmp,
+    );
+    assert.equal(code, 0); // explicit --plan does not require approval
+    const parsed = JSON.parse(out);
+    assert.equal(parsed.active.n, 1);
+    assert.deepEqual(
+      parsed.steps.map((s: { status: string }) => s.status),
+      ["in_progress", "pending"],
+    );
+    // …while auto-discovery correctly refuses it (not approved yet)
+    const auto = runCli(["steps", "--dir", tmp], tmp);
+    assert.equal(auto.code, 1);
+    assert.match(auto.out, /no approved plan/i);
+  });
+
   it("prints a human checklist marking the active step", async () => {
     await writeFile(join(tmp, "docs", "features", "feed.md"), PLAN);
     const { out, code } = runCli(["steps", "--dir", tmp], tmp);

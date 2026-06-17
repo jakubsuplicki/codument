@@ -38,7 +38,7 @@ When those questions remain, switch to `grill-with-docs` first. Ask one sharp de
    - Verification strategy
    - Open questions
 4. Mark the plan as awaiting approval.
-5. Stop and ask the user to approve or change the plan before implementation.
+5. Show the delivery-plan checklist inline (see Approval Summary), then stop and ask the user to approve or change the plan before implementation. Never make the user open the doc to see what they are approving.
 
 ## Delivery Plan Format
 
@@ -51,6 +51,14 @@ Status: draft, awaiting approval before source edits.
 - [ ] Step 2: ...
 - [ ] Step 3: ...
 ```
+
+## Approval Summary
+
+The user approves from the chat, not by opening the doc — so the approval message must carry the plan's checklist, not just a link to the file.
+
+- Render the steps inline by running `codument steps --plan docs/features/<name>.md` (or the `docs/concepts/...` path) and showing its output. It reads the checklist back from the file you just wrote, so the summary the user approves is exactly what is on disk — no paraphrase drift. `--plan` works even though the plan is only "awaiting approval".
+- If the CLI is unavailable, list each `- [ ]` step inline yourself.
+- Keep the message to the step list plus a one-line scope / non-goals note; link the doc for full detail, but the inline summary must never be a bare link.
 
 ## Rules
 
