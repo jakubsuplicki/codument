@@ -7,7 +7,7 @@ sources: []
 depends_on:
   - commands
   - lib
-last_reviewed: 2026-06-04
+last_reviewed: 2026-06-18
 ---
 
 ## Summary
@@ -24,8 +24,8 @@ Backward compatibility with the current Claude-centered implementation is not re
 
 ## Workflow Shape
 
-1. Route intent: decide whether the request is still rough enough to need `grill-with-docs` with the user, or settled enough to move directly into `plan-with-docs`.
-2. Grill with docs: challenge rough or ambiguous requests against the existing overview, registry, feature docs, concept docs, ADRs, and code reality.
+1. Route intent: before any source edit, name the assumption the change depends on; a load-bearing one you cannot confirm (or a still-rough request) needs `grill-with-docs`, while settled scope moves directly into `plan-with-docs`.
+2. Grill with docs: resolve the load-bearing assumptions a change depends on against the existing overview, registry, feature docs, concept docs, ADRs, and code reality.
 3. Plan with docs: write or update the relevant feature plan with scope, non-goals, acceptance criteria, verification strategy, and implementation steps.
 4. Approval gate: do not start source edits until the user approves the plan.
 5. Work step: pick the next unchecked step and implement only that slice.
@@ -37,7 +37,7 @@ Backward compatibility with the current Claude-centered implementation is not re
 
 Each implementation step has a hard gate: finish one `work-step`, stop for `review-work`, then stop for `commit-work`. The agent should not ask to start the next plan step until the current step has been reviewed and committed. Review findings are a user decision point: the agent lists required fixes, then waits for the user to approve all fixes, select specific fixes, defer specific findings with a reason, or pause.
 
-The always-loaded agent instructions should route intent into that loop without requiring the user to name a skill. The first decision is whether the agent can safely plan from settled context or must grill with the user first. Rough ideas, feature concepts, ambiguous changes, and "before we code" discussions start with `grill-with-docs`. Settled scope moves to `plan-with-docs`, which writes the durable plan and stops for explicit approval. Approved plans enter `work-step`, completed steps enter `review-work`, and clean or explicitly deferred reviews offer `commit-work` as the next gated action.
+The always-loaded agent instructions should route intent into that loop without requiring the user to name a skill. Before any source edit the agent names the assumption the change depends on: a load-bearing assumption it cannot confirm from the request, docs, or code — or a rough idea, feature concept, or "before we code" discussion — starts with `grill-with-docs`, while a confirmed or cheap-to-reverse assumption goes straight to implementation. Settled scope moves to `plan-with-docs`, which writes the durable plan and stops for explicit approval. Approved plans enter `work-step`; any source edit, in or out of the plan loop, is reviewed before commit via `review-work`, and clean or explicitly deferred reviews offer `commit-work` as the next gated action.
 
 ## Non-goals
 

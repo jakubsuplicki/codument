@@ -125,17 +125,17 @@ flowchart LR
   A -->|not yet| P
 ```
 
-1. Rough ideas and ambiguous feature requests trigger `grill-with-docs`.
+1. Before any source edit the agent names the assumption the change depends on; a load-bearing one it cannot confirm — or a rough, ambiguous request — triggers `grill-with-docs`.
 2. Settled scope triggers `plan-with-docs`, which writes the durable plan and stops for approval.
 3. Approved plans trigger `work-step` for the next unchecked step.
-4. Completed implementation steps trigger `review-work` before any commit.
+4. Any source edit gets reviewed before commit — `review-work` inside a plan, the same bar for an ad-hoc fix.
 5. Clean or explicitly resolved reviews offer `commit-work` as the next gated action.
 
 The installed skills:
 
 | Skill | Purpose |
 | --- | --- |
-| `grill-with-docs` | Challenge a request against docs, code, ADRs, terminology, and edge cases before planning |
+| `grill-with-docs` | Resolve the load-bearing assumptions a change depends on, against docs, code, ADRs, and edge cases, before planning |
 | `plan-with-docs` | Turn resolved decisions into a compact feature plan with steps and acceptance criteria |
 | `tdd` | Implement one behavior slice at a time with the strongest practical feedback loop |
 | `work-step` | Execute the next approved plan step without skipping ahead |

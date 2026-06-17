@@ -139,7 +139,7 @@ describe("update command", () => {
     assert.ok(content.includes("Codument Delivery Workflow"));
     assert.ok(content.includes("Intent routing"));
     assert.ok(content.includes("use `grill-with-docs` first"));
-    assert.ok(content.includes("use `review-work` before any commit"));
+    assert.ok(content.includes("gets reviewed before commit"));
   });
 
   it("creates missing Claude settings when Claude profile is stored", async () => {

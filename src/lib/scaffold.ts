@@ -109,13 +109,28 @@ Use Codument as the durable control plane for agent-led engineering work:
 ### Intent routing
 Use these routing rules at the start of each user request. Do not wait for the user to name a skill when their intent is clear.
 
-- Rough idea, feature concept, ambiguous change, or "before we code" discussion: use \`grill-with-docs\` first. Load the smallest relevant docs and source context, ask one sharp question at a time, and do not edit source code.
+- Before editing source, name the one assumption the change depends on and run the assumption gate below. If a load-bearing assumption is unconfirmed, or the request is a rough idea / concept / "before we code" discussion, use \`grill-with-docs\` first — load the smallest relevant docs and source, surface the assumption with your recommended reading, ask one sharp question at a time, and do not edit source. If every load-bearing assumption is confirmed or cheap to reverse, go straight to implementation.
 - Settled scope with enough answers for implementation design: use \`plan-with-docs\`. Write or update the durable feature/concept plan, mark it awaiting approval, and stop for explicit user approval.
 - Approved plan or user says to continue an approved plan: use \`work-step\`. Implement only the first unchecked step.
-- Completed implementation step: use \`review-work\` before any commit.
+- Any source edit, in or out of the delivery-plan loop, gets reviewed before commit — review is owed to the edit, not to a plan step. Scale it: a trivial edit (rename, comment, typo, pure-config) gets a one-pass self-review of the diff; a behavior change — public interface, data shape, deletion, or anything that tripped the assumption gate — gets the full \`review-work\` / \`code-reviewer\` pass. An ad-hoc bug fix is a behavior change: review it even though no plan step produced it.
 - Clean review, or review findings explicitly fixed/deferred by the user: offer \`commit-work\` as the next gated action and wait for the user to ask for it.
 
-When a request is ambiguous between planning and implementation, treat it as planning and begin with docs-backed grilling.
+### Assumption gate (before any source edit)
+Default is to proceed. Stop to confirm only when a choice is BOTH load-bearing AND unconfirmed — never on ambiguity alone.
+
+Load-bearing = wrong makes the work wrong, wasted, or hard to undo: it changes a public interface, data shape, migration, a deletion, security/auth behavior, the chosen approach, or behavior other callers depend on.
+
+It is unconfirmed (and load-bearing) when one of these holds and you cannot settle it from the request, docs, or code:
+- Two readings: the request admits two materially different readings and you had to pick one.
+- Inferred "correct": you are inferring intended behavior the user never stated — including which behavior is the right one for a bug fix.
+- Unverified property: you are relying on an unconfirmed claim about the code or domain ("X is always non-null / sorted / unique / present").
+
+Route:
+1. Confirmed, or trivial: just do it. No preamble.
+2. A guess but cheap to reverse (wrong = a quick local follow-up edit): declare the assumption inline in one line and proceed. Do not wait.
+3. Load-bearing AND unconfirmed: do not edit. State your recommended reading and the one sharpest question in a single line, then wait (\`grill-with-docs\` if it needs docs/source to resolve).
+
+When unsure between 2 and 3, the test is reversibility, not difficulty: reversible-with-a-follow-up is tier 2 (declare), not tier 3 (ask). One line, recommendation-first — never a questionnaire.
 
 ### Step gates
 At the end of each implementation step, stop and offer review options. Do not ask to start the next plan step yet.

@@ -1,11 +1,11 @@
 ---
 name: grill-with-docs
-description: Stress-test a requested change against Codument docs, source mappings, ADRs, terminology, and implementation reality before planning or coding.
+description: Resolve the load-bearing assumptions a change depends on, against Codument docs, source mappings, ADRs, and implementation reality, before planning or coding.
 ---
 
 # Grill With Docs
 
-Use this before implementation when the user has an idea, feature, bug fix, or architectural direction that needs sharpening.
+Use this before implementation, when a change turns on a load-bearing assumption that one line can't settle — a rough idea, an ambiguous change, or a "before we code" direction that's still open. It's the deep-dive the assumption gate routes into when surfacing the assumption with a recommended reading isn't enough on its own.
 
 ## Boundary With Plan With Docs
 

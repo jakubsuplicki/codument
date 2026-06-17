@@ -103,10 +103,11 @@ describe("buildManagedSection", () => {
     assert.ok(section.includes("use `grill-with-docs` first"));
     assert.ok(section.includes("use `plan-with-docs`"));
     assert.ok(section.includes("use `work-step`"));
-    assert.ok(section.includes("use `review-work` before any commit"));
+    assert.ok(section.includes("gets reviewed before commit"));
     assert.ok(section.includes("offer `commit-work`"));
     assert.ok(section.includes("wait for the user to ask for it"));
-    assert.ok(section.includes("treat it as planning"));
+    assert.ok(section.includes("Assumption gate (before any source edit)"));
+    assert.ok(section.includes("never on ambiguity alone"));
     assert.ok(section.includes("Step gates"));
     assert.ok(section.includes("Outside an explicitly opted-in autopilot run, never move from one implementation step directly into the next"));
     // guard: the gate rule must stay mode-conditioned, never regress to the bare absolute
