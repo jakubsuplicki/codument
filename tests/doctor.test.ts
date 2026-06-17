@@ -30,9 +30,17 @@ describe("buildReport (change-control fixture)", () => {
 
     assert.equal(report.lint.byId["missing-source"], 1);
     assert.equal(report.lint.byId["generated-leakage"], 1);
-    assert.equal(report.lint.byId["high-fanout"], 1);
     assert.equal(report.lint.byId["empty-depends-on"], 2);
     assert.equal(report.lint.byId["unmapped-source"], 1);
+
+    // high-fanout is informational, never an actionable finding: it stays out of
+    // the lint count/byId and lives in notes, so "clean" can't be reached by
+    // collapsing a genuinely-shared file to one owner.
+    assert.equal(report.lint.byId["high-fanout"], undefined);
+    assert.ok(!report.lint.findings.some((f) => f.id === "high-fanout"));
+    const fanoutNotes = report.lint.notes.filter((n) => n.id === "high-fanout");
+    assert.equal(fanoutNotes.length, 1);
+    assert.equal(fanoutNotes[0].severity, "info");
   });
 
   it("is deterministic across runs", () => {

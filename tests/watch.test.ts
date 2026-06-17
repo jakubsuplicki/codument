@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { appendEvent, readRecentEvents } from "../src/lib/events.js";
 import { renderFrame } from "../src/commands/watch.js";
+import { MODEL_RATES, mergeRates } from "../src/lib/token-cost.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, "..", "dist", "cli.js");
@@ -60,6 +61,214 @@ describe("renderFrame", () => {
   });
 });
 
+describe("renderFrame token block", () => {
+  type Review = Parameters<typeof renderFrame>[0];
+  const gitReview = (): Review =>
+    ({
+      version: 1,
+      isGitRepo: true,
+      changedFileCount: 0,
+      plan: null,
+      state: {
+        changedSources: [],
+        changedDocs: [],
+        staleDocs: [],
+        riskTouches: [],
+        unmapped: [],
+        outOfPlan: [],
+        highFanout: [],
+        dependents: [],
+      },
+    }) as unknown as Review;
+  const coverage = { coverage: { percent: 80 } } as never;
+  const tok = (data: Record<string, unknown>, ts = "2026-06-16T10:00:00.000Z") =>
+    ({ type: "tokens", ts, data });
+  const ev = (type: string, message: string) =>
+    ({ type, ts: "2026-06-16T10:00:00.000Z", message });
+  const NOW = "2026-06-16 10:00:00";
+
+  it("hides the block when there are no token events", () => {
+    const frame = renderFrame(gitReview(), coverage, [], NOW);
+    assert.doesNotMatch(frame, /tokens/i);
+    assert.doesNotMatch(frame, /estimated/i);
+    assert.doesNotMatch(frame, /\$\d/);
+    assert.match(frame, /docs coverage: 80%/);
+    assert.match(frame, /Ctrl-C to stop/);
+  });
+
+  it("hides the block when events exist but none are token events", () => {
+    const frame = renderFrame(
+      gitReview(),
+      coverage,
+      [ev("review", "diff clean"), ev("step", "step 1 done")],
+      NOW,
+    );
+    assert.doesNotMatch(frame, /estimated/i);
+    assert.doesNotMatch(frame, /\$\d/);
+    // non-token events show in the activity tape (no dedicated "recent events" header now)
+    assert.match(frame, /step 1 done/);
+  });
+
+  it("renders a labelled, grouped total and cost for one event", () => {
+    const frame = renderFrame(
+      gitReview(),
+      coverage,
+      [tok({ model: "opus-4.8", input: 12000, output: 3000, cacheRead: 480000, cacheCreate: 20000, feature: "auth" })],
+      NOW,
+    );
+    assert.match(frame, /token cost/i);
+    assert.match(frame, /estimated/i);
+    assert.match(frame, /\$0\.50/);
+    // cost-first, with "new" (input+output+cacheCreate) split from cache-read
+    assert.match(frame, /35\.0K new/);
+    assert.match(frame, /480\.0K cache-read/);
+    assert.doesNotMatch(frame, /\$0\.5\b/);
+  });
+
+  it("aggregates and lists features highest-cost-first", () => {
+    const frame = renderFrame(
+      gitReview(),
+      coverage,
+      [
+        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "auth" }),
+        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 600000, cacheCreate: 0, feature: "auth" }),
+        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 400000, cacheCreate: 0, feature: "billing" }),
+      ],
+      NOW,
+    );
+    assert.match(frame, /2\.0M cache-read/);
+    assert.match(frame, /\$1\.00/);
+    assert.match(frame, /auth/);
+    assert.match(frame, /billing/);
+    assert.ok(frame.indexOf("auth") < frame.indexOf("billing"));
+    assert.match(frame, /\$0\.80/);
+    assert.match(frame, /\$0\.20/);
+  });
+
+  it("caps the feature list at the top 3 by cost but counts all in the total", () => {
+    const frame = renderFrame(
+      gitReview(),
+      coverage,
+      [
+        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "f-big" }),
+        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 600000, cacheCreate: 0, feature: "f-mid" }),
+        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 200000, cacheCreate: 0, feature: "f-small" }),
+        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 20000, cacheCreate: 0, feature: "f-tiny" }),
+      ],
+      NOW,
+    );
+    assert.ok(frame.indexOf("f-big") < frame.indexOf("f-mid"));
+    assert.ok(frame.indexOf("f-mid") < frame.indexOf("f-small"));
+    assert.doesNotMatch(frame, /f-tiny/);
+    assert.match(frame, /\$0\.91/);
+    assert.match(frame, /1\.8M cache-read/);
+  });
+
+  it("counts unpriced-model tokens in the total but flags them and charges $0", () => {
+    const frame = renderFrame(
+      gitReview(),
+      coverage,
+      [
+        tok({ model: "opus-4.8", input: 12000, output: 3000, cacheRead: 480000, cacheCreate: 20000, feature: "auth" }),
+        tok({ model: "gpt-9-ultra", input: 50000, output: 10000, cacheRead: 0, cacheCreate: 0, feature: "auth" }),
+      ],
+      NOW,
+    );
+    // unpriced tokens still counted in "new"; only the priced model contributes cost
+    assert.match(frame, /95\.0K new/);
+    assert.match(frame, /480\.0K cache-read/);
+    assert.match(frame, /\$0\.50/);
+    assert.match(frame, /unpriced/i);
+  });
+
+  it("keeps the block below the not-a-git-repo early return", () => {
+    const review = {
+      version: 1 as const,
+      isGitRepo: false,
+      changedFileCount: 0,
+      plan: null,
+      state: {} as never,
+    } as unknown as Review;
+    const frame = renderFrame(
+      review,
+      coverage,
+      [tok({ model: "opus-4.8", input: 12000, output: 3000, cacheRead: 480000, cacheCreate: 20000, feature: "auth" })],
+      NOW,
+    );
+    assert.match(frame, /docs coverage: 80%/);
+    assert.match(frame, /not a git repo/);
+    assert.doesNotMatch(frame, /estimated/i);
+    assert.doesNotMatch(frame, /\$\d/);
+    assert.doesNotMatch(frame, /515,000/);
+  });
+
+  it("frames cost as an estimate, never as authoritative spend", () => {
+    const frame = renderFrame(
+      gitReview(),
+      coverage,
+      [tok({ model: "sonnet-4.6", input: 10000, output: 2000, cacheRead: 500000, cacheCreate: 16000, feature: "docs" })],
+      NOW,
+    );
+    assert.match(frame, /est(\.|imated)/i);
+    assert.match(frame, /\$0\.27/);
+    assert.doesNotMatch(frame, /actual cost|billed|invoice/i);
+  });
+
+  it("is a pure function of its inputs", () => {
+    const events = [
+      tok({ model: "opus-4.8", input: 12000, output: 3000, cacheRead: 480000, cacheCreate: 20000, feature: "auth" }),
+    ];
+    const a = renderFrame(gitReview(), coverage, events, NOW);
+    const b = renderFrame(gitReview(), coverage, events, NOW);
+    assert.equal(a, b);
+    assert.match(a, /2026-06-16 10:00:00/);
+  });
+
+  it("never throws or prints NaN on malformed / out-of-order token events", () => {
+    let frame!: string;
+    assert.doesNotThrow(() => {
+      frame = renderFrame(
+        gitReview(),
+        coverage,
+        [
+          tok({ model: "opus-4.8", input: 12000, output: 3000, cacheRead: 480000, cacheCreate: 20000, feature: "auth" }, "2026-06-16T10:05:00.000Z"),
+          tok({ model: "opus-4.8", input: "oops", output: null, cacheRead: undefined }, "2026-06-16T10:01:00.000Z"),
+          { type: "tokens", ts: "2026-06-16T10:02:00.000Z" } as never,
+          tok({ input: 5, output: 5 }, "2026-06-16T10:03:00.000Z"),
+        ],
+        NOW,
+      );
+    });
+    assert.doesNotMatch(frame, /NaN/);
+    assert.match(frame, /\$0\.50/);
+    assert.match(frame, /token cost/i);
+    assert.match(frame, /480\.0K cache-read/);
+  });
+
+  it("prices a non-Claude model when a custom rate table is supplied", () => {
+    const rates = mergeRates(MODEL_RATES, { "codex-1": { input: 2 } });
+    const frame = renderFrame(
+      gitReview(),
+      coverage,
+      [tok({ model: "codex-1", input: 1_000_000, output: 0, cacheRead: 0, cacheCreate: 0, feature: "auth" })],
+      NOW,
+      { rates },
+    );
+    assert.match(frame, /\$2\.00/);
+    assert.doesNotMatch(frame, /unpriced/i);
+  });
+
+  it("flags the same model as unpriced without the custom table (built-ins only)", () => {
+    const frame = renderFrame(
+      gitReview(),
+      coverage,
+      [tok({ model: "codex-1", input: 1_000_000, output: 0, cacheRead: 0, cacheCreate: 0, feature: "auth" })],
+      NOW,
+    );
+    assert.match(frame, /unpriced/i);
+  });
+});
+
 describe("codument watch --once (CLI, temp git repo)", () => {
   function gitInit(root: string): void {
     const run = (args: string[]) =>
@@ -108,7 +317,7 @@ describe("codument watch --once (CLI, temp git repo)", () => {
     });
     assert.match(out, /codument watch/);
     assert.match(out, /docs coverage/);
-    assert.match(out, /stale docs/);
+    assert.match(out, /stale/);
   });
 
   it("watches a repo given by --dir from a different cwd (no cd needed)", async () => {

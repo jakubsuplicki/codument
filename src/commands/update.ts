@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join, dirname, relative } from "node:path";
 import pc from "picocolors";
 import {
   DELIVERY_SKILLS,
@@ -25,6 +25,7 @@ import {
   upsertManagedSection,
   buildManagedSection,
   ensureDir,
+  nonDirectoryAncestor,
 } from "../lib/scaffold.js";
 import { MARKER_START, MARKER_END } from "../lib/markers.js";
 import { version as pkgVersion } from "../lib/version.js";
@@ -119,56 +120,81 @@ export async function update(options: UpdateOptions): Promise<void> {
   // 1. Update managed files (rules, skills, agents)
   for (const managed of getManagedFiles(profiles, sourceGlobs)) {
     const absPath = join(root, managed.relativePath);
-    const upstreamContent = await managed.upstream();
 
-    if (!existsSync(absPath)) {
+    // A non-directory where a directory must be (a pointer-file or a
+    // symlink-to-file, common in shared-skill setups) makes writeFile throw
+    // ENOTDIR and would abort the entire run mid-way. Skip it with a warning and
+    // keep going, so one odd entry never leaves a half-applied tree.
+    const blocker = nonDirectoryAncestor(absPath);
+    if (blocker) {
       actions.push({
         file: managed.relativePath,
-        action: "create",
-        reason: "file missing from project",
+        action: "skip",
+        reason: `${relative(root, blocker)} is not a directory (pointer or symlink) — left untouched`,
       });
-      if (!dryRun) {
-        ensureDir(dirname(absPath));
-        await writeFile(absPath, upstreamContent);
-        setFileHash(meta, managed.relativePath, upstreamContent);
-      }
       continue;
     }
 
-    const currentContent = await readFile(absPath, "utf-8");
-    const storedHash = meta.fileHashes?.[managed.relativePath];
-    const result = decideMergeStrategy(upstreamContent, currentContent, storedHash);
+    try {
+      const upstreamContent = await managed.upstream();
 
-    // For non-CLAUDE.md files, "merge" can't do section-based merge —
-    // back up the user's version, then overwrite with upstream
-    if (result.action === "merge") {
-      const backupPath = absPath + ".backup";
-      if (!dryRun) {
-        await writeFile(backupPath, currentContent);
+      if (!existsSync(absPath)) {
+        actions.push({
+          file: managed.relativePath,
+          action: "create",
+          reason: "file missing from project",
+        });
+        if (!dryRun) {
+          ensureDir(dirname(absPath));
+          await writeFile(absPath, upstreamContent);
+          setFileHash(meta, managed.relativePath, upstreamContent);
+        }
+        continue;
       }
-      actions.push({
-        file: managed.relativePath,
-        action: "overwrite",
-        reason: `both changed — upstream applied, local backed up to ${managed.relativePath}.backup`,
-      });
-    } else {
-      actions.push({
-        file: managed.relativePath,
-        action: result.action,
-        reason: result.reason,
-      });
-    }
 
-    if (!dryRun) {
-      if (result.action === "overwrite" || result.action === "merge") {
-        await writeFile(absPath, upstreamContent);
-        setFileHash(meta, managed.relativePath, upstreamContent);
+      const currentContent = await readFile(absPath, "utf-8");
+      const storedHash = meta.fileHashes?.[managed.relativePath];
+      const result = decideMergeStrategy(upstreamContent, currentContent, storedHash);
+
+      // For non-CLAUDE.md files, "merge" can't do section-based merge —
+      // back up the user's version, then overwrite with upstream
+      if (result.action === "merge") {
+        const backupPath = absPath + ".backup";
+        if (!dryRun) {
+          await writeFile(backupPath, currentContent);
+        }
+        actions.push({
+          file: managed.relativePath,
+          action: "overwrite",
+          reason: `both changed — upstream applied, local backed up to ${managed.relativePath}.backup`,
+        });
       } else {
-        // skip — but still record hash if missing
-        if (!storedHash) {
-          setFileHash(meta, managed.relativePath, currentContent);
+        actions.push({
+          file: managed.relativePath,
+          action: result.action,
+          reason: result.reason,
+        });
+      }
+
+      if (!dryRun) {
+        if (result.action === "overwrite" || result.action === "merge") {
+          await writeFile(absPath, upstreamContent);
+          setFileHash(meta, managed.relativePath, upstreamContent);
+        } else {
+          // skip — but still record hash if missing
+          if (!storedHash) {
+            setFileHash(meta, managed.relativePath, currentContent);
+          }
         }
       }
+    } catch (error) {
+      // Never let one file's failure abort the run and strand a partial tree.
+      actions.push({
+        file: managed.relativePath,
+        action: "skip",
+        reason: `could not write (${(error as Error).message}) — left untouched`,
+      });
+      process.exitCode = 1;
     }
   }
 
@@ -177,21 +203,39 @@ export async function update(options: UpdateOptions): Promise<void> {
     profiles.flatMap((profile) => profile.instructionFiles),
   );
   for (const file of instructionFiles) {
-    const content =
-      file === "CLAUDE.md" ? buildClaudeManagedSection() : buildManagedSection();
-    const action = await updateInstructionFile(root, meta, dryRun, file, content);
-    actions.push(action);
+    try {
+      const content =
+        file === "CLAUDE.md" ? buildClaudeManagedSection() : buildManagedSection();
+      const action = await updateInstructionFile(root, meta, dryRun, file, content);
+      actions.push(action);
+    } catch (error) {
+      actions.push({
+        file,
+        action: "skip",
+        reason: `could not update (${(error as Error).message}) — left untouched`,
+      });
+      process.exitCode = 1;
+    }
   }
 
   // 3. Update profile settings/hooks
   for (const profile of profiles) {
     if (!profile.settingsFile) continue;
-    const settingsAction = await updateSettings(
-      root,
-      profile.settingsFile,
-      dryRun,
-    );
-    actions.push(settingsAction);
+    try {
+      const settingsAction = await updateSettings(
+        root,
+        profile.settingsFile,
+        dryRun,
+      );
+      actions.push(settingsAction);
+    } catch (error) {
+      actions.push({
+        file: profile.settingsFile,
+        action: "skip",
+        reason: `could not update (${(error as Error).message}) — left untouched`,
+      });
+      process.exitCode = 1;
+    }
   }
 
   // 4. Update meta version
@@ -269,6 +313,15 @@ async function updateSettings(
   dryRun: boolean,
 ): Promise<UpdateAction> {
   const settingsPath = join(root, relativePath);
+
+  const blocker = nonDirectoryAncestor(settingsPath);
+  if (blocker) {
+    return {
+      file: relativePath,
+      action: "skip",
+      reason: `${relative(root, blocker)} is not a directory (pointer or symlink) — left untouched`,
+    };
+  }
 
   if (!existsSync(settingsPath)) {
     const result = ensureClaudeDocsHook();

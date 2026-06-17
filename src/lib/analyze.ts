@@ -226,7 +226,13 @@ export const DEFAULT_BLOAT_THRESHOLDS: BloatThresholds = {
 
 export interface LintFinding {
   id: LintFindingId;
-  severity: "warn";
+  /**
+   * "warn" findings are actionable — a clean registry has zero of them.
+   * "info" findings are awareness-only and never block clean; they surface a
+   * fact worth reviewing (e.g. a file shared by many features) but demand no
+   * change, since acting on them blindly can degrade the registry.
+   */
+  severity: "warn" | "info";
   message: string;
   feature?: string;
   file?: string;
@@ -452,7 +458,10 @@ function computeLint(
       }
     }
 
-    // generated/build/test paths listed as source (exclusion overrides registry)
+    // out-of-scope paths (build/generated/test/data) listed as source — the
+    // exclusion spec, not the file's true nature, is what's asserted here: the
+    // heuristic can match hand-authored data (e.g. *.seed.json), so the message
+    // names the rule, not a claim that the file is generated.
     for (const source of allSources(entry)) {
       if (isExcluded(source, exclusion)) {
         findings.push({
@@ -460,7 +469,7 @@ function computeLint(
           severity: "warn",
           feature: key,
           file: source,
-          message: `${key}: generated/build/test file listed as source: ${source}`,
+          message: `${key}: out-of-scope file listed as source — matches an exclusion rule (build/generated/test/data, e.g. *.seed.json): ${source}`,
         });
       }
     }
@@ -501,14 +510,19 @@ function computeLint(
     }
   }
 
-  // high-fanout: a source mapped across many entries
+  // high-fanout: a source mapped across many entries. Informational, never a
+  // gap to clear — a file genuinely shared by many features (rules, shared
+  // types, a root layout) is *supposed* to be mapped widely, and that wide
+  // mapping is exactly what lets `review` flag every dependent when it changes.
+  // Collapsing it to one owner to zero the count would sever that signal, so we
+  // surface it as a note to review (is the breadth real?), not a finding to fix.
   for (const [file, features] of [...fileToFeatures.entries()].sort(([a], [b]) =>
     a < b ? -1 : a > b ? 1 : 0,
   )) {
     if (features.length >= highFanoutThreshold) {
       findings.push({
         id: "high-fanout",
-        severity: "warn",
+        severity: "info",
         file,
         count: features.length,
         evidence: [...features].sort(),

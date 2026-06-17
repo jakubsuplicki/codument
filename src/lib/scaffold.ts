@@ -1,4 +1,11 @@
-import { mkdirSync, existsSync, cpSync, readFileSync } from "node:fs";
+import {
+  mkdirSync,
+  existsSync,
+  cpSync,
+  readFileSync,
+  statSync,
+  lstatSync,
+} from "node:fs";
 import { writeFile, readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +27,42 @@ export function ensureDir(dir: string): void {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
+}
+
+/**
+ * The first ancestor of `absPath` that exists but cannot be written beneath
+ * (i.e. is not a usable directory), else null. A genuine symlink-to-directory is
+ * fine and reported as null, so it is written through exactly as before. A plain
+ * file, a symlink-to-file, or a broken/dangling symlink sitting where a directory
+ * must be is returned as a blocker, since writing beneath it would throw
+ * ENOTDIR/ENOENT and abort the caller. Missing ancestors are not blockers — they
+ * get created. Lets a writer skip blockers with a warning and keep going.
+ */
+export function nonDirectoryAncestor(absPath: string): string | null {
+  let cur = dirname(absPath);
+  let prev = "";
+  while (cur !== prev) {
+    let link;
+    try {
+      link = lstatSync(cur); // inspect the entry itself, not its symlink target
+    } catch {
+      // does not exist (ENOENT) → an ancestor we'll create; keep walking up
+      prev = cur;
+      cur = dirname(cur);
+      continue;
+    }
+    if (link.isDirectory()) return null; // real directory — writable
+    if (link.isSymbolicLink()) {
+      // a symlink is only usable if it resolves to a directory (statSync follows)
+      try {
+        return statSync(cur).isDirectory() ? null : cur;
+      } catch {
+        return cur; // broken/dangling symlink — cannot write beneath it
+      }
+    }
+    return cur; // a plain file (e.g. a pointer-file) where a directory is required
+  }
+  return null;
 }
 
 export function templatePath(name: string): string {

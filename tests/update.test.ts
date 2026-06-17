@@ -1,12 +1,13 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile, readFile, mkdir } from "node:fs/promises";
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, symlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { MARKER_START, MARKER_END } from "../src/lib/markers.js";
+import { nonDirectoryAncestor } from "../src/lib/scaffold.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLI = join(__dirname, "..", "dist", "cli.js");
@@ -310,5 +311,74 @@ describe("update command", () => {
     runCli("update");
 
     assert.ok(existsSync(join(tmp, ".claude", "agents", "doc-writer.md")));
+  });
+
+  it("skips a pointer-file skill instead of crashing the whole run (ENOTDIR)", async () => {
+    await setupInitializedProject();
+
+    // Mimic a shared-skill setup: replace a skill DIRECTORY with a pointer FILE
+    // (a symlink checked out as text), exactly what crashed `update` in the wild.
+    const skillDir = join(tmp, ".agents", "skills", "work-step");
+    await rm(skillDir, { recursive: true, force: true });
+    await writeFile(skillDir, "../../.claude/skills/work-step");
+
+    // Delete another, real-dir skill so the run still has work to do after the blocker.
+    unlinkSync(join(tmp, ".agents", "skills", "review-work", "SKILL.md"));
+
+    const result = runCli("update");
+
+    // The run must complete, not abort: blocker skipped with a clear reason…
+    assert.equal(result.exitCode, 0);
+    assert.ok(/work-step.*not a directory/s.test(result.stdout), result.stdout);
+    // …and the rest of the run still applies (the deleted skill is recreated).
+    assert.ok(existsSync(join(tmp, ".agents", "skills", "review-work", "SKILL.md")));
+    // The pointer file is left exactly as-is, never clobbered.
+    assert.equal(
+      await readFile(skillDir, "utf-8"),
+      "../../.claude/skills/work-step",
+    );
+  });
+});
+
+describe("nonDirectoryAncestor", () => {
+  it("flags file / symlink-to-file / broken-symlink ancestors, allows real and symlinked dirs", async () => {
+    // real directory ancestor → writable, not a blocker
+    await mkdir(join(tmp, "realdir"), { recursive: true });
+    assert.equal(nonDirectoryAncestor(join(tmp, "realdir", "SKILL.md")), null);
+
+    // missing ancestor → created later, not a blocker
+    assert.equal(nonDirectoryAncestor(join(tmp, "missing", "SKILL.md")), null);
+
+    // plain file (pointer-file) where a directory must be → blocker
+    await writeFile(join(tmp, "pointer"), "../../elsewhere");
+    assert.equal(
+      nonDirectoryAncestor(join(tmp, "pointer", "SKILL.md")),
+      join(tmp, "pointer"),
+    );
+
+    // deep: a grandparent is a file → the grandparent is the blocker
+    assert.equal(
+      nonDirectoryAncestor(join(tmp, "pointer", "sub", "SKILL.md")),
+      join(tmp, "pointer"),
+    );
+
+    // symlink → directory → written through, not a blocker
+    symlinkSync(join(tmp, "realdir"), join(tmp, "linkdir"));
+    assert.equal(nonDirectoryAncestor(join(tmp, "linkdir", "SKILL.md")), null);
+
+    // symlink → file → blocker
+    await writeFile(join(tmp, "afile"), "x");
+    symlinkSync(join(tmp, "afile"), join(tmp, "linktofile"));
+    assert.equal(
+      nonDirectoryAncestor(join(tmp, "linktofile", "SKILL.md")),
+      join(tmp, "linktofile"),
+    );
+
+    // broken / dangling symlink → blocker
+    symlinkSync(join(tmp, "does-not-exist"), join(tmp, "brokenlink"));
+    assert.equal(
+      nonDirectoryAncestor(join(tmp, "brokenlink", "SKILL.md")),
+      join(tmp, "brokenlink"),
+    );
   });
 });

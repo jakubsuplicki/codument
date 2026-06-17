@@ -66,9 +66,14 @@ export interface DoctorReport {
   inScopeSourceCount: number;
   coverage: CoverageReport;
   lint: {
+    // Actionable warnings only — a clean registry has count === 0. Informational
+    // notes (e.g. high-fanout) are kept out of this number so "clean" can never
+    // be reached by degrading the registry to silence an awareness-only signal.
     count: number;
     byId: Record<string, number>;
     findings: LintFinding[];
+    /** Awareness-only findings (severity "info"). Never block clean. */
+    notes: LintFinding[];
   };
 }
 
@@ -103,9 +108,14 @@ export function buildReport(
     bloat,
     highFanoutThreshold: opts.highFanoutThreshold,
   });
-  const findings = registryExists
+  const all = registryExists
     ? result.lint
     : [missingRegistryFinding(), ...result.lint];
+
+  // Split actionable warnings from awareness-only notes: "clean" is defined over
+  // warnings, so an info finding can never keep the registry from going green.
+  const findings = all.filter((f) => f.severity === "warn");
+  const notes = all.filter((f) => f.severity === "info");
 
   const byId: Record<string, number> = {};
   for (const finding of findings) {
@@ -117,7 +127,7 @@ export function buildReport(
     registryExists,
     inScopeSourceCount: result.inScopeSourceCount,
     coverage: result.coverage,
-    lint: { count: findings.length, byId, findings },
+    lint: { count: findings.length, byId, findings, notes },
   };
 }
 
@@ -211,6 +221,18 @@ function printHuman(report: DoctorReport): void {
     }
   }
 
+  if (lint.notes.length > 0) {
+    console.log();
+    console.log(
+      `  ${pc.dim("Notes:")} ${pc.dim(String(lint.notes.length) + " informational — review, not required to clear")}`,
+    );
+    for (const note of lint.notes) {
+      console.log(
+        `    ${pc.cyan("ℹ")} ${pc.dim(note.id.padEnd(17))} ${pc.dim(note.message)}`,
+      );
+    }
+  }
+
   console.log();
   console.log(
     pc.dim(
@@ -219,7 +241,7 @@ function printHuman(report: DoctorReport): void {
   );
   console.log(
     pc.dim(
-      "  Findings are warnings, not failures. They do not change the exit code.",
+      "  Findings are warnings, not failures. Notes are awareness-only. Neither changes the exit code.",
     ),
   );
 }

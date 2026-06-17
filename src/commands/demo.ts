@@ -15,7 +15,7 @@ import { packageRoot } from "../lib/scaffold.js";
 import { buildReport, writeCoverageArtifacts } from "./doctor.js";
 import { buildReview } from "./review.js";
 import { writeReport, openInBrowser } from "./report.js";
-import { buildFrame, CLEAR } from "./watch.js";
+import { buildFrame, CLEAR, clockLabel } from "./watch.js";
 import type { DemoExplainer } from "../lib/report-html.js";
 
 // The explainer embedded in the demo's HTML report so anyone showcasing it can
@@ -269,7 +269,7 @@ async function demoLive(
 
 /** Redraws the live watch frame. Clears the screen when interactive; stacks otherwise. */
 function drawFrame(dir: string, footer: string, interactive: boolean): void {
-  const body = buildFrame(dir, new Date().toISOString());
+  const body = buildFrame(dir, clockLabel(new Date()));
   process.stdout.write((interactive ? CLEAR : "\n") + body + "\n" + footer + "\n");
 }
 

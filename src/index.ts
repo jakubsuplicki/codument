@@ -49,6 +49,46 @@ export type {
 export { isGitRepo, getWorkingTreeChanges } from "./lib/git.js";
 export { appendEvent, readRecentEvents } from "./lib/events.js";
 export type { CodumentEvent } from "./lib/events.js";
+export { MODEL_RATES, costOf, mergeRates, loadRates } from "./lib/token-cost.js";
+export type {
+  TokenUsage,
+  ModelRate,
+  CostBreakdown,
+  RateTable,
+} from "./lib/token-cost.js";
+export { summarizeTokens, isTokenEvent } from "./lib/token-report.js";
+export type {
+  TokenEventData,
+  TokenRollup,
+  TokenSummary,
+} from "./lib/token-report.js";
+export {
+  resolveSessionLog,
+  featureForFile,
+  recordToEvents,
+  pumpFeed,
+  claudeProjectsDir,
+  normalizeModelId,
+} from "./lib/claude-feed.js";
+export type { FeedContext, RecordResult, PumpResult } from "./lib/claude-feed.js";
+export { emitTokens } from "./lib/emit-producer.js";
+export type { EmitTokensMeta } from "./lib/emit-producer.js";
+export {
+  parseDeliveryPlan,
+  activeStep,
+  extractStatus,
+  isApproved,
+  todoStatus,
+  loadPlan,
+  findActivePlans,
+  emitActiveStep,
+} from "./lib/plan-steps.js";
+export type {
+  PlanStep,
+  ActivePlan,
+  TodoStatus,
+  StepEmitResult,
+} from "./lib/plan-steps.js";
 export { renderReviewReportHtml } from "./lib/report-html.js";
 export type { ReportData, DemoExplainer } from "./lib/report-html.js";
 export type {

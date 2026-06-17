@@ -4,11 +4,14 @@ import { adopt } from "./commands/adopt.js";
 import { createBenchmarkCommand } from "./commands/benchmark.js";
 import { demo } from "./commands/demo.js";
 import { doctor } from "./commands/doctor.js";
+import { emitTokensCommand } from "./commands/emit.js";
 import { init } from "./commands/init.js";
 import { migrateRegistryCommand } from "./commands/migrate.js";
 import { report } from "./commands/report.js";
 import { review } from "./commands/review.js";
 import { watch } from "./commands/watch.js";
+import { feed } from "./commands/feed.js";
+import { stepsCommand } from "./commands/steps.js";
 import { scan } from "./commands/scan.js";
 import { update } from "./commands/update.js";
 import { version } from "./lib/version.js";
@@ -84,7 +87,30 @@ program
   .option("--once", "Render a single frame and exit (for CI/inspection)")
   .option("--interval <ms>", "Refresh interval in milliseconds (default 2000)")
   .option("--dir <path>", "Repo to watch (default: current directory)")
+  .option("--no-feed", "Do not auto-tail the Claude session log into events.jsonl")
   .action(watch);
+
+program
+  .command("feed")
+  .description(
+    "Tail the active Claude Code session log and normalize per-turn token usage + tool activity into .codument/events.jsonl (for watch / studio)",
+  )
+  .option("--once", "Single backfill pass and exit")
+  .option("--interval <ms>", "Poll interval in milliseconds (default 1000)")
+  .option("--dir <path>", "Repo to feed (default: current directory)")
+  .action(feed);
+
+program
+  .command("steps")
+  .description(
+    "Print the active plan's delivery-plan checklist (to mirror into a native to-do panel) and optionally log the active step for watch",
+  )
+  .option("--plan <path>", "Plan doc to read (default: the single approved plan with an unchecked step)")
+  .option("--json", "Machine-readable checklist with per-step to-do status (for mirroring)")
+  .option("--emit", "Append a `step` event for the active step into .codument/events.jsonl (for watch)")
+  .option("--dir <path>", "Project root (default: current directory)")
+  .option("--root <dir>", "Project root (default: current directory)")
+  .action(stepsCommand);
 
 program
   .command("migrate-registry")
@@ -130,6 +156,23 @@ program
       ].join("\n"),
     );
   });
+
+const emit = program
+  .command("emit")
+  .description("Emit a codument event into .codument/events.jsonl");
+
+emit
+  .command("tokens")
+  .description("Record agent token usage for cost tracking (estimate, not a bill)")
+  .requiredOption("--model <model>", "model id, e.g. opus-4.8")
+  .option("--input <n>", "input tokens", "0")
+  .option("--output <n>", "output tokens", "0")
+  .option("--cache-read <n>", "cache read tokens", "0")
+  .option("--cache-create <n>", "cache creation tokens", "0")
+  .option("--feature <feature>", "feature to attribute this usage to")
+  .option("--step <step>", "delivery-plan step to attribute this usage to")
+  .option("--root <dir>", "project root (defaults to current directory)")
+  .action(emitTokensCommand);
 
 program.addCommand(createBenchmarkCommand());
 
