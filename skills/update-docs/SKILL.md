@@ -29,6 +29,35 @@ You are writing documentation that another developer will read to understand thi
 - Revision history, glossaries, or timeline sections
 - Vague descriptions ("handles X logic for the application")
 
+## Start from `codument doctor`
+
+Before writing anything, find out what actually needs work — don't guess. `codument doctor` is the deterministic gap list; let its **findings** (warnings) drive the pass, and re-run it after each fix so you can watch the finding clear. A finding that re-runs clean is the done signal — there is no separate sign-off.
+
+`doctor` also prints **Notes** (informational). Notes are *not* findings — clearing them is not the goal, and "clean" is defined over findings only. Read them, act only if one points to something genuinely wrong (see high-fanout below). Never edit the registry just to make a note disappear.
+
+```bash
+codument doctor          # human-readable
+codument doctor --json   # stable contract to consume programmatically
+```
+
+Fix each finding by its type — the doc fix is **not** the same for every one:
+
+- **bloated-doc** — *compact, don't rewrite.* The message names the signal that tripped:
+  - `N completed-log items` — a `[x]` delivery-plan checklist was never compacted. The work is already recorded in git history; delete or collapse the done log and keep only the durable decisions it produced.
+  - `section "X" is N lines` — split that section out, or summarize it down to its decisions.
+  - `N lines (> …)` — trim the doc to its durable core (Summary, How it works, Key files, Gotchas).
+  - Compact to the durable core, then **stop** — do not shave lines to slip just under the limit. The threshold is a prompt to review length, not a number to hit. If the genuine durable core still exceeds it (every line earns its place), raise `--max-doc-lines` / `--max-section-lines` for the repo rather than cutting content that belongs.
+- **missing-doc** — a registered feature has no doc; create it from the template below.
+- **unmapped-source** — a real source file has no owner; assign it to a feature in `docs/.registry.json`, or split out a new feature doc (see the entry points below).
+- **generated-leakage** — a file matching an exclusion rule (build/generated/test/data, e.g. `dist/**`, `*.seed.json`) is listed as a source. Usually de-list it — it is not tracked source, so don't write docs for it. But confirm the label fits first: the heuristic matches by path, so it can misfire on hand-authored data (a `*.seed.json` that is a real source of truth). If it's genuinely authored content you want tracked, adjust the exclusion rather than forcing docs onto it — and never drop a file that matters just to clear the finding.
+- **empty-depends-on** — registry shape, not prose: a mature feature declares no `depends_on`; read its imports and declare the real edges to the features it builds on.
+
+A **note** has its own rule:
+
+- **high-fanout** (informational) — a file is mapped across many features. This is usually *correct*: shared infra (security rules, shared types, a root layout, a barrel file) is meant to be mapped widely, and that breadth is exactly what lets `codument review` flag every dependent when the file changes. **Do not collapse a shared file to a single owner to silence this** — that destroys the dependent-tracking signal it exists to provide, and a single owner is often the wrong one. Act only if the breadth is *wrong*: a test helper, fixture, or unrelated utility accidentally mapped into many features should be removed from the ones that don't truly own it. Genuinely-shared infra: leave it mapped widely.
+
+After you change code, `codument review` is the companion check — it flags docs that went **stale** (a source changed but its mapped doc didn't) for the current diff. Update those the same way (see "Updating docs after code changes" below), then re-run `codument review` to confirm they clear.
+
 ## Three Entry Points
 
 ### 1. Planning a new feature

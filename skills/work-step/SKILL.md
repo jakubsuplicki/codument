@@ -12,16 +12,25 @@ Use this when the user says to continue, work the next step, or implement the ap
 1. Find the active plan in the relevant `docs/features/*.md` or `docs/concepts/*.md`.
 2. Confirm the plan status is approved.
 3. Pick the first unchecked delivery-plan step.
-4. Read `docs/.registry.json` before touching source files.
-5. Implement only that step.
-6. Use `tdd` or the strongest practical verification loop.
-7. Update mapped docs and registry as part of the same step.
-8. Mark the step complete only after verification passes.
-9. Outside autopilot, stop and do not start the next delivery-plan step. In an autopilot run, proceed directly to `review-work` for this step without waiting.
-10. Outside autopilot, present the user with end-of-step options:
+4. Surface the checklist in the live view (see Plan Checklist Mirror below): mirror the plan's steps into your host's native to-do panel with the step you are about to implement marked in progress, and run `codument steps --emit` so `codument watch` shows the active step.
+5. Read `docs/.registry.json` before touching source files.
+6. Implement only that step.
+7. Use `tdd` or the strongest practical verification loop.
+8. Update mapped docs and registry as part of the same step.
+9. Mark the step complete — in the plan doc, and in the mirrored native to-do list — only after verification passes.
+10. Outside autopilot, stop and do not start the next delivery-plan step. In an autopilot run, proceed directly to `review-work` for this step without waiting.
+11. Outside autopilot, present the user with end-of-step options:
     - Run `review-work` now (recommended)
     - Make a specific correction to this step
     - Pause here
+
+## Plan Checklist Mirror
+
+The plan doc's `## Delivery Plan` checklist is the source of truth; the panels below are one-way projections of it, so a step is never "done" until its `- [ ]` is `- [x]` in the doc.
+
+- If your host agent has a native to-do / checklist tool (e.g. Claude Code's TodoWrite), mirror the plan steps into it at the start of the step so the checklist is visible while you work. Run `codument steps --json` for the exact list — each item carries `text` plus a `status` of `completed` / `in_progress` / `pending` that maps directly onto the to-do tool. Mark the active step `in_progress`. If your host has no such tool, skip this silently.
+- Run `codument steps --emit` to log the active `step` event into `.codument/events.jsonl`, so anyone running `codument watch` (any agent, any terminal) sees the active step in the activity tape. It is idempotent — safe to run every step; it only appends when the active step changes.
+- `codument steps` auto-detects the single approved plan with an unchecked step; pass `--plan docs/features/<name>.md` when more than one is active.
 
 ## End-Of-Step Gate
 

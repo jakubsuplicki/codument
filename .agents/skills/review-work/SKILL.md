@@ -10,11 +10,12 @@ Use this after a planned step has been implemented and before committing.
 ## Review Order
 
 1. Read the approved plan step.
-2. Inspect the current diff.
-3. Check whether the implementation matches the planned behavior.
-4. Check tests or verification output.
-5. Check docs and `docs/.registry.json`.
-6. Look for correctness, security, data-loss, performance, type-safety, and maintainability issues.
+2. Run `codument review` (add `--json` to consume it programmatically) for the deterministic change-state: which feature owners the diff touches, docs that went **stale** (source changed, mapped doc didn't), high-risk areas touched, out-of-plan changes, unmapped new files, and dependent features that may need re-review. Use it as the spine of the review — it tells you where to look; it does not certify the change is safe.
+3. Inspect the current diff.
+4. Check whether the implementation matches the planned behavior.
+5. Check tests or verification output.
+6. Resolve every `codument review` finding: update each stale doc and its `docs/.registry.json` entry (set `last_updated`), register unmapped source files, and flag dependents whose interface changed. Re-run `codument review` to confirm the doc/registry findings clear.
+7. Look for correctness, security, data-loss, performance, type-safety, and maintainability issues beyond what the deterministic pass can see.
 
 ## Output
 
