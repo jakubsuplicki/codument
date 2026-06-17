@@ -4,29 +4,47 @@ A deterministic, git-native change-control safety layer for AI-made changes — 
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-Codument has **two sides**:
+## What it is
 
-1. **Installed agent workflow (automatic).** A small project operating system for agent-led engineering — docs, source-to-doc ownership, planning guidance, workflow skills, review discipline, and commit hygiene. Your agent routes clear intent into the right phase from the installed instructions; you do not have to name a skill. The core loop is:
+Codument has **two sides** that work together:
 
-   ```text
-   grill -> plan -> approve -> implement -> verify -> document -> review -> commit -> repeat
-   ```
+- **A delivery workflow your agent runs.** Docs-backed planning, source-to-doc ownership, review discipline, and commit hygiene. You just chat; your agent routes intent into the right phase from the installed instructions. Core loop: `grill → plan → approve → implement → verify → document → review → commit`.
+- **Deterministic CLI checks you run.** Local, no-network, no-AI commands that read the repo and report the facts: `doctor` (coverage + lint), `review` (what a change touched, what went stale), `watch` (a live view). Same repo state → same output.
 
-2. **Deterministic CLI safety checks.** Local, no-network, no-AI commands that read the repo and tell you the facts: `doctor` (documentation coverage + registry lint), `review` (what an AI change touched, what docs went stale, what is unmapped or out-of-plan), and `watch` (a live terminal view of the same). Same repo state → same output.
-
-The docs are not a side quest. They are the durable control plane — a v2 registry mapping source files to the features that own them — that lets Claude, Codex, and future agents pick up the next step without relying on chat history, and that the safety checks read to reason about change.
+The link between them is **`docs/.registry.json`** — a v2 registry mapping each source file to the feature/doc that owns it. The workflow writes it as it builds; the checks read it to reason about every change.
 
 ```mermaid
 flowchart TB
-  subgraph WF["① Installed agent workflow · your agent"]
+  subgraph WF["Delivery workflow · your agent"]
     L["grill → plan → implement → review → commit"]
   end
   REG[("docs/.registry.json<br/>which doc owns each source file")]
-  subgraph CLI["② Deterministic CLI checks · no AI, no network"]
-    C["doctor · review · watch · report"]
+  subgraph CLI["Deterministic checks · no AI, no network"]
+    C["doctor · review · watch"]
   end
   WF -->|writes &amp; updates docs as it builds| REG
   REG -->|read to reason about every change| CLI
+```
+
+## How you run it
+
+codument is two tools used in two places — keeping them straight is the whole trick:
+
+| Where | What it's for | Examples |
+| --- | --- | --- |
+| 🖥️ **Your terminal** (you type) | setup, the deterministic checks, upgrades | `codument init`/`scan`/`adopt` · `codument doctor`/`review`/`watch` · `codument update` |
+| 💬 **Your agent** (you just chat) | the delivery workflow and the fixes | `grill → … → commit` · `/update-docs` · `/review-work` |
+
+**Rule of thumb: the CLI finds and reports; your agent fixes.** Codument never writes your code or docs.
+
+The flow, start to finish:
+
+```text
+1. Set up    terminal · once      npm i -D codument  →  codument init | scan | adopt
+2. Build     agent · ongoing      just chat: grill → plan → implement → review → commit
+3. Check     terminal · anytime   codument doctor | review | watch
+4. Fix       agent                /update-docs … your agent clears what the checks found
+5. Upgrade   terminal · rare      codument update   (after bumping the package)
 ```
 
 ## Try it in 30 seconds
@@ -45,43 +63,21 @@ npx codument demo --live
 
 (From a checkout of this repo: `npm run demo` or `npm run demo:live`.)
 
-## Which command, when
-
-```mermaid
-flowchart LR
-  subgraph S["Set up · once"]
-    direction TB
-    i["init — new project"]
-    sc["scan — existing code, no docs yet"]
-    ad["adopt / migrate-registry — existing Codument repo"]
-  end
-  subgraph B["Build · your agent, repeating"]
-    direction TB
-    w["the delivery loop (grill → … → commit)"]
-  end
-  subgraph K["Check · deterministic, no AI"]
-    direction TB
-    dr["doctor — coverage + lint"]
-    rv["review / report — what a change touched"]
-    wt["watch — live view"]
-  end
-  S --> B --> K
-  K -. findings feed back .-> B
-```
-
-## Install
+## 1 · Set up — terminal, once
 
 ```bash
 npm install -D codument
 ```
 
-## New Projects
+Then run **one** of these, matching your project:
+
+### New project → `init`
 
 ```bash
 npx codument init
 ```
 
-Use `init` for fresh projects that do not already have Codument docs. By default, Codument installs the Codex/generic profile:
+Installs the Codex/generic profile by default:
 
 - `AGENTS.md` with the shared delivery workflow
 - `.agents/skills/` with the core workflow skills
@@ -89,137 +85,35 @@ Use `init` for fresh projects that do not already have Codument docs. By default
 - `docs/.registry.json` mapping source files to docs
 - `.codument-meta.json` recording installed agent profiles
 
-Install specific agent profiles with:
+Pick profiles explicitly with `--agents codex`, `--agents claude`, or `--agents codex,claude`. The Claude profile also writes `.claude/skills`, `.claude/agents`, `.claude/rules`, `.claude/settings.json`, and `CLAUDE.md`.
 
-```bash
-npx codument init --agents codex
-npx codument init --agents claude
-npx codument init --agents codex,claude
-```
-
-The Claude profile also writes `.claude/skills`, `.claude/agents`, `.claude/rules`, `.claude/settings.json`, and `CLAUDE.md`.
-
-## Existing Code, No Codument Yet
+### Existing code, no docs yet → `scan`
 
 ```bash
 npx codument scan
 ```
 
-`scan` groups source files into feature and concept docs, creates scaffolds, and populates `docs/.registry.json`. New entries are marked `needs-review`; run `/update-docs` to fill them with real content.
+Groups source files into feature and concept docs, creates scaffolds, and populates `docs/.registry.json`. New entries are marked `needs-review`; run `/update-docs` (the agent) to fill them with real content.
 
-## Existing Codument Projects
-
-Use `adopt` when a project already has Codument docs, an older `.codument-meta.json`, or a legacy registry (the flat `sources` shape, or the old `mappings` shape).
+### Existing Codument project (upgrade or migrate) → `adopt`
 
 ```bash
 npx codument adopt --dry-run --agents codex,claude
 npx codument adopt --agents codex,claude
 ```
 
-`adopt` is the migration/onboarding path. It:
+Use `adopt` when a project already has Codument docs, an older `.codument-meta.json`, or a legacy registry (the flat `sources` or old `mappings` shape). It migrates the registry into the **v2** ownership shape (`primary_sources`, `related_sources`, `docs`, `depends_on`, `risk`), keeps the old one as `docs/.registry.backup.json`, refreshes `.codument-meta.json`, and installs/updates the selected agent profiles.
 
-- migrates a legacy `docs/.registry.json` into the **v2** ownership shape (`primary_sources`, `related_sources`, `docs`, `depends_on`, `risk`)
-- keeps the old registry as `docs/.registry.backup.json`
-- refreshes `.codument-meta.json` with current project detection and selected agents
-- installs or updates the selected agent profiles using the same managed-file logic as `update`
-
-If you only want to convert the registry (no profile changes), run the one-shot migration directly — it is idempotent and backs up first:
+To convert only the registry (no profile changes), run the idempotent one-shot — it backs up first:
 
 ```bash
 npx codument migrate-registry --dry-run
 npx codument migrate-registry
 ```
 
-The v2 model is the only shape the analyzers read; the legacy shape is converted once and then never read again.
+The v2 model is the only shape the analyzers read; the legacy shape is converted once and never read again.
 
-## Deterministic change-control checks
-
-These commands are local, need no network and no AI model, and produce the same output for the same repo state. They read the v2 registry, the filesystem, and `git`.
-
-```mermaid
-flowchart LR
-  AI["AI makes a change"] --> DIFF["git diff<br/>(uncommitted)"]
-  DIFF --> ENG{{"codument review / watch"}}
-  REG[("registry")] --> ENG
-  ENG --> F1["docs gone stale"]
-  ENG --> F2["unmapped files"]
-  ENG --> F3["out-of-plan changes"]
-  ENG --> F4["high-risk areas touched"]
-```
-
-### `codument doctor` — documentation coverage
-
-"Test coverage for your docs." A deterministic gap-finder, not a quality judge.
-
-```bash
-npx codument doctor
-npx codument doctor --json     # stable machine contract for CI/badges
-npx codument doctor --write    # write .codument/coverage.json + an SVG badge
-```
-
-It reports two separate channels, never blended into one number:
-
-- **Coverage (scored):** ownership (in-scope source files with a documented owner), dependency (mature entries declaring `depends_on`), risk (declared high-risk areas with a durable doc), and freshness/drift (over a git-history window). The headline score is the equal-weight average of the ratios that apply; a ratio with no denominator (e.g. risk before you add hints) is excluded, never counted as 0% or 100%.
-- **Lint (warnings):** missing/leaked sources, missing docs, high-fanout files, empty `depends_on`, unmapped sources, and bloated docs (whole-doc size, oversized sections, never-compacted completed-step logs — tunable with `--max-doc-lines`, `--max-section-lines`, `--max-completed-log`).
-
-`doctor` is warning-only: findings never change the exit code.
-
-### `codument review` — review an AI change
-
-Reads the uncommitted git diff against the registry and reports what changed and what is suspicious:
-
-```bash
-npx codument review
-npx codument review --json
-```
-
-- changed files grouped by the feature that owns them
-- **stale docs** — a source changed but its mapped doc did not
-- **high-risk areas touched** (auth, data-loss, etc.)
-- **out-of-plan changes** when an approved plan (`Status: approved` with a `## Scope`) is detected
-- **unmapped changes** with no registry owner, high-fanout files, and dependent features that may need re-review
-
-It reports repo facts and gaps — it does not certify that a change is safe.
-
-### `codument report` — the same review as a shareable HTML page
-
-For something you can read at a glance, screenshot, or hand to a teammate:
-
-```bash
-npx codument report          # writes .codument/report.html and opens it
-npx codument report --no-open --out review.html
-```
-
-A self-contained HTML page (no network, no JS) that leads with a plain-language verdict and the coverage delta, with finding cards and a collapsible per-file breakdown — instead of a wall of terminal text.
-
-### `codument watch` — live terminal view
-
-A second terminal that continuously refreshes the same change-state while your agent works (no daemon, zero extra dependencies):
-
-```bash
-npx codument watch
-npx codument watch --once          # one frame, for CI/inspection
-npx codument watch --interval 1000
-npx codument watch --dir ../other  # watch another repo without cd
-```
-
-`watch` reuses the exact analyzer `review` uses, so the live view and the snapshot can never disagree, and it tails the append-only `.codument/events.jsonl` flow log (which `review --log` and the workflow can write).
-
-## Core Skills
-
-Codument installs these delivery-loop skills:
-
-| Skill | Purpose |
-| --- | --- |
-| `grill-with-docs` | Challenge a request against docs, code, ADRs, terminology, and edge cases before planning |
-| `plan-with-docs` | Turn resolved decisions into a compact feature plan with steps and acceptance criteria |
-| `tdd` | Implement one behavior slice at a time with the strongest practical feedback loop |
-| `work-step` | Execute the next approved plan step without skipping ahead |
-| `review-work` | Review the diff against the approved plan, tests, docs, registry, and architecture |
-| `commit-work` | Verify, stage, and commit focused work with a conventional commit |
-| `update-docs` | Fill scaffold docs or update mapped docs after source changes |
-
-## Daily Workflow
+## 2 · Build — your agent, ongoing
 
 Chat normally. Codument's always-loaded instructions route clear intent into the right delivery skill; slash commands are just explicit overrides when you want to force a phase.
 
@@ -236,59 +130,186 @@ flowchart LR
 3. Approved plans trigger `work-step` for the next unchecked step.
 4. Completed implementation steps trigger `review-work` before any commit.
 5. Clean or explicitly resolved reviews offer `commit-work` as the next gated action.
-6. After commit, the agent offers the next work step, plan review, context compaction, or pause.
 
-Working state should stay compact. Feature docs should capture the durable decisions, current plan, acceptance criteria, verification strategy, gotchas, and key files, not a transcript of every agent turn.
+The installed skills:
 
-## Run the approved plan — "codument it"
+| Skill | Purpose |
+| --- | --- |
+| `grill-with-docs` | Challenge a request against docs, code, ADRs, terminology, and edge cases before planning |
+| `plan-with-docs` | Turn resolved decisions into a compact feature plan with steps and acceptance criteria |
+| `tdd` | Implement one behavior slice at a time with the strongest practical feedback loop |
+| `work-step` | Execute the next approved plan step without skipping ahead |
+| `review-work` | Review the diff against the approved plan, tests, docs, registry, and architecture |
+| `commit-work` | Verify, stage, and commit focused work with a conventional commit |
+| `update-docs` | Fill scaffold docs, or update/compact mapped docs after source changes |
 
-Codument never runs your coding agent — your agent does. So you trigger autopilot by telling your agent, not by running a CLI command. There is no `codument run` command, and there never will be: the Codument CLI only does setup and deterministic checks (`init`, `scan`, `doctor`, `review`, `watch`, `migrate-registry`, `adopt`, `update`, `benchmark`).
+Keep working state compact. Feature docs should capture durable decisions, the current plan, acceptance criteria, verification strategy, gotchas, and key files — not a transcript of every agent turn. (To run an approved plan end-to-end without per-step prompts, see **Autopilot** in Reference.)
 
-Once a plan is approved, tell your agent:
+## 3 · Check — terminal, deterministic (no AI)
 
-> codument, run the plan
+These commands are local, need no network and no AI model, and produce the same output for the same repo state. They read the v2 registry, the filesystem, and `git`.
 
-(also recognized: "run the plan", "codument this plan", "autopilot", or `/work-step --auto`).
+### `codument doctor` — documentation coverage
 
-Your agent then works the approved plan end to end: for each remaining step it implements, reviews, and commits without stopping for routine confirmations — one focused commit per step, under your own identity (no AI co-author trailer).
+"Test coverage for your docs." A deterministic gap-finder, not a quality judge.
 
-Autopilot is opt-in per run and off by default. The per-step gates still run; autopilot only stops *waiting* for your routine confirmation. It will not start until the plan is approved (look for `Status: approved` in the plan), and it pauses to ask you when something needs a real decision:
+```bash
+npx codument doctor
+npx codument doctor --json     # stable machine contract for CI/badges
+npx codument doctor --write    # write .codument/coverage.json + an SVG badge
+```
+
+It reports separate channels, never blended into one number:
+
+- **Coverage (scored):** ownership (in-scope source files with a documented owner), dependency (mature entries declaring `depends_on`), risk (declared high-risk areas with a durable doc), and freshness/drift (over a git-history window). The headline score is the equal-weight average of the ratios that apply; a ratio with no denominator is excluded, never counted as 0% or 100%.
+- **Lint (warnings):** missing/leaked sources, missing docs, empty `depends_on`, unmapped sources, and bloated docs (whole-doc size, oversized sections, never-compacted completed-step logs — tunable with `--max-doc-lines`, `--max-section-lines`, `--max-completed-log`). These are *findings* — a clean registry has zero.
+- **Notes (informational):** high-fanout files (a file mapped across many features). Awareness-only — they never count toward "clean", because acting on them blindly degrades the registry (see the findings table below).
+
+`doctor` is warning-only: neither findings nor notes change the exit code.
+
+### `codument review` — review an AI change
+
+Reads the uncommitted git diff against the registry and reports what changed and what is suspicious:
+
+```bash
+npx codument review
+npx codument review --json
+```
+
+- changed files grouped by the feature that owns them
+- **stale docs** — a source changed but its mapped doc did not
+- **high-risk areas touched** (auth, data-loss, etc.)
+- **out-of-plan changes** when an approved plan (`Status: approved` with a `## Scope`) is detected
+- **unmapped changes**, high-fanout files, and dependent features that may need re-review
+
+It reports repo facts and gaps — it does not certify that a change is safe.
+
+### `codument report` — the same review as a shareable HTML page
+
+```bash
+npx codument report          # writes .codument/report.html and opens it
+npx codument report --no-open --out review.html
+```
+
+A self-contained page (no network, no JS) that leads with a plain-language verdict and the coverage delta, with finding cards and a collapsible per-file breakdown — instead of a wall of terminal text.
+
+### `codument watch` — live terminal view
+
+A second terminal that continuously refreshes the same change-state while your agent works (no daemon, zero extra dependencies):
+
+```bash
+npx codument watch
+npx codument watch --once          # one frame, for CI/inspection
+npx codument watch --interval 1000
+npx codument watch --dir ../other  # watch another repo without cd
+```
+
+`watch` reuses the exact analyzer `review` uses, so the live view and the snapshot can never disagree, and it tails the append-only `.codument/events.jsonl` flow log.
+
+### `codument feed` — populate the event log from the agent's session
+
+`feed` is the producer behind the live view: it tails the active Claude Code session transcript (the per-turn log Claude Code already writes), normalizes each turn's token usage + tool activity into `.codument/events.jsonl`, and attributes it to a feature via the registry. `watch` runs it for you each refresh (disable with `watch --no-feed`); call it directly for a one-shot backfill or a headless/CI populate.
+
+```bash
+npx codument feed              # tail the session log continuously
+npx codument feed --once       # single backfill pass, then exit
+npx codument feed --dir ../other
+```
+
+It reads telemetry that already exists (no extra token cost), is idempotent (a byte-offset cursor means restarts never double-count), and is best-effort against Claude Code's internal transcript format. It's the Claude-specific adapter for the otherwise vendor-neutral `emit` + events-log seam.
+
+### `codument emit tokens` — estimated token cost, per feature
+
+codument never calls an AI model, so it can't meter tokens itself. Instead your agent (or a small hook that reads its session transcript) reports usage as it works, and `watch` shows an **estimated** running cost, attributed to the feature being worked:
+
+```bash
+codument emit tokens --model opus-4.8 --input 1200 --output 340 \
+  --cache-read 8000 --feature auth --step 3
+```
+
+That appends a **counts-only** record to `.codument/events.jsonl` — no dollars are stored. `watch` prices it live:
+
+```text
+  token cost  (estimated)
+  515,000 tokens   $0.50
+    auth           $0.32
+    billing        $0.18
+```
+
+The four token buckets are priced separately — cache reads are ~10× cheaper than fresh input and dominate the count, so a single blended rate would overstate the bill badly. The figure is **always an estimate**, derived from a rate table at display time, never an invoice; per-feature numbers are an allocation of what the agent tagged.
+
+**Setting prices.** codument bundles rates for **Claude models only** — deliberately, so it stays agent-neutral without shipping prices for vendors it can't keep current. To price anything else — Codex/GPT, Gemini, a fine-tune — or to override a default, add a `.codument/rates.json` to your project (USD per million tokens, per bucket; any bucket you omit is treated as `$0`):
+
+```json
+{
+  "codex-1":  { "input": 1.5, "output": 6, "cacheRead": 0.2 },
+  "gpt-5":    { "input": 2,   "output": 8 },
+  "opus-4.8": { "output": 30 }
+}
+```
+
+The numbers above are **illustrative** — fill in each provider's current published rates. Your file merges *over* the built-in defaults — add new models, or override a single bucket of an existing one. A model with no rate isn't an error: its tokens are still counted and it's flagged `unpriced` rather than priced wrong. And because only counts are stored, changing a rate re-prices everything — past logs included — on the next `watch`.
+
+## 4 · Fix — from findings to clean
+
+`doctor` and `review` report findings; they never auto-fix — codument stays a deterministic checker, so there is no `codument fix`. You clear findings the way you build features: your agent fixes them with the installed skills, then you re-run the check to confirm. A finding that re-runs clean is the "done" signal. The finding's *type* tells you which lever to pull:
+
+| Finding | What it means | How to clear it |
+| --- | --- | --- |
+| **stale doc** (`review`) | a source changed but its mapped doc did not | `/update-docs` — update the doc from the current source |
+| **bloated-doc** | a doc is too long, has an oversized section, or carries a never-compacted `[x]` completed-log | `/update-docs` — **compact** it: drop the done log (it lives in git history), split big sections, keep the durable decisions. Not a rewrite. |
+| **missing-doc** | a registered feature has no doc | `/update-docs` — write it from the template |
+| **unmapped-source** | a real source file has no owning feature | add it to a feature's `primary_sources` in `docs/.registry.json` (or `codument scan` to propose mappings) |
+| **generated-leakage** | a file matching an exclusion rule (build/generated/test/data, e.g. `dist/**`, `*.seed.json`) is listed as a source | de-list it — it is not tracked source. If the heuristic misfired on genuinely authored content, adjust the exclusion instead of forcing docs onto it |
+| **empty-depends-on** | a mature feature declares no dependencies | add its real `depends_on` edges, or confirm there are none |
+
+**`high-fanout` is a note, not a finding — don't "clear" it.** A file mapped across many features is usually *correct*: shared infra (security rules, shared types, a root layout, a barrel file) is supposed to be mapped widely, and that breadth is exactly what lets `review` flag every dependent when it changes. Collapsing it to one owner to zero the count **severs that signal** — and the single owner is often the wrong one. Act only when the breadth is genuinely wrong (a test helper or unrelated utility mapped into features that don't own it); otherwise leave shared infra mapped widely, or raise `--high-fanout` if the threshold is noisy for your repo. "Clean" never requires touching it.
+
+The skills already know this loop: `/update-docs` starts from `codument doctor` and `/review-work` starts from `codument review`, so your agent pulls the findings and clears them without you reciting them. Keep docs compact as you go and `bloated-doc` rarely fires.
+
+## 5 · Upgrade — terminal, on version bumps
+
+After bumping the codument package, re-sync the managed files (skills, rules, `AGENTS.md`/`CLAUDE.md`) for the agent profiles recorded in `.codument-meta.json`:
+
+```bash
+npx codument update --dry-run   # preview first
+npx codument update
+npx codument update --agents codex,claude   # override stored profiles
+```
+
+`update` only refreshes codument's own managed files — it never touches your docs or code. Entries you've customized are backed up to `<file>.backup`; symlinked/pointer skill entries are left untouched.
+
+---
+
+## Reference
+
+<details>
+<summary><b>Autopilot — "codument it"</b></summary>
+
+Codument never runs your coding agent — your agent does. So you trigger autopilot by telling your agent, not by running a CLI command. There is no `codument run` command: the CLI only does setup and deterministic checks.
+
+Once a plan is approved, tell your agent **"codument, run the plan"** (also recognized: "run the plan", "codument this plan", "autopilot", or `/work-step --auto`). Your agent then works the approved plan end to end: for each remaining step it implements, reviews, and commits without stopping for routine confirmations — one focused commit per step, under your own identity (no AI co-author trailer).
+
+Autopilot is opt-in per run and off by default. The per-step gates still run; autopilot only stops *waiting* for your routine confirmation. It will not start until the plan is approved (`Status: approved`), and it pauses to ask when something needs a real decision:
 
 - a review finding that needs a human judgment call (and always for changes touching public interfaces, security, data loss, or dependencies),
 - a failing verification, or
 - a change that would fall outside the approved plan.
 
-To stop early, tell your agent **"pause"** or **"stop autopilot"**. To run a single fully-gated step the old way, say **"work the next step"** or `/work-step` without `--auto`.
+To stop early, say **"pause"** or **"stop autopilot"**. To run a single fully-gated step, say **"work the next step"** or `/work-step` without `--auto`.
+</details>
 
-## Acknowledgements
-
-Thanks to Matt Pocock's [mattpocock/skills](https://github.com/mattpocock/skills), especially `/grill-with-docs`, which helped shape Codument's habit of grilling ideas against the docs before coding.
-
-## Update Managed Files
-
-```bash
-npx codument update
-npx codument update --dry-run
-```
-
-`update` refreshes the managed files for the agent profiles recorded in `.codument-meta.json`. Override the stored profiles when needed:
-
-```bash
-npx codument update --agents codex,claude
-```
-
-## Proof Benchmarks
+<details>
+<summary><b>Proof benchmarks</b></summary>
 
 Codument ships self-contained proof benchmarks. They do not call an AI model, require telemetry, or judge work subjectively.
 
-The context benchmark compares two deterministic context-selection strategies over a packaged fixture:
+The **context benchmark** compares two deterministic context-selection strategies over a packaged fixture:
 
 ```bash
 npx codument benchmark context
 npx codument benchmark context --json
 ```
-
-Current fixture output:
 
 ```text
 Naive context:    3,068 estimated file-context tokens (16 files)
@@ -301,9 +322,9 @@ Relevance:
   Irrelevant files included: 0/8
 ```
 
-These are estimated file-context tokens using `ceil(characters / 4)`. The benchmark proves that the packaged registry can route a known task to a smaller relevant working set. It does not claim every real task will reduce total model tokens; small tasks may spend more on workflow than they save.
+These are estimated file-context tokens using `ceil(characters / 4)`. The benchmark proves the packaged registry can route a known task to a smaller relevant working set. It does not claim every real task reduces total model tokens; small tasks may spend more on workflow than they save.
 
-The quality benchmark gives any coding agent the same fixture task and scores the final repo deterministically:
+The **quality benchmark** gives any coding agent the same fixture task and scores the final repo deterministically:
 
 ```bash
 npx codument benchmark init /tmp/codument-bench --agents codex
@@ -313,18 +334,18 @@ npm test
 npx codument benchmark score /tmp/codument-bench
 ```
 
-`benchmark score` checks the final files for passing tests, required behavior, docs updates, registry coverage, protected fixture metadata, source boundaries, and benchmark-specific shortcuts. It scores the final repo state, not the agent's private reasoning or path to the answer.
-
-Expected scoring shape:
+`benchmark score` checks the final files for passing tests, required behavior, docs updates, registry coverage, protected fixture metadata, source boundaries, and benchmark-specific shortcuts. Expected shape:
 
 ```text
 Fresh fixture:     6/9 FAIL
 Completed fixture: 9/9 PASS
 ```
 
-To compare a baseline against Codument, initialize two fixture directories and give both agents the same task. In the baseline run, ask the agent to solve directly without using Codument's installed workflow. In the Codument run, ask it to follow `AGENTS.md` and the skills. Score both directories with the same `benchmark score` command.
+To compare a baseline against Codument, initialize two fixture directories and give both agents the same task — one solving directly, one following `AGENTS.md` and the skills — then score both with the same command.
+</details>
 
-## Documentation Structure
+<details>
+<summary><b>Documentation structure</b></summary>
 
 ```text
 docs/
@@ -338,10 +359,12 @@ docs/
 ```
 
 The registry is the source of truth for which docs own which source files. Agents must check it before and after source edits.
+</details>
 
-## Developing codument
+<details>
+<summary><b>Developing codument</b></summary>
 
-When developing Codument itself, you can test a local checkout against another project by building the CLI and running it directly:
+Test a local checkout against another project by building the CLI and running it directly:
 
 ```bash
 cd /path/to/codument
@@ -351,16 +374,21 @@ cd /path/to/existing-project
 node ../codument/dist/cli.js adopt --dry-run --agents codex,claude
 ```
 
-To test hooks that call `node_modules/codument/...`, install a local packed copy of your checkout:
+To test hooks that call `node_modules/codument/...`, install a local packed copy:
 
 ```bash
 cd /path/to/codument
 npm --cache /private/tmp/codument-npm-cache pack
 
 cd /path/to/existing-project
-npm install -D ../codument/codument-0.4.0.tgz
+npm install -D ../codument/codument-0.4.1.tgz
 npx codument adopt --agents codex,claude
 ```
+</details>
+
+## Acknowledgements
+
+Thanks to Matt Pocock's [mattpocock/skills](https://github.com/mattpocock/skills), especially `/grill-with-docs`, which helped shape Codument's habit of grilling ideas against the docs before coding.
 
 ## Requirements
 

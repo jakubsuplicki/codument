@@ -13,7 +13,52 @@
         "lib"
       ],
       "risk": [],
-      "last_updated": "2026-06-16",
+      "last_updated": "2026-06-17",
+      "status": "current"
+    },
+    "plan-step-mirroring": {
+      "doc": "docs/features/plan-step-mirroring.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/lib/plan-steps.ts",
+        "src/commands/steps.ts"
+      ],
+      "related_sources": [
+        "src/cli.ts",
+        "src/commands/watch.ts"
+      ],
+      "docs": [],
+      "depends_on": [
+        "cli",
+        "lib",
+        "registry-health-and-change-control"
+      ],
+      "risk": [],
+      "last_updated": "2026-06-17",
+      "status": "current"
+    },
+    "token-cost-tracking": {
+      "doc": "docs/features/token-cost-tracking.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/commands/emit.ts",
+        "src/commands/feed.ts",
+        "src/lib/claude-feed.ts",
+        "src/lib/emit-producer.ts",
+        "src/lib/token-cost.ts",
+        "src/lib/token-report.ts"
+      ],
+      "related_sources": [
+        "src/commands/watch.ts"
+      ],
+      "docs": [],
+      "depends_on": [
+        "cli",
+        "lib",
+        "registry-health-and-change-control"
+      ],
+      "risk": [],
+      "last_updated": "2026-06-17",
       "status": "current"
     },
     "commands": {
@@ -80,22 +125,26 @@
         "src/lib/benchmark-context.ts",
         "src/lib/benchmark-quality.ts",
         "src/lib/change-state.ts",
+        "src/lib/claude-feed.ts",
         "src/lib/claude-settings.ts",
         "src/lib/codemod.ts",
         "src/lib/detect.ts",
         "src/lib/events.ts",
         "src/lib/git.ts",
         "src/lib/markers.ts",
+        "src/lib/emit-producer.ts",
         "src/lib/registry.ts",
         "src/lib/report-html.ts",
         "src/lib/scaffold.ts",
+        "src/lib/token-cost.ts",
+        "src/lib/token-report.ts",
         "src/lib/version.ts"
       ],
       "related_sources": [],
       "docs": [],
       "depends_on": [],
       "risk": [],
-      "last_updated": "2026-06-16",
+      "last_updated": "2026-06-17",
       "status": "current"
     },
     "registry-health-and-change-control": {
@@ -125,7 +174,7 @@
       "risk": [
         "data-loss"
       ],
-      "last_updated": "2026-06-16",
+      "last_updated": "2026-06-17",
       "status": "in-progress"
     },
     "doc-audience-layers": {
