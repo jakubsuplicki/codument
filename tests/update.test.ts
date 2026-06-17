@@ -72,7 +72,10 @@ async function setupInitializedProject(): Promise<void> {
   await writeFile(join(tmp, "tsconfig.json"), "{}");
   await mkdir(join(tmp, "src"));
 
-  runCli("init");
+  // Anchor to the codex profile explicitly: these tests exercise the
+  // `.agents/skills` managed-file layout (and Claude settings added on top via
+  // `update --agents claude`), independent of which profile `init` defaults to.
+  runCli("init", "--agents", "codex");
 }
 
 describe("update command", () => {

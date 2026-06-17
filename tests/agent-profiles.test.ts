@@ -44,8 +44,8 @@ describe("agent profiles", () => {
     assert.deepStrictEqual(detectAgentIds(tmp), ["codex", "claude"]);
   });
 
-  it("defaults to codex when no agent files exist", () => {
-    assert.deepStrictEqual(resolveAgentIds(tmp), ["codex"]);
+  it("defaults to claude when no agent files exist", () => {
+    assert.deepStrictEqual(resolveAgentIds(tmp), ["claude"]);
   });
 
   it("defines concrete output locations per profile", () => {

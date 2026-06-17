@@ -77,15 +77,16 @@ Then run **one** of these, matching your project:
 npx codument init
 ```
 
-Installs the Codex/generic profile by default:
+Installs the Claude profile by default:
 
-- `AGENTS.md` with the shared delivery workflow
-- `.agents/skills/` with the core workflow skills
+- `AGENTS.md` and `CLAUDE.md` with the shared delivery workflow
+- `.claude/skills/` with the core workflow skills
+- `.claude/agents/`, `.claude/rules/`, and `.claude/settings.json` for Claude-specific subagents, rules, and the documentation hook
 - `docs/` with feature, concept, guide, and ADR structure
 - `docs/.registry.json` mapping source files to docs
 - `.codument-meta.json` recording installed agent profiles
 
-Pick profiles explicitly with `--agents codex`, `--agents claude`, or `--agents codex,claude`. The Claude profile also writes `.claude/skills`, `.claude/agents`, `.claude/rules`, `.claude/settings.json`, and `CLAUDE.md`.
+Pick profiles explicitly with `--agents claude`, `--agents codex`, or `--agents codex,claude`. The Codex/generic profile writes `AGENTS.md` and `.agents/skills/` only — portable across any agent that reads `AGENTS.md`.
 
 ### Existing code, no docs yet → `scan`
 

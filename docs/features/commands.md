@@ -11,7 +11,7 @@ sources:
   - src/commands/update.ts
 depends_on:
   - lib
-last_reviewed: 2026-06-16
+last_reviewed: 2026-06-18
 ---
 
 ## Summary
@@ -25,7 +25,7 @@ The CLI commands implement codument's core workflow: `init` bootstraps fresh pro
 Sets up everything a project needs for the docs-backed delivery loop:
 
 1. **Detects project** — calls `detectProject()` to identify language (TS/JS), framework, and source directory
-2. **Resolves agent profiles** — uses explicit `--agents`, existing agent files, or defaults to the Codex/generic profile
+2. **Resolves agent profiles** — uses explicit `--agents`, existing agent files, or defaults to the Claude profile
 3. **Creates docs structure** — `docs/`, `docs/features/`, `docs/concepts/`, `docs/architecture/decisions/`, `docs/guides/`, plus an empty `.registry.json`
 4. **Copies templates** — `overview.md` and `getting-started.md` from the package's `templates/` directory
 5. **Installs core workflow skills** — copies `grill-with-docs`, `plan-with-docs`, `tdd`, `work-step`, `review-work`, `commit-work`, and `update-docs` into each selected profile's skills directory

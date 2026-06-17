@@ -110,7 +110,7 @@ export function resolveAgentIds(
   if (parsed.length > 0) return parsed;
 
   const detected = detectAgentIds(root);
-  return detected.length > 0 ? detected : ["codex"];
+  return detected.length > 0 ? detected : ["claude"];
 }
 
 export function getAgentProfiles(ids: AgentProfileId[]): AgentProfile[] {

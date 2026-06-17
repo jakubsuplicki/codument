@@ -90,28 +90,29 @@ describe("init command", () => {
     assert.ok(existsSync(join(tmp, "docs", "getting-started.md")));
   });
 
-  it("creates default codex/generic agent structure", () => {
+  it("creates default claude agent structure", () => {
     runInit();
 
-    assert.ok(existsSync(join(tmp, ".agents", "skills", "update-docs")));
-    assert.ok(existsSync(join(tmp, ".agents", "skills", "grill-with-docs")));
-    assert.ok(!existsSync(join(tmp, ".claude")));
+    assert.ok(existsSync(join(tmp, ".claude", "skills", "update-docs")));
+    assert.ok(existsSync(join(tmp, ".claude", "skills", "grill-with-docs")));
+    assert.ok(existsSync(join(tmp, "CLAUDE.md")));
+    assert.ok(!existsSync(join(tmp, ".agents")));
   });
 
   it("copies core delivery skills for the default profile", async () => {
     runInit();
 
     assert.ok(
-      existsSync(join(tmp, ".agents", "skills", "update-docs", "SKILL.md")),
+      existsSync(join(tmp, ".claude", "skills", "update-docs", "SKILL.md")),
     );
     assert.ok(
-      existsSync(join(tmp, ".agents", "skills", "tdd", "SKILL.md")),
+      existsSync(join(tmp, ".claude", "skills", "tdd", "SKILL.md")),
     );
     assert.ok(
-      existsSync(join(tmp, ".agents", "skills", "commit-work", "SKILL.md")),
+      existsSync(join(tmp, ".claude", "skills", "commit-work", "SKILL.md")),
     );
     const commitSkill = await readFile(
-      join(tmp, ".agents", "skills", "commit-work", "SKILL.md"),
+      join(tmp, ".claude", "skills", "commit-work", "SKILL.md"),
       "utf-8",
     );
     assert.ok(commitSkill.includes("Compact context before continuing"));
@@ -174,7 +175,7 @@ describe("init command", () => {
     const meta = JSON.parse(await readFile(metaPath, "utf-8"));
     assert.equal(meta.version, PKG_VERSION);
     assert.ok(meta.initialized);
-    assert.deepStrictEqual(meta.agents, ["codex"]);
+    assert.deepStrictEqual(meta.agents, ["claude"]);
     assert.ok(meta.project);
     assert.equal(meta.project.language, "typescript");
   });
