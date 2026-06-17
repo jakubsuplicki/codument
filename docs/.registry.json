@@ -58,7 +58,7 @@
         "registry-health-and-change-control"
       ],
       "risk": [],
-      "last_updated": "2026-06-17",
+      "last_updated": "2026-06-18",
       "status": "current"
     },
     "commands": {
@@ -144,7 +144,7 @@
       "docs": [],
       "depends_on": [],
       "risk": [],
-      "last_updated": "2026-06-17",
+      "last_updated": "2026-06-18",
       "status": "current"
     },
     "registry-health-and-change-control": {
@@ -174,7 +174,7 @@
       "risk": [
         "data-loss"
       ],
-      "last_updated": "2026-06-17",
+      "last_updated": "2026-06-18",
       "status": "in-progress"
     },
     "doc-audience-layers": {

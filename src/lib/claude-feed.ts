@@ -6,13 +6,19 @@ import {
   readSync,
   closeSync,
   readFileSync,
-  writeFileSync,
+  realpathSync,
   mkdirSync,
 } from "node:fs";
-import { join, relative, basename, isAbsolute } from "node:path";
+import { join, relative, resolve, basename, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { allSources, type Registry, readRegistrySync } from "./registry.js";
-import { appendEvent, type CodumentEvent } from "./events.js";
+import {
+  appendEvent,
+  readAllEvents,
+  rewriteEvents,
+  atomicWriteFileSync,
+  type CodumentEvent,
+} from "./events.js";
 
 // Adapter that turns a coding agent's own session telemetry into codument
 // events. Claude Code writes an append-only JSONL transcript per session under
@@ -72,6 +78,21 @@ function readHead(file: string, bytes = 65536): string {
 function sessionCwd(file: string): string | null {
   const head = readHead(file, 1_000_000);
   const m = /"cwd"\s*:\s*"((?:\\.|[^"\\])*)"/.exec(head);
+  if (!m) return null;
+  try {
+    return JSON.parse(`"${m[1]}"`);
+  } catch {
+    return m[1];
+  }
+}
+
+/** The `sessionId` a transcript records (constant within a file). Regex over a
+ *  head window, like `sessionCwd`, so it doesn't depend on a fully parseable
+ *  first line. Used to match feed events (which carry `data.session`) back to a
+ *  transcript file when deciding whether their source still exists. */
+function sessionIdOf(file: string): string | null {
+  const head = readHead(file, 65536);
+  const m = /"sessionId"\s*:\s*"((?:\\.|[^"\\])*)"/.exec(head);
   if (!m) return null;
   try {
     return JSON.parse(`"${m[1]}"`);
@@ -300,6 +321,7 @@ export function recordToEvents(record: unknown, ctx: FeedContext): RecordResult 
       type: "tokens",
       ts,
       data: {
+        source: "feed",
         model: normalizeModelId(model),
         input: coerceNum(usage.input_tokens),
         output: coerceNum(usage.output_tokens),
@@ -338,6 +360,7 @@ export function recordToEvents(record: unknown, ctx: FeedContext): RecordResult 
       ts,
       message: label,
       data: {
+        source: "feed",
         tool: name,
         ...(file ? { file } : {}),
         ...(feature ? { feature } : {}),
@@ -378,7 +401,18 @@ function readFeedState(root: string): FeedState {
 function writeFeedState(root: string, state: FeedState): void {
   const dir = join(root, ".codument");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(feedStatePath(root), JSON.stringify(state, null, 2) + "\n");
+  atomicWriteFileSync(feedStatePath(root), JSON.stringify(state, null, 2) + "\n");
+}
+
+/** Collapse path aliases (symlinks, `.`/`..`, case) to one canonical key so a
+ *  session isn't pumped twice when it appears under two spellings. Falls back to
+ *  lexical resolution when the file no longer exists. */
+function canonSession(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
 }
 
 /** Reads bytes [offset, size) of a file and returns the decoded text. */
@@ -400,39 +434,58 @@ export interface PumpResult {
   session: string | null;
 }
 
+interface ParsedSession {
+  /** Normalized events for the lines consumed this pass. */
+  events: Array<Omit<CodumentEvent, "ts"> & { ts: string }>;
+  /** Byte offset after the consumed whole lines. */
+  offset: number;
+  /** Feature to carry forward for this session. */
+  feature: string | null;
+  /** Whether the offset advanced — i.e. there was work to persist. */
+  advanced: boolean;
+}
+
 /**
- * Tail the active session log once: parse transcript lines appended since the
- * last pump, append normalized events to .codument/events.jsonl, and persist
- * the byte offset so restarts never double-emit. Idempotent and cheap; call on
- * an interval. Only whole lines are consumed (a half-written trailing line is
- * left for the next pump). Returns how many events were appended.
+ * Parse one session log from its recorded offset to end-of-file into normalized
+ * events — pure with respect to the event log (it does NOT append or write
+ * state; the caller decides what to do with the result). Only whole lines are
+ * consumed (a half-written trailing line waits for the next pass). The registry
+ * is read lazily, only once there is actual work, so idle polls stay cheap.
  */
-export function pumpFeed(root: string, home = homedir()): PumpResult {
-  const session = resolveSessionLog(root, home);
-  if (!session) return { emitted: 0, session: null };
+function parseSession(
+  root: string,
+  session: string,
+  state: FeedState,
+  registry?: Registry,
+): ParsedSession {
+  const carried = state.feature[session] ?? null;
+  const idle = (offset: number): ParsedSession => ({
+    events: [],
+    offset,
+    feature: carried,
+    advanced: false,
+  });
 
   let size: number;
   try {
     size = statSync(session).size;
   } catch {
-    return { emitted: 0, session };
+    return idle(state.offsets[session] ?? 0); // session log vanished — nothing to parse
   }
 
-  const state = readFeedState(root);
   let offset = state.offsets[session] ?? 0;
   if (offset > size) offset = 0; // truncated/rotated — restart this file
-  if (offset === size) return { emitted: 0, session };
+  if (offset === size) return idle(offset);
 
   const chunk = readFrom(session, offset, size);
   const lastNL = chunk.lastIndexOf("\n");
-  if (lastNL === -1) return { emitted: 0, session }; // no complete line yet
+  if (lastNL === -1) return idle(offset); // no complete line yet
   const complete = chunk.slice(0, lastNL + 1);
   const consumedBytes = Buffer.byteLength(complete, "utf-8");
 
-  const registry = readRegistrySync(join(root, "docs", ".registry.json"));
-  let feature: string | null = state.feature[session] ?? null;
-  let emitted = 0;
-
+  const reg = registry ?? readRegistrySync(join(root, "docs", ".registry.json"));
+  let feature: string | null = carried;
+  const events: ParsedSession["events"] = [];
   for (const line of complete.split("\n")) {
     if (!line.trim()) continue;
     let record: unknown;
@@ -441,17 +494,137 @@ export function pumpFeed(root: string, home = homedir()): PumpResult {
     } catch {
       continue; // skip malformed lines, keep advancing the offset
     }
-    const result = recordToEvents(record, { root, registry, prevFeature: feature });
+    const result = recordToEvents(record, { root, registry: reg, prevFeature: feature });
     feature = result.feature;
-    for (const ev of result.events) {
-      appendEvent(root, ev);
-      emitted += 1;
+    events.push(...result.events);
+  }
+
+  return { events, offset: offset + consumedBytes, feature, advanced: true };
+}
+
+/**
+ * Tail the active session log once: parse transcript lines appended since the
+ * last pump, append normalized events to .codument/events.jsonl, and persist
+ * the byte offset so restarts never double-emit. Idempotent and cheap; call on
+ * an interval. Feed-state is written only when the offset actually advanced, so
+ * idle polls don't churn the file. Returns how many events were appended.
+ */
+export function pumpFeed(root: string, home = homedir()): PumpResult {
+  const resolved = resolveSessionLog(root, home);
+  if (!resolved) return { emitted: 0, session: null };
+
+  // Key feed-state by the canonical path so an alias can't reset the offset and
+  // re-emit (the same key `resetFeed` uses).
+  const session = canonSession(resolved);
+  const state = readFeedState(root);
+  const parsed = parseSession(root, session, state);
+  for (const ev of parsed.events) appendEvent(root, ev);
+  if (parsed.advanced) {
+    state.offsets[session] = parsed.offset;
+    if (parsed.feature) state.feature[session] = parsed.feature;
+    writeFeedState(root, state);
+  }
+  return { emitted: parsed.events.length, session: resolved };
+}
+
+/** True for an event feed produced — i.e. re-derivable from a transcript. The
+ *  unconditional `source: "feed"` marker is authoritative; the legacy
+ *  session/uuid stamp is also honored so logs written before the marker existed
+ *  are still recognized. Manual `emit`s and `review`/`step` notes match none of
+ *  these and are left untouched. */
+function isFeedSourced(event: CodumentEvent): boolean {
+  const data = event.data as Record<string, unknown> | undefined;
+  if (!data || typeof data !== "object") return false;
+  return (
+    data.source === "feed" ||
+    typeof data.session === "string" ||
+    typeof data.uuid === "string"
+  );
+}
+
+export interface ResetResult {
+  /** Feed-sourced events superseded by a fresh rebuild. */
+  removed: number;
+  /** Non-feed events (manual emits, review notes) left in place. */
+  kept: number;
+  /** Feed events whose transcript is gone, kept verbatim (could not re-derive). */
+  preserved: number;
+  /** Events re-emitted by the fresh rebuild. */
+  emitted: number;
+  /** The active session resolved for the rebuild, if any. */
+  session: string | null;
+}
+
+/**
+ * Rebuild every feed-sourced event from the live transcript(s) using the
+ * *current* normalization and attribution — the cure for stale events left by an
+ * older `normalizeModelId` (e.g. before a new model id or a `[1m]` suffix was
+ * handled, which show up `unpriced`). It re-pumps every session the cursor has
+ * touched (not just the newest, so multi-session history isn't undercounted),
+ * preserves manual `emit`s and `review` notes, and — crucially — keeps any feed
+ * event whose transcript no longer exists verbatim rather than dropping it, so a
+ * rebuild can never silently lose cost data it can't re-derive. The new log is
+ * assembled in memory and written once (atomically): no backup, but also no
+ * destroy-before-rebuild window.
+ */
+export function resetFeed(root: string, home = homedir()): ResetResult {
+  const prior = readFeedState(root);
+  const all = readAllEvents(root);
+  const active = resolveSessionLog(root, home);
+
+  // Sessions to rebuild from: every transcript the cursor touched + active now,
+  // canonicalized so a path alias can't double-pump the same file.
+  const sessions = new Set<string>();
+  for (const s of Object.keys(prior.offsets)) sessions.add(canonSession(s));
+  if (active) sessions.add(canonSession(active));
+
+  // Nothing to do on a fresh/never-fed project — don't create empty artifacts.
+  if (all.length === 0 && sessions.size === 0) {
+    return { removed: 0, kept: 0, preserved: 0, emitted: 0, session: active };
+  }
+
+  const kept = all.filter((e) => !isFeedSourced(e));
+  const feedEvents = all.filter((e) => isFeedSourced(e));
+
+  // Rebuild from each existing transcript, from offset 0, collecting in memory.
+  // Record the sessionId of every transcript that still exists so we can tell a
+  // genuinely-gone session apart from a turn the rebuild simply chose not to
+  // re-emit (e.g. a zero-usage `<synthetic>` turn).
+  const state: FeedState = { offsets: {}, feature: {} };
+  const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+  const rebuilt: CodumentEvent[] = [];
+  const presentSessionIds = new Set<string>();
+  for (const session of sessions) {
+    if (!existsSync(session)) continue; // transcript gone — its events are orphans
+    const sid = sessionIdOf(session);
+    if (sid) presentSessionIds.add(sid);
+    const parsed = parseSession(root, session, state, registry);
+    for (const ev of parsed.events) rebuilt.push(ev);
+    if (parsed.advanced) {
+      state.offsets[session] = parsed.offset;
+      if (parsed.feature) state.feature[session] = parsed.feature;
     }
   }
 
-  state.offsets[session] = offset + consumedBytes;
-  if (feature) state.feature[session] = feature;
+  // A prior feed event is superseded when its source transcript still exists
+  // (the from-scratch re-pump is the authoritative replacement for that whole
+  // session, including any turns it deliberately skipped). It is preserved only
+  // when its session's transcript is gone — never a silent loss, but also never
+  // resurrecting turns the rebuild intentionally dropped.
+  const orphaned = feedEvents.filter((e) => {
+    const sid = (e.data as Record<string, unknown> | undefined)?.session;
+    return !(typeof sid === "string" && presentSessionIds.has(sid));
+  });
+
+  // Assemble once, then write once. Events first (the precious data), then state.
+  rewriteEvents(root, [...kept, ...orphaned, ...rebuilt]);
   writeFeedState(root, state);
 
-  return { emitted, session };
+  return {
+    removed: feedEvents.length - orphaned.length,
+    kept: kept.length,
+    preserved: orphaned.length,
+    emitted: rebuilt.length,
+    session: active,
+  };
 }

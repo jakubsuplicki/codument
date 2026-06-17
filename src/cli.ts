@@ -98,6 +98,10 @@ program
   .option("--once", "Single backfill pass and exit")
   .option("--interval <ms>", "Poll interval in milliseconds (default 1000)")
   .option("--dir <path>", "Repo to feed (default: current directory)")
+  .option(
+    "--reset",
+    "Rebuild feed-sourced events from the transcript at the current normalization (re-prices stale/unpriced events); preserves manual emits and review notes",
+  )
   .action(feed);
 
 program

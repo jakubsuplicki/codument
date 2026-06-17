@@ -1,11 +1,12 @@
 import pc from "picocolors";
-import { pumpFeed, resolveSessionLog } from "../lib/claude-feed.js";
+import { pumpFeed, resetFeed, resolveSessionLog } from "../lib/claude-feed.js";
 
 interface FeedOptions {
   root?: string;
   dir?: string;
   once?: boolean;
   interval?: string | number;
+  reset?: boolean;
 }
 
 const NO_SESSION = (root: string): void => {
@@ -27,6 +28,35 @@ const NO_SESSION = (root: string): void => {
  */
 export async function feed(options: FeedOptions = {}): Promise<void> {
   const root = options.root ?? options.dir ?? process.cwd();
+
+  // Maintenance one-shot: rebuild feed-sourced events under the current
+  // normalization (re-prices stale/unpriced events). Runs even with no live
+  // session, since it can rebuild from the transcripts the cursor already knows.
+  if (options.reset) {
+    const { removed, kept, preserved, emitted, session } = resetFeed(root);
+    console.log(
+      `${pc.green("✓")} feed reset · re-fed ${emitted} event${emitted === 1 ? "" : "s"}, ` +
+        `dropped ${removed} stale, kept ${kept} other`,
+    );
+    if (preserved > 0) {
+      console.log(
+        pc.yellow(
+          `  ⚠ preserved ${preserved} event${preserved === 1 ? "" : "s"} from transcript(s) no longer present — kept as-is, not re-priced`,
+        ),
+      );
+    }
+    if (removed === 0 && emitted === 0 && preserved === 0) {
+      console.log(
+        pc.dim("  (nothing to rebuild — no feed events and no Claude session for this project)"),
+      );
+    } else if (!session) {
+      console.log(
+        pc.dim("  (no active session resolved — rebuilt from prior feed history only)"),
+      );
+    }
+    return;
+  }
+
   const session = resolveSessionLog(root);
   if (!session) {
     NO_SESSION(root);

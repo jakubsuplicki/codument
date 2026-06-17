@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, mkdir, writeFile, appendFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, appendFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,11 +8,14 @@ import {
   featureForFile,
   resolveSessionLog,
   pumpFeed,
+  resetFeed,
   normalizeModelId,
   type FeedContext,
 } from "../src/lib/claude-feed.js";
 import { costOf } from "../src/lib/token-cost.js";
-import { readRecentEvents } from "../src/lib/events.js";
+import { appendEvent, readAllEvents, readRecentEvents } from "../src/lib/events.js";
+import { emitTokens } from "../src/lib/emit-producer.js";
+import { summarizeTokens } from "../src/lib/token-report.js";
 import type { Registry } from "../src/lib/registry.js";
 
 const REGISTRY: Registry = {
@@ -130,6 +133,7 @@ describe("recordToEvents", () => {
     const tok = events.find((e) => e.type === "tokens");
     assert.ok(tok, "a tokens event is emitted");
     assert.deepEqual(tok!.data, {
+      source: "feed", // unconditional marker so reset can always identify feed events
       model: "opus-4.8", // canonicalized from the transcript's claude-opus-4-8
       input: 100,
       output: 20,
@@ -299,5 +303,229 @@ describe("pumpFeed (idempotent tailer)", () => {
     await appendFile(log, rest + "\n"); // finish the second line
     pumpFeed(root, home);
     assert.equal(readRecentEvents(root, 50).length, 2);
+  });
+});
+
+describe("resetFeed (rebuild feed-sourced events at current normalization)", () => {
+  let root: string;
+  let home: string;
+  let log: string;
+  const TRANS_TS = "2026-06-16T10:00:00.000Z";
+  // Two transcript turns whose raw model id (`claude-opus-4-8[1m]`) the *current*
+  // normalizeModelId canonicalizes to the priced `opus-4.8`.
+  const rec = (uuid: string) =>
+    JSON.stringify({
+      type: "assistant",
+      timestamp: TRANS_TS,
+      uuid,
+      sessionId: "s9",
+      cwd: root,
+      message: {
+        role: "assistant",
+        model: "claude-opus-4-8[1m]",
+        usage: {
+          input_tokens: 1000,
+          output_tokens: 200,
+          cache_read_input_tokens: 50000,
+          cache_creation_input_tokens: 0,
+        },
+        content: [],
+      },
+    });
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-reset-proj-"));
+    home = await mkdtemp(join(tmpdir(), "codument-reset-home-"));
+    const dir = join(home, ".claude", "projects", "proj");
+    await mkdir(dir, { recursive: true });
+    log = join(dir, "sess.jsonl");
+    await writeFile(log, rec("t1") + "\n" + rec("t2") + "\n");
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  });
+
+  // A feed event written by an OLDER feed that left the model id un-normalized
+  // (so it prices as unpriced today). Carries the session/uuid stamp feed adds.
+  const staleEvent = (uuid: string) => ({
+    type: "tokens",
+    ts: TRANS_TS,
+    data: {
+      model: "claude-opus-4-8[1m]",
+      input: 1000,
+      output: 200,
+      cacheRead: 50000,
+      cacheCreate: 0,
+      session: "s9",
+      uuid,
+    },
+  });
+
+  it("drops stale feed events and rebuilds them priced at the current normalization", async () => {
+    appendEvent(root, staleEvent("t1"));
+    appendEvent(root, staleEvent("t2"));
+    // Mark the transcript as already fully consumed, so only a reset (not a
+    // normal pump) can rebuild — this is the real-world stale scenario.
+    const size = (await stat(log)).size;
+    await mkdir(join(root, ".codument"), { recursive: true });
+    await writeFile(
+      join(root, ".codument", "feed-state.json"),
+      JSON.stringify({ offsets: { [log]: size }, feature: {} }),
+    );
+
+    // Before: the raw id is unpriced → no derivable cost.
+    const before = summarizeTokens(readAllEvents(root));
+    assert.equal(before.totals.cost, null);
+    assert.ok(before.unpriced.includes("claude-opus-4-8[1m]"));
+
+    const result = resetFeed(root, home);
+    assert.equal(result.removed, 2);
+    assert.equal(result.emitted, 2);
+
+    const after = summarizeTokens(readAllEvents(root));
+    assert.deepEqual(after.unpriced, []);
+    assert.ok(after.totals.cost && after.totals.cost.total > 0);
+    // Exactly two priced opus-4.8 events, no stale survivors, no duplicates.
+    const toks = readAllEvents(root).filter((e) => e.type === "tokens");
+    assert.equal(toks.length, 2);
+    assert.ok(toks.every((e) => (e.data as Record<string, unknown>).model === "opus-4.8"));
+  });
+
+  it("preserves manual emit and review events while rebuilding feed events", () => {
+    emitTokens(
+      root,
+      { input: 5_000_000, output: 0, cacheRead: 0, cacheCreate: 0 },
+      { model: "opus-4.8", feature: "manual" },
+    );
+    appendEvent(root, { type: "review", message: "looks good" });
+    appendEvent(root, staleEvent("t1")); // the only feed event → dropped + rebuilt
+
+    const result = resetFeed(root, home);
+    assert.equal(result.removed, 1); // only the stamped feed event
+    assert.equal(result.kept, 2); // manual emit + review survive
+    assert.equal(result.emitted, 2); // both transcript turns re-fed
+
+    const after = readAllEvents(root);
+    assert.ok(after.some((e) => e.type === "review"));
+    assert.ok(
+      after.some(
+        (e) => e.type === "tokens" && (e.data as Record<string, unknown>).feature === "manual",
+      ),
+      "the manual emit (no session stamp) is preserved",
+    );
+  });
+
+  it("is idempotent: a second reset yields identical totals and a normal pump adds nothing", () => {
+    const first = resetFeed(root, home);
+    const t1 = summarizeTokens(readAllEvents(root)).totals;
+
+    const second = resetFeed(root, home);
+    const t2 = summarizeTokens(readAllEvents(root)).totals;
+
+    assert.deepEqual(t2, t1); // no drift, no accumulation
+    assert.equal(second.removed, first.emitted); // re-drops exactly what it re-made
+    assert.equal(pumpFeed(root, home).emitted, 0); // offset cursor restored
+  });
+
+  it("preserves feed events whose transcript is gone — never silently loses cost data", async () => {
+    // Two stale feed events from a session whose transcript no longer exists.
+    const gonePath = join(home, ".claude", "projects", "proj", "gone.jsonl");
+    const goneEvent = (uuid: string) => ({
+      type: "tokens",
+      ts: TRANS_TS,
+      data: { source: "feed", model: "opus-4.8", input: 10, output: 5, cacheRead: 0, cacheCreate: 0, session: "sg", uuid },
+    });
+    appendEvent(root, goneEvent("g1"));
+    appendEvent(root, goneEvent("g2"));
+    await mkdir(join(root, ".codument"), { recursive: true });
+    await writeFile(
+      join(root, ".codument", "feed-state.json"),
+      JSON.stringify({ offsets: { [gonePath]: 500, [log]: 0 }, feature: {} }),
+    );
+
+    const result = resetFeed(root, home);
+    // The live transcript (t1,t2) is rebuilt; the gone session's events are kept.
+    assert.equal(result.emitted, 2);
+    assert.equal(result.preserved, 2);
+    assert.equal(result.removed, 0); // nothing superseded — g1/g2 weren't in any transcript
+
+    const uuids = readAllEvents(root)
+      .filter((e) => e.type === "tokens")
+      .map((e) => (e.data as Record<string, unknown>).uuid);
+    assert.ok(uuids.includes("g1") && uuids.includes("g2"), "gone-session events survive");
+    assert.ok(uuids.includes("t1") && uuids.includes("t2"), "live-session events rebuilt");
+  });
+
+  it("rebuilds every session the cursor touched, not just the newest (multi-session)", async () => {
+    const dir = join(home, ".claude", "projects", "proj");
+    const log2 = join(dir, "sess2.jsonl");
+    const rec2 = (uuid: string) =>
+      JSON.stringify({
+        type: "assistant",
+        timestamp: TRANS_TS,
+        uuid,
+        sessionId: "s2",
+        cwd: root,
+        message: {
+          role: "assistant",
+          model: "claude-opus-4-8",
+          usage: { input_tokens: 100, output_tokens: 50 },
+          content: [],
+        },
+      });
+    await writeFile(log2, rec2("m1") + "\n" + rec2("m2") + "\n");
+    await mkdir(join(root, ".codument"), { recursive: true });
+    await writeFile(
+      join(root, ".codument", "feed-state.json"),
+      JSON.stringify({ offsets: { [log]: 0, [log2]: 0 }, feature: {} }),
+    );
+
+    const result = resetFeed(root, home);
+    assert.equal(result.emitted, 4); // both transcripts rebuilt (2 + 2)
+    const sessions = new Set(
+      readAllEvents(root)
+        .filter((e) => e.type === "tokens")
+        .map((e) => (e.data as Record<string, unknown>).session),
+    );
+    assert.deepEqual([...sessions].sort(), ["s2", "s9"]);
+  });
+
+  it("drops a stale zero-usage event when its session is still present (not preserved)", () => {
+    // A leftover <synthetic> event stamped with the LIVE session (s9). Its
+    // transcript exists, so reset must drop it — not mistake it for an orphan.
+    appendEvent(root, {
+      type: "tokens",
+      ts: TRANS_TS,
+      data: { source: "feed", model: "<synthetic>", input: 0, output: 0, cacheRead: 0, cacheCreate: 0, session: "s9", uuid: "syn1" },
+    });
+
+    const result = resetFeed(root, home);
+    assert.equal(result.preserved, 0); // session s9 is present → not an orphan
+    const models = readAllEvents(root)
+      .filter((e) => e.type === "tokens")
+      .map((e) => (e.data as Record<string, unknown>).model);
+    assert.ok(!models.includes("<synthetic>"), "stale synthetic event dropped");
+    assert.deepEqual([...new Set(models)], ["opus-4.8"]);
+  });
+
+  it("rebuilds from prior offsets when no active session resolves (offsets-only fallback)", async () => {
+    // Re-point the transcript's cwd away from root so resolveSessionLog returns null.
+    await writeFile(
+      log,
+      rec("t1").replace(`"cwd":"${root}"`, '"cwd":"/elsewhere"') +
+        "\n" +
+        rec("t2").replace(`"cwd":"${root}"`, '"cwd":"/elsewhere"') +
+        "\n",
+    );
+    await mkdir(join(root, ".codument"), { recursive: true });
+    await writeFile(
+      join(root, ".codument", "feed-state.json"),
+      JSON.stringify({ offsets: { [log]: 0 }, feature: {} }),
+    );
+
+    const result = resetFeed(root, home);
+    assert.equal(result.session, null); // no active session resolved
+    assert.equal(result.emitted, 2); // still rebuilt from the prior-offset transcript
   });
 });
