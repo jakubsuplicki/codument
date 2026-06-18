@@ -20,7 +20,7 @@ const program = new Command();
 
 program
   .name("codument")
-  .description("Docs-backed delivery workflow for AI coding agents")
+  .description("Docs-based guardrails for AI coding workflows: coverage scoring, doc-drift checks, and diff safety review.")
   .version(version);
 
 program
@@ -35,7 +35,7 @@ program
 
 program
   .command("scan")
-  .description("Scan codebase and generate documentation for existing code")
+  .description("Scan codebase and create documentation scaffolds for existing code")
   .action(scan);
 
 program
@@ -156,7 +156,7 @@ program
         `To run an approved plan, tell your agent:  ${pc.bold('"codument, run the plan"')}`,
         "",
         "The CLI only does setup and deterministic checks:",
-        `  ${pc.dim("codument init | scan | doctor | review | report | watch | demo | migrate-registry | adopt | update | benchmark")}`,
+        `  ${pc.dim("codument init | scan | doctor | review | report | watch | feed | steps | demo | migrate-registry | adopt | update | benchmark")}`,
       ].join("\n"),
     );
   });

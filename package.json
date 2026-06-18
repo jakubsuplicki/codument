@@ -1,7 +1,7 @@
 {
   "name": "codument",
   "version": "0.5.0",
-  "description": "Docs-backed delivery workflow for AI coding agents",
+  "description": "Docs-based guardrails for AI coding workflows: coverage scoring, doc-drift checks, and diff safety review.",
   "type": "module",
   "bin": {
     "codument": "dist/cli.js"
@@ -15,7 +15,8 @@
     "skills",
     "agents",
     "rules",
-    "fixtures"
+    "fixtures",
+    "!**/*.map"
   ],
   "engines": {
     "node": ">=18"
@@ -30,12 +31,14 @@
   },
   "keywords": [
     "ai-agents",
-    "codex",
     "claude",
+    "change-control",
+    "code-review",
+    "guardrails",
+    "diff-review",
     "documentation",
-    "delivery-workflow",
-    "ai",
-    "docs"
+    "docs",
+    "ai"
   ],
   "license": "Apache-2.0",
   "devDependencies": {

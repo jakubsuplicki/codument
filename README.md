@@ -219,6 +219,17 @@ npx codument feed --dir ../other
 
 It reads telemetry that already exists (no extra token cost), is idempotent (a byte-offset cursor means restarts never double-count), and is best-effort against Claude Code's internal transcript format. It's the Claude-specific adapter for the otherwise vendor-neutral `emit` + events-log seam.
 
+### `codument steps` — mirror the active plan's checklist
+
+Prints the active plan's delivery-plan checklist so you can mirror it into a native to-do panel, and optionally logs the active step for `watch`:
+
+```bash
+npx codument steps                       # the single approved plan with an unchecked step
+npx codument steps --json                # machine-readable, with per-step to-do status
+npx codument steps --emit                # append a `step` event to .codument/events.jsonl (for watch)
+npx codument steps --plan docs/features/foo.md
+```
+
 ### `codument emit tokens` — estimated token cost, per feature
 
 codument never calls an AI model, so it can't meter tokens itself. Instead your agent (or a small hook that reads its session transcript) reports usage as it works, and `watch` shows an **estimated** running cost, attributed to the feature being worked:
@@ -287,7 +298,7 @@ npx codument update --agents codex,claude   # override stored profiles
 <details>
 <summary><b>Autopilot — "codument it"</b></summary>
 
-Codument never runs your coding agent — your agent does. So you trigger autopilot by telling your agent, not by running a CLI command. There is no `codument run` command: the CLI only does setup and deterministic checks.
+Codument never runs your coding agent — your agent does. So you trigger autopilot by telling your agent, not by running a CLI command. Running `codument run` (alias `autopilot`) only prints this reminder and points you back at the phrase — the CLI itself does setup and deterministic checks, never your agent.
 
 Once a plan is approved, tell your agent **"codument, run the plan"** (also recognized: "run the plan", "codument this plan", "autopilot", or `/work-step --auto`). Your agent then works the approved plan end to end: for each remaining step it implements, reviews, and commits without stopping for routine confirmations — one focused commit per step, under your own identity (no AI co-author trailer).
 
@@ -382,7 +393,7 @@ cd /path/to/codument
 npm --cache /private/tmp/codument-npm-cache pack
 
 cd /path/to/existing-project
-npm install -D ../codument/codument-0.4.1.tgz
+npm install -D ../codument/codument-0.5.0.tgz
 npx codument adopt --agents codex,claude
 ```
 </details>
