@@ -60,7 +60,7 @@ Use Codument as the durable control plane for agent-led engineering work:
 Use these routing rules at the start of each user request. Do not wait for the user to name a skill when their intent is clear.
 
 - Before editing source, name the one assumption the change depends on and run the assumption gate below. If a load-bearing assumption is unconfirmed, or the request is a rough idea / concept / "before we code" discussion, use `grill-with-docs` first — load the smallest relevant docs and source, surface the assumption with your recommended reading, ask one sharp question at a time, and do not edit source. If every load-bearing assumption is confirmed or cheap to reverse, go straight to implementation.
-- Settled scope with enough answers for implementation design: use `plan-with-docs`. Write or update the durable feature/concept plan, mark it awaiting approval, and stop for explicit user approval.
+- Settled scope with enough answers for implementation design: use `plan-with-docs`. Write or update the durable feature/concept plan, mark it awaiting approval, show its delivery-plan checklist inline in the chat (the steps themselves, never just a doc link), and stop for explicit user approval.
 - Approved plan or user says to continue an approved plan: use `work-step`. Implement only the first unchecked step.
 - Any source edit, in or out of the delivery-plan loop, gets reviewed before commit — review is owed to the edit, not to a plan step. Scale it: a trivial edit (rename, comment, typo, pure-config) gets a one-pass self-review of the diff; a behavior change — public interface, data shape, deletion, or anything that tripped the assumption gate — gets the full `review-work` / `code-reviewer` pass. An ad-hoc bug fix is a behavior change: review it even though no plan step produced it.
 - Clean review, or review findings explicitly fixed/deferred by the user: offer `commit-work` as the next gated action and wait for the user to ask for it.
@@ -105,6 +105,7 @@ Autopilot is off by default and applies to one run only; never assume it from a 
 - During `review-work` in autopilot, auto-apply only safe, obvious fixes, then proceed to `commit-work`. Always pause for any finding that needs a judgment call or that touches public interfaces, security, data loss or deletions, or dependency changes.
 - Hard pause conditions (stop the run, report a compact summary, wait for the user): a judgment-call review finding, a verification failure, or any change that falls outside the approved plan.
 - Interrupt: if the user says "pause" or "stop autopilot", immediately return to the manual one-step-at-a-time gated loop.
+- Show progress at every step boundary: before starting each step, post a short checklist inline in the chat — the step just completed, the step now starting, and what remains. Autopilot suppresses the approval and option prompts and the waiting between steps, not the progress reporting; never advance from one step to the next silently.
 - On any pause or on plan completion, report a compact summary of steps done, commits made, and why it stopped.
 
 The Codument CLI does not run your coding agent. There is no `codument run` command; autopilot lives entirely in these instructions, which your agent follows.
@@ -121,7 +122,7 @@ A task is NOT complete until:
 8. Review findings are resolved or explicitly deferred
 
 ### Planning and approval
-Do not move from a rough idea into source edits automatically. First use the docs-backed grilling and planning workflow to resolve scope, non-goals, acceptance criteria, verification strategy, and implementation steps. Begin implementation only after the user approves the plan.
+Do not move from a rough idea into source edits automatically. First use the docs-backed grilling and planning workflow to resolve scope, non-goals, acceptance criteria, verification strategy, and implementation steps. Begin implementation only after the user approves the plan. Surface the plan's checklist inline in the chat at the approval gate, so the user approves the steps they can see rather than a link they must open.
 
 ### Documentation Registry
 The file `docs/.registry.json` maps source files to their documentation.

@@ -1,5 +1,5 @@
 {
-  "version": "0.3.0",
+  "version": "0.5.0",
   "initialized": "2026-03-29",
   "project": {
     "language": "typescript",
@@ -18,26 +18,26 @@
     "sourceFiles": 13
   },
   "fileHashes": {
-    ".agents/skills/grill-with-docs/SKILL.md": "0d1e7a98aa70cdea",
-    ".agents/skills/plan-with-docs/SKILL.md": "fe650d1ddc993337",
+    ".agents/skills/grill-with-docs/SKILL.md": "ec6dfe9030cbd569",
+    ".agents/skills/plan-with-docs/SKILL.md": "d3a00f11b023d91b",
     ".agents/skills/tdd/SKILL.md": "121de0703b9f0f25",
-    ".agents/skills/work-step/SKILL.md": "9359c2cc5540f0ed",
-    ".agents/skills/review-work/SKILL.md": "86117f9abac066a8",
-    ".agents/skills/commit-work/SKILL.md": "84069e5f57949549",
-    ".agents/skills/update-docs/SKILL.md": "55028ccc68c10447",
-    ".claude/skills/grill-with-docs/SKILL.md": "0d1e7a98aa70cdea",
-    ".claude/skills/plan-with-docs/SKILL.md": "fe650d1ddc993337",
+    ".agents/skills/work-step/SKILL.md": "742e18a9371771ab",
+    ".agents/skills/review-work/SKILL.md": "020c354e2223d4a3",
+    ".agents/skills/commit-work/SKILL.md": "5fdbd394edaab23e",
+    ".agents/skills/update-docs/SKILL.md": "f178796e6fd6f407",
+    ".claude/skills/grill-with-docs/SKILL.md": "ec6dfe9030cbd569",
+    ".claude/skills/plan-with-docs/SKILL.md": "d3a00f11b023d91b",
     ".claude/skills/tdd/SKILL.md": "121de0703b9f0f25",
-    ".claude/skills/work-step/SKILL.md": "9359c2cc5540f0ed",
-    ".claude/skills/review-work/SKILL.md": "86117f9abac066a8",
-    ".claude/skills/commit-work/SKILL.md": "84069e5f57949549",
-    ".claude/skills/update-docs/SKILL.md": "55028ccc68c10447",
+    ".claude/skills/work-step/SKILL.md": "742e18a9371771ab",
+    ".claude/skills/review-work/SKILL.md": "020c354e2223d4a3",
+    ".claude/skills/commit-work/SKILL.md": "5fdbd394edaab23e",
+    ".claude/skills/update-docs/SKILL.md": "f178796e6fd6f407",
     ".claude/rules/documentation.md": "992f46bfb6e8c42b",
     ".claude/agents/doc-writer.md": "aafdbda0721efad1",
     ".claude/agents/doc-scanner.md": "0dc3127f8fab8276",
     ".claude/agents/code-reviewer.md": "f499dcaf04d6f571",
-    "AGENTS.md": "53c6877d1c110c0d",
-    "CLAUDE.md": "5d4239620728db75"
+    "AGENTS.md": "b24daaaffefaec28",
+    "CLAUDE.md": "7b4824430aafc7f6"
   },
   "agents": [
     "codex",
