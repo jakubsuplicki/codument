@@ -115,6 +115,7 @@ function printHuman(report: ReviewReport): void {
 
   console.log(
     `  ${report.changedFileCount} changed file(s): ${state.changedSources.length} source, ${state.changedDocs.length} docs` +
+      (state.otherChanged.length > 0 ? `, ${state.otherChanged.length} other` : "") +
       (plan ? pc.dim(`  (plan: ${plan.plan})`) : ""),
   );
   console.log();

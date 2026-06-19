@@ -256,12 +256,15 @@ describe("watch tape integration", () => {
       state: {
         changedSources: [],
         changedDocs: [],
+        byFeature: [],
         staleDocs: [],
         riskTouches: [],
         unmapped: [],
+        otherChanged: [],
         outOfPlan: [],
         highFanout: [],
         dependents: [],
+        planScoped: false,
       },
     } as unknown as Parameters<typeof renderFrame>[0];
     const coverage = { coverage: { percent: 94 } } as never;

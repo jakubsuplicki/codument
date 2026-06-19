@@ -205,7 +205,7 @@ npx codument watch --interval 1000
 npx codument watch --dir ../other  # watch another repo without cd
 ```
 
-`watch` reuses the exact analyzer `review` uses, so the live view and the snapshot can never disagree, and it tails the append-only `.codument/events.jsonl` flow log.
+`watch` leads with a plain-words verdict — `✓ CLEAN`, `▲ DRIFTING`, `■ AT RISK`, or `⊘ OFF-PLAN` — over the all-sessions estimated cost and a per-feature breakdown. It reuses the exact analyzer `review` uses, so the live view and the snapshot can never disagree, and it tails the append-only `.codument/events.jsonl` flow log.
 
 ### `codument feed` — populate the event log from the agent's session
 
@@ -239,13 +239,13 @@ codument emit tokens --model opus-4.8 --input 1200 --output 340 \
   --cache-read 8000 --feature auth --step 3
 ```
 
-That appends a **counts-only** record to `.codument/events.jsonl` — no dollars are stored. `watch` prices it live:
+That appends a **counts-only** record to `.codument/events.jsonl` — no dollars are stored. `watch` prices it live, under the verdict headline:
 
 ```text
-  token cost  (estimated)
-  515,000 tokens   $0.50
-    auth           $0.32
-    billing        $0.18
+  ✓ CLEAN    1 feature touched · docs current
+  Cost       $0.50 estimated · 1 session
+    auth         $0.32
+    billing      $0.18
 ```
 
 The four token buckets are priced separately — cache reads are ~10× cheaper than fresh input and dominate the count, so a single blended rate would overstate the bill badly. The figure is **always an estimate**, derived from a rate table at display time, never an invoice; per-feature numbers are an allocation of what the agent tagged.
@@ -261,6 +261,34 @@ The four token buckets are priced separately — cache reads are ~10× cheaper t
 ```
 
 The numbers above are **illustrative** — fill in each provider's current published rates. Your file merges *over* the built-in defaults — add new models, or override a single bucket of an existing one. A model with no rate isn't an error: its tokens are still counted and it's flagged `unpriced` rather than priced wrong. And because only counts are stored, changing a rate re-prices everything — past logs included — on the next `watch`.
+
+### `codument cost` — the full token-cost ledger
+
+`watch` shows a glanceable top-3 of where spend went; `codument cost` prints the **whole** ledger from the captured `.codument/events.jsonl` — the all-sessions estimated total, then every feature, model, and (when attributed) step, sorted by spend with each line's share:
+
+```bash
+npx codument cost                 # the full ledger
+npx codument cost --json          # the raw token summary, for scripts
+npx codument cost --dir ../other  # another repo without cd
+```
+
+```text
+codument cost  ·  my-app
+
+  $3,992.79 estimated  ·  22006 events
+  2.8M in · 33.9M out · 4.7B cache-read · 107.3M cache-create
+
+by feature
+  ingredient-catalog      $729.72   18%
+  cook-voice-loop-ux…     $447.39   11%
+  …
+
+by model
+  opus-4.8              $2,869.03   72%
+  opus-4.7                $906.51   23%
+```
+
+It's a pure read — it never tails or mutates the log (refresh capture with `feed`/`watch` first) and needs no git repo, just a `.codument/events.jsonl`. Cost is derived from the rate table at read time (an **estimate**, never a bill); an unknown model is flagged `unpriced` rather than priced wrong.
 
 ## 4 · Fix — from findings to clean
 

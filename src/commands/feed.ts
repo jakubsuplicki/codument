@@ -1,5 +1,5 @@
 import pc from "picocolors";
-import { pumpFeed, resetFeed, resolveSessionLog } from "../lib/claude-feed.js";
+import { backfillFeed, pumpFeed, resetFeed, resolveSessionLogs } from "../lib/claude-feed.js";
 
 interface FeedOptions {
   root?: string;
@@ -7,6 +7,7 @@ interface FeedOptions {
   once?: boolean;
   interval?: string | number;
   reset?: boolean;
+  backfill?: boolean;
 }
 
 const NO_SESSION = (root: string): void => {
@@ -54,11 +55,38 @@ export async function feed(options: FeedOptions = {}): Promise<void> {
         pc.dim("  (no active session resolved — rebuilt from prior feed history only)"),
       );
     }
+    if (options.backfill) {
+      console.log(
+        pc.dim("  (--backfill was redundant with --reset — reset already rebuilds from every matching session)"),
+      );
+    }
     return;
   }
 
-  const session = resolveSessionLog(root);
-  if (!session) {
+  // Retroactive one-shot: ingest every matching transcript from offset 0, adding
+  // only turns not already captured — picks up sessions that were never watched.
+  if (options.backfill) {
+    const { sessions, newSessions, added } = backfillFeed(root);
+    if (sessions === 0) {
+      NO_SESSION(root);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(
+      `${pc.green("✓")} backfill · +${added} event${added === 1 ? "" : "s"} from ` +
+        `${newSessions} of ${sessions} session${sessions === 1 ? "" : "s"}`,
+    );
+    if (added === 0) {
+      console.log(pc.dim("  (already complete — every turn was already captured)"));
+    }
+    return;
+  }
+
+  // Guard on the full matching set (the same discovery `pumpFeed` uses), not the
+  // single newest — otherwise the command can report "no session" in a fallback
+  // case where `pumpFeed` would in fact find and pump one.
+  const sessions = resolveSessionLogs(root);
+  if (sessions.length === 0) {
     NO_SESSION(root);
     process.exitCode = 1;
     return;
@@ -72,7 +100,8 @@ export async function feed(options: FeedOptions = {}): Promise<void> {
     return;
   }
 
-  console.log(pc.bold("codument feed") + pc.dim(`  ·  ${session}`));
+  const label = sessions.length === 1 ? sessions[0] : `${sessions.length} sessions`;
+  console.log(pc.bold("codument feed") + pc.dim(`  ·  ${label}`));
   console.log(
     pc.dim("  normalizing token usage + tool activity → .codument/events.jsonl · Ctrl-C to stop"),
   );

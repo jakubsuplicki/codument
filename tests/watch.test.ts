@@ -6,8 +6,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { appendEvent, readRecentEvents } from "../src/lib/events.js";
-import { renderFrame } from "../src/commands/watch.js";
+import { renderFrame, sessionStats } from "../src/commands/watch.js";
 import { MODEL_RATES, mergeRates } from "../src/lib/token-cost.js";
+import type { CodumentEvent } from "../src/lib/events.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, "..", "dist", "cli.js");
@@ -18,6 +19,40 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await rm(tmp, { recursive: true, force: true });
+});
+
+describe("sessionStats — calendar span, not summed session time", () => {
+  const tok = (session: string, ts: string): CodumentEvent =>
+    ({
+      type: "tokens",
+      ts,
+      data: { session, model: "opus-4.8", input: 1, output: 0, cacheRead: 0, cacheCreate: 0 },
+    }) as CodumentEvent;
+
+  it("reports wall-clock elapsed across sessions, never the sum of overlapping spans", () => {
+    // A spans 00:00–02:00 (2h), B spans 01:00–04:00 (3h); they overlap.
+    const events = [
+      tok("A", "2026-06-01T00:00:00.000Z"),
+      tok("A", "2026-06-01T02:00:00.000Z"),
+      tok("B", "2026-06-01T01:00:00.000Z"),
+      tok("B", "2026-06-01T04:00:00.000Z"),
+    ];
+    const { sessions, hours } = sessionStats(events);
+    assert.equal(sessions, 2);
+    // calendar span 00:00 → 04:00 = 4h. Summed per-session would be 2h + 3h = 5h.
+    assert.equal(hours, 4);
+  });
+
+  it("skips events with no session id or an unparseable timestamp", () => {
+    const events = [
+      tok("A", "2026-06-01T00:00:00.000Z"),
+      tok("A", "not-a-date"),
+      { type: "tokens", ts: "2026-06-01T09:00:00.000Z", data: { model: "opus-4.8" } } as CodumentEvent,
+    ];
+    const { sessions, hours } = sessionStats(events);
+    assert.equal(sessions, 1); // only "A"; the session-less event is ignored
+    assert.equal(hours, 0); // A has a single valid timestamp → no span
+  });
 });
 
 describe("events log", () => {
@@ -72,12 +107,15 @@ describe("renderFrame token block", () => {
       state: {
         changedSources: [],
         changedDocs: [],
+        byFeature: [],
         staleDocs: [],
         riskTouches: [],
         unmapped: [],
+        otherChanged: [],
         outOfPlan: [],
         highFanout: [],
         dependents: [],
+        planScoped: false,
       },
     }) as unknown as Review;
   const coverage = { coverage: { percent: 80 } } as never;
@@ -116,8 +154,8 @@ describe("renderFrame token block", () => {
       [tok({ model: "opus-4.8", input: 12000, output: 3000, cacheRead: 480000, cacheCreate: 20000, feature: "auth" })],
       NOW,
     );
-    assert.match(frame, /token cost/i);
-    assert.match(frame, /estimated/i);
+    assert.match(frame, /\bcost\b/i);
+    assert.match(frame, /est\./i);
     assert.match(frame, /\$0\.50/);
     // cost-first, with "new" (input+output+cacheCreate) split from cache-read
     assert.match(frame, /35\.0K new/);
@@ -162,6 +200,46 @@ describe("renderFrame token block", () => {
     assert.doesNotMatch(frame, /f-tiny/);
     assert.match(frame, /\$0\.91/);
     assert.match(frame, /1\.8M cache-read/);
+  });
+
+  it("leads cost with the all-sessions total and its session provenance", () => {
+    const frame = renderFrame(
+      gitReview(),
+      coverage,
+      [
+        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "a", session: "s1" }),
+        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "b", session: "s2" }),
+        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "c", session: "s3" }),
+      ],
+      NOW,
+    );
+    assert.match(frame, /\$1\.50/); // all three sessions summed (3 × 1M cache-read × $0.5/M)
+    assert.match(frame, /3 sessions/);
+  });
+
+  it("shows a 'this session' delta for cost accrued since the watch started", () => {
+    const before = tok(
+      { model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "a", session: "s1" },
+      "2026-06-16T09:00:00.000Z",
+    );
+    const after = tok(
+      { model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "a", session: "s1" },
+      "2026-06-16T11:00:00.000Z",
+    );
+    const frame = renderFrame(gitReview(), coverage, [before, after], NOW, {
+      sinceTs: "2026-06-16T10:00:00.000Z",
+    });
+    assert.match(frame, /\$1\.00/); // total across both
+    assert.match(frame, /\+\$0\.50 this session/); // only the turn after the watch started
+  });
+
+  it("omits the 'this session' delta when nothing accrued since the watch started", () => {
+    const old = tok(
+      { model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "a", session: "s1" },
+      "2026-06-16T09:00:00.000Z",
+    );
+    const frame = renderFrame(gitReview(), coverage, [old], NOW, { sinceTs: "2026-06-16T10:00:00.000Z" });
+    assert.doesNotMatch(frame, /this session/);
   });
 
   it("counts unpriced-model tokens in the total but flags them and charges $0", () => {
@@ -241,7 +319,7 @@ describe("renderFrame token block", () => {
     });
     assert.doesNotMatch(frame, /NaN/);
     assert.match(frame, /\$0\.50/);
-    assert.match(frame, /token cost/i);
+    assert.match(frame, /\bcost\b/i);
     assert.match(frame, /480\.0K cache-read/);
   });
 
@@ -317,7 +395,8 @@ describe("codument watch --once (CLI, temp git repo)", () => {
     });
     assert.match(out, /codument watch/);
     assert.match(out, /docs coverage/);
-    assert.match(out, /stale/);
+    // the changed risk-tagged auth source (doc not updated) → an AT RISK verdict
+    assert.match(out, /AT RISK/i);
   });
 
   it("watches a repo given by --dir from a different cwd (no cd needed)", async () => {

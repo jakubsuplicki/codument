@@ -8,6 +8,15 @@ import { readRecentEvents, type CodumentEvent } from "../lib/events.js";
 import { summarizeTokens } from "../lib/token-report.js";
 import { loadRates, type RateTable } from "../lib/token-cost.js";
 import { pumpFeed } from "../lib/claude-feed.js";
+import { readRegistrySync } from "../lib/registry.js";
+import {
+  classifyVerdict,
+  costProvenance,
+  formatCost,
+  isTestFile,
+  type CostModel,
+  type Severity,
+} from "../lib/verdict.js";
 
 interface WatchOptions {
   root?: string;
@@ -51,6 +60,10 @@ interface RenderOpts {
   mood?: Mood;
   /** Resolved model→rate table (defaults + .codument/rates.json); built-ins if omitted. */
   rates?: RateTable;
+  /** Registry feature count — the blast-radius denominator. */
+  totalFeatures?: number;
+  /** ISO time the watch run started — enables the "this session" cost delta. */
+  sinceTs?: string;
 }
 
 // Text kaomoji, never emoji: a real 🐶 renders at inconsistent widths and would
@@ -125,11 +138,6 @@ function buildTape(events: CodumentEvent[], extra: ActivityItem[]): ActivityItem
   return deduped.slice(0, 6);
 }
 
-function warnCount(n: number, label: string): string {
-  const text = `${n} ${label}`;
-  return n > 0 ? pc.yellow(text) : pc.dim(text);
-}
-
 /** The session id of the newest event that carries one, else undefined. Used to
  *  scope the frame to the current run so a cumulative events.jsonl doesn't show
  *  "all sessions ever" cost. */
@@ -151,6 +159,54 @@ function compactTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return `${n}`;
+}
+
+// Verdict glyph + status word + colour. The glyph carries the meaning so the
+// verdict survives a screenshot / colourblindness; colour only reinforces.
+const VERDICT_STYLE: Record<Severity, { symbol: string; word: string; paint: (s: string) => string }> = {
+  clean: { symbol: "✓", word: "CLEAN", paint: pc.green },
+  drifting: { symbol: "▲", word: "DRIFTING", paint: pc.yellow },
+  "off-plan": { symbol: "⊘", word: "OFF-PLAN", paint: pc.yellow },
+  "at-risk": { symbol: "■", word: "AT RISK", paint: pc.red },
+};
+
+function plural(n: number, one: string, many = one + "s"): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** A bar filled proportional to the largest value (relative rank, not absolute share). */
+function bar(value: number, max: number, width = 18): string {
+  const filled = max > 0 ? Math.round((value / max) * width) : 0;
+  return "█".repeat(filled) + "░".repeat(Math.max(0, width - filled));
+}
+
+/** Pad to width, or truncate with an ellipsis when a name overflows — keeps the
+ *  cost / findings columns aligned for long feature names. */
+function fit(name: string, width: number): string {
+  return name.length > width ? name.slice(0, width - 1) + "…" : name.padEnd(width);
+}
+
+/** Distinct feed sessions + the **calendar span** they cover — first→last
+ *  timestamped session event, i.e. wall-clock elapsed, not summed session time.
+ *  Reads as "31 sessions over 30 days" and can never exceed real elapsed time
+ *  (summing per-session spans would double-count overlap and inflate idle).
+ *  Timestamps are parsed to numbers before min/max so a stray non-ISO `ts` can't
+ *  win a lexicographic comparison and skew the span. */
+export function sessionStats(events: CodumentEvent[]): { sessions: number; hours: number } {
+  const sessions = new Set<string>();
+  let min = Infinity;
+  let max = -Infinity;
+  for (const e of events) {
+    const sid = (e.data as Record<string, unknown> | undefined)?.session;
+    if (typeof sid !== "string") continue;
+    const t = new Date(e.ts).getTime();
+    if (!Number.isFinite(t)) continue; // unparseable ts — skip, don't let it skew the span
+    sessions.add(sid);
+    if (t < min) min = t;
+    if (t > max) max = t;
+  }
+  const hours = max > min ? (max - min) / 3_600_000 : 0;
+  return { sessions: sessions.size, hours };
 }
 
 /** Pure frame renderer. `now` and `opts` are injected so output is testable. */
@@ -178,6 +234,10 @@ export function renderFrame(
   }
 
   const s = review.state;
+  const verdict = classifyVerdict(s, {
+    totalFeatures: opts.totalFeatures ?? 0,
+    testsTouched: s.changedSources.some(isTestFile),
+  });
   const mood = opts.mood ?? deriveMood(review);
   const { face, word } = mascotFor(mood, tick);
   const spin = mood === "working" ? pc.cyan(SPINNER[tick % SPINNER.length]) + " " : "";
@@ -212,58 +272,114 @@ export function renderFrame(
   }
   lines.push("");
 
-  // One compact change-state strip — the same facts as before, no longer a
-  // vertical stack. `docs coverage:` text is retained for the badge/contract.
-  const strip = [
-    `docs coverage: ${pc.bold(cov)}`,
-    `${review.changedFileCount} changed (${s.changedSources.length} src)`,
-    warnCount(s.staleDocs.length, "stale"),
-    warnCount(s.riskTouches.length, "risk"),
-    `${s.dependents.length} dep`,
-  ];
-  if (s.unmapped.length > 0) strip.push(warnCount(s.unmapped.length, "unmapped"));
-  if (review.plan) {
-    strip.push(warnCount(s.outOfPlan.length, "out-of-plan"));
-    strip.push(pc.dim(`plan: ${review.plan.plan}`));
-  }
-  lines.push("  " + strip.join(pc.dim(" · ")));
+  // ── Verdict headline — the plain-words state, glyph-led. ────────────────
+  const vs = VERDICT_STYLE[verdict.status];
+  lines.push(`  ${vs.paint(`${vs.symbol} ${vs.word}`)}   ${verdict.gloss}`);
   lines.push("");
 
-  // Estimated token cost, attributed per feature. codument can't meter tokens
-  // itself — these are counts the agent reported into the events log, priced from
-  // a static rate table, so the figure is an estimate, never a bill. Cost leads;
-  // tokens are split into "new" (input+output+cacheCreate — actual work) vs
-  // "cache-read" (the accumulated context re-read every turn), because in agentic
-  // sessions cache-read dwarfs everything and a single summed total reads as
-  // absurd. Hidden until a token event exists.
-  const tokens = summarizeTokens(scoped, opts.rates);
-  if (tokens.totals.eventCount > 0) {
+  // ── Cost headline — the all-sessions total (not session-scoped), with its
+  // provenance and the live delta. codument can't meter tokens; these are counts
+  // the agent reported into the events log, priced from a static table — an
+  // estimate, never a bill. New (input+output+cacheCreate, the real work) is split
+  // from cache-read (context re-read each turn), which dwarfs everything. Hidden
+  // until a token event exists.
+  const tokens = summarizeTokens(events, opts.rates);
+  const hasCost = tokens.totals.eventCount > 0;
+  if (hasCost) {
+    const total = tokens.totals.cost?.total ?? 0;
+    const stats = sessionStats(events);
+    // Live delta — cost of turns logged since the watch run started. Compared by
+    // parsed time so a stray non-ISO ts can't slip past a string comparison.
+    let deltaCost = 0;
+    if (opts.sinceTs) {
+      const sinceMs = new Date(opts.sinceTs).getTime();
+      const recent = events.filter((e) => {
+        const t = new Date(e.ts).getTime();
+        return Number.isFinite(t) && t >= sinceMs;
+      });
+      deltaCost = summarizeTokens(recent, opts.rates).totals.cost?.total ?? 0;
+    }
+    const cost: CostModel = {
+      total,
+      sessions: stats.sessions,
+      hours: stats.hours > 0 ? stats.hours : null,
+      thisSession: deltaCost,
+      byFeature: [],
+      complete: true,
+      capturedSessions: stats.sessions,
+      knownSessions: stats.sessions,
+    };
+    const delta = deltaCost > 0 ? `   ${pc.dim(`+${formatCost(deltaCost)} this session`)}` : "";
+    lines.push(
+      `  ${pc.bold("cost")}  ${pc.bold(formatCost(total))}  ${pc.dim(`·  ${costProvenance(cost)} · est.`)}${delta}`,
+    );
     const u = tokens.totals.usage;
     const fresh = u.input + u.output + u.cacheCreate;
-    const dollars = (n: number) => `$${n.toFixed(2)}`;
-    lines.push(
-      pc.bold("  token cost") + pc.dim(`  (estimated${session ? " · this session" : ""})`),
-    );
-    lines.push(
-      `  ${pc.bold(dollars(tokens.totals.cost?.total ?? 0))}   ${pc.dim(
-        `${compactTokens(fresh)} new · ${compactTokens(u.cacheRead)} cache-read`,
-      )}`,
-    );
-    const topFeatures = Object.entries(tokens.byFeature)
-      .sort((a, b) => (b[1].cost?.total ?? 0) - (a[1].cost?.total ?? 0))
-      .slice(0, 3);
-    for (const [feature, rollup] of topFeatures) {
-      lines.push(`    ${feature.padEnd(16)} ${dollars(rollup.cost?.total ?? 0)}`);
+    lines.push(pc.dim(`        ${compactTokens(fresh)} new · ${compactTokens(u.cacheRead)} cache-read`));
+    lines.push("");
+  }
+
+  // ── Now (active plan step), touched scope + blast radius. ───────────────
+  const lastStep = scoped
+    .filter((e) => e.type === "step")
+    .sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0))[0];
+  if (lastStep?.message) lines.push(`  ${pc.dim("now")}      ${lastStep.message}`);
+  const touched = [plural(verdict.blast.touched, "feature"), plural(review.changedFileCount, "file")];
+  if (verdict.unmapped > 0) touched.push(`${verdict.unmapped} unmapped`);
+  const blast =
+    verdict.blast.total > 0
+      ? `   ${pc.dim(`blast radius ${verdict.blast.touched} of ${verdict.blast.total}`)}`
+      : "";
+  lines.push(`  ${pc.dim("touched")}  ${touched.join(" · ")}${blast}`);
+
+  // ── Named findings — only rows that are actually present. ───────────────
+  for (const r of verdict.risk) {
+    const detail =
+      r.kind === "risk-tag"
+        ? `${r.tags.join(", ")} · ${plural(r.files, "file")}${r.noTest ? " · no test yet" : ""}`
+        : `shared infra · ${plural(r.features, "feature")}${r.noTest ? " · no test yet" : ""}`;
+    lines.push(`  ${pc.red("■ risk")}     ${fit(r.subject, 20)} ${pc.dim(detail)}`);
+  }
+  for (const d of verdict.drift) {
+    const age = d.staleDays != null ? `doc ${d.staleDays}d behind` : "doc not updated";
+    lines.push(`  ${pc.yellow("▲ drift")}    ${fit(d.feature, 20)} ${pc.dim(`code changed, ${age}`)}`);
+  }
+  if (verdict.offPlan) {
+    const names = verdict.offPlan.files.map((f) => basename(f)).slice(0, 3).join(", ");
+    const extra = verdict.offPlan.files.length > 3 ? ` +${verdict.offPlan.files.length - 3}` : "";
+    lines.push(`  ${pc.yellow("⊘ off-plan")} ${pc.dim(`${names}${extra}  (not in any step)`)}`);
+  }
+  lines.push("");
+
+  // ── Where it went — top features by spend, with a relative bar + share. ──
+  if (hasCost) {
+    const total = tokens.totals.cost?.total ?? 0;
+    const byFeat = Object.entries(tokens.byFeature)
+      .map(([feature, r]) => ({ feature, cost: r.cost?.total ?? 0 }))
+      .filter((f) => f.cost > 0)
+      .sort((a, b) => b.cost - a.cost);
+    const top = byFeat.slice(0, 3);
+    const maxCost = top.length > 0 ? top[0].cost : 0;
+    if (top.length > 0) lines.push(pc.dim("  where it went"));
+    for (const f of top) {
+      const pct = total > 0 ? Math.round((f.cost / total) * 100) : 0;
+      lines.push(
+        `    ${fit(f.feature, 18)} ${formatCost(f.cost).padStart(10)}  ${pc.cyan(bar(f.cost, maxCost))}  ${String(pct).padStart(2)}%`,
+      );
     }
+    if (byFeat.length > 3) lines.push(pc.dim(`    + ${byFeat.length - 3} more`));
     if (tokens.unpriced.length > 0) {
       lines.push(pc.yellow(`  unpriced models: ${tokens.unpriced.join(", ")}`));
     }
     lines.push("");
   }
 
-  lines.push(
-    pc.dim("  Ctrl-C to stop · refreshes on an interval · facts, not a safety guarantee"),
-  );
+  // ── Footer — coverage (the badge/contract keeps the "docs coverage:" text,
+  // distinct from blast radius above) + an honest disclaimer. ──────────────
+  const footer = [`docs coverage: ${pc.bold(cov)}`];
+  if (review.plan) footer.push(pc.dim(`plan: ${review.plan.plan}`));
+  footer.push(pc.dim("Ctrl-C to stop · facts, not a safety guarantee"));
+  lines.push("  " + footer.join(pc.dim("   ")));
   return lines.join("\n");
 }
 
@@ -315,6 +431,7 @@ interface FrameData {
   activity: ActivityItem[];
   mood: Mood;
   rates: RateTable;
+  totalFeatures: number;
 }
 
 // Read effectively the whole event log each tick: the token cost must sum every
@@ -329,7 +446,9 @@ function gatherFrameData(root: string): FrameData {
   const events = readRecentEvents(root, EVENT_WINDOW);
   const { activity, mood } = gatherActivity(root, review);
   const rates = loadRates(root);
-  return { review, coverage, events, activity, mood, rates };
+  const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+  const totalFeatures = Object.keys(registry.features).length;
+  return { review, coverage, events, activity, mood, rates, totalFeatures };
 }
 
 /** Builds one frame's data from the repo and renders it. Exported for the live demo. */
@@ -340,6 +459,7 @@ export function buildFrame(root: string, now: string, tick = 0): string {
     activity: d.activity,
     mood: d.mood,
     rates: d.rates,
+    totalFeatures: d.totalFeatures,
   });
 }
 
@@ -348,6 +468,8 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
   // Auto-tail the agent's session log into events.jsonl so a single `watch`
   // shows live token cost + reads/edits. Harmless no-op when no session matches.
   const feedOn = options.feed !== false;
+  // The watch run's start — turns logged after this drive the "this session" delta.
+  const startedAt = new Date().toISOString();
 
   if (options.once) {
     // Single frame, no screen clear — for CI/tests and one-shot inspection.
@@ -377,7 +499,14 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
       cache.coverage,
       cache.events,
       clockLabel(new Date()),
-      { tick, activity: cache.activity, mood: cache.mood, rates: cache.rates },
+      {
+        tick,
+        activity: cache.activity,
+        mood: cache.mood,
+        rates: cache.rates,
+        totalFeatures: cache.totalFeatures,
+        sinceTs: startedAt,
+      },
     );
     process.stdout.write(CLEAR + frame + "\n");
   };

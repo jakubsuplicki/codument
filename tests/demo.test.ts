@@ -58,7 +58,8 @@ describe("codument demo --live --auto", () => {
     assert.match(clean, /an AI agent is editing/);
     // the panel reflects the change landing (coverage drops to the lit-up state)
     assert.match(clean, /docs coverage: 71%/);
-    assert.match(clean, /3 out-of-plan/);
+    // the planted out-of-plan change surfaces as a verdict finding
+    assert.match(clean, /off-plan/i);
     // and it still produced the shareable report
     assert.ok(existsSync(join(repo, ".codument", "report.html")));
     assert.match(clean, /codument watch/);

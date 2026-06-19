@@ -11,6 +11,7 @@ import { report } from "./commands/report.js";
 import { review } from "./commands/review.js";
 import { watch } from "./commands/watch.js";
 import { feed } from "./commands/feed.js";
+import { cost } from "./commands/cost.js";
 import { stepsCommand } from "./commands/steps.js";
 import { scan } from "./commands/scan.js";
 import { update } from "./commands/update.js";
@@ -102,7 +103,21 @@ program
     "--reset",
     "Rebuild feed-sourced events from the transcript at the current normalization (re-prices stale/unpriced events); preserves manual emits and review notes",
   )
+  .option(
+    "--backfill",
+    "Ingest every matching transcript from offset 0, adding only turns not already captured (picks up sessions that were never watched); idempotent",
+  )
   .action(feed);
+
+program
+  .command("cost")
+  .description(
+    "Print the full estimated token-cost ledger (all sessions, by feature / model / step) from captured usage in .codument/events.jsonl",
+  )
+  .option("--dir <path>", "Project root (default: current directory)")
+  .option("--root <dir>", "Project root (default: current directory)")
+  .option("--json", "Emit the machine-readable token summary instead of the ledger")
+  .action(cost);
 
 program
   .command("steps")

@@ -62,6 +62,10 @@ export interface ChangeState {
   byFeature: FeatureGroup[];
   /** Changed sources with no registry owner. */
   unmapped: string[];
+  /** Changed files that are neither source nor docs (config, assets, data):
+   *  real working-tree changes outside codument's source↔doc governance. Kept so
+   *  a clean verdict never claims "working tree clean" while they sit uncommitted. */
+  otherChanged: string[];
   /** Features whose source changed but whose mapped doc did not (drift). */
   staleDocs: StaleDoc[];
   /** Docs that changed while their feature's source did not. */
@@ -113,6 +117,17 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     [...changed].filter((f) => !isDoc(f) && isSourceFile(f, exclusion)),
   );
   const changedDocs = sortStrings([...changed].filter(isDoc));
+  // The third bucket beside sources and docs: real, non-excluded changes that are
+  // neither a doc nor a recognized source — config like app.json, an image asset,
+  // a data file. Excluded build/generated paths (dist/, node_modules/, *.seed.json,
+  // …) are dropped here too, exactly as they are from changedSources and unmapped,
+  // so the verdict counts only changes a human cares about — surfaced so a clean
+  // verdict stays honest that the tree isn't empty.
+  const otherChanged = sortStrings(
+    [...changed].filter(
+      (f) => !isDoc(f) && !isSourceFile(f, exclusion) && !isExcluded(f, exclusion),
+    ),
+  );
 
   // group changed sources by owning feature
   const groups = new Map<string, string[]>();
@@ -213,6 +228,7 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     changedDocs,
     byFeature,
     unmapped: sortStrings(unmapped),
+    otherChanged,
     staleDocs,
     docsChangedWithoutSource: sortStrings(docsChangedWithoutSource),
     highFanout,

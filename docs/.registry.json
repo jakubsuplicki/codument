@@ -13,7 +13,7 @@
         "lib"
       ],
       "risk": [],
-      "last_updated": "2026-06-17",
+      "last_updated": "2026-06-19",
       "status": "current"
     },
     "plan-step-mirroring": {
@@ -41,6 +41,7 @@
       "doc": "docs/features/token-cost-tracking.md",
       "type": "feature",
       "primary_sources": [
+        "src/commands/cost.ts",
         "src/commands/emit.ts",
         "src/commands/feed.ts",
         "src/lib/claude-feed.ts",
@@ -58,7 +59,7 @@
         "registry-health-and-change-control"
       ],
       "risk": [],
-      "last_updated": "2026-06-18",
+      "last_updated": "2026-06-19",
       "status": "current"
     },
     "commands": {
@@ -138,13 +139,14 @@
         "src/lib/scaffold.ts",
         "src/lib/token-cost.ts",
         "src/lib/token-report.ts",
+        "src/lib/verdict.ts",
         "src/lib/version.ts"
       ],
       "related_sources": [],
       "docs": [],
       "depends_on": [],
       "risk": [],
-      "last_updated": "2026-06-18",
+      "last_updated": "2026-06-19",
       "status": "current"
     },
     "registry-health-and-change-control": {
@@ -174,7 +176,7 @@
       "risk": [
         "data-loss"
       ],
-      "last_updated": "2026-06-18",
+      "last_updated": "2026-06-19",
       "status": "in-progress"
     },
     "doc-audience-layers": {
@@ -203,6 +205,26 @@
       "risk": [],
       "last_updated": "2026-06-16",
       "status": "draft"
+    },
+    "complete-cost-capture": {
+      "doc": "docs/features/complete-cost-capture.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/lib/verdict.ts"
+      ],
+      "related_sources": [
+        "src/lib/claude-feed.ts",
+        "src/commands/feed.ts",
+        "src/commands/watch.ts"
+      ],
+      "docs": [],
+      "depends_on": [
+        "token-cost-tracking",
+        "registry-health-and-change-control"
+      ],
+      "risk": [],
+      "last_updated": "2026-06-19",
+      "status": "current"
     }
   }
 }

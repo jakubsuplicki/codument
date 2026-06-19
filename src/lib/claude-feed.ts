@@ -86,6 +86,21 @@ function sessionCwd(file: string): string | null {
   }
 }
 
+/** A transcript's recorded `cwd` is constant for the life of the file, so cache
+ *  it per path: the fallback scan in `resolveSessionLogs` runs every pump and
+ *  would otherwise re-read a head window per file per tick. Only positive
+ *  results are cached — a just-created transcript may not have written its `cwd`
+ *  yet, and must be re-read until it does rather than be excluded forever. */
+const sessionCwdCache = new Map<string, string>();
+function cachedSessionCwd(file: string): string | null {
+  const key = canonSession(file);
+  const cached = sessionCwdCache.get(key);
+  if (cached !== undefined) return cached;
+  const cwd = sessionCwd(file);
+  if (cwd !== null) sessionCwdCache.set(key, cwd);
+  return cwd;
+}
+
 /** The `sessionId` a transcript records (constant within a file). Regex over a
  *  head window, like `sessionCwd`, so it doesn't depend on a fully parseable
  *  first line. Used to match feed events (which carry `data.session`) back to a
@@ -106,6 +121,25 @@ function newestJsonl(dir: string): string | null {
   let best: string | null = null;
   let bestMtime = -1;
   for (const file of jsonlFilesIn(dir)) {
+    let m: number;
+    try {
+      m = statSync(file).mtimeMs;
+    } catch {
+      continue;
+    }
+    if (m > bestMtime) {
+      bestMtime = m;
+      best = file;
+    }
+  }
+  return best;
+}
+
+/** Newest of an explicit file list by mtime, or null. */
+function newestOf(files: string[]): string | null {
+  let best: string | null = null;
+  let bestMtime = -1;
+  for (const file of files) {
     let m: number;
     try {
       m = statSync(file).mtimeMs;
@@ -171,6 +205,56 @@ export function resolveSessionLog(root: string, home = homedir()): string | null
     }
   }
   return best;
+}
+
+/**
+ * Every Claude Code transcript whose recorded `cwd` matches `root` — the
+ * complete set the feed should pump, not just the newest. Concurrent windows
+ * each write their own session file, so following only the newest (see
+ * `resolveSessionLog`) under-counts spend and makes the live total jump between
+ * windows. Returns de-duplicated original paths (canonicalized only for the
+ * dedupe key). Cheap on repeat calls: the slug dir needs no per-file read, and
+ * the fallback scan caches each file's constant `cwd`.
+ */
+export function resolveSessionLogs(root: string, home = homedir()): string[] {
+  const projects = claudeProjectsDir(home);
+  if (!existsSync(projects)) return [];
+
+  const byCanon = new Map<string, string>(); // canonical path -> original path
+  const add = (file: string): void => {
+    const c = canonSession(file);
+    if (!byCanon.has(c)) byCanon.set(c, file);
+  };
+
+  // Primary: Claude names each project dir for the cwd, so every transcript in
+  // the slug dir belongs to root — no per-file `cwd` read needed (the trust
+  // `resolveSessionLog` places in the slug dir, extended to its siblings).
+  const slug = root.replace(/[/.]/g, "-");
+  const slugDir = join(projects, slug);
+  const slugExists = existsSync(slugDir);
+  if (slugExists) for (const file of jsonlFilesIn(slugDir)) add(file);
+
+  // Fallback: scan the other project dirs and match the recorded `cwd`, covering
+  // any slug encoding we didn't anticipate.
+  let projectDirs: string[];
+  try {
+    projectDirs = readdirSync(projects);
+  } catch {
+    return [...byCanon.values()];
+  }
+  for (const name of projectDirs) {
+    const dir = join(projects, name);
+    if (slugExists && dir === slugDir) continue;
+    try {
+      if (!statSync(dir).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    for (const file of jsonlFilesIn(dir)) {
+      if (cachedSessionCwd(file) === root) add(file);
+    }
+  }
+  return [...byCanon.values()];
 }
 
 // ── Feature attribution ─────────────────────────────────────────────────
@@ -460,13 +544,17 @@ interface ParsedSession {
  * events — pure with respect to the event log (it does NOT append or write
  * state; the caller decides what to do with the result). Only whole lines are
  * consumed (a half-written trailing line waits for the next pass). The registry
- * is read lazily, only once there is actual work, so idle polls stay cheap.
+ * is read lazily, only once there is actual work, so idle polls stay cheap. When
+ * `skipUuids` is given, records whose `uuid` is already captured are still
+ * parsed (advancing the offset and the feature carry-forward) but not
+ * re-emitted — the idempotency hook for backfill.
  */
 function parseSession(
   root: string,
   session: string,
   state: FeedState,
   registry?: Registry,
+  skipUuids?: Set<string>,
 ): ParsedSession {
   const carried = state.feature[session] ?? null;
   const idle = (offset: number): ParsedSession => ({
@@ -506,6 +594,13 @@ function parseSession(
     }
     const result = recordToEvents(record, { root, registry: reg, prevFeature: feature });
     feature = result.feature;
+    // Backfill skips turns already captured (keyed by the record's uuid), but
+    // only after carrying the feature forward — so a later un-captured turn in
+    // the same file still attributes correctly across the skipped one.
+    if (skipUuids) {
+      const uid = (record as Record<string, unknown>)?.uuid;
+      if (typeof uid === "string" && skipUuids.has(uid)) continue;
+    }
     events.push(...result.events);
   }
 
@@ -513,28 +608,123 @@ function parseSession(
 }
 
 /**
- * Tail the active session log once: parse transcript lines appended since the
- * last pump, append normalized events to .codument/events.jsonl, and persist
- * the byte offset so restarts never double-emit. Idempotent and cheap; call on
- * an interval. Feed-state is written only when the offset actually advanced, so
- * idle polls don't churn the file. Returns how many events were appended.
+ * Tail every session log for this repo once: parse transcript lines appended
+ * since the last pump (per-file byte offsets), append normalized events to
+ * .codument/events.jsonl, and persist offsets so restarts never double-emit.
+ * Follows ALL transcripts whose `cwd` matches root — not just the newest — so
+ * concurrent windows are fully counted and the live total never jumps between
+ * them. Per-file offsets keep it idempotent and cheap: a file with no new bytes
+ * is skipped before the registry is even read. Returns how many events were
+ * appended and the newest matching session (for display continuity).
  */
 export function pumpFeed(root: string, home = homedir()): PumpResult {
-  const resolved = resolveSessionLog(root, home);
-  if (!resolved) return { emitted: 0, session: null };
+  const matching = resolveSessionLogs(root, home);
+  if (matching.length === 0) return { emitted: 0, session: null };
+  const active = newestOf(matching);
 
-  // Key feed-state by the canonical path so an alias can't reset the offset and
-  // re-emit (the same key `resetFeed` uses).
-  const session = canonSession(resolved);
   const state = readFeedState(root);
-  const parsed = parseSession(root, session, state);
-  for (const ev of parsed.events) appendEvent(root, ev);
-  if (parsed.advanced) {
-    state.offsets[session] = parsed.offset;
-    if (parsed.feature) state.feature[session] = parsed.feature;
-    writeFeedState(root, state);
+  // Key feed-state by canonical path so an alias can't reset an offset and
+  // re-emit (the same key `resetFeed` uses).
+  const sessions = matching.map(canonSession);
+
+  let registry: Registry | undefined;
+  let emitted = 0;
+  let advancedAny = false;
+  for (const session of sessions) {
+    const off = state.offsets[session] ?? 0;
+    let size: number;
+    try {
+      size = statSync(session).size;
+    } catch {
+      continue; // transcript vanished — nothing to pump from it
+    }
+    if (size === off) continue; // no new bytes (idle) — skip before reading the registry
+
+    registry ??= readRegistrySync(join(root, "docs", ".registry.json"));
+    const parsed = parseSession(root, session, state, registry);
+    for (const ev of parsed.events) appendEvent(root, ev);
+    emitted += parsed.events.length;
+    if (parsed.advanced) {
+      advancedAny = true;
+      state.offsets[session] = parsed.offset;
+      if (parsed.feature) state.feature[session] = parsed.feature;
+    }
   }
-  return { emitted: parsed.events.length, session: resolved };
+  if (advancedAny) writeFeedState(root, state);
+  return { emitted, session: active };
+}
+
+/** Every turn `uuid` already recorded in the event log — the idempotency key for
+ *  backfill. A turn stamps the same uuid on its token and activity events, so
+ *  this is a per-*turn* key, not per-event; backfill skips a whole transcript
+ *  record whose uuid is present rather than any single event. */
+function knownFeedUuids(root: string): Set<string> {
+  const seen = new Set<string>();
+  for (const ev of readAllEvents(root)) {
+    const id = (ev.data as Record<string, unknown> | undefined)?.uuid;
+    if (typeof id === "string") seen.add(id);
+  }
+  return seen;
+}
+
+export interface BackfillResult {
+  /** Matching transcripts discovered for the repo. */
+  sessions: number;
+  /** Of those, how many contributed at least one previously-uncaptured turn. */
+  newSessions: number;
+  /** Events appended by the backfill. */
+  added: number;
+  /** Newest matching session, for display. */
+  session: string | null;
+}
+
+/**
+ * Ingest EVERY matching transcript from offset 0, appending only turns not
+ * already captured (keyed by turn `uuid`) — the retroactive complement to live
+ * pumping: the agent keeps its transcripts whether or not `watch` ran, so a
+ * never-watched or historical session can be picked up after the fact. Additive
+ * and non-destructive — existing events (feed, manual emits, review notes) are
+ * untouched, and re-running adds nothing (idempotent by uuid). Advances each
+ * session's live cursor to end-of-file so the live pump won't re-emit what was
+ * backfilled.
+ */
+export function backfillFeed(root: string, home = homedir()): BackfillResult {
+  const matching = resolveSessionLogs(root, home);
+  const active = newestOf(matching);
+  if (matching.length === 0) return { sessions: 0, newSessions: 0, added: 0, session: null };
+
+  // Single-writer assumption: like the live pump, this appends without a lock,
+  // so two concurrent backfills on one root could double-emit a turn. That suits
+  // the interactive one-shot this is built for; a collector would add locking.
+  const known = knownFeedUuids(root);
+  const realState = readFeedState(root);
+  const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+  // A throwaway state so every session parses from offset 0 (the whole file);
+  // the live cursor in realState is advanced separately, to EOF.
+  const fromZero: FeedState = { offsets: {}, feature: {} };
+
+  let added = 0;
+  let newSessions = 0;
+  for (const orig of matching) {
+    const session = canonSession(orig);
+    const parsed = parseSession(root, session, fromZero, registry, known);
+    if (parsed.events.length > 0) {
+      for (const ev of parsed.events) {
+        appendEvent(root, ev);
+        const id = (ev.data as Record<string, unknown> | undefined)?.uuid;
+        if (typeof id === "string") known.add(id); // guard against repeats within this run too
+      }
+      added += parsed.events.length;
+      newSessions++;
+    }
+    // Sync the live cursor to EOF so a subsequent pump won't re-emit these turns.
+    if (parsed.advanced) {
+      realState.offsets[session] = parsed.offset;
+      if (parsed.feature) realState.feature[session] = parsed.feature;
+    }
+  }
+  writeFeedState(root, realState);
+  return { sessions: matching.length, newSessions, added, session: active };
 }
 
 /** True for an event feed produced — i.e. re-derivable from a transcript. The
@@ -580,13 +770,15 @@ export interface ResetResult {
 export function resetFeed(root: string, home = homedir()): ResetResult {
   const prior = readFeedState(root);
   const all = readAllEvents(root);
-  const active = resolveSessionLog(root, home);
+  const matching = resolveSessionLogs(root, home);
+  const active = newestOf(matching);
 
-  // Sessions to rebuild from: every transcript the cursor touched + active now,
-  // canonicalized so a path alias can't double-pump the same file.
+  // Sessions to rebuild from: every matching transcript (not just the newest, so
+  // a cold-start reset captures concurrent history too) plus any the cursor
+  // touched. Canonicalized so a path alias can't double-pump the same file.
   const sessions = new Set<string>();
   for (const s of Object.keys(prior.offsets)) sessions.add(canonSession(s));
-  if (active) sessions.add(canonSession(active));
+  for (const m of matching) sessions.add(canonSession(m));
 
   // Nothing to do on a fresh/never-fed project — don't create empty artifacts.
   if (all.length === 0 && sessions.size === 0) {

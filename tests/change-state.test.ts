@@ -60,6 +60,27 @@ describe("computeChangeState (change-control fixture diff)", () => {
     ]);
   });
 
+  it("buckets config/asset changes into otherChanged, but drops excluded paths", async () => {
+    const registry = await readRegistry(join(FIXTURE, "docs", ".registry.json"));
+    const s = computeChangeState({
+      registry,
+      changedFiles: [
+        "src/lib/db.ts", // source
+        "docs/features/tasks.md", // doc
+        "app.json", // other (config)
+        "assets/logo.png", // other (asset)
+        "dist/bundle.js", // excluded build output → dropped everywhere
+      ],
+    });
+    assert.deepStrictEqual(s.otherChanged, ["app.json", "assets/logo.png"]);
+    // Excluded build output is not source, not docs, and not "other" — consistent
+    // with how unmapped/coverage treat it (so it can't inflate the verdict count).
+    assert.ok(!s.otherChanged.includes("dist/bundle.js"), "excluded path not in otherChanged");
+    assert.ok(!s.changedSources.includes("app.json"), "app.json is not source");
+    // The four non-excluded inputs partition cleanly into source/docs/other.
+    assert.equal(s.changedSources.length + s.changedDocs.length + s.otherChanged.length, 4);
+  });
+
   it("flags the high-risk touch (auth) and the high-fanout file (db)", async () => {
     const s = await state();
     const riskFeatures = s.riskTouches.map((r) => r.feature).sort();

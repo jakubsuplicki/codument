@@ -7,7 +7,9 @@ import {
   recordToEvents,
   featureForFile,
   resolveSessionLog,
+  resolveSessionLogs,
   pumpFeed,
+  backfillFeed,
   resetFeed,
   normalizeModelId,
   type FeedContext,
@@ -260,6 +262,41 @@ describe("resolveSessionLog", () => {
   });
 });
 
+describe("resolveSessionLogs (all matching transcripts)", () => {
+  let home: string;
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "codument-home-"));
+  });
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("returns every transcript whose cwd matches, across dirs, deduped", async () => {
+    const projects = join(home, ".claude", "projects");
+    // Slug dir for /repo/x: its files are trusted as belonging to root with no
+    // per-file cwd read.
+    const slug = join(projects, "-repo-x");
+    await mkdir(slug, { recursive: true });
+    await writeFile(join(slug, "a.jsonl"), JSON.stringify({ type: "assistant", cwd: "/repo/x" }) + "\n");
+    await writeFile(join(slug, "b.jsonl"), JSON.stringify({ type: "assistant", cwd: "/repo/x" }) + "\n");
+    // A differently-named dir: one matching session (matched via cwd) and one
+    // non-matching (excluded).
+    const other = join(projects, "misc");
+    await mkdir(other, { recursive: true });
+    await writeFile(join(other, "c.jsonl"), JSON.stringify({ type: "assistant", cwd: "/repo/x" }) + "\n");
+    await writeFile(join(other, "d.jsonl"), JSON.stringify({ type: "assistant", cwd: "/repo/other" }) + "\n");
+
+    const found = resolveSessionLogs("/repo/x", home)
+      .map((p) => p.split("/").pop())
+      .sort();
+    assert.deepEqual(found, ["a.jsonl", "b.jsonl", "c.jsonl"]);
+  });
+
+  it("returns [] when there is no projects dir", () => {
+    assert.deepEqual(resolveSessionLogs("/repo/x", join(home, "nope")), []);
+  });
+});
+
 describe("pumpFeed (idempotent tailer)", () => {
   let root: string;
   let home: string;
@@ -316,6 +353,39 @@ describe("pumpFeed (idempotent tailer)", () => {
     assert.equal(readRecentEvents(root, 50).length, 3);
   });
 
+  it("pumps every concurrent session, not just the newest", async () => {
+    // A second live session in the same project dir, same cwd (root).
+    const dir = join(home, ".claude", "projects", "proj");
+    const log2 = join(dir, "sess2.jsonl");
+    const rec2 = (uuid: string) =>
+      JSON.stringify({
+        type: "assistant",
+        timestamp: TS,
+        uuid,
+        sessionId: "s2",
+        cwd: root,
+        message: {
+          role: "assistant",
+          model: "claude-opus-4-8",
+          usage: { input_tokens: 10, output_tokens: 5 },
+          content: [],
+        },
+      });
+    await writeFile(log2, rec2("m1") + "\n" + rec2("m2") + "\n");
+
+    const first = pumpFeed(root, home);
+    assert.equal(first.emitted, 4); // both sessions' turns, not just the newest's 2
+    const sessions = new Set(
+      readRecentEvents(root, 50)
+        .filter((e) => e.type === "tokens")
+        .map((e) => (e.data as Record<string, unknown>).session),
+    );
+    assert.deepEqual([...sessions].sort(), ["s1", "s2"]);
+
+    // Idempotent across both: a second pass with no new bytes adds nothing.
+    assert.equal(pumpFeed(root, home).emitted, 0);
+  });
+
   it("does not consume a half-written trailing line", async () => {
     const rec = (uuid: string) =>
       JSON.stringify({
@@ -337,6 +407,187 @@ describe("pumpFeed (idempotent tailer)", () => {
     await appendFile(log, rest + "\n"); // finish the second line
     pumpFeed(root, home);
     assert.equal(readRecentEvents(root, 50).length, 2);
+  });
+});
+
+describe("backfillFeed (retroactive ingest of unwatched sessions)", () => {
+  let root: string;
+  let home: string;
+  let dir: string;
+  const rec = (uuid: string, session: string) =>
+    JSON.stringify({
+      type: "assistant",
+      timestamp: TS,
+      uuid,
+      sessionId: session,
+      cwd: root,
+      message: {
+        role: "assistant",
+        model: "claude-opus-4-8",
+        usage: { input_tokens: 100, output_tokens: 50 },
+        content: [],
+      },
+    });
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-bf-proj-"));
+    home = await mkdtemp(join(tmpdir(), "codument-bf-home-"));
+    dir = join(home, ".claude", "projects", "proj");
+    await mkdir(dir, { recursive: true });
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("ingests a never-watched session and is idempotent by uuid", async () => {
+    await writeFile(join(dir, "s.jsonl"), rec("a", "s1") + "\n" + rec("b", "s1") + "\n");
+
+    const first = backfillFeed(root, home);
+    assert.equal(first.added, 2);
+    assert.equal(first.sessions, 1);
+    assert.equal(first.newSessions, 1);
+    assert.equal(readAllEvents(root).filter((e) => e.type === "tokens").length, 2);
+
+    // Re-running adds nothing (every uuid already captured).
+    const second = backfillFeed(root, home);
+    assert.equal(second.added, 0);
+    assert.equal(second.newSessions, 0);
+    assert.equal(readAllEvents(root).filter((e) => e.type === "tokens").length, 2);
+
+    // The live cursor is at EOF, so a pump adds nothing either.
+    assert.equal(pumpFeed(root, home).emitted, 0);
+  });
+
+  it("picks up multiple historical sessions in one pass", async () => {
+    await writeFile(join(dir, "s1.jsonl"), rec("a", "s1") + "\n");
+    await writeFile(join(dir, "s2.jsonl"), rec("b", "s2") + "\n" + rec("c", "s2") + "\n");
+
+    const result = backfillFeed(root, home);
+    assert.equal(result.added, 3);
+    assert.equal(result.newSessions, 2);
+    const sessions = new Set(
+      readAllEvents(root)
+        .filter((e) => e.type === "tokens")
+        .map((e) => (e.data as Record<string, unknown>).session),
+    );
+    assert.deepEqual([...sessions].sort(), ["s1", "s2"]);
+  });
+
+  it("preserves manual emits and adds only the uncaptured turns", async () => {
+    // A manual emit (no uuid) and one already-captured feed turn (uuid "a").
+    emitTokens(root, { input: 1_000_000, output: 0, cacheRead: 0, cacheCreate: 0 }, { model: "opus-4.8", feature: "manual" });
+    appendEvent(root, {
+      type: "tokens",
+      ts: TS,
+      data: { source: "feed", model: "opus-4.8", input: 1, output: 1, cacheRead: 0, cacheCreate: 0, session: "s1", uuid: "a" },
+    });
+    // Transcript has the captured turn (a) plus a new one (b).
+    await writeFile(join(dir, "s.jsonl"), rec("a", "s1") + "\n" + rec("b", "s1") + "\n");
+
+    const result = backfillFeed(root, home);
+    assert.equal(result.added, 1); // only b
+    const toks = readAllEvents(root).filter((e) => e.type === "tokens");
+    const uuids = toks
+      .map((e) => (e.data as Record<string, unknown>).uuid)
+      .filter(Boolean)
+      .sort();
+    assert.deepEqual(uuids, ["a", "b"]);
+    assert.ok(
+      toks.some((e) => (e.data as Record<string, unknown>).feature === "manual"),
+      "the manual emit is preserved",
+    );
+  });
+
+  it("carries the feature forward across an already-captured turn", async () => {
+    // A registry so an edit attributes to a feature.
+    await mkdir(join(root, "docs"), { recursive: true });
+    await writeFile(
+      join(root, "docs", ".registry.json"),
+      JSON.stringify({
+        features: {
+          auth: {
+            doc: "docs/features/auth.md",
+            type: "feature",
+            primary_sources: ["src/auth/login.ts"],
+            related_sources: [],
+            docs: [],
+            depends_on: [],
+            risk: [],
+            last_updated: "2026-06-16",
+            status: "current",
+          },
+        },
+      }),
+    );
+    // Turn A edits an auth file (→ feature "auth"); turn B is reasoning-only.
+    const recA = JSON.stringify({
+      type: "assistant",
+      timestamp: TS,
+      uuid: "a",
+      sessionId: "s1",
+      cwd: root,
+      message: {
+        role: "assistant",
+        model: "claude-opus-4-8",
+        usage: { input_tokens: 1, output_tokens: 1 },
+        content: [{ type: "tool_use", name: "Edit", input: { file_path: join(root, "src/auth/login.ts") } }],
+      },
+    });
+    const recB = JSON.stringify({
+      type: "assistant",
+      timestamp: TS,
+      uuid: "b",
+      sessionId: "s1",
+      cwd: root,
+      message: { role: "assistant", model: "claude-opus-4-8", usage: { input_tokens: 5, output_tokens: 2 }, content: [] },
+    });
+    await writeFile(join(dir, "s.jsonl"), recA + "\n" + recB + "\n");
+    // Turn A is already captured → backfill skips emitting it, but must still
+    // carry its feature forward so turn B (no tools) attributes to "auth".
+    appendEvent(root, {
+      type: "tokens",
+      ts: TS,
+      data: { source: "feed", model: "opus-4.8", input: 1, output: 1, cacheRead: 0, cacheCreate: 0, feature: "auth", session: "s1", uuid: "a" },
+    });
+
+    const result = backfillFeed(root, home);
+    assert.equal(result.added, 1); // only turn B
+    const b = readAllEvents(root).find(
+      (e) => e.type === "tokens" && (e.data as Record<string, unknown>).uuid === "b",
+    );
+    assert.ok(b, "turn B was emitted");
+    assert.equal(
+      (b!.data as Record<string, unknown>).feature,
+      "auth",
+      "B inherits auth via carry-forward across the skipped, already-captured turn A",
+    );
+  });
+
+  it("handles a zero-usage-only transcript: nothing added, cursor still synced", async () => {
+    const synthetic = JSON.stringify({
+      type: "assistant",
+      timestamp: TS,
+      uuid: "z1",
+      sessionId: "s1",
+      cwd: root,
+      message: { role: "assistant", model: "<synthetic>", usage: { input_tokens: 0, output_tokens: 0 }, content: [] },
+    });
+    await writeFile(join(dir, "s.jsonl"), synthetic + "\n");
+
+    const result = backfillFeed(root, home);
+    assert.equal(result.added, 0);
+    assert.equal(result.newSessions, 0);
+    // Cursor advanced to EOF → a subsequent pump finds nothing new either.
+    assert.equal(pumpFeed(root, home).emitted, 0);
+  });
+
+  it("returns no sessions when none match", () => {
+    assert.deepEqual(backfillFeed(root, home), {
+      sessions: 0,
+      newSessions: 0,
+      added: 0,
+      session: null,
+    });
   });
 });
 
@@ -517,6 +768,37 @@ describe("resetFeed (rebuild feed-sourced events at current normalization)", () 
 
     const result = resetFeed(root, home);
     assert.equal(result.emitted, 4); // both transcripts rebuilt (2 + 2)
+    const sessions = new Set(
+      readAllEvents(root)
+        .filter((e) => e.type === "tokens")
+        .map((e) => (e.data as Record<string, unknown>).session),
+    );
+    assert.deepEqual([...sessions].sort(), ["s2", "s9"]);
+  });
+
+  it("rebuilds all matching sessions on a cold start with no prior offsets", async () => {
+    // A second concurrent transcript (same cwd) the cursor has NEVER seen (no
+    // feed-state). Reset must still discover and rebuild both, not just newest.
+    const log2 = join(home, ".claude", "projects", "proj", "sess2.jsonl");
+    const rec2 = (uuid: string) =>
+      JSON.stringify({
+        type: "assistant",
+        timestamp: TRANS_TS,
+        uuid,
+        sessionId: "s2",
+        cwd: root,
+        message: {
+          role: "assistant",
+          model: "claude-opus-4-8",
+          usage: { input_tokens: 100, output_tokens: 50 },
+          content: [],
+        },
+      });
+    await writeFile(log2, rec2("m1") + "\n" + rec2("m2") + "\n");
+
+    // No feed-state on disk → prior.offsets is empty (the cold-start case).
+    const result = resetFeed(root, home);
+    assert.equal(result.emitted, 4); // sess (t1,t2) AND sess2 (m1,m2)
     const sessions = new Set(
       readAllEvents(root)
         .filter((e) => e.type === "tokens")
