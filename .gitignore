@@ -2,6 +2,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 .claude/
+.codument/
 .codument-private/
 
 # Canonical lockfile is package-lock.json (npm); ignore other package managers'
