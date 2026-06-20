@@ -493,6 +493,11 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
   let cache = gatherFrameData(root);
   let tick = 0;
 
+  // Repaint only when the rendered bytes actually change. The animation tick fires
+  // many times a second, but on an idle tree most frames are byte-identical (the
+  // mascot and clock advance at most ~once/sec) — writing those is the dominant
+  // idle battery cost, both the stdout churn and the terminal's full-screen redraw.
+  let lastFrame: string | null = null;
   const paint = () => {
     const frame = renderFrame(
       cache.review,
@@ -508,6 +513,8 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
         sinceTs: startedAt,
       },
     );
+    if (frame === lastFrame) return;
+    lastFrame = frame;
     process.stdout.write(CLEAR + frame + "\n");
   };
   paint();
