@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { appendEvent, readRecentEvents } from "../src/lib/events.js";
-import { renderFrame, sessionStats } from "../src/commands/watch.js";
+import {
+  renderFrame,
+  sessionStats,
+  animDelayFor,
+  ANIM_FAST_MS,
+  ANIM_IDLE_MS,
+} from "../src/commands/watch.js";
 import { MODEL_RATES, mergeRates } from "../src/lib/token-cost.js";
 import type { CodumentEvent } from "../src/lib/events.js";
 
@@ -52,6 +58,19 @@ describe("sessionStats — calendar span, not summed session time", () => {
     const { sessions, hours } = sessionStats(events);
     assert.equal(sessions, 1); // only "A"; the session-less event is ignored
     assert.equal(hours, 0); // A has a single valid timestamp → no span
+  });
+});
+
+describe("animDelayFor — mood-adaptive animation cadence", () => {
+  it("ticks fast only while working, slow otherwise", () => {
+    assert.equal(animDelayFor("working"), ANIM_FAST_MS);
+    assert.equal(animDelayFor("idle"), ANIM_IDLE_MS);
+    assert.equal(animDelayFor("clean"), ANIM_IDLE_MS);
+    assert.equal(animDelayFor("alert"), ANIM_IDLE_MS);
+  });
+
+  it("keeps the working cadence genuinely faster than idle (so the loop barely wakes when quiet)", () => {
+    assert.ok(ANIM_FAST_MS < ANIM_IDLE_MS);
   });
 });
 

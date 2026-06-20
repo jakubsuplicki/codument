@@ -89,6 +89,19 @@ function typingDots(tick: number): string {
   return ".".repeat(tick % 4);
 }
 
+// Animation cadence by mood. Fast only while files are actively changing, so the
+// mascot/typing stays fluid during real work; slow otherwise, so an idle watcher
+// barely wakes the CPU. Paired with the frame-dedup in `watch`, idle ticks rarely
+// even paint — so the slow cadence costs almost nothing while the tree is quiet.
+export const ANIM_FAST_MS = 150;
+export const ANIM_IDLE_MS = 600;
+
+/** Animation tick delay (ms) for the current mood. Pure, so the cadence policy is
+ *  testable without driving the live loop. */
+export function animDelayFor(mood: Mood): number {
+  return mood === "working" ? ANIM_FAST_MS : ANIM_IDLE_MS;
+}
+
 /** State-only mood (no clock): the fallback when the live loop doesn't pass one. */
 function deriveMood(review: ReviewReport): Mood {
   if (!review.isGitRepo) return "idle";
@@ -483,11 +496,11 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
     return;
   }
 
-  // Two cadences: a fast tick animates the mascot/typing from cached data, a
-  // slow tick re-runs the change-state analyzer. Keeps motion smooth without
-  // paying for a git+registry recompute every frame.
+  // Two cadences: an animation tick advances the mascot/typing from cached data,
+  // a slow data tick re-runs the change-state analyzer. Keeps motion smooth
+  // without paying for a git+registry recompute every frame. The animation tick
+  // is mood-adaptive (fast only while working) so an idle watcher barely wakes.
   const dataMs = Math.max(500, Number(options.interval) || 2000);
-  const animMs = 120;
 
   if (feedOn) pumpFeed(root);
   let cache = gatherFrameData(root);
@@ -519,17 +532,25 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
   };
   paint();
 
-  const animTimer = setInterval(() => {
-    tick = (tick + 1) % 100000;
-    paint();
-  }, animMs);
+  // Self-rescheduling so each tick's delay tracks the latest mood: a working tree
+  // animates fast, an idle/clean/alert one ticks slowly. setInterval can't do this
+  // without rebuilding the timer, so reschedule from inside the callback.
+  let animTimer: ReturnType<typeof setTimeout>;
+  const scheduleAnim = () => {
+    animTimer = setTimeout(() => {
+      tick = (tick + 1) % 100000;
+      paint();
+      scheduleAnim();
+    }, animDelayFor(cache.mood));
+  };
+  scheduleAnim();
   const dataTimer = setInterval(() => {
     if (feedOn) pumpFeed(root); // tail new session-log turns before recomputing
     cache = gatherFrameData(root);
   }, dataMs);
 
   const stop = () => {
-    clearInterval(animTimer);
+    clearTimeout(animTimer);
     clearInterval(dataTimer);
     process.stdout.write("\n");
     process.exit(0);
