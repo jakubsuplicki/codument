@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildReview } from "../src/commands/review.js";
+import { getWorkingTreeChanges } from "../src/lib/git.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, "..", "dist", "cli.js");
@@ -101,6 +102,20 @@ describe("buildReview (temp git repo)", () => {
 
     const riskFeatures = report.state.riskTouches.map((r) => r.feature);
     assert.ok(riskFeatures.includes("auth"), "auth risk touched");
+  });
+
+  it("accepts a precomputed changed-file list and matches the self-computed report", async () => {
+    // watch passes the working-tree changes it already gathered so the analyzer
+    // doesn't re-run `git status`; the report must be identical either way.
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => { return 7; };\n",
+      "src/lib/cache.ts": "export const cache = {};\n",
+    });
+    const changes = getWorkingTreeChanges(tmp);
+    const passed = buildReview(tmp, changes);
+    const selfComputed = buildReview(tmp);
+    assert.deepStrictEqual(passed, selfComputed);
+    assert.equal(passed.changedFileCount, changes.length);
   });
 
   it("flags out-of-plan changes when an approved plan is present", async () => {

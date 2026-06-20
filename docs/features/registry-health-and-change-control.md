@@ -8,7 +8,7 @@ depends_on:
   - cli
   - commands
   - lib
-last_reviewed: 2026-06-16
+last_reviewed: 2026-06-20
 ---
 
 ## Summary
@@ -187,6 +187,8 @@ Architecture (worked out earlier; agent-neutral by design):
 - An append-only `.codument/events.jsonl` event log carries richer flow events (including the review-effectiveness notes from `docs/concepts/review-effectiveness-metric.md`); `watch` tails it.
 - Rendered with an Ink TUI. Run with `GIT_OPTIONAL_LOCKS=0` so polling `git status` does not create lock churn that re-triggers the agent.
 - No daemon required: it is a foreground loop the user starts in a spare terminal.
+
+Live-loop cost discipline (battery): the loop must stay cheap because it runs indefinitely in a spare terminal. Three rules keep an idle watcher near-silent. (1) The render loop only writes a frame when the rendered bytes actually change — the animation tick fires many times a second but most idle frames are byte-identical, so an idle tree repaints at roughly clock-second granularity instead of every tick (the dominant idle cost is the full-screen redraw, both stdout churn and the terminal's own re-render). (2) The animation tick is mood-adaptive (`animDelayFor`): ~150ms while `working` so the mascot/typing stays fluid during real edits, ~600ms otherwise, so the loop barely wakes the CPU when quiet. (3) Each data tick computes the working-tree change set once (`getWorkingTreeChanges`) and shares it with both the `buildReview` analyzer and the activity tape, so a refresh spawns a single `git status` tree scan rather than two. The data tick stays at `--interval` (default 2000ms); the cheap `isGitRepo` rev-parse calls are left un-memoized (global memoization would widen the blast radius for a negligible gain — the costly per-tick op is the `status -uall` scan, now de-duplicated).
 
 ## Approved-Plan Autopilot
 

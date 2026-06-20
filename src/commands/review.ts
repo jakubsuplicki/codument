@@ -29,19 +29,22 @@ export interface ReviewReport {
  * the repo state (git changes + registry + approved plan). The same diff always
  * produces the same report — no clock, no randomness, sorted throughout.
  */
-export function buildReview(root: string): ReviewReport {
+export function buildReview(root: string, changedFiles?: string[]): ReviewReport {
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
-  const changedFiles = getWorkingTreeChanges(root);
+  // Callers that already computed the working-tree changes (e.g. `watch`, which
+  // also needs them for its activity tape) can pass them in to avoid a second
+  // `git status` tree scan per refresh; default to computing them here.
+  const changes = changedFiles ?? getWorkingTreeChanges(root);
   const plan = detectApprovedPlanScope(root);
   const state = computeChangeState({
     registry,
-    changedFiles,
+    changedFiles: changes,
     planScope: plan?.scope,
   });
   return {
     version: 1,
     isGitRepo: isGitRepo(root),
-    changedFileCount: changedFiles.length,
+    changedFileCount: changes.length,
     plan,
     state,
   };

@@ -401,6 +401,7 @@ export function renderFrame(
 function gatherActivity(
   root: string,
   review: ReviewReport,
+  changedFiles: string[],
 ): { activity: ActivityItem[]; mood: Mood } {
   if (!review.isGitRepo) return { activity: [], mood: "idle" };
 
@@ -414,7 +415,7 @@ function gatherActivity(
 
   const items: ActivityItem[] = [];
   let newestMs = 0;
-  for (const file of getWorkingTreeChanges(root)) {
+  for (const file of changedFiles) {
     let mtimeMs: number;
     try {
       mtimeMs = statSync(join(root, file)).mtimeMs;
@@ -454,10 +455,14 @@ interface FrameData {
 const EVENT_WINDOW = 1_000_000;
 
 function gatherFrameData(root: string): FrameData {
-  const review = buildReview(root);
+  // Compute the working-tree changes once and share them with both the review
+  // analyzer and the activity tape, so a refresh spawns one `git status` tree
+  // scan instead of two.
+  const changedFiles = getWorkingTreeChanges(root);
+  const review = buildReview(root, changedFiles);
   const coverage = buildReport(root);
   const events = readRecentEvents(root, EVENT_WINDOW);
-  const { activity, mood } = gatherActivity(root, review);
+  const { activity, mood } = gatherActivity(root, review, changedFiles);
   const rates = loadRates(root);
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
   const totalFeatures = Object.keys(registry.features).length;
