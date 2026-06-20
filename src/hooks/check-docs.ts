@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join, relative, dirname } from "node:path";
 import { allSources, readRegistrySync } from "../lib/registry.js";
 
 // This hook runs after Write/Edit tool use.
@@ -8,21 +8,52 @@ import { allSources, readRegistrySync } from "../lib/registry.js";
 // Output goes to the terminal (developer-facing). The Claude profile pairs this
 // with the path-scoped rule in .claude/rules/documentation.md.
 
-const root = process.cwd();
-const registryPath = join(root, "docs", ".registry.json");
+// Resolve the hook payload. Current Claude Code delivers it as JSON on stdin
+// ({ tool_input: { file_path } }); older/explicit invocations set the
+// CLAUDE_TOOL_INPUT env var ({ file_path }). Prefer the env var when present
+// (also what the test suite injects), otherwise read stdin — guarding against an
+// interactive TTY with no piped input so the hook never blocks.
+function readToolInput(): string | undefined {
+  if (process.env.CLAUDE_TOOL_INPUT) return process.env.CLAUDE_TOOL_INPUT;
+  if (process.stdin.isTTY) return undefined;
+  try {
+    return readFileSync(0, "utf-8");
+  } catch {
+    return undefined;
+  }
+}
 
-const toolInput = process.env.CLAUDE_TOOL_INPUT;
-if (!toolInput) process.exit(0);
+const raw = readToolInput();
+if (!raw || !raw.trim()) process.exit(0);
 
-let parsed: { file_path?: string } | undefined;
+let parsed:
+  | { file_path?: string; tool_input?: { file_path?: string } }
+  | undefined;
 try {
-  parsed = JSON.parse(toolInput);
+  parsed = JSON.parse(raw);
 } catch {
   process.exit(0);
 }
 
-if (!parsed?.file_path) process.exit(0);
-const filePath = parsed.file_path;
+const filePath = parsed?.tool_input?.file_path ?? parsed?.file_path;
+if (!filePath) process.exit(0);
+
+// Find the project root by walking up from the edited file to the directory that
+// holds docs/.registry.json, so the hook works regardless of the cwd the harness
+// runs it from. Fall back to cwd (preserves behavior for relative paths).
+function findRoot(fromFile: string): string {
+  let dir = dirname(fromFile);
+  for (let i = 0; i < 50; i++) {
+    if (existsSync(join(dir, "docs", ".registry.json"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return process.cwd();
+}
+
+const root = findRoot(filePath);
+const registryPath = join(root, "docs", ".registry.json");
 
 const relPath = relative(root, filePath);
 

@@ -29,6 +29,34 @@ function runHook(root: string, filePath: string): string {
   });
 }
 
+// Current Claude Code contract: the payload arrives as JSON on stdin
+// ({ tool_input: { file_path } }) with NO CLAUDE_TOOL_INPUT env var.
+function runHookViaStdin(cwd: string, filePath: string): string {
+  const env = { ...process.env };
+  delete env.CLAUDE_TOOL_INPUT;
+  return execFileSync("node", [HOOK], {
+    cwd,
+    input: JSON.stringify({ tool_input: { file_path: filePath } }),
+    encoding: "utf-8",
+    env,
+    timeout: 10000,
+  });
+}
+
+// Legacy env contract but run from an unrelated cwd, to prove the hook resolves
+// the registry from the edited file's path rather than process.cwd().
+function runHookFromCwd(cwd: string, filePath: string): string {
+  return execFileSync("node", [HOOK], {
+    cwd,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      CLAUDE_TOOL_INPUT: JSON.stringify({ file_path: filePath }),
+    },
+    timeout: 10000,
+  });
+}
+
 describe("check-docs hook", () => {
   it("prints all docs mapped to a changed source file", async () => {
     const tmp = await createProject();
@@ -86,6 +114,65 @@ describe("check-docs hook", () => {
       assert.equal(output.trim(), "");
     } finally {
       await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("reads the payload from stdin when no CLAUDE_TOOL_INPUT env is set", async () => {
+    const tmp = await createProject();
+    try {
+      const registry: Registry = {
+        features: {
+          feature: {
+            doc: "docs/features/feature.md",
+            type: "feature",
+            primary_sources: ["src/feature.ts"],
+            depends_on: [],
+            last_updated: "2026-05-29",
+            status: "current",
+          },
+        },
+      };
+      await writeFile(
+        join(tmp, "docs", ".registry.json"),
+        JSON.stringify(registry, null, 2) + "\n",
+      );
+
+      const output = runHookViaStdin(tmp, join(tmp, "src", "feature.ts"));
+
+      assert.ok(output.includes('"feature" (docs/features/feature.md)'));
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves the registry from the edited file's path regardless of cwd", async () => {
+    const tmp = await createProject();
+    const otherCwd = await mkdtemp("/private/tmp/codument-cwd-");
+    try {
+      const registry: Registry = {
+        features: {
+          feature: {
+            doc: "docs/features/feature.md",
+            type: "feature",
+            primary_sources: ["src/feature.ts"],
+            depends_on: [],
+            last_updated: "2026-05-29",
+            status: "current",
+          },
+        },
+      };
+      await writeFile(
+        join(tmp, "docs", ".registry.json"),
+        JSON.stringify(registry, null, 2) + "\n",
+      );
+
+      // Run from an unrelated directory; file_path is absolute inside tmp.
+      const output = runHookFromCwd(otherCwd, join(tmp, "src", "feature.ts"));
+
+      assert.ok(output.includes('"feature" (docs/features/feature.md)'));
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+      await rm(otherCwd, { recursive: true, force: true });
     }
   });
 });
