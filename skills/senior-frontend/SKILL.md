@@ -63,6 +63,10 @@ description: >
 - Ensure all interactive elements have visible focus states
 - Test with keyboard navigation — not just mouse
 
+### Motion
+- For anything beyond a basic CSS transition — deciding whether to animate, choosing easing/duration/springs, building drawers/toasts/sheets, gestures and drag-to-dismiss, or reviewing/fixing janky motion — invoke the `motion-craft` skill instead of hand-rolling it. It covers both web (CSS/WAAPI/Motion) and React Native (Reanimated + Gesture Handler).
+- Animate only `transform`/`opacity` for compositor-thread performance; never animate layout-triggering properties (`width`, `height`, `top`, `margin`).
+
 ## Accessibility
 
 - Semantic HTML first: `<button>` not `<div onClick>`
