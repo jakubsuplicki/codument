@@ -12,6 +12,7 @@ import {
   animDelayFor,
   ANIM_FAST_MS,
   ANIM_IDLE_MS,
+  clockLabel,
 } from "../src/commands/watch.js";
 import { MODEL_RATES, mergeRates } from "../src/lib/token-cost.js";
 import type { CodumentEvent } from "../src/lib/events.js";
@@ -58,6 +59,14 @@ describe("sessionStats — calendar span, not summed session time", () => {
     const { sessions, hours } = sessionStats(events);
     assert.equal(sessions, 1); // only "A"; the session-less event is ignored
     assert.equal(hours, 0); // A has a single valid timestamp → no span
+  });
+});
+
+describe("clockLabel — header wall-clock", () => {
+  it("renders zero-padded HH:MM with no seconds", () => {
+    const label = clockLabel(new Date(2026, 5, 21, 9, 5, 43));
+    assert.equal(label, "09:05");
+    assert.doesNotMatch(label, /:\d\d:/); // no seconds component
   });
 });
 

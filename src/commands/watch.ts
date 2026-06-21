@@ -111,12 +111,16 @@ function deriveMood(review: ReviewReport): Mood {
   return "idle";
 }
 
-/** Friendly local wall-clock for the live header — `09:11:29`, not a raw ISO Z
- *  string. Only the live loop uses it; renderFrame still displays whatever `now`
- *  string it is handed, so injected test timestamps round-trip unchanged. */
+/** Friendly local wall-clock for the live header — `09:11`, not a raw ISO Z
+ *  string. Minutes only, no seconds: since the loop repaints only when the frame
+ *  changes, a seconds digit wouldn't tick smoothly (it would jump whenever some
+ *  other change forced a repaint), reading as laggy rather than live. Dropping it
+ *  also lets an idle tree's header change just once a minute. Only the live loop
+ *  uses it; renderFrame still displays whatever `now` string it is handed, so
+ *  injected test timestamps round-trip unchanged. */
 export function clockLabel(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 function shortTime(ts: string): string {
