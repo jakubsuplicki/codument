@@ -254,6 +254,7 @@ export function renderFrame(
   const s = review.state;
   const verdict = classifyVerdict(s, {
     totalFeatures: opts.totalFeatures ?? 0,
+    inScopeSourceCount: coverage.inScopeSourceCount,
     testsTouched: s.changedSources.some(isTestFile),
   });
   const mood = opts.mood ?? deriveMood(review);
@@ -344,11 +345,21 @@ export function renderFrame(
   if (lastStep?.message) lines.push(`  ${pc.dim("now")}      ${lastStep.message}`);
   const touched = [plural(verdict.blast.touched, "feature"), plural(review.changedFileCount, "file")];
   if (verdict.unmapped > 0) touched.push(`${verdict.unmapped} unmapped`);
+  // At ≤1 feature the feature ratio is a single bit ("1 of 1"); fall back to the
+  // file-grain numerator so even an undecomposed repo shows real resolution.
+  const oneFeature = verdict.blast.total <= 1;
   const blast =
-    verdict.blast.total > 0
-      ? `   ${pc.dim(`blast radius ${verdict.blast.touched} of ${verdict.blast.total}`)}`
-      : "";
+    oneFeature && verdict.blast.totalFiles > 0
+      ? `   ${pc.dim(`blast radius ${verdict.blast.touchedFiles} of ${verdict.blast.totalFiles} files`)}`
+      : verdict.blast.total > 0
+        ? `   ${pc.dim(`blast radius ${verdict.blast.touched} of ${verdict.blast.total}`)}`
+        : "";
   lines.push(`  ${pc.dim("touched")}  ${touched.join(" · ")}${blast}`);
+
+  // Decomposition shape nudge (info-only) — surfaced here because a 1-feature
+  // repo is exactly where "this resolves to one feature" is the useful signal.
+  const shape = coverage.lint?.notes?.find((f) => f.id === "under-decomposed" || f.id === "over-decomposed");
+  if (shape) lines.push(`  ${pc.yellow("▲ shape")}    ${pc.dim(shape.message)}`);
 
   // ── Named findings — only rows that are actually present. ───────────────
   for (const r of verdict.risk) {
@@ -360,7 +371,15 @@ export function renderFrame(
   }
   for (const d of verdict.drift) {
     const age = d.staleDays != null ? `doc ${d.staleDays}d behind` : "doc not updated";
-    lines.push(`  ${pc.yellow("▲ drift")}    ${fit(d.feature, 20)} ${pc.dim(`code changed, ${age}`)}`);
+    // At ≤1 feature, name the changed files (per-file drift) so the row resolves
+    // below the single feature; the data is already on the change-state.
+    const files = oneFeature
+      ? (s.staleDocs.find((sd) => sd.feature === d.feature)?.changedSources ?? [])
+      : [];
+    const fileNote = files.length
+      ? ` ${pc.dim(`(${files.slice(0, 3).map((f) => basename(f)).join(", ")}${files.length > 3 ? ` +${files.length - 3}` : ""})`)}`
+      : "";
+    lines.push(`  ${pc.yellow("▲ drift")}    ${fit(d.feature, 20)} ${pc.dim(`code changed, ${age}`)}${fileNote}`);
   }
   if (verdict.offPlan) {
     const names = verdict.offPlan.files.map((f) => basename(f)).slice(0, 3).join(", ");

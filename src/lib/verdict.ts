@@ -51,6 +51,11 @@ export interface BlastRadius {
   touched: number;
   /** Total registry features (the denominator) — distinct from coverage. */
   total: number;
+  /** Changed in-scope source files (file-grain numerator). Gives real
+   *  resolution at low feature counts, where the feature ratio is a single bit. */
+  touchedFiles: number;
+  /** In-scope source files on disk (file-grain denominator). 0 when unknown. */
+  totalFiles: number;
 }
 
 export interface Verdict {
@@ -69,6 +74,8 @@ export interface Verdict {
 export interface VerdictOptions {
   /** Registry feature count — the blast-radius denominator. */
   totalFeatures: number;
+  /** In-scope source-file count — the file-grain blast denominator. */
+  inScopeSourceCount?: number;
   /** Any test/spec file among the changed sources (aggravator for risk). */
   testsTouched?: boolean;
   /** Fanout strictly above this escalates a shared file to a risk finding
@@ -268,7 +275,12 @@ export function classifyVerdict(state: ChangeState, opts: VerdictOptions): Verdi
     risk,
     drift,
     offPlan,
-    blast: { touched: state.byFeature.length, total: opts.totalFeatures },
+    blast: {
+      touched: state.byFeature.length,
+      total: opts.totalFeatures,
+      touchedFiles: state.changedSources.length,
+      totalFiles: opts.inScopeSourceCount ?? 0,
+    },
     unmapped: state.unmapped.length,
   };
   verdict.gloss = buildGloss(verdict, state);

@@ -36,7 +36,7 @@ describe("classifyVerdict — severity", () => {
     const v = classifyVerdict(mkState(), OPTS);
     assert.equal(v.status, "clean");
     assert.equal(v.gloss, "working tree clean");
-    assert.deepEqual(v.blast, { touched: 0, total: 64 });
+    assert.deepEqual(v.blast, { touched: 0, total: 64, touchedFiles: 0, totalFiles: 0 });
   });
 
   it("clean with safe changes, noting in-plan only when plan-scoped", () => {
@@ -50,7 +50,17 @@ describe("classifyVerdict — severity", () => {
     assert.equal(classifyVerdict(base, OPTS).gloss, "2 features touched · docs current");
     const scoped = classifyVerdict(mkState({ ...base, planScoped: true }), OPTS);
     assert.equal(scoped.gloss, "2 features touched · docs current · in plan");
-    assert.deepEqual(classifyVerdict(base, OPTS).blast, { touched: 2, total: 64 });
+    assert.deepEqual(classifyVerdict(base, OPTS).blast, { touched: 2, total: 64, touchedFiles: 0, totalFiles: 0 });
+  });
+
+  it("computes file-grain blast from changed sources and the in-scope count", () => {
+    const state = mkState({
+      changedSources: ["src/a.ts", "src/b.ts"],
+      byFeature: [{ feature: "app", files: ["src/a.ts", "src/b.ts"] }],
+    });
+    const v = classifyVerdict(state, { totalFeatures: 1, inScopeSourceCount: 10 });
+    // At one feature the feature ratio is "1 of 1"; file-grain resolves it to 2 of 10.
+    assert.deepEqual(v.blast, { touched: 1, total: 1, touchedFiles: 2, totalFiles: 10 });
   });
 
   it("a doc-only change is clean but not 'working tree clean'", () => {

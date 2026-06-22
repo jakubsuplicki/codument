@@ -271,7 +271,7 @@
         "registry-health-and-change-control"
       ],
       "risk": [],
-      "last_updated": "2026-06-19",
+      "last_updated": "2026-06-22",
       "status": "current"
     },
     "feature-decomposition": {
@@ -284,7 +284,9 @@
       "related_sources": [
         "src/lib/analyze.ts",
         "src/cli.ts",
-        "src/lib/registry.ts"
+        "src/lib/registry.ts",
+        "src/lib/verdict.ts",
+        "src/commands/watch.ts"
       ],
       "docs": [
         "skills/plan-with-docs/SKILL.md",
@@ -298,7 +300,7 @@
       ],
       "risk": [],
       "last_updated": "2026-06-22",
-      "status": "in-progress"
+      "status": "current"
     }
   }
 }
