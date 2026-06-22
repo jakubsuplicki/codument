@@ -16,6 +16,9 @@ export interface RegistryEntry {
   risk: string[];
   last_updated: string;
   status: string;
+  /** When true, mutes the `under-decomposed` shape nudge — a deliberately large
+   *  but cohesive feature the author has acknowledged. Absent ⇒ not acknowledged. */
+  cohesive?: boolean;
 }
 
 export interface Registry {
@@ -256,6 +259,7 @@ function parseEntry(
     risk: uniqSort(risk),
     last_updated,
     status,
+    ...(value.cohesive === true ? { cohesive: true } : {}),
   };
 }
 
@@ -277,6 +281,7 @@ function ensureEntryDefaults(
     risk: partial.risk ?? [],
     last_updated: date,
     status: partial.status ?? "current",
+    ...(partial.cohesive === true ? { cohesive: true } : {}),
   };
 }
 

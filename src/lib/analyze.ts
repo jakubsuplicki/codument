@@ -206,7 +206,9 @@ export type LintFindingId =
   | "high-fanout"
   | "empty-depends-on"
   | "bloated-doc"
-  | "unmapped-source";
+  | "unmapped-source"
+  | "under-decomposed"
+  | "over-decomposed";
 
 // Bloat is measured by three independent signals, never one line count.
 // Conservative defaults, calibrated against fixtures/benchmarks/doc-bloat;
@@ -545,10 +547,61 @@ function computeLint(
     }
   }
 
+  // ── Decomposition shape (info-only). The agent proposes the cut; we only flag
+  // shape. A `warn` here would assert a semantic cut ("too big/small to be one
+  // feature") and false-fire on a large cohesive feature, so these NEVER block a
+  // clean result — they are awareness nudges keyed on structure, not judgments. ─
+  const inScopeSet = new Set(inScopeFiles);
+  const matureFeatures = entries.filter(([, e]) => e.type === "feature" && isMatureEntry(e));
+
+  // Under-decomposition: the whole project resolves to a single dominant feature
+  // (the "plinko collapse"). Cannot fire once ≥2 feature-type entries are mature,
+  // so it never triggers on a normally-decomposed repo. `cohesive: true` mutes it.
+  if (matureFeatures.length === 1 && inScopeFiles.length >= 4) {
+    const [key, entry] = matureFeatures[0];
+    if (!entry.cohesive) {
+      const owned = entry.primary_sources.filter((s) => inScopeSet.has(s)).length;
+      if (owned / inScopeFiles.length >= 0.8) {
+        findings.push({
+          id: "under-decomposed",
+          severity: "info",
+          feature: key,
+          count: owned,
+          message: `${key}: one feature owns ${owned} of ${inScopeFiles.length} in-scope files — the project resolves to a single feature (split it, or set "cohesive": true to mute)`,
+        });
+      }
+    }
+  }
+
+  // Over-decomposition: a feature whose sole primary is a barrel/index/types file
+  // — the only mechanically-safe over-split signal (whether a real 1-file feature
+  // should fold is the agent's judgment, left to the concept channel).
+  for (const [key, entry] of matureFeatures) {
+    if (entry.primary_sources.length === 1 && isBarrelFile(entry.primary_sources[0])) {
+      findings.push({
+        id: "over-decomposed",
+        severity: "info",
+        feature: key,
+        file: entry.primary_sources[0],
+        message: `${key}: owns only a barrel/index file (${entry.primary_sources[0]}) — consider folding into its consumer or marking type: concept`,
+      });
+    }
+  }
+
   // bloated docs (each distinct doc checked once)
   findings.push(...computeBloat(root, entries, bloat));
 
   return sortFindings(findings);
+}
+
+/** A pure re-export / index / types module — the only over-decomposition signal
+ *  safe to assert deterministically. */
+function isBarrelFile(path: string): boolean {
+  const base = path.split("/").pop() ?? path;
+  // `.d.ts` is intentionally excluded: `generated-leakage` already fires a `warn`
+  // for a declaration file listed as a source, so adding an `over-decomposed`
+  // info on top would just misdirect from the real (leakage) problem.
+  return /^(index|types|barrel)\.(ts|tsx|js|jsx)$/.test(base);
 }
 
 // Maps every distinct doc path to a representative owning feature, so a doc
@@ -640,7 +693,7 @@ function largestSection(lines: string[]): {
   return { maxSectionLines, maxSectionTitle };
 }
 
-const FINDING_ORDER: LintFindingId[] = [
+export const FINDING_ORDER: LintFindingId[] = [
   "missing-registry",
   "missing-source",
   "missing-doc",
@@ -649,6 +702,8 @@ const FINDING_ORDER: LintFindingId[] = [
   "empty-depends-on",
   "bloated-doc",
   "unmapped-source",
+  "under-decomposed",
+  "over-decomposed",
 ];
 
 function sortFindings(findings: LintFinding[]): LintFinding[] {
