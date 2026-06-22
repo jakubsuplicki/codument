@@ -459,7 +459,7 @@ npx codument adopt --agents codex,claude
 ```
 </details>
 
-## Contributing & running codument
+## Contributing
 
 codument is a solo-authored, source-available project. I build and maintain it on my own, so it's both a working tool and a portfolio of how I approach change control for AI-made changes.
 
