@@ -278,10 +278,13 @@
       "doc": "docs/features/feature-decomposition.md",
       "type": "feature",
       "primary_sources": [
-        "src/lib/feature-map.ts"
+        "src/lib/feature-map.ts",
+        "src/commands/map.ts"
       ],
       "related_sources": [
-        "src/lib/analyze.ts"
+        "src/lib/analyze.ts",
+        "src/cli.ts",
+        "src/lib/registry.ts"
       ],
       "docs": [],
       "depends_on": [

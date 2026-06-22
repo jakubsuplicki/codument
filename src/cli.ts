@@ -15,6 +15,7 @@ import { cost } from "./commands/cost.js";
 import { stepsCommand } from "./commands/steps.js";
 import { scan } from "./commands/scan.js";
 import { update } from "./commands/update.js";
+import { mapRoute, mapCheck, mapMaterialize } from "./commands/map.js";
 import { version } from "./lib/version.js";
 
 const program = new Command();
@@ -130,6 +131,32 @@ program
   .option("--dir <path>", "Project root (default: current directory)")
   .option("--root <dir>", "Project root (default: current directory)")
   .action(stepsCommand);
+
+const map = program
+  .command("map")
+  .description("Feature Map routing + materialization (feature decomposition)");
+
+map
+  .command("route <file>")
+  .description("Print which feature owns <file> per the plan's Feature Map")
+  .option("--plan <path>", "Plan doc to read (default: the single approved plan)")
+  .option("--json", "Machine-readable owner lookup")
+  .option("--root <dir>", "Project root (default: current directory)")
+  .action((file, options) => mapRoute({ file, ...options }));
+
+map
+  .command("check")
+  .description("Validate the plan's Feature Map and flag a too-coarse shape")
+  .option("--plan <path>", "Plan doc to read (default: the single approved plan)")
+  .option("--root <dir>", "Project root (default: current directory)")
+  .action((options) => mapCheck(options));
+
+map
+  .command("materialize <file>")
+  .description("Create/extend the owning feature's registry entry + doc for <file>")
+  .option("--plan <path>", "Plan doc to read (default: the single approved plan)")
+  .option("--root <dir>", "Project root (default: current directory)")
+  .action((file, options) => mapMaterialize({ file, ...options }));
 
 program
   .command("migrate-registry")
