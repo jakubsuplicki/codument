@@ -273,6 +273,21 @@
       "risk": [],
       "last_updated": "2026-06-19",
       "status": "current"
+    },
+    "feature-decomposition": {
+      "doc": "docs/features/feature-decomposition.md",
+      "type": "feature",
+      "primary_sources": [],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [
+        "registry-health-and-change-control",
+        "plan-step-mirroring",
+        "lib"
+      ],
+      "risk": [],
+      "last_updated": "2026-06-22",
+      "status": "in-progress"
     }
   }
 }
