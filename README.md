@@ -387,6 +387,27 @@ To compare a baseline against Codument, initialize two fixture directories and g
 </details>
 
 <details>
+<summary><b>The documentation model</b></summary>
+
+Codument's docs follow two ideas that make them durable rather than decorative:
+
+- **Registry-owned docs.** Every source file has an owning doc, recorded in `docs/.registry.json`. Ownership is what makes drift *detectable*: when a source file changes but its owner doesn't, that's a stale doc the deterministic checks can flag — not a judgment call.
+
+- **One source, layered by audience.** A doc is never split into a "human version" and an "agent version" — two copies drift, which is the exact failure Codument exists to prevent. Instead each doc carries ordered layers in a single file, from plain to technical to machine-readable:
+
+  ```text
+  ## In plain terms   — what it does and why, no jargon
+  ## How it works     — architecture, data flow, trade-offs
+  ## Decisions        — the durable "why"
+  <!-- machine block  — acceptance criteria, registry mapping -->
+  ```
+
+  A human reads the top and expands downward to learn; the agent reads all of it. Audience is a *presentation* concern, never a storage one — so there's only ever one thing to keep true.
+
+Docs come in types — **features** (a capability), **concepts** (a cross-cutting idea), and **ADRs** (a recorded architecture decision) — and the layering applies within each.
+</details>
+
+<details>
 <summary><b>Documentation structure</b></summary>
 
 ```text
