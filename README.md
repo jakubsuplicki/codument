@@ -4,6 +4,12 @@ A deterministic, git-native change-control safety layer for AI-made changes — 
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
+<p align="center">
+  <img src="docs/assets/codument-watch-hero.png" alt="codument watch: a live, deterministic panel attributing agent spend to each feature; verdict CLEAN, cost $4,007.22 across 31 sessions, with a per-feature 'where it went' breakdown" width="820">
+</p>
+
+<p align="center"><sub><code>codument watch</code> · estimated from captured token usage · facts, not a bill</sub></p>
+
 ## What it is
 
 Codument has **two sides** that work together:
@@ -448,6 +454,20 @@ npm install -D ../codument/codument-0.5.0.tgz
 npx codument adopt --agents codex,claude
 ```
 </details>
+
+## Contributing & running codument
+
+codument is a solo-authored, source-available project. I build and maintain it alone — it's both a working tool and a portfolio of how I approach change control for AI-made changes.
+
+Code contributions are not accepted. Pull requests will be closed unmerged. No hard feelings — it's a deliberate choice to keep the codebase fully owned and vouched-for, line by line.
+
+What is very welcome:
+
+- 🐛 Bug reports and 💡 ideas → open an issue
+- 🧪 "I ran it on my repo and here's what happened" → issues or Discussions
+- ⭐ a star, if it's useful to you
+
+The Apache-2.0 license lets you fork, run, and adapt it freely for your own use.
 
 ## Acknowledgements
 

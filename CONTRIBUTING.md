@@ -1,23 +1,34 @@
 # Contributing
 
-## Development
+codument is a solo-authored, source-available project. I build and maintain it alone — it's both a working tool and a portfolio of how I approach change control for AI-made changes.
+
+**Code contributions are not accepted.** Pull requests will be closed unmerged. No hard feelings — it's a deliberate choice to keep the codebase fully owned and vouched-for, line by line.
+
+What is very welcome:
+
+- 🐛 Bug reports and 💡 ideas → open an issue
+- 🧪 "I ran it on my repo and here's what happened" → issues or Discussions
+- ⭐ a star, if it's useful to you
+
+The Apache-2.0 license lets you fork, run, and adapt it freely for your own use.
+
+---
+
+## Maintainer notes
+
+The rest of this file is for the maintainer.
+
+### Development
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/codument.git
+git clone https://github.com/jakubsuplicki/codument.git
 cd codument
 npm install
 npm run build
 npm test
 ```
 
-## Making Changes
-
-1. Create a branch: `git checkout -b my-change`
-2. Make your changes
-3. Build and test: `npm run build && npm test`
-4. Commit and push
-
-## Publishing a New Version
+### Publishing a new version
 
 ```bash
 # 1. Build and test
