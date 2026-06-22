@@ -1,5 +1,32 @@
 {
   "features": {
+    "impact-ledger": {
+      "doc": "docs/features/impact-ledger.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/lib/review-events.ts",
+        "src/lib/impact-ledger.ts"
+      ],
+      "related_sources": [
+        "src/commands/emit.ts",
+        "src/commands/review.ts",
+        "src/lib/git.ts",
+        "src/cli.ts",
+        "src/commands/watch.ts",
+        "src/commands/report.ts",
+        "src/lib/report-html.ts"
+      ],
+      "docs": [],
+      "depends_on": [
+        "review-effectiveness-metric",
+        "complete-cost-capture",
+        "token-cost-tracking",
+        "registry-health-and-change-control"
+      ],
+      "risk": [],
+      "last_updated": "2026-06-22",
+      "status": "in-progress"
+    },
     "cli": {
       "doc": "docs/features/cli.md",
       "type": "feature",

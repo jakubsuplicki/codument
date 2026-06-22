@@ -7,8 +7,8 @@ import {
   type ApprovedPlan,
   type ChangeState,
 } from "../lib/change-state.js";
-import { getWorkingTreeChanges, isGitRepo } from "../lib/git.js";
-import { appendEvent } from "../lib/events.js";
+import { getWorkingTreeChanges, isGitRepo, getHeadSha } from "../lib/git.js";
+import { emitCaught } from "../lib/review-events.js";
 
 interface ReviewOptions {
   root?: string;
@@ -74,19 +74,16 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
 
   const report = buildReview(root);
 
-  // Opt-in: append a flow event so `watch` (and the review-effectiveness log)
-  // has something to tail. Off by default to avoid a surprise file write.
+  // Opt-in: snapshot the deterministic catches (stale docs, risk touches,
+  // off-plan files) as a `caught` event — the provable line of the impact ledger.
+  // Identities, not counts, so the ledger can count distinct things caught. Off
+  // by default to avoid a surprise file write; `commit-work` runs it at commit.
   if (options.log) {
-    appendEvent(root, {
-      type: "review",
-      message: `${report.state.staleDocs.length} stale, ${report.state.unmapped.length} unmapped, ${report.state.riskTouches.length} risk`,
-      data: {
-        changed: report.changedFileCount,
-        stale: report.state.staleDocs.length,
-        unmapped: report.state.unmapped.length,
-        risk: report.state.riskTouches.length,
-        outOfPlan: report.state.outOfPlan.length,
-      },
+    emitCaught(root, {
+      commit: getHeadSha(root),
+      staleDocs: report.state.staleDocs.map((d) => d.doc),
+      riskTouches: report.state.riskTouches.map((r) => r.feature),
+      offPlan: report.state.outOfPlan,
     });
   }
 

@@ -375,6 +375,83 @@ describe("renderFrame token block", () => {
   });
 });
 
+describe("renderFrame caught section (impact ledger)", () => {
+  type Review = Parameters<typeof renderFrame>[0];
+  const gitReview = (): Review =>
+    ({
+      version: 1,
+      isGitRepo: true,
+      changedFileCount: 0,
+      plan: null,
+      state: {
+        changedSources: [],
+        changedDocs: [],
+        byFeature: [],
+        staleDocs: [],
+        riskTouches: [],
+        unmapped: [],
+        otherChanged: [],
+        outOfPlan: [],
+        highFanout: [],
+        dependents: [],
+        planScoped: false,
+      },
+    }) as unknown as Review;
+  const coverage = { coverage: { percent: 80 } } as never;
+  const NOW = "2026-06-16 10:00:00";
+  const caught = (data: Record<string, unknown>) =>
+    ({
+      type: "caught",
+      ts: "2026-06-16T10:00:00.000Z",
+      data: { commit: null, staleDocs: [], riskTouches: [], offPlan: [], ...data },
+    }) as unknown as CodumentEvent;
+  const review = (tier: string, resolution: string) =>
+    ({ type: "review", ts: "2026-06-16T10:00:00.000Z", data: { tier, resolution } }) as unknown as CodumentEvent;
+
+  it("hides the section when there are no caught/review events", () => {
+    const frame = renderFrame(gitReview(), coverage, [], NOW);
+    assert.doesNotMatch(frame, /caught \(all sessions\)/);
+  });
+
+  it("leads with the provable line, counting distinct catches across snapshots", () => {
+    const frame = renderFrame(
+      gitReview(),
+      coverage,
+      [
+        caught({ staleDocs: ["docs/a.md", "docs/b.md"], riskTouches: ["auth"] }),
+        caught({ staleDocs: ["docs/a.md"], offPlan: ["src/x.ts"] }), // docs/a.md repeats → not double-counted
+      ],
+      NOW,
+    );
+    assert.match(frame, /caught \(all sessions\)/);
+    assert.match(frame, /provable/);
+    assert.match(frame, /2 stale docs flagged/);
+    assert.match(frame, /1 high-risk touch\b/);
+    assert.match(frame, /1 off-plan change\b/);
+    assert.doesNotMatch(frame, /reported/); // no self-reported events
+  });
+
+  it("shows only the reported line (correctness fixed) labeled self-reported, minor out of headline", () => {
+    const frame = renderFrame(
+      gitReview(),
+      coverage,
+      [review("correctness", "fixed"), review("correctness", "fixed"), review("minor", "fixed"), review("minor", "deferred")],
+      NOW,
+    );
+    assert.match(frame, /caught \(all sessions\)/);
+    assert.match(frame, /reported/);
+    assert.match(frame, /2 review issues fixed before commit/); // correctness only
+    assert.match(frame, /agent self-reported/);
+    assert.match(frame, /\+1 minor/);
+    assert.doesNotMatch(frame, /provable/); // no caught snapshots
+  });
+
+  it("hides the section when caught snapshots found nothing (clean ship-moments)", () => {
+    const frame = renderFrame(gitReview(), coverage, [caught({}), caught({})], NOW);
+    assert.doesNotMatch(frame, /caught \(all sessions\)/);
+  });
+});
+
 describe("codument watch --once (CLI, temp git repo)", () => {
   function gitInit(root: string): void {
     const run = (args: string[]) =>

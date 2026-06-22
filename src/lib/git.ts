@@ -22,6 +22,22 @@ export function isGitRepo(root: string): boolean {
   }
 }
 
+/**
+ * The current HEAD commit sha (full 40-char), or null when there is no commit
+ * yet (a fresh repo), git is unavailable, or the directory is not a repo. Used
+ * as provenance on a `caught` snapshot — the commit a pending change sits on at
+ * the moment review logged it — not as a dedup key.
+ */
+export function getHeadSha(root: string): string | null {
+  if (!isGitRepo(root)) return null;
+  try {
+    const sha = git(root, ["rev-parse", "HEAD"]).trim();
+    return sha.length > 0 ? sha : null;
+  } catch {
+    return null;
+  }
+}
+
 // Parse one `git status --porcelain` path field, taking the post-rename path and
 // unquoting git's C-style quoting for paths with special characters.
 function parsePath(field: string): string {

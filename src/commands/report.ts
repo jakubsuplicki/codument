@@ -5,6 +5,7 @@ import { platform } from "node:os";
 import pc from "picocolors";
 import { buildReview } from "./review.js";
 import { buildReport } from "./doctor.js";
+import { buildImpactLedger } from "../lib/impact-ledger.js";
 import {
   renderReviewReportHtml,
   type ReportData,
@@ -41,6 +42,7 @@ export function buildReportData(
     previousPercent: readPreviousPercent(root),
     generatedAt,
     demo,
+    impact: buildImpactLedger(root),
   };
 }
 

@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -157,5 +157,26 @@ describe("codument review (CLI)", () => {
     const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
     assert.match(out, /Stale docs/);
     assert.match(out, /auth/);
+  });
+
+  it("--log writes a caught snapshot with finding identities", async () => {
+    await scaffold({
+      "docs/plans/add-thing.md":
+        "---\ntitle: Add Thing\ntype: plan\nstatus: approved\n---\n\n## Scope\n\n- `src/lib/db.ts`\n",
+      // auth source changes without its doc (stale + risk), and an off-plan file
+      "src/auth/login.ts": "export const login = () => { return 9; };\n",
+    });
+    execFileSync("node", [CLI, "review", "--log"], { cwd: tmp, encoding: "utf-8" });
+    const log = await readFile(join(tmp, ".codument", "events.jsonl"), "utf-8");
+    const caught = log
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l))
+      .find((e) => e.type === "caught");
+    assert.ok(caught, "a caught event was written");
+    assert.deepEqual(caught.data.staleDocs, ["docs/features/auth.md"]);
+    assert.deepEqual(caught.data.riskTouches, ["auth"]);
+    assert.ok(caught.data.offPlan.includes("src/auth/login.ts"));
+    assert.equal(typeof caught.data.commit, "string");
   });
 });

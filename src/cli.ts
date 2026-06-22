@@ -4,7 +4,7 @@ import { adopt } from "./commands/adopt.js";
 import { createBenchmarkCommand } from "./commands/benchmark.js";
 import { demo } from "./commands/demo.js";
 import { doctor } from "./commands/doctor.js";
-import { emitTokensCommand } from "./commands/emit.js";
+import { emitTokensCommand, emitReviewCommand } from "./commands/emit.js";
 import { init } from "./commands/init.js";
 import { migrateRegistryCommand } from "./commands/migrate.js";
 import { report } from "./commands/report.js";
@@ -58,7 +58,7 @@ program
     "Review the uncommitted git diff against the v2 registry: owners, stale docs, risk touches, out-of-plan and unmapped changes, dependents",
   )
   .option("--json", "Emit the machine-readable review contract")
-  .option("--log", "Append a review event to .codument/events.jsonl (for watch)")
+  .option("--log", "Append a `caught` snapshot (provable catches) to .codument/events.jsonl (for the impact ledger)")
   .action(review);
 
 program
@@ -192,6 +192,17 @@ emit
   .option("--step <step>", "delivery-plan step to attribute this usage to")
   .option("--root <dir>", "project root (defaults to current directory)")
   .action(emitTokensCommand);
+
+emit
+  .command("review")
+  .description("Record a resolved review finding (self-reported, tiered) for the impact ledger")
+  .requiredOption("--tier <tier>", "correctness | minor")
+  .requiredOption("--resolution <resolution>", "fixed | deferred")
+  .option("--feature <feature>", "feature this finding belongs to")
+  .option("--step <step>", "delivery-plan step this finding belongs to")
+  .option("--summary <text>", "one-line description of the finding")
+  .option("--root <dir>", "project root (defaults to current directory)")
+  .action(emitReviewCommand);
 
 program.addCommand(createBenchmarkCommand());
 

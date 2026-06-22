@@ -1,4 +1,5 @@
 import { emitTokens } from "../lib/emit-producer.js";
+import { emitReview, type ReviewTier, type ReviewResolution } from "../lib/review-events.js";
 
 export interface EmitTokensCliOptions {
   model: string;
@@ -38,4 +39,35 @@ export function emitTokensCommand(options: EmitTokensCliOptions): void {
       ...(options.step !== undefined ? { step: options.step } : {}),
     },
   );
+}
+
+export interface EmitReviewCliOptions {
+  tier: string;
+  resolution: string;
+  feature?: string;
+  step?: string;
+  summary?: string;
+  root?: string;
+}
+
+/**
+ * `codument emit review` — record one resolved review finding (self-reported,
+ * tiered) into .codument/events.jsonl. The agent's `review-work` step shells this
+ * once per finding it fixed/deferred. Invalid tier/resolution exits nonzero
+ * without writing a malformed event.
+ */
+export function emitReviewCommand(options: EmitReviewCliOptions): void {
+  const root = options.root ?? process.cwd();
+  try {
+    emitReview(root, {
+      tier: options.tier as ReviewTier,
+      resolution: options.resolution as ReviewResolution,
+      ...(options.feature !== undefined ? { feature: options.feature } : {}),
+      ...(options.step !== undefined ? { step: options.step } : {}),
+      ...(options.summary !== undefined ? { summary: options.summary } : {}),
+    });
+  } catch (err) {
+    console.error(`codument emit review: ${(err as Error).message}`);
+    process.exitCode = 1;
+  }
 }

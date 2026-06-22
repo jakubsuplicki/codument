@@ -132,6 +132,44 @@ describe("renderReviewReportHtml", () => {
     // the number layer must stack above the .ring::after donut-hole disc, or it's invisible
     assert.match(html, /\.ring \.num\{[^}]*z-index:\s*[1-9]/);
   });
+
+  it("omits the Caught panel when there is no impact ledger data", () => {
+    const html = renderReviewReportHtml({
+      review: { version: 1, isGitRepo: true, changedFileCount: 0, plan: null, state: emptyState() },
+      coveragePercent: 90,
+      generatedAt: "t",
+      impact: {
+        provable: { staleDocs: 0, riskTouches: 0, offPlan: 0, snapshots: 0 },
+        reported: { headline: 0, fixed: { correctness: 0, minor: 0 }, deferred: { correctness: 0, minor: 0 }, total: 0 },
+        hasProvable: false,
+        hasReported: false,
+      },
+    });
+    assert.doesNotMatch(html, /Caught across this project/);
+  });
+
+  it("renders the Caught panel: provable line leads, reported line labeled self-reported", () => {
+    const html = renderReviewReportHtml({
+      review: { version: 1, isGitRepo: true, changedFileCount: 0, plan: null, state: emptyState() },
+      coveragePercent: 90,
+      generatedAt: "t",
+      impact: {
+        provable: { staleDocs: 23, riskTouches: 4, offPlan: 2, snapshots: 12 },
+        reported: { headline: 11, fixed: { correctness: 11, minor: 3 }, deferred: { correctness: 0, minor: 1 }, total: 15 },
+        hasProvable: true,
+        hasReported: true,
+      },
+    });
+    assert.match(html, /Caught across this project/);
+    assert.match(html, /Provable/);
+    assert.match(html, /23 stale docs flagged/);
+    assert.match(html, /4 high-risk touches/);
+    assert.match(html, /2 off-plan changes/);
+    assert.match(html, /Reported/);
+    assert.match(html, /11 review issues fixed before commit/);
+    assert.match(html, /\+3 minor/);
+    assert.match(html, /agent self-reported/);
+  });
 });
 
 describe("report command (temp git repo)", () => {

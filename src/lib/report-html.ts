@@ -1,4 +1,5 @@
 import type { ReviewReport } from "../commands/review.js";
+import type { ImpactLedger } from "./impact-ledger.js";
 
 // Self-contained HTML review report: inline CSS, no network, no JS (uses native
 // <details> for the collapsible sections). Pure function of the data passed in,
@@ -13,6 +14,8 @@ export interface ReportData {
   generatedAt: string;
   /** Optional "how this was produced" notes — set by `demo` to explain the sample repo. */
   demo?: DemoExplainer;
+  /** Optional cumulative impact ledger (all sessions) — the "what codument caught" panel. */
+  impact?: ImpactLedger;
 }
 
 /** A clickable explainer panel describing how a sample/demo report was produced. */
@@ -173,6 +176,7 @@ export function renderReviewReportHtml(data: ReportData): string {
     : `<div class="clean-note"><span class="ok-dot"></span>Source and docs changed together, every change is owned, and nothing fell outside scope.</div>`;
 
   const demoHtml = data.demo ? renderDemo(data.demo) : "";
+  const impactHtml = renderImpact(data.impact);
 
   const byFeature = s.byFeature
     .map(
@@ -325,6 +329,18 @@ export function renderReviewReportHtml(data: ReportData): string {
   details.exp>summary:hover{color:var(--ink2)}
   details.exp .why{font-size:13px;color:var(--ink2);margin-top:7px;padding-left:14px;border-left:1px solid var(--line2);line-height:1.5}
 
+  /* caught (impact ledger) */
+  .impact{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px 18px 14px}
+  .iline{display:flex;gap:14px;align-items:baseline;padding:11px 0}
+  .iline+.iline{border-top:1px solid var(--line)}
+  .ik{font-family:var(--mono);font-size:10px;letter-spacing:1.3px;text-transform:uppercase;font-weight:700;padding:3px 0;border-radius:6px;flex:none;width:82px;text-align:center}
+  .ik.prov{color:var(--good);background:var(--good-bg);border:1px solid var(--good-ln)}
+  .ik.rep{color:var(--info);background:var(--info-bg);border:1px solid var(--info-ln)}
+  .iv{color:var(--ink);font-size:14px}
+  .iv .self{font-family:var(--mono);font-size:11px;color:var(--ink3);margin-left:8px}
+  .ifoot{font-family:var(--mono);font-size:11px;color:var(--ink3);margin:12px 0 2px;line-height:1.6}
+  .ifoot b{color:var(--ink2)}
+
   /* collapsible detail blocks */
   details.block{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:12px;overflow:hidden}
   details.block>summary{cursor:pointer;list-style:none;padding:15px 18px;display:flex;align-items:center;gap:11px;font-weight:600;font-size:14px;color:var(--ink)}
@@ -378,6 +394,8 @@ export function renderReviewReportHtml(data: ReportData): string {
   <div class="shead"><h2>Findings</h2><span class="ln"></span></div>
   ${findingsBody}
 
+  ${impactHtml}
+
   <div class="shead"><h2>Details</h2><span class="ln"></span></div>
   ${demoHtml}
   <details class="block">
@@ -398,6 +416,37 @@ export function renderReviewReportHtml(data: ReportData): string {
 </body>
 </html>
 `;
+}
+
+/** Cumulative "what codument caught on this project" panel — provable line leads,
+ *  agent-self-reported line labeled. Empty string when there is nothing to show. */
+function renderImpact(impact?: ImpactLedger): string {
+  if (!impact || (!impact.hasProvable && !impact.hasReported)) return "";
+  const rows: string[] = [];
+  if (impact.hasProvable) {
+    const p = impact.provable;
+    const parts: string[] = [];
+    if (p.staleDocs > 0) parts.push(`${p.staleDocs} stale ${p.staleDocs === 1 ? "doc" : "docs"} flagged`);
+    if (p.riskTouches > 0) parts.push(`${p.riskTouches} high-risk ${p.riskTouches === 1 ? "touch" : "touches"}`);
+    if (p.offPlan > 0) parts.push(`${p.offPlan} off-plan ${p.offPlan === 1 ? "change" : "changes"}`);
+    rows.push(
+      `<div class="iline"><span class="ik prov">Provable</span><span class="iv">${esc(parts.join(" · "))}</span></div>`,
+    );
+  }
+  if (impact.hasReported) {
+    const r = impact.reported;
+    let main = `${r.headline} review ${r.headline === 1 ? "issue" : "issues"} fixed before commit`;
+    if (r.fixed.minor > 0) main += ` · +${r.fixed.minor} minor`;
+    rows.push(
+      `<div class="iline"><span class="ik rep">Reported</span><span class="iv">${esc(main)}<span class="self">agent self-reported · correctness</span></span></div>`,
+    );
+  }
+  return `
+  <div class="shead"><h2>Caught across this project</h2><span class="ln"></span></div>
+  <div class="impact">
+    ${rows.join("\n    ")}
+    <p class="ifoot"><b>Provable</b> — what codument's analyzer caught, deterministic. <b>Reported</b> — findings the agent fixed before commit, self-reported. Cumulative across all sessions.</p>
+  </div>`;
 }
 
 function renderDemo(d: DemoExplainer): string {

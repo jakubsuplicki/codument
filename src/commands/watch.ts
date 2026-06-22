@@ -5,6 +5,7 @@ import { buildReview, type ReviewReport } from "./review.js";
 import { buildReport, type DoctorReport } from "./doctor.js";
 import { isGitRepo, getWorkingTreeChanges } from "../lib/git.js";
 import { readRecentEvents, type CodumentEvent } from "../lib/events.js";
+import { summarizeImpact } from "../lib/impact-ledger.js";
 import { summarizeTokens } from "../lib/token-report.js";
 import { loadRates, type RateTable } from "../lib/token-cost.js";
 import { pumpFeed } from "../lib/claude-feed.js";
@@ -387,6 +388,33 @@ export function renderFrame(
     if (byFeat.length > 3) lines.push(pc.dim(`    + ${byFeat.length - 3} more`));
     if (tokens.unpriced.length > 0) {
       lines.push(pc.yellow(`  unpriced models: ${tokens.unpriced.join(", ")}`));
+    }
+    lines.push("");
+  }
+
+  // ── Caught (all sessions) — what the loop has caught over the project's life,
+  // cumulative from the whole log (like cost, not session-scoped). Provable
+  // catches (codument's own analyzer, ungameable) lead; agent-self-reported
+  // review-fixes are a separate, labeled line. Never blended into one number.
+  // Hidden until there is something to show.
+  const impact = summarizeImpact(events);
+  if (impact.hasProvable || impact.hasReported) {
+    lines.push(pc.dim("  caught (all sessions)"));
+    if (impact.hasProvable) {
+      const p = impact.provable;
+      const parts: string[] = [];
+      if (p.staleDocs > 0) parts.push(`${plural(p.staleDocs, "stale doc")} flagged`);
+      if (p.riskTouches > 0) parts.push(plural(p.riskTouches, "high-risk touch", "high-risk touches"));
+      if (p.offPlan > 0) parts.push(plural(p.offPlan, "off-plan change"));
+      lines.push(`    ${pc.cyan("provable")}  ${parts.join(" · ")}`);
+    }
+    if (impact.hasReported) {
+      const r = impact.reported;
+      let main = `${plural(r.headline, "review issue")} fixed before commit`;
+      if (r.fixed.minor > 0) main += pc.dim(` · +${r.fixed.minor} minor`);
+      lines.push(
+        `    ${pc.cyan("reported")}  ${main}   ${pc.dim("(agent self-reported · correctness)")}`,
+      );
     }
     lines.push("");
   }

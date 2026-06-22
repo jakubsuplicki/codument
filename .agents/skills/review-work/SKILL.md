@@ -10,7 +10,7 @@ Use this after a planned step has been implemented and before committing.
 ## Review Order
 
 1. Read the approved plan step.
-2. Run `codument review` (add `--json` to consume it programmatically) for the deterministic change-state: which feature owners the diff touches, docs that went **stale** (source changed, mapped doc didn't), high-risk areas touched, out-of-plan changes, unmapped new files, and dependent features that may need re-review. Use it as the spine of the review — it tells you where to look; it does not certify the change is safe.
+2. Run `codument review --log` (add `--json` to consume it programmatically). `--log` snapshots a `caught` event — the **provable** line of the impact ledger (`codument watch` / `report`) — recording the stale docs, risk touches, and off-plan files this change flagged **while they are still present** (before step 6 clears them). The report gives the deterministic change-state: which feature owners the diff touches, docs that went **stale** (source changed, mapped doc didn't), high-risk areas touched, out-of-plan changes, unmapped new files, and dependent features that may need re-review. Use it as the spine of the review — it tells you where to look; it does not certify the change is safe.
 3. Inspect the current diff.
 4. Check whether the implementation matches the planned behavior.
 5. Check tests or verification output.
@@ -49,8 +49,19 @@ Review clean. Next options:
 3. Pause here
 ```
 
+## Record resolved findings (impact ledger)
+
+When a review finding is resolved before commit — **fixed** (a verifiable change) or explicitly **deferred** — log it once so `codument watch` / `report` can show what the review step caught:
+
+```bash
+codument emit review --tier <correctness|minor> --resolution <fixed|deferred> [--feature <name>] [--step <n>] [--summary "<one line>"]
+```
+
+Tier conservatively: `correctness` covers safety, security, data-loss, and logic bugs; anything cosmetic is `minor`. This line is explicitly self-reported, and the `watch` headline counts only **fixed × correctness** — so do not inflate it. A finding that was neither fixed nor deferred (dismissed as a non-issue) is not logged.
+
 ## Rules
 
+- Log each resolved finding once with `codument emit review` (fixed or deferred); never log one that was neither.
 - Treat extra unplanned scope as a finding.
 - Do not focus on formatting that automated tools should handle.
 - Do not manufacture issues.
