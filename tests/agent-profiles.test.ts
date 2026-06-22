@@ -57,6 +57,7 @@ describe("agent profiles", () => {
 
   it("includes the core delivery skills", () => {
     assert.deepStrictEqual([...DELIVERY_SKILLS], [
+      "establish-charter",
       "grill-with-docs",
       "plan-with-docs",
       "tdd",
@@ -65,6 +66,10 @@ describe("agent profiles", () => {
       "commit-work",
       "update-docs",
     ]);
+  });
+
+  it("leads the delivery skills with the charter gate", () => {
+    assert.equal(DELIVERY_SKILLS[0], "establish-charter");
   });
 
   it("clarifies when to grill versus plan", async () => {

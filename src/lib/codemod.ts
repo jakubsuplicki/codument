@@ -8,6 +8,13 @@ export interface FileHash {
   hash: string;
 }
 
+export interface CharterMeta {
+  /** How serious the project is, set by the establish-charter gate. */
+  seriousness: "demo" | "serious";
+  /** ISO date the charter was established. */
+  established: string;
+}
+
 export interface MetaFile {
   version: string;
   initialized: string;
@@ -15,6 +22,12 @@ export interface MetaFile {
   project: Record<string, unknown>;
   lastScan?: Record<string, unknown>;
   fileHashes?: Record<string, string>;
+  /**
+   * At-a-glance charter status, set when the establish-charter gate runs.
+   * `docs/charter.md` remains the source of truth; this is a convenience mirror.
+   * Absent until a charter is established.
+   */
+  charter?: CharterMeta;
 }
 
 export type MergeResult =

@@ -24,6 +24,7 @@ Backward compatibility with the current Claude-centered implementation is not re
 
 ## Workflow Shape
 
+0. Charter gate (once per project, before the first grill): on an uncharted project (`docs/charter.md` missing), the first real-work-intent message runs `establish-charter` first — it sets the project's seriousness and walks the core tech/architecture choices recommendation-first, writes the charter, then hands back to the normal loop. A pure question or read-only request does not trip it; a charted project skips it. See [project-charter-gate.md](project-charter-gate.md).
 1. Route intent: before any source edit, name the assumption the change depends on; a load-bearing one you cannot confirm (or a still-rough request) needs `grill-with-docs`, while settled scope moves directly into `plan-with-docs`.
 2. Grill with docs: resolve the load-bearing assumptions a change depends on against the existing overview, registry, feature docs, concept docs, ADRs, and code reality.
 3. Plan with docs: write or update the relevant feature plan with scope, non-goals, acceptance criteria, verification strategy, and implementation steps.

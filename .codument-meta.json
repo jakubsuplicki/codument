@@ -36,8 +36,10 @@
     ".claude/agents/doc-writer.md": "aafdbda0721efad1",
     ".claude/agents/doc-scanner.md": "0dc3127f8fab8276",
     ".claude/agents/code-reviewer.md": "f499dcaf04d6f571",
-    "AGENTS.md": "b24daaaffefaec28",
-    "CLAUDE.md": "7b4824430aafc7f6"
+    "AGENTS.md": "60dc1e0574ee8924",
+    "CLAUDE.md": "439bf90a742598a0",
+    ".agents/skills/establish-charter/SKILL.md": "ef8ed40d7e8b64b0",
+    ".claude/skills/establish-charter/SKILL.md": "ef8ed40d7e8b64b0"
   },
   "agents": [
     "codex",

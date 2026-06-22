@@ -81,6 +81,36 @@ describe("writeMeta", () => {
     assert.ok(raw.endsWith("\n"));
     assert.deepStrictEqual(JSON.parse(raw), meta);
   });
+
+  it("round-trips the optional charter field", async () => {
+    const meta: MetaFile = {
+      version: "0.1.0",
+      initialized: "2026-03-01",
+      project: {},
+      charter: { seriousness: "serious", established: "2026-06-22" },
+    };
+
+    await writeMeta(tmp, meta);
+    const result = await readMeta(tmp);
+
+    assert.deepStrictEqual(result?.charter, {
+      seriousness: "serious",
+      established: "2026-06-22",
+    });
+  });
+
+  it("omits charter by default", async () => {
+    const meta: MetaFile = {
+      version: "0.1.0",
+      initialized: "2026-03-01",
+      project: {},
+    };
+
+    await writeMeta(tmp, meta);
+    const result = await readMeta(tmp);
+
+    assert.equal(result?.charter, undefined);
+  });
 });
 
 describe("decideMergeStrategy", () => {

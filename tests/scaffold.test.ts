@@ -100,6 +100,13 @@ describe("buildManagedSection", () => {
     assert.ok(section.includes("Core loop"));
     assert.ok(section.includes("Intent routing"));
     assert.ok(section.includes("Do not wait for the user to name a skill"));
+    assert.ok(section.includes("Charter gate (runs before the normal grill"));
+    assert.ok(section.includes("run `establish-charter` first"));
+    // the charter gate must be the FIRST routing rule, ahead of the assumption gate
+    assert.ok(
+      section.indexOf("Charter gate") <
+        section.indexOf("Before editing source, name the one assumption"),
+    );
     assert.ok(section.includes("use `grill-with-docs` first"));
     assert.ok(section.includes("use `plan-with-docs`"));
     assert.ok(section.includes("use `work-step`"));

@@ -109,6 +109,11 @@ describe("init command", () => {
       existsSync(join(tmp, ".claude", "skills", "tdd", "SKILL.md")),
     );
     assert.ok(
+      existsSync(
+        join(tmp, ".claude", "skills", "establish-charter", "SKILL.md"),
+      ),
+    );
+    assert.ok(
       existsSync(join(tmp, ".claude", "skills", "commit-work", "SKILL.md")),
     );
     const commitSkill = await readFile(

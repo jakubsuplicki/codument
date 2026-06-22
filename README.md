@@ -120,12 +120,13 @@ Chat normally. Codument's always-loaded instructions route clear intent into the
 
 ```mermaid
 flowchart LR
-  G[grill] --> P[plan] --> A{approved?}
+  CH[charter?] --> G[grill] --> P[plan] --> A{approved?}
   A -->|yes| I[implement] --> V[verify] --> D[document] --> R[review] --> C[commit]
   C -->|next step| G
   A -->|not yet| P
 ```
 
+0. On an uncharted project, the first real-work-intent message triggers `establish-charter` once: it asks whether this is a quick demo or a serious app, then walks the core tech and architecture choices recommendation-first — explained in plain language with trade-offs, so even a non-technical user understands the decisions — and writes `docs/charter.md`. A pure question doesn't trip it; a charted project skips it.
 1. Before any source edit the agent names the assumption the change depends on; a load-bearing one it cannot confirm — or a rough, ambiguous request — triggers `grill-with-docs`.
 2. Settled scope triggers `plan-with-docs`, which writes the durable plan and stops for approval.
 3. Approved plans trigger `work-step` for the next unchecked step.
@@ -136,6 +137,7 @@ The installed skills:
 
 | Skill | Purpose |
 | --- | --- |
+| `establish-charter` | On an uncharted project, set its seriousness (demo vs. serious) and walk the core tech/architecture choices recommendation-first, then write `docs/charter.md` — once, before the first grill |
 | `grill-with-docs` | Resolve the load-bearing assumptions a change depends on, against docs, code, ADRs, and edge cases, before planning |
 | `plan-with-docs` | Turn resolved decisions into a compact feature plan with steps and acceptance criteria |
 | `tdd` | Implement one behavior slice at a time with the strongest practical feedback loop |

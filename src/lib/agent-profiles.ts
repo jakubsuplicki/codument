@@ -23,6 +23,7 @@ export interface AgentProfile {
 }
 
 export const DELIVERY_SKILLS = [
+  "establish-charter",
   "grill-with-docs",
   "plan-with-docs",
   "tdd",

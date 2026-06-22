@@ -1,5 +1,26 @@
 {
   "features": {
+    "project-charter-gate": {
+      "doc": "docs/features/project-charter-gate.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/lib/scaffold.ts"
+      ],
+      "related_sources": [
+        "src/lib/agent-profiles.ts",
+        "src/lib/codemod.ts"
+      ],
+      "docs": [
+        "skills/establish-charter/SKILL.md",
+        "templates/charter.md"
+      ],
+      "depends_on": [
+        "agent-delivery-workflow"
+      ],
+      "risk": [],
+      "last_updated": "2026-06-22",
+      "status": "current"
+    },
     "impact-ledger": {
       "doc": "docs/features/impact-ledger.md",
       "type": "feature",
@@ -173,7 +194,7 @@
       "docs": [],
       "depends_on": [],
       "risk": [],
-      "last_updated": "2026-06-19",
+      "last_updated": "2026-06-22",
       "status": "current"
     },
     "registry-health-and-change-control": {
