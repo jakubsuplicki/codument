@@ -1,8 +1,8 @@
 # Contributing
 
-codument is a solo-authored, source-available project. I build and maintain it alone — it's both a working tool and a portfolio of how I approach change control for AI-made changes.
+codument is a solo-authored, source-available project. I build and maintain it on my own, so it's both a working tool and a portfolio of how I approach change control for AI-made changes.
 
-**Code contributions are not accepted.** Pull requests will be closed unmerged. No hard feelings — it's a deliberate choice to keep the codebase fully owned and vouched-for, line by line.
+I'm not accepting code contributions, so please don't open a pull request. It's nothing personal; I just want to keep the codebase something I can fully stand behind.
 
 What is very welcome:
 
