@@ -10,7 +10,7 @@ When you create or modify ANY source file, documentation MUST be handled as part
 ### For every source file you touch:
 
 1. Read `docs/.registry.json`
-2. Find the file path in any feature's `sources` array
+2. Find the file path in any feature's `primary_sources` / `related_sources`
 
 **If the file IS in the registry:**
 - Read the corresponding doc file
@@ -19,16 +19,21 @@ When you create or modify ANY source file, documentation MUST be handled as part
 - If your change affects the public interface (exported functions, types, or behavior), set dependent features' status to `"stale"` via the `depends_on` field
 
 **If the file is NOT in the registry** and contains significant logic (not just types, configs, or one-line re-exports):
-- Determine the feature name from the file's purpose (kebab-case)
-- Create `docs/features/{feature-name}.md` with sections: Summary, How It Works, Key Files, and optionally API/Interface and Gotchas
-- Add the mapping to `docs/.registry.json`:
+
+- **First, route via the approved plan's Feature Map.** If the active plan carries a `feature-map` block, run `codument map materialize <file>` — it creates or extends the *owning* feature's registry entry + doc scaffold for you. Do not hand-pick a feature name when a Map exists.
+- **An unmapped file with a Map present is a flag, not a lump.** If `codument map materialize` reports the file unmapped or ambiguous, STOP and add/fix a Map row (the file's owner is a decomposition decision) — never fold it into an existing umbrella feature.
+- **Only when there is no Feature Map** (an out-of-loop, ad-hoc edit) fall back to naming the feature from the file's purpose (kebab-case), create `docs/features/{feature-name}.md` (Summary, How It Works, Key Files), and add a **v2** entry to `docs/.registry.json`:
   ```json
   "feature-name": {
     "doc": "docs/features/feature-name.md",
-    "sources": ["src/path/to/file.ts"],
-    "status": "current",
+    "type": "feature",
+    "primary_sources": ["src/path/to/file.ts"],
+    "related_sources": [],
+    "docs": [],
+    "depends_on": [],
+    "risk": [],
     "last_updated": "YYYY-MM-DD",
-    "depends_on": []
+    "status": "current"
   }
   ```
 - Populate `depends_on` based on imports from other registered features

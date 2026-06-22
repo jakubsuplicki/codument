@@ -287,7 +287,8 @@
         "src/lib/registry.ts"
       ],
       "docs": [
-        "skills/plan-with-docs/SKILL.md"
+        "skills/plan-with-docs/SKILL.md",
+        "rules/documentation.md"
       ],
       "depends_on": [
         "registry-health-and-change-control",
