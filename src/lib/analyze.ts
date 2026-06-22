@@ -54,7 +54,9 @@ export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
   extensions: [".ts", ".tsx", ".js", ".jsx"],
 };
 
-function globToRegExp(glob: string): RegExp {
+// Exported so the Feature Map router (feature-map.ts) matches globs with the
+// exact same semantics the exclusion spec uses — one globber, no drift.
+export function globToRegExp(glob: string): RegExp {
   let re = "";
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];

@@ -277,8 +277,12 @@
     "feature-decomposition": {
       "doc": "docs/features/feature-decomposition.md",
       "type": "feature",
-      "primary_sources": [],
-      "related_sources": [],
+      "primary_sources": [
+        "src/lib/feature-map.ts"
+      ],
+      "related_sources": [
+        "src/lib/analyze.ts"
+      ],
       "docs": [],
       "depends_on": [
         "registry-health-and-change-control",
