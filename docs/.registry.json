@@ -288,6 +288,7 @@
       ],
       "docs": [
         "skills/plan-with-docs/SKILL.md",
+        "skills/work-step/SKILL.md",
         "rules/documentation.md"
       ],
       "depends_on": [
