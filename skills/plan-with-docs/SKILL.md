@@ -34,6 +34,7 @@ When those questions remain, switch to `grill-with-docs` first. Ask one sharp de
    - Current decision
    - Non-goals
    - Delivery plan
+   - Feature Map (whenever the plan introduces source files — see below)
    - Acceptance criteria
    - Verification strategy
    - Open questions
@@ -52,6 +53,26 @@ Status: draft, awaiting approval before source edits.
 - [ ] Step 3: ...
 ```
 
+## Feature Map (required when the plan introduces source files)
+
+A plan that adds source files MUST carry a fenced `feature-map` block. This is the decomposition decision made explicit and approvable: it routes each source path to the feature that owns it, and `work-step` consumes it via `codument map` so files land in the right feature instead of being lumped into one umbrella feature.
+
+```feature-map
+src/fairness.ts | fairness    | feature | provably-fair seed/HMAC engine; isolated seam
+src/board.ts    | board       | feature | canvas peg/slot render + ball animation
+src/payouts.ts  | payouts     | concept | static multiplier tables
+src/main.ts     | app-shell   | feature | DOM bootstrap + wiring  [secondary: game, board]
+```
+
+Each row is `path-or-glob | feature-slug | type (feature|concept) | one-line responsibility`, with an optional trailing `[secondary: a, b]` for files whose logic also belongs to other features (entry/wiring files especially).
+
+How to draw the cut:
+
+- **The default unit is the module, not the app.** Treat each module/responsibility you named in the plan as a *candidate feature*. Do not collapse the whole app into one feature — that reproduces the one-feature collapse where blast, cost, and drift cannot resolve.
+- **Group only genuine single responsibilities.** Merge two files into one feature only when they are truly one thing.
+- **Leaf utilities → `concept`.** Small tables, pure helpers, types, and barrels go to `type: concept` so they are documented without inflating the feature count.
+- The slug becomes the doc/registry key (`docs/features/{slug}.md` or `docs/concepts/{slug}.md`); use kebab-case a developer would say out loud.
+
 ## Approval Summary
 
 The user approves from the chat, not by opening the doc — so the approval message must carry the plan's checklist, not just a link to the file.
@@ -59,6 +80,7 @@ The user approves from the chat, not by opening the doc — so the approval mess
 - Render the steps inline by running `codument steps --plan docs/features/<name>.md` (or the `docs/concepts/...` path) and showing its output. It reads the checklist back from the file you just wrote, so the summary the user approves is exactly what is on disk — no paraphrase drift. `--plan` works even though the plan is only "awaiting approval".
 - If the CLI is unavailable, list each `- [ ]` step inline yourself.
 - Keep the message to the step list plus a one-line scope / non-goals note; link the doc for full detail, but the inline summary must never be a bare link.
+- When the plan carries a Feature Map, render it inline too (the human approves the *cut*, not just the steps) and run `codument map check --plan docs/features/<name>.md` — surface any malformed rows or a too-coarse-shape flag at the gate, before approval, where it can still be fixed.
 
 ## Rules
 

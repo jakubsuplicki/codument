@@ -286,7 +286,9 @@
         "src/cli.ts",
         "src/lib/registry.ts"
       ],
-      "docs": [],
+      "docs": [
+        "skills/plan-with-docs/SKILL.md"
+      ],
       "depends_on": [
         "registry-health-and-change-control",
         "plan-step-mirroring",
