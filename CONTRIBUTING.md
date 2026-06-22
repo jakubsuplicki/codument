@@ -14,11 +14,9 @@ The Apache-2.0 license lets you fork, run, and adapt it freely for your own use.
 
 ---
 
-## Maintainer notes
+## Running from source
 
-The rest of this file is for the maintainer.
-
-### Development
+Forking to adapt it for your own use is welcome. To build and test a local checkout:
 
 ```bash
 git clone https://github.com/jakubsuplicki/codument.git
@@ -26,24 +24,4 @@ cd codument
 npm install
 npm run build
 npm test
-```
-
-### Publishing a new version
-
-```bash
-# 1. Build and test
-npm run build
-npm test
-
-# 2. Bump version (creates commit + git tag)
-npm version patch   # 0.1.0 → 0.1.1 (bug fixes)
-npm version minor   # 0.1.0 → 0.2.0 (new features)
-npm version major   # 0.1.0 → 1.0.0 (breaking changes)
-
-# 3. Push to GitHub with tags
-git push && git push --tags
-
-# 4. Publish to npm
-npm run build
-npm publish --otp=CODE
 ```
