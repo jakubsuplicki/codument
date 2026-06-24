@@ -1,10 +1,13 @@
 ---
 name: senior-backend
 description: >
-  Build robust backend systems. Use when designing APIs, writing backend logic,
-  optimizing database queries, implementing authentication, handling errors,
-  or reviewing backend code. Covers Node.js, Express, Go, Python, PostgreSQL,
-  GraphQL, and REST APIs.
+  Build robust backend systems: API design, data modeling, query optimization,
+  authentication, and error handling. Covers Node.js, Express, Go, Python,
+  PostgreSQL, GraphQL, and REST, and the principles apply to any server stack.
+  Use whenever the user designs or writes server-side logic, endpoints, database
+  schemas or queries, or authentication. Do NOT use for system-wide architecture
+  or migration trade-offs (use senior-architect), or for reviewing a diff or PR
+  (use code-reviewer).
 ---
 
 # Backend Development

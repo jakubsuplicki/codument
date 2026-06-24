@@ -1,9 +1,13 @@
 ---
 name: senior-architect
 description: >
-  Design and evaluate software architecture. Use when designing system architecture,
-  making technical decisions, evaluating trade-offs, planning migrations, or when asked
-  to architect a solution. Covers web apps, APIs, databases, and distributed systems.
+  Design and evaluate software architecture: system boundaries, technical decisions,
+  trade-offs, migration paths, and ADRs. Covers web apps, services, APIs, databases,
+  and distributed systems; the approach is stack-agnostic. Use whenever the user is
+  choosing an architecture, weighing a trade-off (consistency vs availability, build
+  vs buy), planning a migration, or asks to architect a system. Do NOT use for
+  implementing a single endpoint, query, or component (use senior-backend /
+  senior-frontend), or for reviewing existing code (use code-reviewer / review-codebase).
 ---
 
 # Software Architecture

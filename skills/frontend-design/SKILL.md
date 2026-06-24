@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.
+description: Create distinctive, production-grade UI visuals across web and native: layout, typography, color, hierarchy, and aesthetic direction that avoid generic "AI slop". Use whenever the goal is visual design quality, aesthetic direction, or beautifying an interface (web, React Native, or native). Do NOT use for state management, data fetching, rendering performance, or framework/component architecture (use senior-frontend), or for animation and gesture mechanics (use motion-craft).
 license: Complete terms in LICENSE.txt
 ---
 

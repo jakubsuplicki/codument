@@ -122,9 +122,10 @@ Status: approved (2026-06-24). Implementing via autopilot.
 
 - [ ] Step 1 (Bucket A descriptions + cleanup): Rewrite the descriptions of `senior-backend`,
       `senior-architect`, `frontend-design`, `code-reviewer` to the formula (third-person capability
-      + pushy "Use when" + per-stack keywords + the matrix exclusion clause); remove the duplicated
-      Definition-of-Done line and the "reviewing X code" shadow-review framing; keep bodies inline
-      and under 500 lines. (`senior-backend` keeps its light stack tokens inline.)
+      + pushy "Use when" + per-stack keywords + the matrix exclusion clause); remove the
+      "reviewing X code" shadow-review framing but **keep** the registry Definition-of-Done line
+      (research rubric: a skill that can fire standalone must carry it); keep bodies inline and
+      under 500 lines. (`senior-backend` keeps its light stack tokens inline.)
 - [ ] Step 2 (Bucket B — `motion-craft` refactor, the template): Split the stack-specific sections
       (web impl, native impl, setup, examples, bridges) into `references/web.md`,
       `references/react-native.md`, `references/examples.md`, `references/bridges.md` (each with a
@@ -178,7 +179,7 @@ What is true once all nine steps land:
   matching skill fires and siblings stay silent — closing both the "skipped" gap (0 invocations in
   31 past sessions) and the over-trigger/token-burn risk, validated by trigger evals before ship.
 - **Loop conflicts gone.** `review-work` stays sole reviewer; `senior-architect` feeds grill/charter
-  instead of competing; DoD duplication and "reviewing X code" framing removed; the transform/opacity
+  instead of competing; "reviewing X code" framing removed (registry DoD line kept); the transform/opacity
   rule lives only in `motion-craft`.
 - **codument's own repo.** Stops carrying frontend skills scoped to a frontend-less CLI; gets the
   base skills, generalized.
@@ -215,7 +216,8 @@ features owning the touched source files.
   keyword lacks backing content.
 - Trigger evals pass: each touched skill fires on its should-trigger prompts and stays silent on the
   should-NOT-trigger look-alikes.
-- No duplicated Definition-of-Done line or "reviewing X code" framing; `review-work` remains the only
+- No "reviewing X code" shadow-review framing, and the registry Definition-of-Done line preserved in
+  every skill; `review-work` remains the only
   in-loop reviewer; the transform/opacity rule lives only in `motion-craft`.
 - Exactly one info-only domain-consult bullet in the Intent-routing block; no new CLI / approval gate
   / `detect.ts` gating. `codument doctor` clean; `domain-skills` registered with `last_updated` set;

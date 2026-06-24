@@ -1,9 +1,13 @@
 ---
 name: code-reviewer
 description: >
-  Perform thorough code reviews. Use when reviewing pull requests, auditing code quality,
-  checking for security issues, or when asked to review code. Covers TypeScript, JavaScript,
-  Python, Go, Swift, and Kotlin.
+  Perform thorough code reviews of a diff or set of files: correctness, security,
+  performance, architecture fit, and tests, reported by severity. Covers TypeScript,
+  JavaScript, Python, Go, Swift, and Kotlin, and the checks apply to any language.
+  Use whenever the user asks to review a PR or diff, audit code quality, or check for
+  bugs or security issues. Do NOT use for reviewing an entire codebase
+  feature-by-feature (use review-codebase), or for greenfield architecture design
+  (use senior-architect).
 ---
 
 # Code Review
