@@ -296,6 +296,17 @@ describe("init command", () => {
     assert.equal(meta.project.framework, "express");
   });
 
+  it("emits exactly one domain-skill consult nudge into both instruction files", async () => {
+    runInit("--agents", "codex,claude");
+
+    const agentsMd = await readFile(join(tmp, "AGENTS.md"), "utf-8");
+    const claudeMd = await readFile(join(tmp, "CLAUDE.md"), "utf-8");
+    const needle = "Domain skills are advisory";
+    assert.equal(agentsMd.split(needle).length - 1, 1);
+    assert.equal(claudeMd.split(needle).length - 1, 1);
+    assert.ok(agentsMd.includes("`senior-backend`"));
+  });
+
   it("installs domain skills with their reference files", () => {
     runInit();
 

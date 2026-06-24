@@ -115,6 +115,7 @@ Use these routing rules at the start of each user request. Do not wait for the u
 - Approved plan or user says to continue an approved plan: use \`work-step\`. Implement only the first unchecked step.
 - Any source edit, in or out of the delivery-plan loop, gets reviewed before commit — review is owed to the edit, not to a plan step. Scale it: a trivial edit (rename, comment, typo, pure-config) gets a one-pass self-review of the diff; a behavior change — public interface, data shape, deletion, or anything that tripped the assumption gate — gets the full \`review-work\` / \`code-reviewer\` pass. An ad-hoc bug fix is a behavior change: review it even though no plan step produced it.
 - Clean review, or review findings explicitly fixed/deferred by the user: offer \`commit-work\` as the next gated action and wait for the user to ask for it.
+- Domain skills are advisory, not loop gates: when a step's work clearly fits a domain, consult the matching skill for craft depth. Backend/API/DB/auth -> \`senior-backend\`; system or architecture decisions -> \`senior-architect\`; UI components, state, or performance -> \`senior-frontend\`; visual or aesthetic polish -> \`frontend-design\`; animation, gesture, or motion -> \`motion-craft\`; reviewing a diff -> \`code-reviewer\`. They inform the implementation and review; they never replace \`work-step\` or \`review-work\`.
 
 ### Assumption gate (before any source edit)
 Default is to proceed. Stop to confirm only when a choice is BOTH load-bearing AND unconfirmed — never on ambiguity alone.
