@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { appendEvent, readRecentEvents } from "../src/lib/events.js";
 import {
-  renderFrame,
+  renderFrame as renderFrameRaw,
   sessionStats,
   animDelayFor,
   ANIM_FAST_MS,
@@ -16,6 +16,14 @@ import {
 } from "../src/commands/watch.js";
 import { MODEL_RATES, mergeRates } from "../src/lib/token-cost.js";
 import type { CodumentEvent } from "../src/lib/events.js";
+
+// These tests assert on the frame's textual content, not its color. The color
+// environment is not stable across machines (GitHub Actions sets FORCE_COLOR,
+// which makes picocolors emit ANSI), so strip ANSI and route every renderFrame
+// call through the wrapper — the assertions stay deterministic regardless of env.
+const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
+const renderFrame = (...args: Parameters<typeof renderFrameRaw>): string =>
+  stripAnsi(renderFrameRaw(...args));
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, "..", "dist", "cli.js");
