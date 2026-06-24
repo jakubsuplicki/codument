@@ -19,15 +19,15 @@ You are a design engineer with craft sensibility. You build interfaces where eve
 
 Animation craft is **~70-80% platform-neutral judgment** and ~20-30% platform-specific implementation (treat that split as a heuristic, not a measurement — but the judgment layer is genuinely large and durable). So this skill is organized as:
 
-1. **The shared core (§1-§6)** — the decisions, easing, springs, choreography, perceived performance, and accessibility *intent*. This is where the durable value lives. Read it regardless of platform.
-2. **The web implementation layer (§7)** — CSS / WAAPI / the Motion library.
-3. **The React Native implementation layer (§8)** — Reanimated + Gesture Handler.
-4. **The translation table (§9)** and the cross-cutting honesty sections (§10-§12) — exactly where web and native diverge, so you never false-port a technique.
-5. **Flagship examples in both stacks (§13)** and **optional unified bridges (§14)**.
+1. **The shared core (§1-§6, here)** — the decisions, easing, springs, choreography, perceived performance, and accessibility *intent*. This is where the durable value lives. Read it regardless of platform.
+2. **The web implementation layer** — CSS / WAAPI / the Motion library. Read `references/web.md` when targeting the web.
+3. **The React Native implementation layer** — Reanimated + Gesture Handler, plus native setup/build. Read `references/react-native.md` when targeting mobile.
+4. **The translation table (§9, here)** and the cross-cutting honesty sections (§10-§11, here) — exactly where web and native diverge, so you never false-port a technique.
+5. **Flagship examples in both stacks** — read `references/examples.md`. **Optional unified bridges** — read `references/bridges.md`.
 
-> **The split that matters is web vs native — NOT bare React Native vs Expo.** For animation, bare RN and Expo run *byte-for-byte identical* Reanimated/Gesture-Handler/Skia code. Their only differences are install/config (§12) and navigation transitions (§11). Do not organize your thinking around "native vs Expo"; organize it around "web vs native."
+> **The split that matters is web vs native — NOT bare React Native vs Expo.** For animation, bare RN and Expo run *byte-for-byte identical* Reanimated/Gesture-Handler/Skia code. Their only differences are install/config (native setup sidebar in `references/react-native.md`) and navigation transitions (§11). Do not organize your thinking around "native vs Expo"; organize it around "web vs native."
 
-> ⚠️ **Standing version caveat for everything in §8, §12, §14.** The native ecosystem moves one breaking step per SDK cycle. Every version-gated claim here (Expo SDK defaults, Reanimated 4 + react-native-worklets pairing, New Architecture status, Moti's Reanimated-3 dependency) must be **re-verified at authoring/use time**. When in doubt, check the lib's current docs before committing to an API.
+> ⚠️ **Standing version caveat for everything in `references/react-native.md` and `references/bridges.md`.** The native ecosystem moves one breaking step per SDK cycle. Every version-gated claim there (Expo SDK defaults, Reanimated 4 + react-native-worklets pairing, New Architecture status, Moti's Reanimated-3 dependency) must be **re-verified at authoring/use time**. When in doubt, check the lib's current docs before committing to an API.
 
 ## Core Philosophy
 
@@ -149,134 +149,9 @@ Detection mechanics differ per platform — see §10 (and note the reactivity tr
 
 ---
 
-# §7. WEB IMPLEMENTATION LAYER
+**Web implementation layer (§7)** — CSS / WAAPI / the Motion library. Read `references/web.md` when targeting the web.
 
-### The library: it's `motion` now
-Framer Motion was renamed. Use package **`motion`**, import from **`motion/react`**, docs at **motion.dev**. (`framer-motion` still resolves as the legacy package, but new code should use `motion`.)
-
-```jsx
-import { motion, AnimatePresence, useReducedMotion } from "motion/react";
-```
-
-### Performance rule (web-specific)
-Animate **`transform` and `opacity`** (and `filter` when needed) — these can run on the **compositor thread**, skipping layout and paint. Animating `width`/`height`/`margin`/`top` triggers layout + paint on the main thread.
-- `will-change` / `translateZ(0)` promote a layer — use *sparingly*; over-promotion is its own anti-pattern (memory, too many layers).
-- Avoid layout thrashing (interleaved read/write of layout properties in a frame).
-- **WAAPI caveat:** `element.animate()` only composites the *same* properties CSS does (transform/opacity/filter). Animating any other property via WAAPI runs on the main thread exactly like CSS — WAAPI is not categorically off-main-thread.
-
-### Buttons must feel responsive
-```css
-.button { transition: transform 160ms ease-out; }
-.button:active { transform: scale(0.97); }   /* subtle: 0.95-0.98 */
-```
-
-### Enter without JS — `@starting-style`
-```css
-.toast {
-  opacity: 1; transform: translateY(0);
-  transition: opacity 400ms ease, transform 400ms ease;
-  @starting-style { opacity: 0; transform: translateY(100%); }
-}
-```
-- Enter via `@starting-style` is Baseline (since ~FF129 / 2024). It only applies on the element's **first** style update.
-- **Full exit** via animated `display`/`overlay`/`transition-behavior: allow-discrete` is **not yet Baseline** — for robust exit choreography use Motion's `<AnimatePresence>`.
-- Legacy fallback everywhere: `useEffect(() => setMounted(true), [])` + `data-mounted`.
-
-### Presence / exit — `<AnimatePresence>`
-Wrap exiting elements so they survive unmount long enough to animate out.
-> **Web exit isn't free either.** Watch for: the `layout` prop conflicting with your own `transform`; `mode="popLayout"`/`"wait"` semantics; and the hard requirement that each child has a stable `key`. Treat the web presence model with the same suspicion as the native one (§11).
-
-### Origin-aware popovers
-Default `transform-origin: center` is wrong for almost every popover. Scale from the trigger:
-```css
-.popover { transform-origin: var(--radix-popover-content-transform-origin); } /* Radix */
-.popover { transform-origin: var(--transform-origin); }                       /* Base UI */
-```
-**Exception: modals keep `transform-origin: center`** — they aren't anchored to a trigger.
-
-### CSS transitions over keyframes for interruptible UI
-Transitions retarget mid-flight; `@keyframes` restart from zero. For rapidly-triggered UI (toasts, toggles) use transitions. Use `@keyframes`/WAAPI for predetermined motion.
-
-### clip-path (web-only superpower)
-`clip-path: inset(top right bottom left)` for reveals, hold-to-delete overlays, tabs with perfect color transitions, comparison sliders, scroll reveals. **There is no clean, performant native equivalent** (§11).
-
-### Reduced motion (web)
-```css
-@media (prefers-reduced-motion: reduce) { .element { animation: fade 0.2s ease; /* no transform motion */ } }
-```
-```jsx
-const reduce = useReducedMotion();           // reactive: re-renders when the OS setting flips
-const closedX = reduce ? 0 : "-100%";
-```
-
-### Touch-vs-pointer on web
-Gate hover behind capability so touch taps don't trigger false hovers:
-```css
-@media (hover: hover) and (pointer: fine) { .element:hover { transform: scale(1.05); } }
-```
-
----
-
-# §8. REACT NATIVE IMPLEMENTATION LAYER (Reanimated + Gesture Handler)
-
-> Identical for Expo and bare RN. Setup differs — see §12.
-
-### Core primitives (run on the UI thread via worklets)
-```jsx
-import Animated, {
-  useSharedValue, useAnimatedStyle,
-  withTiming, withSpring, withDecay,
-  Easing, FadeIn, SlideInUp, LinearTransition,
-} from "react-native-reanimated";
-
-const x = useSharedValue(0);
-const style = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
-
-x.value = withTiming(100, { duration: 220, easing: Easing.bezier(0.23, 1, 0.32, 1) });
-```
-
-### Timing, spring, decay
-- `withTiming(to, { duration, easing })` — `Easing.bezier(x1,y1,x2,y2)` takes the **same four control points** as your CSS `cubic-bezier` (copy the numbers; see §9 caveat).
-- `withSpring(to, config)` — **two mutually-exclusive modes**: physics `{ mass, stiffness, damping }` **or** perceptual `{ duration, dampingRatio }`. (Reanimated 4 adds `energyThreshold` for rest detection.) Re-tune from your web values.
-- `withDecay({ velocity, deceleration, clamp, rubberBand })` — momentum/fling and the basis of velocity-based dismissal.
-
-### Performance rule (native-specific)
-Keep animation on the **UI thread** via worklets (Reanimated does this by default) so it survives a busy JS thread. Even on the UI thread, prefer **`transform`/`opacity`** — animating `width`/`height`/`flex` re-runs **Yoga layout** every frame.
-
-### Enter/exit & layout — simpler than the web here
-- `entering`/`exiting` presets: `FadeIn`, `SlideInUp`, `ZoomIn`, … with `.springify()`, `.duration()`, `.delay()`.
-- `LinearTransition` is the built-in FLIP/layout answer (web needs Motion's `layout` prop or manual FLIP).
-- `Keyframe` API for multi-step.
-
-```jsx
-<Animated.View entering={FadeIn.duration(220)} exiting={FadeIn.duration(150)} layout={LinearTransition} />
-```
-> ⚠️ **`LinearTransition` is simpler to *invoke*, not simpler to *get right*.** It is finicky inside virtualized lists, with nested layouts, and on first mount under the New Architecture (§11). Expect to debug it in real lists.
-
-### Gestures & drag (full Gesture Handler API)
-```jsx
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
-
-const pan = Gesture.Pan()
-  .onUpdate(e => { translateY.value = e.translationY; })
-  .onEnd(e => {
-    // velocity comes free — momentum dismissal without measuring time yourself
-    translateY.value = withDecay({ velocity: e.velocityY, clamp: [0, SHEET_HEIGHT] });
-  });
-// <GestureDetector gesture={pan}><Animated.View style={style} /></GestureDetector>
-```
-- Wrap the app in **`<GestureHandlerRootView>`** (footgun: forgetting it = gestures silently dead).
-- `simultaneousWithExternalGesture(scrollRef)` for drag-inside-a-scrollview.
-- Multi-touch protection, pointer capture, boundary damping → all expressed in `onUpdate`/`onEnd` math.
-
-### Crossing threads: `runOnJS` → `scheduleOnRN`
-- `runOnJS` / `runOnUI` are **still re-exported from `react-native-reanimated` but deprecated**. Existing `runOnJS(fn)(...args)` code keeps working — do **not** tell readers it's broken.
-- New preferred names live in `react-native-worklets`: **`scheduleOnRN`** / `scheduleOnUI`. **The call signature changed:** `scheduleOnRN(fn, ...args)` — *not* `scheduleOnRN(fn)(...args)`. This is a real migration footgun.
-
-### Legacy
-The old `Animated` API + `useNativeDriver: true` exists in older code — recognize it, but author new motion in Reanimated. `useAnimatedGestureHandler` was **removed in Reanimated 4** — use the `Gesture` API above.
-
-### Reduced motion (native) — see §10 for the reactivity trap.
+**React Native implementation layer (§8)** — Reanimated + Gesture Handler, plus the native setup/build sidebar (architecture, Expo Go vs dev build, bare vs Expo, footguns). Read `references/react-native.md` when targeting mobile.
 
 ---
 
@@ -336,53 +211,11 @@ Call these out loudly so nobody false-ports a web technique:
 
 ---
 
-# §12. Native setup sidebar (NOT a principles axis)
+**Native setup sidebar (§12)** — architecture-first branching (New Arch / Reanimated 4 + worklets plugin vs Old Arch / Reanimated 3), Expo Go vs dev build, bare vs Expo install differences, and setup footguns. Lives with the native mechanics — read `references/react-native.md` when targeting mobile.
 
-Branch your *setup* in this order — none of it changes the animation code:
+**Flagship examples (§13)** — toast stack, drag-to-dismiss sheet, origin-aware popover, blur-during-transition, plus the Sonner principles, built in both stacks. Read `references/examples.md` for the worked signatures.
 
-1. **Architecture first.** New Architecture is the SDK 53+ default, **forced from SDK 55+** (RN 0.76+):
-   - New Arch → **Reanimated 4** + `react-native-worklets` + the **`react-native-worklets/plugin`** babel plugin (must be **last** in the babel plugin list; do **not** also add the old `react-native-reanimated/plugin`).
-   - Old Arch → **Reanimated 3** + `react-native-reanimated/plugin`.
-2. **Expo Go vs dev build.** Expo Go pins exact native module versions; the moment you need a newer Reanimated/Skia API, move to an **EAS dev build**.
-3. **Only then, bare vs Expo — install-only.** Expo: `npx expo install` (plugin auto-configured via `babel-preset-expo`). Bare: npm + `pod install` + manual plugin. Adjacent libs differ by name (`expo-blur` vs the **effectively unmaintained** `@react-native-community/blur` — prefer Skia for bare; `expo-linear-gradient` vs `react-native-linear-gradient`).
-
-**Footguns:** missing `<GestureHandlerRootView>`; Reanimated breaks **Remote JS Debugging** (use Hermes debugging); `useAnimatedGestureHandler` removed in v4.
-
----
-
-# §13. Flagship examples — built in both stacks
-
-Recreate the signatures in **both** so the mapping is concrete. **Each opens with the decision (§1) before any code.**
-
-- **Toast stack (Sonner-style)** — *Decision: occasional, purpose = spatial consistency + feedback.* Springs + velocity dismissal + restack. Web: transitions + `<AnimatePresence>`. Native: `withSpring` + `Gesture.Pan` + `withDecay` + `LinearTransition`. **Ports beautifully.**
-- **Drag-to-dismiss sheet (Vaul-style)** — *Decision: occasional, purpose = spatial consistency.* Web: pointer events + manual velocity. Native: `Gesture.Pan` (`velocityY` free) + `withDecay` + boundary `rubberBand`. **Ports beautifully** — the native gesture story is arguably cleaner here.
-- **Origin-aware popover** — **lossy on native** (no transform-origin on presets → translate math). Flag it.
-- **Any blur-during-transition** — **lossy on native** (Skia or skip). Flag it.
-
-## Sonner principles (building loved components — platform-agnostic)
-1. **DX is king** — no hooks/context/setup. `<Toaster />` once, `toast()` anywhere.
-2. **Good defaults > options** — ship beautiful out of the box.
-3. **Naming creates identity** — "Sonner" over "react-toast."
-4. **Handle edge cases invisibly** — pause timers on hidden tab/blur, fill stack gaps, capture pointers/gestures during drag.
-5. **Transitions, not keyframes, for dynamic UI** (web) / shared values you can retarget (native).
-6. **Cohesion** — match motion to the component's personality; a playful toast can be bouncier than a banking graph.
-
----
-
-# §14. Optional unified-API bridges (present as bridges, not the foundation)
-
-A true *write-once* animator is **not** realistic for high-craft motion: Reanimated-on-web runs on the **JS thread** (no off-thread win — peer to Motion on web, not superior), its layout/shared-element animations are **partial on web**, and Gesture Handler's **web support is the weakest link** — exactly the gesture/drag physics this skill leans on. The realistic ceiling is "one API, **two runtimes**." Pick by project shape **and Reanimated-4 readiness**:
-
-| Bridge | Fits | ⚠️ Reanimated-4 / New-Arch reality |
-| --- | --- | --- |
-| **Moti** | universal/Solito monorepos, Framer-Motion-shaped API | **Depends on Reanimated 3; breaks on RN4 / New Arch (moti#391).** If you lead with Reanimated 4 (which SDK 55 forces) you **cannot** also default to Moti. |
-| **Tamagui** | full design-system commitment; swappable drivers = Motion/WAAPI on web + Reanimated on native | Real "best of both," but heavy lock-in and its own New-Arch/RN4 upgrade lag — weigh maturity cost. |
-| **NativeWind** | already on Tailwind; additive transition support | Verify current Reanimated pairing. |
-| **Legend Motion** | tiny / bundle-sensitive | Verify status. |
-
-> ⚠️ **Central contradiction to resolve before blessing any bridge:** "lead with Reanimated 4" and "default to Moti" are **mutually incompatible on current Expo**. Re-check each bridge's Reanimated-4 status at authoring time. **Sheet libraries hit the same wall** — `@gorhom/bottom-sheet` lagged Reanimated 4 (#2600); warn authors recreating the "Sonner sheet."
-
-Keep teaching at the **principle level** so the skill survives library churn.
+**Optional unified-API bridges (§14)** — Moti / Tamagui / NativeWind / Legend Motion, with the Reanimated-4 readiness caveats. Read `references/bridges.md` when evaluating a write-once / cross-runtime animator.
 
 ---
 
