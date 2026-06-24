@@ -33,6 +33,33 @@ export const DELIVERY_SKILLS = [
   "update-docs",
 ] as const;
 
+/**
+ * Always-on domain-expertise skills shipped to every consumer repo alongside the
+ * delivery loop. Each is task-scoped via its description (with a sibling exclusion
+ * clause), so firing is gated by the description, not by installation.
+ */
+export const DOMAIN_SKILLS = [
+  "senior-backend",
+  "senior-architect",
+  "senior-frontend",
+  "frontend-design",
+  "motion-craft",
+  "code-reviewer",
+  "review-codebase",
+] as const;
+
+/** Every skill codument installs into a repo: the delivery loop plus domain skills. */
+export const ALL_SKILLS = [...DELIVERY_SKILLS, ...DOMAIN_SKILLS] as const;
+
+/**
+ * The single seam for which skills install into a profile. No stack gating today
+ * (every skill ships to every repo); kept as a function so future per-profile or
+ * per-stack gating has one place to live.
+ */
+export function resolveSkills(): readonly string[] {
+  return ALL_SKILLS;
+}
+
 export const AGENT_PROFILES: Record<AgentProfileId, AgentProfile> = {
   codex: {
     id: "codex",

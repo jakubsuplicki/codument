@@ -15,6 +15,9 @@ export {
 export {
   AGENT_PROFILES,
   DELIVERY_SKILLS,
+  DOMAIN_SKILLS,
+  ALL_SKILLS,
+  resolveSkills,
   detectAgentIds,
   getAgentProfiles,
   parseAgentIds,

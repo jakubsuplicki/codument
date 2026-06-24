@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import pc from "picocolors";
 import {
-  DELIVERY_SKILLS,
+  resolveSkills,
   getAgentProfiles,
   resolveAgentIds,
   type AgentProfile,
@@ -137,18 +137,22 @@ async function installProfile(
   force?: boolean,
 ): Promise<void> {
   const skillSource = skillsDir();
-  for (const name of DELIVERY_SKILLS) {
-    const source = join(skillSource, name, "SKILL.md");
-    if (!existsSync(source)) continue;
+  const skills = resolveSkills();
+  for (const name of skills) {
+    const srcDir = join(skillSource, name);
+    if (!existsSync(join(srcDir, "SKILL.md"))) continue;
 
-    const dest = join(root, profile.skillsDir, name, "SKILL.md");
-    if (!existsSync(dest) || force) {
-      ensureDir(join(root, profile.skillsDir, name));
-      cpSync(source, dest);
+    // Copy the whole skill directory (SKILL.md + any references/) so skills that
+    // use progressive-disclosure reference files install completely, not just
+    // their entrypoint.
+    const destDir = join(root, profile.skillsDir, name);
+    if (!existsSync(join(destDir, "SKILL.md")) || force) {
+      ensureDir(destDir);
+      cpSync(srcDir, destDir, { recursive: true });
     }
   }
   console.log(
-    `  ${pc.green("✓")} Installed ${DELIVERY_SKILLS.length} skills for ${profile.displayName}`,
+    `  ${pc.green("✓")} Installed ${skills.length} skills for ${profile.displayName}`,
   );
 
   if (profile.rulesDir) {

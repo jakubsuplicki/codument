@@ -4,7 +4,7 @@ import { cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  DELIVERY_SKILLS,
+  resolveSkills,
   getAgentProfiles,
   parseAgentIds,
   type AgentProfileId,
@@ -202,7 +202,7 @@ async function installBenchmarkAgentAssets(
   const profiles = getAgentProfiles(agentIds);
 
   for (const profile of profiles) {
-    for (const skill of DELIVERY_SKILLS) {
+    for (const skill of resolveSkills()) {
       const source = join(skillsDir(), skill);
       if (!existsSync(source)) continue;
 

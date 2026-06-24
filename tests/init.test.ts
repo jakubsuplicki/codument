@@ -296,6 +296,36 @@ describe("init command", () => {
     assert.equal(meta.project.framework, "express");
   });
 
+  it("installs domain skills with their reference files", () => {
+    runInit();
+
+    // a Bucket-A domain skill installs as a single SKILL.md
+    assert.ok(
+      existsSync(join(tmp, ".claude", "skills", "senior-backend", "SKILL.md")),
+    );
+    // a Bucket-B skill installs SKILL.md AND its references/ (recursive copy)
+    assert.ok(
+      existsSync(join(tmp, ".claude", "skills", "motion-craft", "SKILL.md")),
+    );
+    assert.ok(
+      existsSync(
+        join(tmp, ".claude", "skills", "motion-craft", "references", "web.md"),
+      ),
+    );
+    assert.ok(
+      existsSync(
+        join(
+          tmp,
+          ".claude",
+          "skills",
+          "senior-frontend",
+          "references",
+          "react-native.md",
+        ),
+      ),
+    );
+  });
+
   it("installs multiple selected profiles", async () => {
     runInit("--agents", "codex,claude");
 

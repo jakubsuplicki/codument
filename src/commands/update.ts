@@ -1,9 +1,9 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, dirname, relative } from "node:path";
 import pc from "picocolors";
 import {
-  DELIVERY_SKILLS,
+  resolveSkills,
   getAgentProfiles,
   resolveAgentIds,
   type AgentProfile,
@@ -53,14 +53,28 @@ function getManagedFiles(
   const files = new Map<string, ManagedFile>();
 
   for (const profile of profiles) {
-    for (const name of DELIVERY_SKILLS) {
-      const source = join(skillsDir(), name, "SKILL.md");
+    for (const name of resolveSkills()) {
+      const skillDir = join(skillsDir(), name);
+      const source = join(skillDir, "SKILL.md");
       if (!existsSync(source)) continue;
       const relativePath = `${profile.skillsDir}/${name}/SKILL.md`;
       files.set(relativePath, {
         relativePath,
         upstream: () => readFile(source, "utf-8"),
       });
+      // Reference files (one level deep) ship alongside the skill entrypoint.
+      const refsDir = join(skillDir, "references");
+      if (existsSync(refsDir)) {
+        for (const ref of readdirSync(refsDir)) {
+          if (!ref.endsWith(".md")) continue;
+          const refRel = `${profile.skillsDir}/${name}/references/${ref}`;
+          const refSource = join(refsDir, ref);
+          files.set(refRel, {
+            relativePath: refRel,
+            upstream: () => readFile(refSource, "utf-8"),
+          });
+        }
+      }
     }
 
     if (profile.rulesDir) {

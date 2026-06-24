@@ -3,12 +3,16 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import {
   detectAgentIds,
   parseAgentIds,
   resolveAgentIds,
   AGENT_PROFILES,
   DELIVERY_SKILLS,
+  DOMAIN_SKILLS,
+  ALL_SKILLS,
+  resolveSkills,
 } from "../src/lib/agent-profiles.js";
 
 let tmp: string;
@@ -92,5 +96,39 @@ describe("agent profiles", () => {
       planSkill,
       /Do not use `plan-with-docs` yet if any meaningful decision is still open/,
     );
+  });
+
+  it("ships the seven domain skills", () => {
+    assert.deepStrictEqual([...DOMAIN_SKILLS], [
+      "senior-backend",
+      "senior-architect",
+      "senior-frontend",
+      "frontend-design",
+      "motion-craft",
+      "code-reviewer",
+      "review-codebase",
+    ]);
+  });
+
+  it("resolves delivery + domain skills with no duplicates", () => {
+    const resolved = resolveSkills();
+    assert.deepStrictEqual([...resolved], [...ALL_SKILLS]);
+    assert.equal(resolved.length, DELIVERY_SKILLS.length + DOMAIN_SKILLS.length);
+    assert.equal(new Set(resolved).size, resolved.length);
+  });
+
+  it("every resolved skill has a source SKILL.md; Bucket-B skills carry references", () => {
+    for (const name of resolveSkills()) {
+      assert.ok(
+        existsSync(join(process.cwd(), "skills", name, "SKILL.md")),
+        `missing source SKILL.md for ${name}`,
+      );
+    }
+    for (const name of ["motion-craft", "senior-frontend"]) {
+      assert.ok(
+        existsSync(join(process.cwd(), "skills", name, "references")),
+        `${name} should have a references/ directory`,
+      );
+    }
   });
 });
