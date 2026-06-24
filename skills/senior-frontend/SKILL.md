@@ -5,7 +5,8 @@ description: >
   rendering performance, and accessibility. Covers React and Next.js (web) plus
   React Native, with framework-specific mechanics in reference files; the judgment
   applies cross-framework. Use whenever the user builds or optimizes UI components,
-  manages client or server state, or fixes frontend performance. Do NOT use for
+  manages client or server state, or fixes frontend performance including list
+  virtualization and scroll or render jank (e.g. FlatList). Do NOT use for
   visual or aesthetic design direction (use frontend-design), or for animation and
   gesture craft (use motion-craft).
 ---

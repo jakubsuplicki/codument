@@ -5,7 +5,7 @@ description: >
   trade-offs, migration paths, and ADRs. Covers web apps, services, APIs, databases,
   and distributed systems; the approach is stack-agnostic. Use whenever the user is
   choosing an architecture, weighing a trade-off (consistency vs availability, build
-  vs buy), planning a migration, or asks to architect a system. Do NOT use for
+  vs buy, which datastore or technology to choose), planning a migration, or asks to architect a system. Do NOT use for
   implementing a single endpoint, query, or component (use senior-backend /
   senior-frontend), or for reviewing existing code (use code-reviewer / review-codebase).
 ---

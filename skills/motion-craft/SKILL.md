@@ -1,6 +1,6 @@
 ---
 name: motion-craft
-description: Cross-platform animation and motion-design craft for web AND React Native (Expo or bare). Use when deciding whether/how something should animate, choosing easing/duration/springs, building transitions, drawers, toasts, gestures and drag-to-dismiss, reviewing UI motion, or fixing janky animations — on the web (CSS/WAAPI/Motion) or on mobile (Reanimated + Gesture Handler). The web craft draws on Emil Kowalski's design-engineering philosophy (animations.dev); the native layer maps it onto React Native. Do NOT use for static layout, styling, or component/state logic (use senior-frontend or frontend-design).
+description: Cross-platform animation and motion-design craft for web AND React Native (Expo or bare). Use when deciding whether/how something should animate, choosing easing/duration/springs, building transitions, drawers, toasts, gestures and drag-to-dismiss, reviewing UI motion, or fixing jank in animations, gestures, or transitions (not list-scroll or render performance; use senior-frontend) — on the web (CSS/WAAPI/Motion) or on mobile (Reanimated + Gesture Handler). The web craft draws on Emil Kowalski's design-engineering philosophy (animations.dev); the native layer maps it onto React Native. Do NOT use for static layout, styling, or component/state logic (use senior-frontend or frontend-design).
 ---
 
 # Motion Craft
