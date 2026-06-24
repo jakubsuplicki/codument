@@ -35,11 +35,12 @@ When those questions remain, switch to `grill-with-docs` first. Ask one sharp de
    - Non-goals
    - Delivery plan
    - Feature Map (whenever the plan introduces source files — see below)
+   - Outcome (what completing every step achieves — the end state, including honest limits)
    - Acceptance criteria
    - Verification strategy
    - Open questions
 4. Mark the plan as awaiting approval.
-5. Show the delivery-plan checklist inline (see Approval Summary), then stop and ask the user to approve or change the plan before implementation. Never make the user open the doc to see what they are approving.
+5. Show the delivery-plan checklist, the outcome, and the open questions inline (see Approval Summary), then stop and ask the user to approve or change the plan before implementation. Never make the user open the doc to see what they are approving.
 
 ## Delivery Plan Format
 
@@ -73,13 +74,30 @@ How to draw the cut:
 - **Leaf utilities → `concept`.** Small tables, pure helpers, types, and barrels go to `type: concept` so they are documented without inflating the feature count.
 - The slug becomes the doc/registry key (`docs/features/{slug}.md` or `docs/concepts/{slug}.md`); use kebab-case a developer would say out loud.
 
+## Outcome (what completing the plan achieves)
+
+The steps say what you will *do*; the Outcome says what is *true once they all land* — the end state
+the user is approving, in their words, not a restatement of the steps. Write it as the plan's
+`## Outcome` section and render it at the approval gate. Cover:
+
+- **The concrete after-state**, before → after where it helps: what a user, repo, or caller gets
+  that they did not have before. Group by the change that matters, not step-by-step.
+- **Where it lands** — who notices and on which surface (the product, a consumer repo, a CLI).
+- **What it deliberately does NOT do** — the honest limits and non-goals restated as outcomes, so
+  approval is informed. A plan that lists only upside oversells.
+
+Keep it to a few grouped outcomes plus the limits. It must follow from the steps — never promise an
+outcome no step delivers.
+
 ## Approval Summary
 
-The user approves from the chat, not by opening the doc — so the approval message must carry the plan's checklist, not just a link to the file.
+The user approves from the chat, not by opening the doc — so the approval message must carry the plan's checklist, its outcome, and its open questions, not just a link to the file.
 
 - Render the steps inline by running `codument steps --plan docs/features/<name>.md` (or the `docs/concepts/...` path) and showing its output. It reads the checklist back from the file you just wrote, so the summary the user approves is exactly what is on disk — no paraphrase drift. `--plan` works even though the plan is only "awaiting approval".
 - If the CLI is unavailable, list each `- [ ]` step inline yourself.
-- Keep the message to the step list plus a one-line scope / non-goals note; link the doc for full detail, but the inline summary must never be a bare link.
+- Render the plan's `## Outcome` inline alongside the steps — the user approves the *end state*, not just the task list. State what completing every step achieves and, honestly, what it does not. This is required, not optional: do not make the user ask "so what does this achieve?"
+- Render the Open Questions inline too, each with its recommended default, so unresolved choices are settled at the gate rather than discovered mid-implementation.
+- Keep the message to the step list, the outcome, and the open questions, plus a one-line scope / non-goals note; link the doc for full detail, but the inline summary must never be a bare link.
 - When the plan carries a Feature Map, render it inline too (the human approves the *cut*, not just the steps) and run `codument map check --plan docs/features/<name>.md` — surface any malformed rows or a too-coarse-shape flag at the gate, before approval, where it can still be fixed.
 
 ## Rules

@@ -61,7 +61,7 @@
         "lib"
       ],
       "risk": [],
-      "last_updated": "2026-06-19",
+      "last_updated": "2026-06-24",
       "status": "current"
     },
     "plan-step-mirroring": {
@@ -224,7 +224,7 @@
       "risk": [
         "data-loss"
       ],
-      "last_updated": "2026-06-22",
+      "last_updated": "2026-06-24",
       "status": "in-progress"
     },
     "doc-audience-layers": {
@@ -299,7 +299,7 @@
         "lib"
       ],
       "risk": [],
-      "last_updated": "2026-06-22",
+      "last_updated": "2026-06-24",
       "status": "current"
     }
   }
