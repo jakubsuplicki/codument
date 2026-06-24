@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
+import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { Registry } from "../src/lib/registry.js";
@@ -10,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const HOOK = join(__dirname, "..", "dist", "hooks", "check-docs.js");
 
 async function createProject(): Promise<string> {
-  const tmp = await mkdtemp("/private/tmp/codument-test-");
+  const tmp = await mkdtemp(join(tmpdir(), "codument-test-"));
   await mkdir(join(tmp, "docs"), { recursive: true });
   await mkdir(join(tmp, "src"), { recursive: true });
   await writeFile(join(tmp, "src", "feature.ts"), "export const x = 1;\n");
@@ -147,7 +148,7 @@ describe("check-docs hook", () => {
 
   it("resolves the registry from the edited file's path regardless of cwd", async () => {
     const tmp = await createProject();
-    const otherCwd = await mkdtemp("/private/tmp/codument-cwd-");
+    const otherCwd = await mkdtemp(join(tmpdir(), "codument-cwd-"));
     try {
       const registry: Registry = {
         features: {

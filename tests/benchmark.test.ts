@@ -273,7 +273,7 @@ describe("benchmark command", () => {
         "npm",
         [
           "--cache",
-          "/private/tmp/codument-npm-cache",
+          join(tmpdir(), "codument-npm-cache"),
           "pack",
           "--json",
           "--pack-destination",
