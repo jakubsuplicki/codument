@@ -4,7 +4,9 @@ description: >
   Run a full codebase review across all features. Reads the documentation registry
   to understand feature boundaries, then spawns code-reviewer agents per feature to
   identify bugs, security issues, and quality concerns. Non-breaking — reports issues
-  and optionally applies safe fixes only. Invoke with /review-codebase.
+  and optionally applies safe fixes only. Use whenever reviewing the whole project
+  across features (an audit), not a single change. Do NOT use for one diff or PR
+  (use code-reviewer). Invoke with /review-codebase.
 ---
 
 # Codebase Review
