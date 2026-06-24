@@ -51,6 +51,10 @@ program
   .option("--max-section-lines <n>", "Per-section line threshold for bloat (default 150)")
   .option("--max-completed-log <n>", "Completed-log [x] item threshold for bloat (default 15)")
   .option("--high-fanout <n>", "Distinct-entry count to flag a high-fanout file (default 3)")
+  .option(
+    "--strict",
+    "Exit 1 if there are findings, for CI gating (opt-in; bare doctor stays warning-only and notes never fail)",
+  )
   .action(doctor);
 
 program

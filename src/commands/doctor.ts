@@ -16,6 +16,7 @@ interface DoctorOptions {
   root?: string;
   json?: boolean;
   write?: boolean;
+  strict?: boolean;
   maxDocLines?: string | number;
   maxSectionLines?: string | number;
   maxCompletedLog?: string | number;
@@ -152,6 +153,12 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
     highFanoutThreshold: num(options.highFanout),
   });
 
+  // --strict is opt-in CI gating: it only sets a nonzero exit code when there
+  // are actionable findings. Notes (info) are excluded by lint.count and bare
+  // `doctor` is unaffected. It never writes to stdout, so `--json` output stays
+  // byte-identical and only the process exit code differs.
+  const strictFail = !!options.strict && report.lint.count > 0;
+
   if (options.write) {
     const { jsonPath, svgPath } = writeCoverageArtifacts(root, report);
     if (!options.json) {
@@ -164,10 +171,12 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
 
   if (options.json) {
     console.log(JSON.stringify(report, null, 2));
+    if (strictFail) process.exitCode = 1;
     return;
   }
 
-  printHuman(report);
+  printHuman(report, strictFail);
+  if (strictFail) process.exitCode = 1;
 }
 
 function relativeTo(root: string, p: string): string {
@@ -196,7 +205,7 @@ function ratioLine(r: CoverageRatio): string {
   return `    ${label} ${pct(r.ratio).padStart(4)}  ${pc.dim(frac)}${suffix}`;
 }
 
-function printHuman(report: DoctorReport): void {
+function printHuman(report: DoctorReport, strictFail = false): void {
   const { coverage, lint } = report;
 
   console.log(pc.bold("codument doctor"));
@@ -239,9 +248,17 @@ function printHuman(report: DoctorReport): void {
       "  Coverage is a gap-finder (registry membership + freshness), not a quality score.",
     ),
   );
-  console.log(
-    pc.dim(
-      "  Findings are warnings, not failures. Notes are awareness-only. Neither changes the exit code.",
-    ),
-  );
+  if (strictFail) {
+    console.log(
+      pc.red(
+        `  Strict: ${report.lint.count} finding${report.lint.count === 1 ? "" : "s"} present, failing (exit 1). Notes are awareness-only and never count.`,
+      ),
+    );
+  } else {
+    console.log(
+      pc.dim(
+        "  Findings are warnings, not failures. Notes are awareness-only. Neither changes the exit code.",
+      ),
+    );
+  }
 }

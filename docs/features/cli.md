@@ -8,7 +8,7 @@ sources:
 depends_on:
   - commands
   - lib
-last_reviewed: 2026-06-16
+last_reviewed: 2026-06-24
 ---
 
 ## Summary
@@ -22,7 +22,7 @@ The CLI is the user-facing entry point for codument. It uses Commander to expose
 The command surface is intentionally small:
 - **`init`** — one-time project setup (`--agents codex,claude` to select profiles, `--force` to overwrite)
 - **`scan`** — discovers source files and creates doc scaffolds
-- **`doctor`** — reports documentation coverage (ownership, freshness, dependency, risk) and registry lint warnings (including doc bloat); `--json` emits the stable report contract. Bloat thresholds are tunable (`--max-doc-lines`, `--max-section-lines`, `--max-completed-log`) as is `--high-fanout`. `--write` persists `.codument/coverage.json` and the SVG badge. Warning-only: findings never change the exit code.
+- **`doctor`** — reports documentation coverage (ownership, freshness, dependency, risk) and registry lint warnings (including doc bloat); `--json` emits the stable report contract. Bloat thresholds are tunable (`--max-doc-lines`, `--max-section-lines`, `--max-completed-log`) as is `--high-fanout`. `--write` persists `.codument/coverage.json` and the SVG badge. `--strict` makes findings exit 1 for CI gating (opt-in). Warning-only by default: without `--strict`, findings never change the exit code, and notes never do.
 - **`review`** — reviews the uncommitted git diff against the v2 registry: changed files grouped by owner, stale docs, high-risk touches, out-of-plan changes (when an approved plan is detected), unmapped changes, high-fanout files, and dependent features. `--json` emits the review contract; `--log` appends a review event to `.codument/events.jsonl`. Reports facts and gaps; it does not certify safety.
 - **`watch`** — live terminal view over the same `computeChangeState` analyzer (so it can never disagree with `review`): a foreground loop (no daemon) that refreshes coverage + change-state and tails `.codument/events.jsonl`. `--once` renders a single frame (CI/inspection); `--interval <ms>` sets the refresh cadence; `--dir <path>` watches another repo without `cd`. Zero-dependency ANSI renderer (not Ink), to preserve the minimal-dependency stance.
 - **`report`** — writes a self-contained HTML review report (`.codument/report.html` by default, `--out <path>` to change) and opens it in the browser (`--no-open` to skip). Leads with a verdict + coverage delta (read from the last `doctor --write`'s `.codument/coverage.json`) and finding cards; each card has a clickable "what this checks" note and the per-file detail is collapsible. No network, deterministic.

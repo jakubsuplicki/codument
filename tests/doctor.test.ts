@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -107,5 +107,60 @@ describe("codument doctor (CLI)", () => {
     });
     assert.ok(out.includes("Documentation coverage"));
     assert.ok(out.includes("ownership"));
+  });
+});
+
+describe("codument doctor --strict (CLI gating)", () => {
+  function run(args: string[], cwd: string): { status: number; stdout: string } {
+    try {
+      const stdout = execFileSync("node", [CLI, ...args], { cwd, encoding: "utf-8" });
+      return { status: 0, stdout };
+    } catch (err) {
+      // execFileSync throws on a nonzero exit; capture the status and stdout.
+      const e = err as { status?: number; stdout?: string };
+      return { status: e.status ?? 1, stdout: e.stdout ?? "" };
+    }
+  }
+
+  let clean: string;
+  let missing: string;
+  beforeEach(async () => {
+    clean = await mkdtemp(join(tmpdir(), "codument-strict-clean-"));
+    await mkdir(join(clean, "docs"), { recursive: true });
+    await writeFile(
+      join(clean, "docs", ".registry.json"),
+      JSON.stringify({ features: {} }),
+    );
+    missing = await mkdtemp(join(tmpdir(), "codument-strict-missing-"));
+  });
+  afterEach(async () => {
+    await rm(clean, { recursive: true, force: true });
+    await rm(missing, { recursive: true, force: true });
+  });
+
+  it("exits 1 on the dirty fixture when findings are present", () => {
+    assert.equal(run(["doctor", "--strict"], FIXTURE).status, 1);
+  });
+
+  it("leaves bare doctor at exit 0 on the same dirty fixture", () => {
+    assert.equal(run(["doctor"], FIXTURE).status, 0);
+  });
+
+  it("exits 0 with --strict on a clean repo (no findings)", () => {
+    assert.equal(run(["doctor", "--strict"], clean).status, 0);
+  });
+
+  it("exits 1 with --strict --json but keeps the JSON contract byte-identical", () => {
+    const plain = run(["doctor", "--json"], FIXTURE);
+    const strict = run(["doctor", "--json", "--strict"], FIXTURE);
+    assert.equal(plain.status, 0);
+    assert.equal(strict.status, 1);
+    // --strict must not change stdout: same JSON either way, only the exit differs.
+    assert.equal(strict.stdout, plain.stdout);
+    assert.ok(JSON.parse(strict.stdout).lint.count > 0);
+  });
+
+  it("exits 1 with --strict on a missing-registry repo", () => {
+    assert.equal(run(["doctor", "--strict"], missing).status, 1);
   });
 });

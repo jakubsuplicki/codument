@@ -170,6 +170,7 @@ These commands are local, need no network and no AI model, and produce the same 
 npx codument doctor
 npx codument doctor --json     # stable machine contract for CI/badges
 npx codument doctor --write    # write .codument/coverage.json + an SVG badge
+npx codument doctor --strict   # exit 1 if there are findings, to gate a CI step
 ```
 
 It reports separate channels, never blended into one number:
@@ -178,7 +179,7 @@ It reports separate channels, never blended into one number:
 - **Lint (warnings):** missing/leaked sources, missing docs, empty `depends_on`, unmapped sources, and bloated docs (whole-doc size, oversized sections, never-compacted completed-step logs — tunable with `--max-doc-lines`, `--max-section-lines`, `--max-completed-log`). These are *findings* — a clean registry has zero.
 - **Notes (informational):** high-fanout files (a file mapped across many features). Awareness-only — they never count toward "clean", because acting on them blindly degrades the registry (see the findings table below).
 
-`doctor` is warning-only: neither findings nor notes change the exit code.
+`doctor` is warning-only by default: neither findings nor notes change the exit code. Add `--strict` to make findings exit 1 (notes still never do), so a CI step can block a merge until they are cleared.
 
 ### `codument review` — review an AI change
 

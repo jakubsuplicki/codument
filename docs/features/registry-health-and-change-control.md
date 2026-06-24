@@ -8,7 +8,7 @@ depends_on:
   - cli
   - commands
   - lib
-last_reviewed: 2026-06-20
+last_reviewed: 2026-06-24
 ---
 
 ## Summary
@@ -150,7 +150,7 @@ The denominator is the critical design decision. "What should be documented" is 
 
 Bloat is measured deterministically by three signals rather than one line count: whole-doc size (configurable line/word thresholds), per-section size (which `Definition of Done` / `What Was Built` section is oversized), and completed-log accumulation (count of inline `[x]` items and per-step build logs that should be compacted). Default thresholds start conservative and are calibrated against a Peelmeal-shaped fixture rather than guessed.
 
-Output: human-readable by default, with a `--json` mode that emits findings carrying machine-readable counts so a score, a badge, CI, and a future GUI all read one stable contract. The first version is warning-only and explains why each finding matters. No new npm package dependencies — Node built-ins plus the already-installed `picocolors`/`commander`/`prompts`; the git-history ratios shell out to the already-required `git` CLI. A genuinely unexpected failure still exits nonzero, but git being absent or the directory not being a repo is a known, handled case (freshness reported N/A), not a runtime failure. Note shallow/grafted clones can undercount history-window queries; the badge backtest must run against a full clone. Recompute is on demand (manual, git hook, or CI); there is no daemon.
+Output: human-readable by default, with a `--json` mode that emits findings carrying machine-readable counts so a score, a badge, CI, and a future GUI all read one stable contract. The first version is warning-only and explains why each finding matters. No new npm package dependencies — Node built-ins plus the already-installed `picocolors`/`commander`/`prompts`; the git-history ratios shell out to the already-required `git` CLI. A genuinely unexpected failure still exits nonzero, but git being absent or the directory not being a repo is a known, handled case (freshness reported N/A), not a runtime failure. Note shallow/grafted clones can undercount history-window queries; the badge backtest must run against a full clone. Recompute is on demand (manual, git hook, or CI); there is no daemon. The opt-in `--strict` flag makes findings exit 1 so a CI step can gate on them (notes never count); bare `doctor` stays warning-only (see the Increment section).
 
 ### Coverage score and badge
 
@@ -290,12 +290,54 @@ Status: **All steps complete (1, 1a, 1b, 2, 3, 4, 4a, 5, 6, 7, 8, 8a, 9).** The 
 - Unit test that generated workflow instructions and the `commit-work` skill contain the autopilot routing and pause conditions and contain no agent `Co-Authored-By` trailer.
 - Run `npm run typecheck`, `npm run build`, and `npm test` for implementation steps.
 
+## Increment: `doctor --strict` (opt-in CI gate)
+
+Status: **approved 2026-06-24; implemented, tested, and reviewed. Not yet committed (held per the user's no-commit instruction).**
+
+Resolves the Open Question on shipping `doctor --strict`. The original deferral was about warning noise; that concern is fully handled by making the gate strictly opt-in, so bare `doctor` keeps its warning-only, exit-0 behaviour unchanged.
+
+### Decision
+
+- Add a boolean `--strict` flag to the `doctor` command only.
+- With `--strict`, `doctor` exits **1 iff `report.lint.count > 0`** (actionable `warn`-severity findings), otherwise 0. The exit logic keys off the existing `lint.count`, which already counts only `warn` findings and excludes `info` notes (`buildReport` in [doctor.ts](../../src/commands/doctor.ts)).
+- **Notes never fail** (e.g. high-fanout): they are `info`, outside `lint.count` by construction, so a repo can never be made to pass `--strict` by silencing an awareness-only signal.
+- **Coverage stays informational** — no coverage gate in v1. A coverage floor, if ever wanted, is a separate `--min-coverage <n>` flag, not bundled into `--strict`: a gradient (coverage) and a discrete count (findings) should not share one exit code.
+- **Scope is `doctor` only.** `review` is a diff-time advisory that explicitly does not certify a change as safe; gating a specific diff is a different model and can follow later as `review --strict`.
+- **Missing registry fails strict**: `missing-registry` is a `warn` finding, so an uninitialised repo run under `--strict` exits 1, which is correct for CI.
+- Name is the canonical `--strict`; no `--fail-on-warn` alias, to avoid extra pre-1.0 surface.
+- On failure, print a one-line deterministic summary (no wall clock), e.g. `strict: 2 finding(s) present — failing`.
+
+### Non-goals
+
+- No change to bare `doctor` behaviour or output (regression-guarded).
+- No coverage threshold, no `--max-findings`, no `review --strict` in this increment.
+- No new runtime dependencies and no new source files: this modifies `src/cli.ts` and `src/commands/doctor.ts`, both already owned by this feature in the registry, so no Feature Map is required.
+
+### Delivery Plan
+
+- [x] Step S1: Implement `--strict` and its tests. Register the boolean `--strict` option on the `doctor` command in `src/cli.ts`; add `strict?: boolean` to `DoctorOptions`, and in `doctor()` set `process.exitCode = 1` with the one-line summary when `options.strict && report.lint.count > 0`. Add CLI tests in `tests/doctor.test.ts` driving `dist/cli.js`: dirty fixture + `--strict` exits 1; dirty fixture without the flag exits 0; clean fixture + `--strict` exits 0; `--strict --json` emits the unchanged contract and still exits 1; missing-registry + `--strict` exits 1.
+- [x] Step S2: Document and resolve. Update the `### codument doctor` behaviour note in this doc and the `doctor` sections of `docs/features/cli.md` and `README.md` to describe `--strict` (opt-in, findings-only, exit 1); mark the Open Question resolved; bump `last_reviewed`/`last_updated` on the touched docs and the registry entry. (`src/cli.ts` and `src/commands/doctor.ts` are already mapped to this feature; verify, no new registry entry.)
+
+### Acceptance Criteria
+
+- `doctor --strict` exits 1 when `lint.count > 0` and 0 otherwise.
+- Bare `doctor` output and exit code are unchanged (always 0 on findings).
+- A run whose only diagnostics are `info` notes exits 0 even under `--strict`.
+- `--strict` composes with `--json` and `--write`: output is identical to the non-strict run; only the process exit code differs.
+- `doctor --strict` on an uninitialised repo (no registry) exits 1.
+- The failure summary is deterministic (no timestamp), so output stays byte-stable for the same repo state.
+
+### Verification Strategy
+
+- New cases in `tests/doctor.test.ts` exercise `dist/cli.js` via `execFileSync` (which throws on a non-zero exit) to assert each exit code above; the `--json` case also asserts the parsed contract is unchanged.
+- `npm run lint`, `npm run typecheck`, `npm run build`, and `npm test` all green.
+
 ## Open Questions
 
 - (Key) What is the exact canonical exclusion glob list, and what default freshness window N (commits)? The file-vs-feature counting question is now resolved in the design (deduped file-level until `primary_sources` exists, then feature-level; multi-mapped files deduped); what remains open is the precise glob set and N, both to be calibrated against the Peelmeal fixture in Step 4.
 - Default bloat thresholds (whole-doc, per-section, completed-log) are calibrated against the Peelmeal fixture in Step 4; what conservative starting values should Step 3 ship before that calibration?
 - Score/badge sequencing is decided (Step 3 ships no score; the public badge waits for the Peelmeal backtest). Residual: may an internal coverage score surface in `--json`/`.codument/coverage.json` before the backtest, while only the public badge waits?
 - Should the public README badge be the absolute coverage number (familiar, like a coverage badge, but cross-repo-comparable) or a delta/trend badge ("docs coverage -6 this week") that cannot be misused for cross-repo comparison?
-- Should `doctor --strict` ship with the first command version, or wait until warning noise is proven low on real repos?
+- ~~Should `doctor --strict` ship with the first command version, or wait until warning noise is proven low on real repos?~~ Resolved (see Increment: `doctor --strict` above): ship it now as an opt-in boolean that exits 1 iff `lint.count > 0`. The warning-noise concern is moot because the gate is strictly opt-in and bare `doctor` stays warning-only/exit 0.
 - ~~Should migration live inside `adopt`, a new `codument migrate-registry` command, or both?~~ Resolved (Step 5): both — `adopt` auto-migrates a legacy registry on adoption, and `codument migrate-registry` is the explicit standalone one-shot (with backup, `--dry-run`, idempotent). Both share `migrateRegistry`, the only legacy reader.
 - ~~`watch` refresh: fs-watch-driven, fixed-interval polling, or both?~~ Resolved (Step 8a): fixed-interval polling (default 2000ms, `--interval`) — simple, robust across platforms, safe with `GIT_OPTIONAL_LOCKS=0`; fs-watch immediate redraw is a possible future enhancement. Also decided: a zero-dependency ANSI renderer rather than Ink, to keep runtime deps at commander/picocolors/prompts.
