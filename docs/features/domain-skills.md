@@ -1,6 +1,6 @@
 ---
 title: Domain Skills (triaged generalization, task-scoped, shipped)
-status: approved
+status: current
 last_updated: 2026-06-24
 ---
 
@@ -118,20 +118,20 @@ detection, no install-gating, no per-repo selection, no merge/retire.**
 
 ## Delivery Plan
 
-Status: approved (2026-06-24). Implementing via autopilot.
+Status: implemented (2026-06-24).
 
-- [ ] Step 1 (Bucket A descriptions + cleanup): Rewrite the descriptions of `senior-backend`,
+- [x] Step 1 (Bucket A descriptions + cleanup): Rewrite the descriptions of `senior-backend`,
       `senior-architect`, `frontend-design`, `code-reviewer` to the formula (third-person capability
       + pushy "Use when" + per-stack keywords + the matrix exclusion clause); remove the
       "reviewing X code" shadow-review framing but **keep** the registry Definition-of-Done line
       (research rubric: a skill that can fire standalone must carry it); keep bodies inline and
       under 500 lines. (`senior-backend` keeps its light stack tokens inline.)
-- [ ] Step 2 (Bucket B — `motion-craft` refactor, the template): Split the stack-specific sections
+- [x] Step 2 (Bucket B — `motion-craft` refactor, the template): Split the stack-specific sections
       (web impl, native impl, setup, examples, bridges) into `references/web.md`,
       `references/react-native.md`, `references/examples.md`, `references/bridges.md` (each with a
       TOC + a body pointer); keep the shared core + translation table + review format in `SKILL.md`
       (target ~250 lines). This becomes the canonical Bucket-B shape.
-- [ ] Step 3 (Bucket B — `senior-frontend` router): Extract platform-neutral frontend judgment
+- [x] Step 3 (Bucket B — `senior-frontend` router): Extract platform-neutral frontend judgment
       (component sizing, state-decision order, "measure before memo", a11y, error/loading pairing,
       the `motion-craft` delegation) into a judgment-first `SKILL.md`; move the existing
       React/Next/Tailwind specifics verbatim into `references/react.md` (React **web**); **author a
@@ -139,24 +139,24 @@ Status: approved (2026-06-24). Implementing via autopilot.
       virtualization, navigation, Hermes/perf, platform + a11y APIs) — RN *motion* still defers to
       `motion-craft`. Description names React web + React Native (both backed) with exclusions
       against `frontend-design` and `motion-craft`.
-- [ ] Step 4 (Bucket C — `review-codebase`): Sharpen only the description boundary (single diff →
+- [x] Step 4 (Bucket C — `review-codebase`): Sharpen only the description boundary (single diff →
       `code-reviewer`; whole project → here, `/review-codebase`). No structural change.
-- [ ] Step 5 (rubric + structure validation, all seven): Verify each against the rubric — body
+- [x] Step 5 (rubric + structure validation, all seven): Verify each against the rubric — body
       <500 lines, references one level deep, TOC on >100-line references, forward-slash paths, the
       registry Definition-of-Done line preserved, exclusion clauses present and non-circular per the
       matrix, and every description stack-keyword backed by real content.
-- [ ] Step 6 (trigger evals, all touched skills): For each, run ≥3 should-trigger prompts (one per
+- [x] Step 6 (trigger evals, all touched skills): For each, run ≥3 should-trigger prompts (one per
       claimed stack/scenario) and ≥3 should-NOT-trigger look-alike prompts that must route to a
       sibling; keep a broadened description only if it triggers on the first set and stays silent on
       the second.
-- [ ] Step 7 (source — install pipeline): Add a flat `DOMAIN_SKILLS` list (all seven) to
+- [x] Step 7 (source — install pipeline): Add a flat `DOMAIN_SKILLS` list (all seven) to
       `agent-profiles.ts` and a single `resolveSkills(profile)` helper; **change the install/update
       copy from single `SKILL.md` to recursive whole-skill-directory** (SKILL.md + `references/*`)
       for both `installProfile` (`init.ts`) and `getManagedFiles` (`update.ts`), and
       `benchmark-quality.ts`; fix the `init.ts:150-152` count log. No `detect.ts` change.
-- [ ] Step 8 (source — nudge): Add one conditional, domain-keyed consult bullet to the Intent-routing
+- [x] Step 8 (source — nudge): Add one conditional, domain-keyed consult bullet to the Intent-routing
       block in `scaffold.ts` `buildManagedSection()` (re-emitted to AGENTS.md + CLAUDE.md).
-- [ ] Step 9 (docs/registry): Register the domain skills + their `references/*` under a
+- [x] Step 9 (docs/registry): Register the domain skills + their `references/*` under a
       `domain-skills` entry; bump `last_updated` on the features owning the modified source files.
 
 ## Feature Map

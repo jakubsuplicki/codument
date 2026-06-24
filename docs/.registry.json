@@ -18,7 +18,7 @@
         "agent-delivery-workflow"
       ],
       "risk": [],
-      "last_updated": "2026-06-22",
+      "last_updated": "2026-06-24",
       "status": "current"
     },
     "impact-ledger": {
@@ -126,7 +126,7 @@
         "lib"
       ],
       "risk": [],
-      "last_updated": "2026-06-18",
+      "last_updated": "2026-06-24",
       "status": "current"
     },
     "hooks": {
@@ -160,7 +160,7 @@
         "lib"
       ],
       "risk": [],
-      "last_updated": "2026-06-16",
+      "last_updated": "2026-06-24",
       "status": "in-progress"
     },
     "lib": {
@@ -194,7 +194,7 @@
       "docs": [],
       "depends_on": [],
       "risk": [],
-      "last_updated": "2026-06-22",
+      "last_updated": "2026-06-24",
       "status": "current"
     },
     "registry-health-and-change-control": {
@@ -296,6 +296,39 @@
       "depends_on": [
         "registry-health-and-change-control",
         "plan-step-mirroring",
+        "lib"
+      ],
+      "risk": [],
+      "last_updated": "2026-06-24",
+      "status": "current"
+    },
+    "domain-skills": {
+      "doc": "docs/features/domain-skills.md",
+      "type": "feature",
+      "primary_sources": [],
+      "related_sources": [
+        "src/lib/agent-profiles.ts",
+        "src/lib/scaffold.ts",
+        "src/commands/init.ts",
+        "src/commands/update.ts",
+        "src/lib/benchmark-quality.ts"
+      ],
+      "docs": [
+        "skills/senior-backend/SKILL.md",
+        "skills/senior-architect/SKILL.md",
+        "skills/senior-frontend/SKILL.md",
+        "skills/senior-frontend/references/react.md",
+        "skills/senior-frontend/references/react-native.md",
+        "skills/frontend-design/SKILL.md",
+        "skills/motion-craft/SKILL.md",
+        "skills/motion-craft/references/web.md",
+        "skills/motion-craft/references/react-native.md",
+        "skills/motion-craft/references/examples.md",
+        "skills/motion-craft/references/bridges.md",
+        "skills/code-reviewer/SKILL.md",
+        "skills/review-codebase/SKILL.md"
+      ],
+      "depends_on": [
         "lib"
       ],
       "risk": [],
