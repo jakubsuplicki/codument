@@ -179,4 +179,61 @@ describe("codument review (CLI)", () => {
     assert.ok(caught.data.offPlan.includes("src/auth/login.ts"));
     assert.equal(typeof caught.data.commit, "string");
   });
+
+  it("--strict exits 1 on an unmapped new source", async () => {
+    await scaffold({ "src/lib/cache.ts": "export const cache = {};\n" });
+    assert.throws(
+      () =>
+        execFileSync("node", [CLI, "review", "--strict"], {
+          cwd: tmp,
+          encoding: "utf-8",
+        }),
+      (err: unknown) => (err as { status?: number }).status === 1,
+    );
+  });
+
+  it("--strict exits 1 on a stale doc (mapped source changed, doc did not)", async () => {
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => { return 6; };\n",
+    });
+    assert.throws(
+      () =>
+        execFileSync("node", [CLI, "review", "--strict"], {
+          cwd: tmp,
+          encoding: "utf-8",
+        }),
+      (err: unknown) => (err as { status?: number }).status === 1,
+    );
+  });
+
+  it("--strict exits 0 when new sources are mapped and docs are fresh", async () => {
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => { return 5; };\n",
+      "docs/features/auth.md": "# auth\n\ntouched\n",
+    });
+    const out = execFileSync("node", [CLI, "review", "--strict"], {
+      cwd: tmp,
+      encoding: "utf-8",
+    });
+    assert.match(out, /codument review/);
+  });
+
+  it("--strict --json still emits the contract and exits 1 on an unmapped source", async () => {
+    await scaffold({ "src/lib/cache.ts": "export const cache = {};\n" });
+    let status = 0;
+    let stdout = "";
+    try {
+      stdout = execFileSync("node", [CLI, "review", "--strict", "--json"], {
+        cwd: tmp,
+        encoding: "utf-8",
+      });
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      status = e.status ?? 0;
+      stdout = e.stdout ?? "";
+    }
+    assert.equal(status, 1);
+    const report = JSON.parse(stdout);
+    assert.equal(report.version, 1);
+  });
 });

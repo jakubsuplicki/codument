@@ -14,7 +14,7 @@ Use this after `review-work` is clean, or after the user has approved/deferred e
 3. Check `git status --short`.
 4. Review the diff and avoid staging unrelated user changes.
 5. Run the relevant verification commands.
-6. Confirm docs and `docs/.registry.json` are updated.
+6. Run `codument review --strict` — it must pass. It exits nonzero while the step left a new source unmapped or a mapped doc stale; materialize the file(s) (`codument map materialize <file>`) and update the stale doc(s) (set `last_updated`), then re-run until clean. Do not commit while it is red.
 7. Stage only files belonging to the completed step.
 8. Commit with a conventional commit prefix:
    - `feat:`
@@ -37,6 +37,7 @@ Use this after `review-work` is clean, or after the user has approved/deferred e
 ## Rules
 
 - Do not commit unresolved high or critical review findings.
+- Do not commit while `codument review --strict` is red — a new source left unmapped or a mapped doc left stale must be synced first.
 - Do not decide to defer review findings yourself; only the user can defer findings.
 - Do not commit unrelated dirty files.
 - Do not claim verification passed if a command failed or could not run.

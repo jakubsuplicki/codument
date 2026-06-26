@@ -45,6 +45,8 @@ When a step lands a NEW source file, route it via the approved plan's Feature Ma
 
 A completed implementation step is not ready for the next plan step until it has been reviewed and committed.
 
+The registry must be in sync before review: `codument review --strict` must pass at the step boundary. It exits nonzero while the step left a new source unmapped or a mapped doc stale — materialize the file(s) (`codument map materialize <file>`) and update the stale doc(s) until it is clean. Mid-step `unmapped-source` is transient and fine; a red gate at the boundary is not — never hand a half-synced step to `review-work` or `commit-work`.
+
 In an autopilot run, skip the options below and continue directly to `review-work` for this step. Outside autopilot, when the implementation and verification are done, say plainly:
 
 ```text

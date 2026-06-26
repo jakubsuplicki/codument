@@ -101,7 +101,7 @@ Use Codument as the durable control plane for agent-led engineering work:
 3. Wait for explicit user approval before implementation.
 4. Implement one planned step at a time.
 5. Build the strongest practical feedback loop, preferring red-green-refactor when it fits.
-6. Update docs and \`docs/.registry.json\` as part of the same step.
+6. Materialize each new source file with \`codument map materialize\` and update the mapped docs + \`docs/.registry.json\` as part of the same step.
 7. Review the diff against the approved plan, tests, docs, and architecture.
 8. Commit focused work with a conventional commit, authored as the user with no AI \`Co-Authored-By\` trailer.
 9. Move to the next unchecked step.
@@ -154,6 +154,7 @@ Autopilot is off by default and applies to one run only; never assume it from a 
 - Trigger: only when the user explicitly says "codument, run the plan" (also "run the plan", "codument this plan", "autopilot", or a best-effort \`/work-step --auto\` hint). The \`--auto\` flag is a convenience hint your host may ignore; the phrase is the reliable trigger.
 - Precondition: never start autopilot before the plan is approved. Confirm the active plan shows \`Status: approved\` (not draft or awaiting approval). If you cannot confirm approval, do not start; say so and ask the user to approve the plan.
 - While active, for each remaining delivery-plan step run \`work-step\` -> \`review-work\` -> \`commit-work\` without stopping for routine confirmations. Each gate still runs; you simply do not wait for the user to say continue. Commit per step with a focused conventional commit, attributed to the user only.
+- Step-sync gate: before \`commit-work\` checks a step off, \`codument review --strict\` must pass. It exits nonzero while the step left a new source unmapped or a mapped doc stale — materialize the file(s) (\`codument map materialize\`) and update the stale doc(s), then re-run until clean. A persistently red gate is a hard-pause condition; never check off or commit a step while it is red.
 - During \`review-work\` in autopilot, auto-apply only safe, obvious fixes, then proceed to \`commit-work\`. Always pause for any finding that needs a judgment call or that touches public interfaces, security, data loss or deletions, or dependency changes.
 - Hard pause conditions (stop the run, report a compact summary, wait for the user): a judgment-call review finding, a verification failure, or any change that falls outside the approved plan.
 - Interrupt: if the user says "pause" or "stop autopilot", immediately return to the manual one-step-at-a-time gated loop.
@@ -172,6 +173,7 @@ A task is NOT complete until:
 6. Dependent features are flagged if an interface changed
 7. \`last_updated\` is set on all touched docs and registry entries
 8. Review findings are resolved or explicitly deferred
+9. \`codument review --strict\` passes for the step — no new source left unmapped, no mapped doc left stale
 
 ### Planning and approval
 Do not move from a rough idea into source edits automatically. First use the docs-backed grilling and planning workflow to resolve scope, non-goals, acceptance criteria, verification strategy, and implementation steps. Begin implementation only after the user approves the plan. Surface the plan's checklist inline in the chat at the approval gate, so the user approves the steps they can see rather than a link they must open.

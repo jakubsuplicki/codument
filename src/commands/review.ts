@@ -14,6 +14,7 @@ interface ReviewOptions {
   root?: string;
   json?: boolean;
   log?: boolean;
+  strict?: boolean;
 }
 
 export interface ReviewReport {
@@ -87,12 +88,41 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     });
   }
 
+  // --strict gates the agent loop: a step is not done while it left a new source
+  // unmapped or a mapped doc stale. Diff-scoped, so it never trips on pre-existing
+  // gaps the step did not touch; it deliberately ignores dependents/risk
+  // (informational) and depends_on (a separate concern), so the gate stays
+  // satisfiable — a genuine leaf feature with no deps can still pass.
+  const strictFail =
+    !!options.strict &&
+    (report.state.unmapped.length > 0 || report.state.staleDocs.length > 0);
+
   if (options.json) {
     console.log(JSON.stringify(report, null, 2));
+    if (strictFail) process.exitCode = 1;
     return;
   }
 
   printHuman(report);
+
+  if (strictFail) {
+    const reasons: string[] = [];
+    if (report.state.unmapped.length > 0)
+      reasons.push(`${report.state.unmapped.length} unmapped new source file(s)`);
+    if (report.state.staleDocs.length > 0)
+      reasons.push(`${report.state.staleDocs.length} stale doc(s)`);
+    console.log(
+      pc.red(
+        `  ✗ --strict: ${reasons.join(" and ")} — the registry/docs are not in sync for this change.`,
+      ),
+    );
+    console.log(
+      pc.dim(
+        "    Materialize unmapped sources (`codument map materialize <file>`) and update each stale doc (+ last_updated), then re-run.",
+      ),
+    );
+    process.exitCode = 1;
+  }
 }
 
 function section(title: string, lines: string[]): void {

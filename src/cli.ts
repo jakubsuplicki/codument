@@ -64,6 +64,7 @@ program
   )
   .option("--json", "Emit the machine-readable review contract")
   .option("--log", "Append a `caught` snapshot (provable catches) to .codument/events.jsonl (for the impact ledger)")
+  .option("--strict", "Exit 1 if the change left a new source unmapped or a mapped doc stale (the step-sync gate)")
   .action(review);
 
 program
