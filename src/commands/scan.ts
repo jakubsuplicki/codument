@@ -75,7 +75,6 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
       docs: [],
       depends_on: [],
       risk: [],
-      last_updated: today,
       status: "needs-review",
     };
 

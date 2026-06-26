@@ -116,8 +116,7 @@ For single-feature updates, do this inline (no agent needed):
 1. Read `docs/.registry.json`, find the doc mapped to the changed file
 2. Open the doc, compare against your code changes
 3. Update only the sections that are now outdated — don't rewrite the whole doc
-4. Update `last_updated` in both the doc frontmatter and the registry
-5. If your change affects the feature's public interface, check `depends_on` and set dependent features' status to `"stale"`
+4. If your change affects the feature's public interface, check `depends_on` and set dependent features' status to `"stale"`
 
 For large refactors touching multiple features, delegate to doc-writer agents per affected feature to avoid context bloat.
 
@@ -188,7 +187,6 @@ The registry at `docs/.registry.json` maps source files to their documentation.
     "type": "feature",
     "sources": ["src/path/to/file.ts"],
     "depends_on": ["other-feature"],
-    "last_updated": "YYYY-MM-DD",
     "status": "current"
   }
 }

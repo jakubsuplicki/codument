@@ -6,7 +6,6 @@ import { demo } from "./commands/demo.js";
 import { doctor } from "./commands/doctor.js";
 import { emitTokensCommand, emitReviewCommand } from "./commands/emit.js";
 import { init } from "./commands/init.js";
-import { migrateRegistryCommand } from "./commands/migrate.js";
 import { report } from "./commands/report.js";
 import { review } from "./commands/review.js";
 import { watch } from "./commands/watch.js";
@@ -164,14 +163,8 @@ map
   .action((file, options) => mapMaterialize({ file, ...options }));
 
 program
-  .command("migrate-registry")
-  .description("One-shot convert docs/.registry.json from the legacy flat shape to v2 (with backup)")
-  .option("--dry-run", "Preview the migration without modifying files")
-  .action((options) => migrateRegistryCommand(options));
-
-program
   .command("adopt")
-  .description("Adopt an existing Codument project and migrate legacy registry data")
+  .description("Adopt an existing Codument project")
   .option(
     "--agents <agents>",
     "Agent profiles to install or refresh: codex, claude",
@@ -203,7 +196,7 @@ program
         `To run an approved plan, tell your agent:  ${pc.bold('"codument, run the plan"')}`,
         "",
         "The CLI only does setup and deterministic checks:",
-        `  ${pc.dim("codument init | scan | doctor | review | report | watch | feed | steps | demo | migrate-registry | adopt | update | benchmark")}`,
+        `  ${pc.dim("codument init | scan | doctor | review | report | watch | feed | steps | demo | adopt | update | benchmark")}`,
       ].join("\n"),
     );
   });

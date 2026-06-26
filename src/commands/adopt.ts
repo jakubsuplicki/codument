@@ -11,9 +11,7 @@ import { readMeta, writeMeta, type MetaFile } from "../lib/codemod.js";
 import { detectProject } from "../lib/detect.js";
 import {
   allSources,
-  migrateRegistry,
   normalizeRegistry,
-  registryNeedsMigration,
   writeRegistry,
 } from "../lib/registry.js";
 import { ensureDir } from "../lib/scaffold.js";
@@ -91,7 +89,7 @@ export async function adopt(options: AdoptOptions): Promise<void> {
 }
 
 interface RegistryAdoptionResult {
-  action: "create" | "migrate" | "normalize" | "skip";
+  action: "create" | "normalize" | "skip";
   entries: number;
   sources: number;
 }
@@ -101,7 +99,6 @@ async function adoptRegistry(
   dryRun: boolean,
 ): Promise<RegistryAdoptionResult> {
   const registryPath = join(root, "docs", ".registry.json");
-  const today = new Date().toISOString().split("T")[0];
 
   if (!existsSync(registryPath)) {
     if (!dryRun) {
@@ -118,10 +115,7 @@ async function adoptRegistry(
     return { action: "skip", entries: 0, sources: 0 };
   }
 
-  const needsMigration = registryNeedsMigration(raw);
-  const registry = needsMigration
-    ? migrateRegistry(raw, today).registry
-    : normalizeRegistry(raw, today);
+  const registry = normalizeRegistry(raw);
   const canonical = JSON.stringify(registry, null, 2) + "\n";
   const changed = canonical !== rawText;
   if (!changed) {
@@ -139,7 +133,7 @@ async function adoptRegistry(
   }
 
   return {
-    action: needsMigration ? "migrate" : "normalize",
+    action: "normalize",
     entries: Object.keys(registry.features).length,
     sources: countSources(registry),
   };
@@ -162,12 +156,8 @@ function printRegistryResult(
     return;
   }
 
-  const label =
-    result.action === "migrate"
-      ? "migrated from legacy mappings"
-      : "normalized";
   console.log(
-    `  ${pc.green("✓")} docs/.registry.json ${verb} ${label} (${result.entries} entries, ${result.sources} sources)`,
+    `  ${pc.green("✓")} docs/.registry.json ${verb} normalized (${result.entries} entries, ${result.sources} sources)`,
   );
 }
 

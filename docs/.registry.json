@@ -18,7 +18,6 @@
         "agent-delivery-workflow"
       ],
       "risk": [],
-      "last_updated": "2026-06-24",
       "status": "current"
     },
     "impact-ledger": {
@@ -45,7 +44,6 @@
         "registry-health-and-change-control"
       ],
       "risk": [],
-      "last_updated": "2026-06-22",
       "status": "in-progress"
     },
     "cli": {
@@ -61,7 +59,6 @@
         "lib"
       ],
       "risk": [],
-      "last_updated": "2026-06-19",
       "status": "current"
     },
     "plan-step-mirroring": {
@@ -82,7 +79,6 @@
         "registry-health-and-change-control"
       ],
       "risk": [],
-      "last_updated": "2026-06-17",
       "status": "current"
     },
     "token-cost-tracking": {
@@ -107,7 +103,6 @@
         "registry-health-and-change-control"
       ],
       "risk": [],
-      "last_updated": "2026-06-19",
       "status": "current"
     },
     "commands": {
@@ -126,7 +121,6 @@
         "lib"
       ],
       "risk": [],
-      "last_updated": "2026-06-24",
       "status": "current"
     },
     "hooks": {
@@ -141,7 +135,6 @@
         "lib"
       ],
       "risk": [],
-      "last_updated": "2026-06-20",
       "status": "current"
     },
     "proof-benchmarks": {
@@ -160,7 +153,6 @@
         "lib"
       ],
       "risk": [],
-      "last_updated": "2026-06-24",
       "status": "in-progress"
     },
     "lib": {
@@ -194,7 +186,6 @@
       "docs": [],
       "depends_on": [],
       "risk": [],
-      "last_updated": "2026-06-24",
       "status": "current"
     },
     "registry-health-and-change-control": {
@@ -203,7 +194,6 @@
       "primary_sources": [
         "src/commands/demo.ts",
         "src/commands/doctor.ts",
-        "src/commands/migrate.ts",
         "src/commands/report.ts",
         "src/commands/review.ts",
         "src/commands/watch.ts",
@@ -224,7 +214,6 @@
       "risk": [
         "data-loss"
       ],
-      "last_updated": "2026-06-22",
       "status": "in-progress"
     },
     "doc-audience-layers": {
@@ -237,7 +226,6 @@
         "registry-health-and-change-control"
       ],
       "risk": [],
-      "last_updated": "2026-06-16",
       "status": "draft"
     },
     "review-effectiveness-metric": {
@@ -251,7 +239,6 @@
         "registry-health-and-change-control"
       ],
       "risk": [],
-      "last_updated": "2026-06-16",
       "status": "draft"
     },
     "complete-cost-capture": {
@@ -271,7 +258,6 @@
         "registry-health-and-change-control"
       ],
       "risk": [],
-      "last_updated": "2026-06-22",
       "status": "current"
     },
     "feature-decomposition": {
@@ -299,7 +285,6 @@
         "lib"
       ],
       "risk": [],
-      "last_updated": "2026-06-24",
       "status": "current"
     },
     "domain-skills": {
@@ -332,7 +317,6 @@
         "lib"
       ],
       "risk": [],
-      "last_updated": "2026-06-24",
       "status": "current"
     }
   }

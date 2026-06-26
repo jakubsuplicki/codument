@@ -83,7 +83,7 @@ related_sources: []
 docs: []
 depends_on: []
 risk: []
-last_updated: ${date}
+last_reviewed: ${date}
 ---
 
 # ${key}

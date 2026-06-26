@@ -118,7 +118,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     );
     console.log(
       pc.dim(
-        "    Materialize unmapped sources (`codument map materialize <file>`) and update each stale doc (+ last_updated), then re-run.",
+        "    Materialize unmapped sources (`codument map materialize <file>`) and update each stale doc, then re-run.",
       ),
     );
     process.exitCode = 1;

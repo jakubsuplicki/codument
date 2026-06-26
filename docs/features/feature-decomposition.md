@@ -10,7 +10,6 @@ depends_on:
   - plan-step-mirroring
   - lib
 risk: []
-last_updated: 2026-06-22
 ---
 
 ## Summary

@@ -17,7 +17,7 @@ Codument has **two sides** that work together:
 - **A delivery workflow your agent runs.** Docs-backed planning, source-to-doc ownership, review discipline, and commit hygiene. You just chat; your agent routes intent into the right phase from the installed instructions. Core loop: `grill → plan → approve → implement → verify → document → review → commit`.
 - **Deterministic CLI checks you run.** Local, no-network, no-AI commands that read the repo and report the facts: `doctor` (coverage + lint), `review` (what a change touched, what went stale), `watch` (a live view). Same repo state → same output.
 
-The link between them is **`docs/.registry.json`** — a v2 registry mapping each source file to the feature/doc that owns it. The workflow writes it as it builds; the checks read it to reason about every change.
+The link between them is **`docs/.registry.json`** — a registry mapping each source file to the feature/doc that owns it. The workflow writes it as it builds; the checks read it to reason about every change.
 
 ```mermaid
 flowchart TB
@@ -102,23 +102,14 @@ npx codument scan
 
 Groups source files into feature and concept docs, creates scaffolds, and populates `docs/.registry.json`. New entries are marked `needs-review`; run `/update-docs` (the agent) to fill them with real content.
 
-### Existing Codument project (upgrade or migrate) → `adopt`
+### Existing Codument project → `adopt`
 
 ```bash
 npx codument adopt --dry-run --agents codex,claude
 npx codument adopt --agents codex,claude
 ```
 
-Use `adopt` when a project already has Codument docs, an older `.codument-meta.json`, or a legacy registry (the flat `sources` or old `mappings` shape). It migrates the registry into the **v2** ownership shape (`primary_sources`, `related_sources`, `docs`, `depends_on`, `risk`), keeps the old one as `docs/.registry.backup.json`, refreshes `.codument-meta.json`, and installs/updates the selected agent profiles.
-
-To convert only the registry (no profile changes), run the idempotent one-shot — it backs up first:
-
-```bash
-npx codument migrate-registry --dry-run
-npx codument migrate-registry
-```
-
-The v2 model is the only shape the analyzers read; the legacy shape is converted once and never read again.
+Use `adopt` when a project already has Codument docs or an older `.codument-meta.json`. It normalizes `docs/.registry.json` into the ownership shape (`primary_sources`, `related_sources`, `docs`, `depends_on`, `risk`), backs the previous file up as `docs/.registry.backup.json`, refreshes `.codument-meta.json`, and installs/updates the selected agent profiles. To re-derive the registry from source at any time, re-run `scan` — it overwrites the machine-derived entries while preserving your human-authored `docs`/`depends_on`/`risk`.
 
 ## 2 · Build — your agent, ongoing
 
@@ -160,7 +151,7 @@ Keep working state compact. Feature docs should capture durable decisions, the c
 
 ## 3 · Check — terminal, deterministic (no AI)
 
-These commands are local, need no network and no AI model, and produce the same output for the same repo state. They read the v2 registry, the filesystem, and `git`.
+These commands are local, need no network and no AI model, and produce the same output for the same repo state. They read the registry, the filesystem, and `git`.
 
 ### `codument doctor` — documentation coverage
 

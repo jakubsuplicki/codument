@@ -1,7 +1,7 @@
 ---
 title: Project Charter
 seriousness: ""
-last_updated: {{date}}
+last_reviewed: {{date}}
 ---
 
 # Project Charter

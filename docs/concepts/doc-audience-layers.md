@@ -23,7 +23,7 @@ Separation is **by section, not by file.** A feature or concept doc carries orde
 
 ```
 ---
-frontmatter        # machine: registry, status, sources, last_updated
+frontmatter        # machine: registry, status, sources
 ---
 # Feature Name
 

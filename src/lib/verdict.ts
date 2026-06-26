@@ -37,8 +37,6 @@ export interface RiskFinding {
 export interface DriftFinding {
   feature: string;
   doc: string;
-  /** Days the doc is behind its code, when the caller can resolve it (mtime). */
-  staleDays?: number;
 }
 
 export interface OffPlanFinding {

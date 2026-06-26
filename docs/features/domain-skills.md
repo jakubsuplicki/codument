@@ -1,7 +1,6 @@
 ---
 title: Domain Skills (triaged generalization, task-scoped, shipped)
 status: current
-last_updated: 2026-06-24
 ---
 
 ## Summary

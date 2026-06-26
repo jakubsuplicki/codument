@@ -15,14 +15,13 @@ When you create or modify ANY source file, documentation MUST be handled as part
 **If the file IS in the registry:**
 - Read the corresponding doc file
 - Update any sections that no longer match your changes (Summary, How It Works, Key Files, API/Interface)
-- Set `last_updated` to today in both the doc frontmatter and the registry entry
 - If your change affects the public interface (exported functions, types, or behavior), set dependent features' status to `"stale"` via the `depends_on` field
 
 **If the file is NOT in the registry** and contains significant logic (not just types, configs, or one-line re-exports):
 
 - **First, route via the approved plan's Feature Map.** If the active plan carries a `feature-map` block, run `codument map materialize <file>` — it creates or extends the *owning* feature's registry entry + doc scaffold for you. Do not hand-pick a feature name when a Map exists.
 - **An unmapped file with a Map present is a flag, not a lump.** If `codument map materialize` reports the file unmapped or ambiguous, STOP and add/fix a Map row (the file's owner is a decomposition decision) — never fold it into an existing umbrella feature.
-- **Only when there is no Feature Map** (an out-of-loop, ad-hoc edit) fall back to naming the feature from the file's purpose (kebab-case), create `docs/features/{feature-name}.md` (Summary, How It Works, Key Files), and add a **v2** entry to `docs/.registry.json`:
+- **Only when there is no Feature Map** (an out-of-loop, ad-hoc edit) fall back to naming the feature from the file's purpose (kebab-case), create `docs/features/{feature-name}.md` (Summary, How It Works, Key Files), and add an entry to `docs/.registry.json`:
   ```json
   "feature-name": {
     "doc": "docs/features/feature-name.md",
@@ -32,7 +31,6 @@ When you create or modify ANY source file, documentation MUST be handled as part
     "docs": [],
     "depends_on": [],
     "risk": [],
-    "last_updated": "YYYY-MM-DD",
     "status": "current"
   }
   ```
@@ -46,6 +44,5 @@ When you plan a feature (create an ADR, design doc, or implementation plan) and 
 1. Code is written and works
 2. New source files are registered in `docs/.registry.json`
 3. Feature docs are created or updated
-4. `last_updated` is set on all touched docs
 
 Do not stop after writing code and ask whether to document. The documentation is part of writing the code.

@@ -1,7 +1,6 @@
 ---
 title: Project Charter Gate
 status: current
-last_updated: 2026-06-22
 ---
 
 ## Summary

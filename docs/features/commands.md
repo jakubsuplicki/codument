@@ -16,7 +16,7 @@ last_reviewed: 2026-06-18
 
 ## Summary
 
-The CLI commands implement codument's core workflow: `init` bootstraps fresh projects, `adopt` migrates existing Codument projects into the current registry/profile model, `scan` discovers existing source files and creates documentation scaffolds, `update` keeps managed profile files in sync after package upgrades, and `benchmark` hosts the package-native proof benchmark command family.
+The CLI commands implement codument's core workflow: `init` bootstraps fresh projects, `adopt` brings existing Codument projects into the current registry/profile model, `scan` discovers existing source files and creates documentation scaffolds, `update` keeps managed profile files in sync after package upgrades, and `benchmark` hosts the package-native proof benchmark command family.
 
 ## How it works
 
@@ -37,12 +37,12 @@ The `--force` flag overwrites all existing files; without it, existing files are
 
 ### adopt
 
-Migrates an existing Codument project without treating it as a fresh install:
+Brings an existing Codument project up to date without treating it as a fresh install:
 
 1. Detects the current project instead of trusting stale `.codument-meta.json` source globs
 2. Resolves selected profiles from `--agents`, stored metadata, or existing agent files
-3. Reads `docs/.registry.json`; if it still holds legacy data (flat `sources` or old `mappings`) it migrates to the v2 ownership shape via `migrateRegistry` (the only legacy reader), otherwise it normalizes the v2 registry in place
-4. Writes `docs/.registry.backup.json` before replacing a migrated registry
+3. Reads `docs/.registry.json` and normalizes it in place (a stray legacy field is ignored on read; there is no migration path)
+4. Writes `docs/.registry.backup.json` before replacing a changed registry
 5. Refreshes `.codument-meta.json` with the current package version, detected project, and selected agents
 6. Delegates to `update` so skills, instruction files, Claude hooks, and other managed files are refreshed through the normal merge strategy
 
@@ -88,7 +88,7 @@ The context benchmark proves registry-guided routing on a fixed fixture. The qua
 
 ## Key files
 
-- `src/commands/adopt.ts` — Existing-project adoption: legacy registry migration, metadata refresh, and managed profile update handoff
+- `src/commands/adopt.ts` — Existing-project adoption: registry normalization, metadata refresh, and managed profile update handoff
 - `src/commands/benchmark.ts` — Context and quality proof benchmark subcommands
 - `src/commands/init.ts` — Project bootstrapping: docs structure, selected agent profiles, workflow skills, instruction files, and profile hooks
 - `src/commands/scan.ts` — Source file discovery, directory-based feature grouping, doc scaffold generation

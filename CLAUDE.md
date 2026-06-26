@@ -85,8 +85,7 @@ A task is NOT complete until:
 4. New source files are registered in `docs/.registry.json`
 5. Corresponding feature docs are created or updated with durable, compact content
 6. Dependent features are flagged if an interface changed
-7. `last_updated` is set on all touched docs and registry entries
-8. Review findings are resolved or explicitly deferred
+7. Review findings are resolved or explicitly deferred
 
 ### Planning and approval
 Do not move from a rough idea into source edits automatically. First use the docs-backed grilling and planning workflow to resolve scope, non-goals, acceptance criteria, verification strategy, and implementation steps. Begin implementation only after the user approves the plan. Surface the plan's checklist inline in the chat at the approval gate, so the user approves the steps they can see rather than a link they must open.

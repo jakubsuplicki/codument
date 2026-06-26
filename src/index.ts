@@ -1,14 +1,10 @@
 export {
   allSources,
-  hasLegacyMappings,
-  isLegacyEntry,
   isMatureEntry,
-  migrateRegistry,
   normalizeRegistry,
   PLANNED_STATUSES,
   readRegistry,
   readRegistrySync,
-  registryNeedsMigration,
   updateRegistryEntry,
   writeRegistry,
 } from "./lib/registry.js";

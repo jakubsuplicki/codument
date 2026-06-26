@@ -370,7 +370,7 @@ export function renderFrame(
     lines.push(`  ${pc.red("■ risk")}     ${fit(r.subject, 20)} ${pc.dim(detail)}`);
   }
   for (const d of verdict.drift) {
-    const age = d.staleDays != null ? `doc ${d.staleDays}d behind` : "doc not updated";
+    const age = "doc not updated";
     // At ≤1 feature, name the changed files (per-file drift) so the row resolves
     // below the single feature; the data is already on the change-state.
     const files = oneFeature

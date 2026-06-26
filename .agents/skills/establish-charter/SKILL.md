@@ -113,7 +113,7 @@ Do not research on the demo path, and do not research choices that are not genui
 ## Persisting The Charter
 
 - Write `docs/charter.md` from the `charter.md` template: seriousness, a one-paragraph project intent,
-  and the settled tech decisions with their one-line rationale. Set `last_updated` to today.
+  and the settled tech decisions with their one-line rationale. Set `last_reviewed` to today.
 - **Mirror a 2-line summary into `docs/overview.md`** (seriousness + the stack in one line), because
   `grill-with-docs` loads `overview.md` first — this is what makes every later grill drill
   proportionally for free.

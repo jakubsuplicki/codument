@@ -145,7 +145,6 @@ interface RegistryEntry {
   docs: string[];              // durable docs/ADRs/runbooks
   depends_on: string[];
   risk: string[];              // optional risk hints
-  last_updated: string;
   status: string;              // preserved verbatim (not flattened to "current")
 }
 interface Registry { features: Record<string, RegistryEntry> }

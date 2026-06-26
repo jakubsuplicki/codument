@@ -38,7 +38,7 @@ function runAdopt(...args: string[]): string {
 }
 
 describe("adopt command", () => {
-  it("migrates legacy mappings and installs selected profiles", async () => {
+  it("normalizes the registry (dropping stray legacy keys) and installs selected profiles", async () => {
     await writeFile(
       join(tmp, ".codument-meta.json"),
       JSON.stringify({
@@ -56,15 +56,21 @@ describe("adopt command", () => {
       join(tmp, "docs", ".registry.json"),
       JSON.stringify(
         {
-          features: {},
+          features: {
+            "cook-mode": {
+              doc: "docs/features/cook-mode.md",
+              type: "feature",
+              primary_sources: ["app/cook/[recipeId].tsx"],
+              related_sources: [],
+              docs: [],
+              depends_on: [],
+              risk: [],
+              status: "current",
+            },
+          },
+          // a stray legacy key the normal read path ignores; adopt drops it on write
           mappings: {
-            "app/cook/[recipeId].tsx": [
-              "features/cook-mode.md",
-              "features/cook-mode-voice-control.md",
-            ],
-            "services/subscription/subscriptionService.ts": [
-              "features/subscription-and-paywall.md",
-            ],
+            "app/cook/[recipeId].tsx": ["features/cook-mode.md"],
           },
         },
         null,
@@ -74,7 +80,7 @@ describe("adopt command", () => {
 
     const output = runAdopt("--agents", "codex,claude");
 
-    assert.ok(output.includes("migrated from legacy mappings"));
+    assert.ok(output.includes("normalized"));
     assert.ok(existsSync(join(tmp, "docs", ".registry.backup.json")));
     assert.ok(existsSync(join(tmp, ".agents", "skills", "work-step", "SKILL.md")));
     assert.ok(existsSync(join(tmp, ".claude", "skills", "review-work", "SKILL.md")));
@@ -85,10 +91,7 @@ describe("adopt command", () => {
     assert.deepStrictEqual(registry.features["cook-mode"].primary_sources, [
       "app/cook/[recipeId].tsx",
     ]);
-    assert.deepStrictEqual(
-      registry.features["cook-mode-voice-control"].primary_sources,
-      ["app/cook/[recipeId].tsx"],
-    );
+    // the stray legacy mappings key is dropped, not migrated into ownership
     assert.ok(!registry.mappings);
 
     const meta = JSON.parse(
