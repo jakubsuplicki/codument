@@ -59,6 +59,40 @@ describe("resolveOwner — derived-first", () => {
       kind: "unowned",
     });
   });
+
+  it("a concept umbrella co-owner does NOT fragment ownership (still derived)", () => {
+    // one feature + the `lib` concept both list the file -> the feature owns it
+    // per-symbol; the concept is a file-grain umbrella handled by the wiring.
+    const r = reg({
+      "token-cost-tracking": {
+        doc: "docs/features/token-cost-tracking.md",
+        type: "feature",
+        primary_sources: ["src/lib/token-cost.ts"],
+      },
+      lib: {
+        doc: "docs/concepts/lib.md",
+        type: "concept",
+        primary_sources: ["src/lib/token-cost.ts"],
+      },
+    });
+    assert.deepStrictEqual(resolveOwner(r, "src/lib/token-cost.ts::costOf()."), {
+      kind: "owned",
+      feature: "token-cost-tracking",
+    });
+  });
+
+  it("a file owned ONLY by a concept is unowned per-symbol (umbrella handles it)", () => {
+    const r = reg({
+      lib: {
+        doc: "docs/concepts/lib.md",
+        type: "concept",
+        primary_sources: ["src/lib/markers.ts"],
+      },
+    });
+    assert.deepStrictEqual(resolveOwner(r, "src/lib/markers.ts::foo()."), {
+      kind: "unowned",
+    });
+  });
 });
 
 describe("resolveOwner — shared file, per-symbol owner map", () => {

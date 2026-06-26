@@ -350,12 +350,12 @@ The gate is a **deterministic enforcer** (runs in CI, reproducible, LLM-free for
 
 ### Ownership model — symbol-grained, derived-first (decision)
 
-Anchors derive from exports via the pinned syntactic parse. A symbol's owner resolves in order:
+Anchors derive from exports via the pinned syntactic parse. **Per-symbol ownership is a `feature` concept** — only `type: "feature"` entries are candidates. A `type: "concept"` entry (the `lib` umbrella that narrates a whole directory file-by-file) is an **umbrella co-owner**: it is woken at file grain by a coarse whole-file change (handled in the wiring), never fragments a feature's symbol ownership, and never counts toward `unassigned`/`ambiguous`. A file owned *only* by a concept resolves `unowned` per-symbol (the umbrella covers it). This was a real fork (decided 2026-06-27): of codument's 15 multi-primary-owner files, 14 are `feature + lib`-concept (so they collapse to derived single-feature ownership once concepts are umbrellas) and exactly one — `src/commands/benchmark.ts` (`commands` + `proof-benchmarks`) — is a genuine two-feature split. The rejected alternatives were cleaning concept entries out of `primary_sources` (orphans the lib-only files like `markers.ts`/`version.ts`) and a full per-symbol split of all 15 (14 artificial maps for the concept overlap). A symbol's owner then resolves in order:
 
-1. **File in exactly one feature's `primary_sources`** -> that feature owns all the file's exported symbols. Automatic, zero authoring (the common case).
-2. **File shared across multiple features' `primary_sources`** -> the registry carries a per-symbol owner map for that file. Migration/`scan` **seeds it from the import graph harvested in the same parse** (a shared-file symbol that references feature X's exclusively-owned files is attributed to X) and flags ambiguous symbols for human confirmation. The gate **fails loud / lints** on a shared file with unassigned exported symbols — it never silently wakes all co-owners.
+1. **File in exactly one feature's `primary_sources`** (plus any number of concept umbrellas) -> that feature owns all the file's exported symbols. Automatic, zero authoring (the common case).
+2. **File shared across multiple FEATURES' `primary_sources`** -> the registry carries a per-symbol owner map (`owned_symbols`) for that file. Migration/`scan` **seeds it from the import graph harvested in the same parse** (a shared-file symbol that references feature X's exclusively-owned files is attributed to X) and flags ambiguous symbols for human confirmation. The gate **fails loud / lints** on a shared file with unassigned exported symbols — it never silently wakes all co-owners.
 
-This is what actually dissolves the `cli.ts` cascade: each command's symbol wakes only its feature's doc. Backwards-compat is not required, so symbol-level ownership is first-class in the registry schema rather than a bolt-on.
+This is what actually dissolves the shared-file cascade: each command's symbol wakes only its feature's doc. Backwards-compat is not required, so symbol-level ownership is first-class in the registry schema rather than a bolt-on.
 
 ### Anchor fingerprint (deterministic body signal)
 
