@@ -82,6 +82,12 @@ export { tsAdapter, MODULE_ANCHOR_NAME } from "./lib/ts-adapter.js";
 export type { TsAnchorKind } from "./lib/ts-adapter.js";
 export { resolveOwner, splitAnchorId } from "./lib/ownership.js";
 export type { OwnershipResolution } from "./lib/ownership.js";
+export {
+  harvestImports,
+  importedFiles,
+  resolveSpecifier,
+} from "./lib/import-graph.js";
+export type { ImportBinding } from "./lib/import-graph.js";
 export { appendEvent, readRecentEvents } from "./lib/events.js";
 export type { CodumentEvent } from "./lib/events.js";
 export { MODEL_RATES, costOf, mergeRates, loadRates } from "./lib/token-cost.js";
