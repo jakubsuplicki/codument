@@ -49,12 +49,12 @@
     "@types/node": "^25.5.0",
     "@types/prompts": "^2.4.9",
     "tsup": "^8.5.1",
-    "tsx": "^4.22.3",
-    "typescript": "^6.0.2"
+    "tsx": "^4.22.3"
   },
   "dependencies": {
     "commander": "^13.0.0",
     "picocolors": "^1.1.0",
-    "prompts": "^2.4.2"
+    "prompts": "^2.4.2",
+    "typescript": "6.0.2"
   }
 }

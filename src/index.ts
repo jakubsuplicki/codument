@@ -46,6 +46,23 @@ export type {
   StaleDoc,
 } from "./lib/change-state.js";
 export { isGitRepo, getWorkingTreeChanges } from "./lib/git.js";
+export {
+  algoStamp,
+  byteNormalize,
+  changedPathsBetween,
+  readBlobAtRef,
+  refReachable,
+  resolveBase,
+  EMPTY_TREE_SHA,
+  ALGO_VERSION,
+  GateError,
+} from "./lib/two-ref.js";
+export type {
+  ChangedPath,
+  ChangeStatus,
+  ResolvedBase,
+  GateErrorKind,
+} from "./lib/two-ref.js";
 export { appendEvent, readRecentEvents } from "./lib/events.js";
 export type { CodumentEvent } from "./lib/events.js";
 export { MODEL_RATES, costOf, mergeRates, loadRates } from "./lib/token-cost.js";

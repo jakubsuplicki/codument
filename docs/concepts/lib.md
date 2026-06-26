@@ -60,6 +60,10 @@ The shared, deterministic registry/docs analyzer behind `doctor` (and later `rev
 
 `git.ts` is the thin git-native data source: `isGitRepo` and `getWorkingTreeChanges` shell out to the already-required `git` CLI with `GIT_OPTIONAL_LOCKS=0` (so polling does not create lock churn that re-triggers the agent), returning sorted repo-relative working-tree changes (deletions excluded). It is kept separate from `computeChangeState` so the analyzer stays pure and testable without a repo.
 
+### Two-ref plumbing (`two-ref.ts`)
+
+The determinism layer for the freshness gate: a pure function of repo state at two refs, with no wall clock in any result. `readBlobAtRef` returns a file's byte-normalized content at a ref (or `null` when the path is absent there — a first-class added/deleted signal), failing loud (`GateError`) on an unresolvable ref. `resolveBase` resolves a single deterministic base to diff against: one merge-base for linear history, a lexicographically-smallest tie-break for a criss-cross (recorded via `ambiguous`), the empty tree when there is no common ancestor, and a best-effort shallow deepen-then-fail-closed when a ref is unreachable. `changedPathsBetween` classifies changes with deletions and renames first-class (unlike the working-tree view). `byteNormalize` strips a BOM and folds CRLF/CR to LF; `algoStamp` stamps the parser + exact bundled `typescript` version + algo version, so a TS bump invalidates anchors rather than mass-staling the repo. Pinned `typescript` (exact, a runtime dependency) is the determinism unit.
+
 ### Events (`events.ts`)
 
 `appendEvent`/`readRecentEvents` manage the append-only `.codument/events.jsonl` flow-event log that `watch` tails — review summaries, work-step notes, and the review-effectiveness notes from [[review-effectiveness-metric]]. Timestamps here are wall-clock because it is a live log, not the deterministic coverage artifact, so it never feeds any score. Writing is opt-in (e.g. `review --log`) to avoid surprise file writes.

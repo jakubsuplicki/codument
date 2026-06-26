@@ -202,7 +202,8 @@
         "src/lib/change-state.ts",
         "src/lib/events.ts",
         "src/lib/git.ts",
-        "src/lib/report-html.ts"
+        "src/lib/report-html.ts",
+        "src/lib/two-ref.ts"
       ],
       "related_sources": [],
       "docs": [],
