@@ -8,6 +8,7 @@ import {
   type ChangeState,
 } from "../lib/change-state.js";
 import { getWorkingTreeChanges, isGitRepo, getHeadSha } from "../lib/git.js";
+import { worktreeChangesSince, GateError } from "../lib/two-ref.js";
 import { emitCaught } from "../lib/review-events.js";
 
 interface ReviewOptions {
@@ -15,6 +16,9 @@ interface ReviewOptions {
   json?: boolean;
   log?: boolean;
   strict?: boolean;
+  /** Diff against the merge-base with this ref (the branch's drift since it
+   *  diverged), not just the uncommitted working tree. */
+  base?: string;
 }
 
 export interface ReviewReport {
@@ -73,7 +77,24 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     return;
   }
 
-  const report = buildReview(root);
+  let report: ReviewReport;
+  try {
+    const changes = options.base
+      ? worktreeChangesSince(root, options.base)
+      : undefined;
+    report = buildReview(root, changes);
+  } catch (err) {
+    // Fail closed: the gate could not run (e.g. an unreachable base on a shallow
+    // clone). Distinct from "ran and passed" so CI never treats it as green.
+    if (err instanceof GateError) {
+      console.log(pc.bold("codument review"));
+      console.log();
+      console.log(pc.red(`  ✗ ${err.message} (gate could not run)`));
+      process.exitCode = 1;
+      return;
+    }
+    throw err;
+  }
 
   // Opt-in: snapshot the deterministic catches (stale docs, risk touches,
   // off-plan files) as a `caught` event — the provable line of the impact ledger.

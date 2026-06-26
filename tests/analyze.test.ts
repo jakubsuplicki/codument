@@ -29,11 +29,9 @@ const FIXTURE = join(
   "project",
 );
 
-async function analyzeFixture(
-  extra: { changedWindow?: { file: string; mappedDocChanged: boolean }[] } = {},
-) {
+async function analyzeFixture() {
   const registry = await readRegistry(join(FIXTURE, "docs", ".registry.json"));
-  return analyze({ root: FIXTURE, registry, srcDir: "src", ...extra });
+  return analyze({ root: FIXTURE, registry, srcDir: "src" });
 }
 
 function ratio(ratios: CoverageRatio[], id: string): CoverageRatio {
@@ -153,11 +151,7 @@ describe("analyze coverage (change-control fixture)", () => {
     assert.equal(risk.denominator, 2);
     assert.equal(risk.ratio, 1);
 
-    const freshness = ratio(result.coverage.ratios, "freshness");
-    assert.equal(freshness.applicable, false);
-    assert.equal(freshness.ratio, null);
-
-    // equal-weight average of the three applicable ratios → 0.78 (freshness N/A)
+    // equal-weight average of the three applicable ratios → 0.78
     assert.equal(result.coverage.percent, 78);
     assert.deepStrictEqual(result.coverage.applicable, [
       "ownership",
@@ -166,20 +160,6 @@ describe("analyze coverage (change-control fixture)", () => {
     ]);
   });
 
-  it("computes freshness when a git window is injected", async () => {
-    const result = await analyzeFixture({
-      changedWindow: [
-        { file: "src/auth/login.ts", mappedDocChanged: false },
-        { file: "src/tasks/tasks.ts", mappedDocChanged: true },
-        { file: "src/lib/db.ts", mappedDocChanged: false },
-      ],
-    });
-    const freshness = ratio(result.coverage.ratios, "freshness");
-    assert.equal(freshness.applicable, true);
-    assert.equal(freshness.numerator, 1);
-    assert.equal(freshness.denominator, 3);
-    assert.equal(freshness.ratio, 0.33);
-  });
 });
 
 describe("analyze lint (change-control fixture)", () => {
@@ -286,19 +266,27 @@ describe("determinism", () => {
     const base: CoverageRatio[] = [
       { id: "ownership", label: "", numerator: 5, denominator: 6, ratio: 0.83, applicable: true },
       { id: "dependency", label: "", numerator: 2, denominator: 4, ratio: 0.5, applicable: true },
-      { id: "risk", label: "", numerator: 2, denominator: 2, ratio: 1, applicable: true },
-      { id: "freshness", label: "", numerator: 0, denominator: 0, ratio: null, applicable: false },
+      { id: "risk", label: "", numerator: 1, denominator: 1, ratio: 1, applicable: true },
+    ];
+    // a zero-denominator ratio never counts as 0% or 100% — drop risk to N/A and
+    // the score is the average of just ownership + dependency, unchanged by order
+    const withNa: CoverageRatio[] = [
+      base[0],
+      base[1],
+      { id: "risk", label: "", numerator: 0, denominator: 0, ratio: null, applicable: false },
     ];
     const forward = rollupScore(base);
     const reversed = rollupScore([...base].reverse());
     assert.equal(forward.percent, 78);
     assert.equal(reversed.percent, 78);
-    // a zero-denominator ratio never counts as 0% or 100%
     assert.deepStrictEqual(forward.applicable.sort(), [
       "dependency",
       "ownership",
       "risk",
     ]);
+    const na = rollupScore(withNa);
+    assert.deepStrictEqual(na.applicable.sort(), ["dependency", "ownership"]);
+    assert.equal(na.percent, rollupScore([...withNa].reverse()).percent);
   });
 
   it("returns a null score when no ratio is applicable", () => {

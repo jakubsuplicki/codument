@@ -42,7 +42,7 @@ program
 program
   .command("doctor")
   .description(
-    "Report documentation coverage (ownership, freshness, dependency, risk) and registry lint warnings",
+    "Report documentation coverage (ownership, dependency, risk) and registry lint warnings",
   )
   .option("--json", "Emit the machine-readable report contract")
   .option("--write", "Write .codument/coverage.json and .codument/coverage.svg (the score artifact + badge)")
@@ -59,11 +59,12 @@ program
 program
   .command("review")
   .description(
-    "Review the uncommitted git diff against the v2 registry: owners, stale docs, risk touches, out-of-plan and unmapped changes, dependents",
+    "Review the git diff against the registry: owners, stale docs, risk touches, out-of-plan and unmapped changes, dependents",
   )
   .option("--json", "Emit the machine-readable review contract")
   .option("--log", "Append a `caught` snapshot (provable catches) to .codument/events.jsonl (for the impact ledger)")
   .option("--strict", "Exit 1 if the change left a new source unmapped or a mapped doc stale (the step-sync gate)")
+  .option("--base <ref>", "Review the branch's drift since it diverged from <ref> (merge-base..working-tree), not just uncommitted changes")
   .action(review);
 
 program

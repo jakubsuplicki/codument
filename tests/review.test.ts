@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildReview } from "../src/commands/review.js";
 import { getWorkingTreeChanges } from "../src/lib/git.js";
+import { worktreeChangesSince } from "../src/lib/two-ref.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, "..", "dist", "cli.js");
@@ -116,6 +117,35 @@ describe("buildReview (temp git repo)", () => {
     const selfComputed = buildReview(tmp);
     assert.deepStrictEqual(passed, selfComputed);
     assert.equal(passed.changedFileCount, changes.length);
+  });
+
+  it("--base surfaces committed branch drift the working-tree view misses", async () => {
+    const run = (args: string[]) =>
+      execFileSync("git", args, {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+      });
+    const baseSha = run(["rev-parse", "HEAD"]).trim();
+
+    // commit a change to auth's source (not its doc) on a branch; leave the tree clean
+    run(["checkout", "-b", "feature"]);
+    await scaffold({ "src/auth/login.ts": "export const login = () => 42;\n" });
+    run(["add", "-A"]);
+    run(["commit", "-m", "change auth source, not its doc"]);
+
+    // the working-tree view sees nothing — the change is committed, not pending
+    assert.equal(getWorkingTreeChanges(tmp).length, 0);
+    assert.equal(buildReview(tmp).state.staleDocs.length, 0);
+
+    // the two-ref view (merge-base..working-tree) surfaces the committed drift
+    const since = worktreeChangesSince(tmp, baseSha);
+    assert.ok(since.includes("src/auth/login.ts"), "two-ref sees the committed change");
+    const baseReport = buildReview(tmp, since);
+    assert.ok(
+      baseReport.state.staleDocs.map((d) => d.feature).includes("auth"),
+      "two-ref view flags auth's stale doc",
+    );
   });
 
   it("flags out-of-plan changes when an approved plan is present", async () => {

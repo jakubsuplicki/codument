@@ -168,7 +168,7 @@ export function makeIgnoredPredicate(
 
 // ── Coverage ratios ─────────────────────────────────────────────────────
 
-export type CoverageRatioId = "ownership" | "freshness" | "dependency" | "risk";
+export type CoverageRatioId = "ownership" | "dependency" | "risk";
 
 export interface CoverageRatio {
   id: CoverageRatioId;
@@ -188,12 +188,6 @@ export interface CoverageReport {
   percent: number | null;
   /** Ids of the ratios that fed the score. */
   applicable: CoverageRatioId[];
-}
-
-/** A changed file from a git window, used only for the freshness ratio. */
-export interface ChangedFile {
-  file: string;
-  mappedDocChanged: boolean;
 }
 
 // ── Lint findings ───────────────────────────────────────────────────────
@@ -256,8 +250,6 @@ export interface AnalyzeInput {
   highFanoutThreshold?: number;
   /** Doc-bloat thresholds; defaults to DEFAULT_BLOAT_THRESHOLDS. */
   bloat?: BloatThresholds;
-  /** Optional git window; when omitted the freshness ratio is N/A. */
-  changedWindow?: ChangedFile[];
 }
 
 export interface AnalysisResult {
@@ -319,7 +311,6 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     exclusion = DEFAULT_EXCLUSION_SPEC,
     highFanoutThreshold = 3,
     bloat = DEFAULT_BLOAT_THRESHOLDS,
-    changedWindow,
   } = input;
   const srcDir =
     input.srcDir ?? (existsSync(join(root, "src")) ? "src" : ".");
@@ -333,7 +324,6 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
   // no-op predicate and fall back to the static exclusion spec alone.
   const isIgnored = makeIgnoredPredicate(listIgnoredPaths(root));
   const inScopeFiles = discoverSourceFiles(root, srcDir, exclusion, isIgnored);
-  const inScopeSet = new Set(inScopeFiles);
 
   // Map every source path to the entries that claim it (for ownership + fanout).
   const fileToFeatures = new Map<string, string[]>();
@@ -349,10 +339,8 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     root,
     entries,
     inScopeFiles,
-    inScopeSet,
     fileToFeatures,
     exclusion,
-    changedWindow,
   );
   const lint = computeLint(
     root,
@@ -371,10 +359,8 @@ function computeCoverage(
   root: string,
   entries: [string, RegistryEntry][],
   inScopeFiles: string[],
-  inScopeSet: Set<string>,
   fileToFeatures: Map<string, string[]>,
   exclusion: ExclusionSpec,
-  changedWindow: ChangedFile[] | undefined,
 ): CoverageReport {
   // ownership: in-scope source files that have a documented owner. The numerator
   // counts a file only if it is itself in-scope, so generated/test paths listed
@@ -417,23 +403,10 @@ function computeCoverage(
     { areas: riskEntries.map(([key]) => key) },
   );
 
-  // freshness/drift: recently changed in-scope source files whose mapped doc also
-  // changed within the same repo-state window. N/A without an injected window.
-  let freshness: CoverageRatio;
-  if (changedWindow === undefined) {
-    freshness = buildRatio("freshness", "freshness/drift (N/A: no git window)", 0, 0);
-  } else {
-    const changedInScope = changedWindow.filter((c) => inScopeSet.has(c.file));
-    const fresh = changedInScope.filter((c) => c.mappedDocChanged);
-    freshness = buildRatio(
-      "freshness",
-      "freshness/drift (changed sources whose docs changed too)",
-      fresh.length,
-      changedInScope.length,
-    );
-  }
-
-  const ratios = [ownership, freshness, dependency, risk];
+  // NOTE: freshness/drift is intentionally not a coverage ratio. It is being
+  // re-sourced from the unified two-ref signal (the freshness gate); until that
+  // lands, coverage scores only the repo-state axes (ownership, dependency, risk).
+  const ratios = [ownership, dependency, risk];
   return rollupScore(ratios);
 }
 

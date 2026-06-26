@@ -196,3 +196,38 @@ export function changedPathsBetween(
   }
   return changes.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
+
+// Paths changed between the merge-base of (base, HEAD) and the current working
+// tree — the LOCAL two-ref advisory view: everything on this branch since it
+// diverged from `base`, committed or not, which is the same question CI answers
+// head↔merge-base. Deletions are excluded here to preserve the file-grain
+// change-state contract (computeChangeState expects extant source paths); the
+// anchored gate verdict handles deletions first-class separately. Returns sorted,
+// deduped, repo-relative paths. Throws GateError when `base` is unreachable.
+export function worktreeChangesSince(root: string, base: string): string[] {
+  const { sha } = resolveBase(root, base, "HEAD");
+  const files = new Set<string>();
+  // tracked changes from the merge-base to the working tree (committed + uncommitted)
+  try {
+    const out = git(root, ["diff", "--name-status", "-M", sha]);
+    for (const line of out.split("\n")) {
+      if (!line.trim()) continue;
+      const parts = line.split("\t");
+      const code = parts[0];
+      if (code.startsWith("D")) continue;
+      files.add(code.startsWith("R") ? parts[2] : parts[1]);
+    }
+  } catch {
+    // no diff available — fall through to untracked only
+  }
+  // untracked files (new, not yet added) are also "changed since base"
+  try {
+    const out = git(root, ["ls-files", "--others", "--exclude-standard"]);
+    for (const line of out.split("\n")) {
+      if (line.trim()) files.add(line.trim());
+    }
+  } catch {
+    // ignore
+  }
+  return [...files].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}

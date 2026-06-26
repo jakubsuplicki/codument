@@ -245,7 +245,7 @@ function printHuman(report: DoctorReport, strictFail = false): void {
   console.log();
   console.log(
     pc.dim(
-      "  Coverage is a gap-finder (registry membership + freshness), not a quality score.",
+      "  Coverage is a gap-finder (registry membership + dependencies), not a quality score.",
     ),
   );
   if (strictFail) {
