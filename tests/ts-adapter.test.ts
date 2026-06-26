@@ -1,18 +1,18 @@
-import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { tsAdapter } from "../src/lib/ts-adapter.js";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, before, describe, it } from "node:test";
 import { changedAnchors } from "../src/lib/fingerprint.js";
+import { tsAdapter } from "../src/lib/ts-adapter.js";
 
 function fpMap(content: string, path = "src/x.ts"): Map<string, string> {
   return new Map(tsAdapter.anchors(path, content).map((a) => [a.name, a.fingerprint]));
 }
 
 describe("tsAdapter.anchors", () => {
-  it("emits one anchor per exported symbol, with kinds", () => {
+  it("emits one anchor per exported symbol, with kinds, plus a residual backstop", () => {
     const anchors = tsAdapter.anchors(
       "src/x.ts",
       `export function a() { return 1; }
@@ -21,14 +21,108 @@ export const c = 3;
 const internal = 4;
 `,
     );
-    assert.deepStrictEqual(
-      anchors.map((a) => a.name).sort(),
-      ["B", "a", "c"],
-    );
+    // `internal` is referenced by no export -> it is residual, caught by the
+    // module backstop, so it is never silently un-gated.
+    assert.deepStrictEqual(anchors.map((a) => a.name).sort(), ["<module>", "B", "a", "c"]);
     const kind = Object.fromEntries(anchors.map((a) => [a.name, a.kind]));
     assert.equal(kind.a, "function");
     assert.equal(kind.B, "class");
     assert.equal(kind.c, "variable");
+    assert.equal(kind["<module>"], "module");
+  });
+
+  it("emits no backstop when the file is pure exports (no residual)", () => {
+    const anchors = tsAdapter.anchors("src/x.ts", "export const x = 1;\n");
+    assert.deepStrictEqual(
+      anchors.map((a) => a.name),
+      ["x"],
+    );
+  });
+
+  it("closes an export's fingerprint over the private helpers it references", () => {
+    const before = fpMap(
+      "function helper() { return 1; }\nexport function f() { return helper(); }\n",
+    );
+    const after = fpMap(
+      "function helper() { return 2; }\nexport function f() { return helper(); }\n",
+    );
+    // editing the private helper moves its caller's fingerprint (no blindness)
+    assert.notEqual(before.get("f"), after.get("f"));
+  });
+
+  it("closure is per-export: a helper used by f but not g wakes only f", () => {
+    const before = fpMap(
+      "function h() { return 1; }\nexport function f() { return h(); }\nexport function g() { return 2; }\n",
+    );
+    const after = fpMap(
+      "function h() { return 9; }\nexport function f() { return h(); }\nexport function g() { return 2; }\n",
+    );
+    assert.notEqual(before.get("f"), after.get("f"), "f references h");
+    assert.equal(before.get("g"), after.get("g"), "g does not reference h");
+  });
+
+  it("closure is transitive (f -> h1 -> h2)", () => {
+    const before = fpMap(
+      "function h2() { return 1; }\nfunction h1() { return h2(); }\nexport function f() { return h1(); }\n",
+    );
+    const after = fpMap(
+      "function h2() { return 5; }\nfunction h1() { return h2(); }\nexport function f() { return h1(); }\n",
+    );
+    assert.notEqual(before.get("f"), after.get("f"));
+  });
+
+  it("a covered helper is not double-counted in the backstop", () => {
+    // `helper` is referenced by `f`, so it is part of f's closure and NOT
+    // residual; the file therefore has no module backstop at all.
+    const anchors = tsAdapter.anchors(
+      "src/x.ts",
+      "function helper() { return 1; }\nexport function f() { return helper(); }\n",
+    );
+    assert.deepStrictEqual(anchors.map((a) => a.name).sort(), ["f"]);
+  });
+
+  it("backstop catches module side-effects no export covers", () => {
+    const before = fpMap("setup({ port: 3000 });\nexport function f() { return 1; }\n");
+    const after = fpMap("setup({ port: 4000 });\nexport function f() { return 1; }\n");
+    assert.equal(before.get("f"), after.get("f"), "f is untouched");
+    assert.notEqual(
+      before.get("<module>"),
+      after.get("<module>"),
+      "the residual side-effect moved",
+    );
+  });
+
+  it("backstop catches import changes (not covered by any symbol body)", () => {
+    const before = fpMap('import { x } from "./a.js";\nexport function f() { return x; }\n');
+    const after = fpMap('import { x } from "./b.js";\nexport function f() { return x; }\n');
+    assert.equal(before.get("f"), after.get("f"), "f's token stream is unchanged");
+    assert.notEqual(before.get("<module>"), after.get("<module>"));
+  });
+
+  it("backstop catches changes to unreferenced module state", () => {
+    const before = fpMap("const dead = 1;\nexport function f() { return 1; }\n");
+    const after = fpMap("const dead = 2;\nexport function f() { return 1; }\n");
+    assert.equal(before.get("f"), after.get("f"));
+    assert.notEqual(before.get("<module>"), after.get("<module>"));
+  });
+
+  it("a method call does not spuriously couple to a same-named top-level decl", () => {
+    // `arr.map` is a property access, not a reference to the top-level `map`, so
+    // `map` stays residual and editing it never moves `f`.
+    const before = fpMap(
+      "function map() { return 1; }\nexport function f() { return [1].map((x) => x); }\n",
+    );
+    const after = fpMap(
+      "function map() { return 9; }\nexport function f() { return [1].map((x) => x); }\n",
+    );
+    assert.equal(before.get("f"), after.get("f"), "f only does arr.map, not map()");
+    assert.notEqual(before.get("<module>"), after.get("<module>"));
+  });
+
+  it("a computed property name is a real reference (closure includes it)", () => {
+    const before = fpMap('const key = "k";\nexport const obj = { [key]: 1 };\n');
+    const after = fpMap('const key = "z";\nexport const obj = { [key]: 1 };\n');
+    assert.notEqual(before.get("obj"), after.get("obj"));
   });
 
   it("dissolves the cascade: editing one symbol moves only its fingerprint", () => {
@@ -52,8 +146,14 @@ const internal = 4;
   });
 
   it("distinguishes 0x10 from 16 and catches intra-string-literal changes", () => {
-    assert.notEqual(fpMap("export const n = 0x10;").get("n"), fpMap("export const n = 16;").get("n"));
-    assert.notEqual(fpMap('export const s = "a b";').get("s"), fpMap('export const s = "ab";').get("s"));
+    assert.notEqual(
+      fpMap("export const n = 0x10;").get("n"),
+      fpMap("export const n = 16;").get("n"),
+    );
+    assert.notEqual(
+      fpMap('export const s = "a b";').get("s"),
+      fpMap('export const s = "ab";').get("s"),
+    );
   });
 
   it("handles default exports and multi-declarator statements", () => {
