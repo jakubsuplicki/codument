@@ -1,6 +1,5 @@
-import { readFile, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, extname } from "node:path";
+import { readFile, writeFile } from "node:fs/promises";
 
 // The registry entry is THE model the analyzers read. It splits ownership into
 // owned (`primary_sources`) versus impacted (`related_sources`), adds durable
@@ -18,6 +17,12 @@ export interface RegistryEntry {
   /** When true, mutes the `under-decomposed` shape nudge — a deliberately large
    *  but cohesive feature the author has acknowledged. Absent ⇒ not acknowledged. */
   cohesive?: boolean;
+  /** For a file SHARED across several features' `primary_sources`, the anchor
+   *  descriptors (the `::`-tail of an anchor id, e.g. `reviewCommand().`) this
+   *  feature owns within that file. Single-owner files need none — ownership is
+   *  derived. Keyed by repo-relative source path. Consumed by the ownership
+   *  resolver to split a shared file's symbols across their real owners. */
+  owned_symbols?: Record<string, string[]>;
 }
 
 export interface Registry {
@@ -68,10 +73,7 @@ export function readRegistrySync(registryPath: string): Registry {
   }
 }
 
-export async function writeRegistry(
-  registryPath: string,
-  registry: Registry,
-): Promise<void> {
+export async function writeRegistry(registryPath: string, registry: Registry): Promise<void> {
   await writeFile(registryPath, JSON.stringify(registry, null, 2) + "\n");
 }
 
@@ -122,22 +124,18 @@ function parseEntry(key: string, value: unknown): RegistryEntry | null {
       ? normalizeDocPath(value.doc)
       : `docs/features/${key}.md`;
   const type =
-    value.type === "feature" || value.type === "concept"
-      ? value.type
-      : typeFromDocPath(doc);
+    value.type === "feature" || value.type === "concept" ? value.type : typeFromDocPath(doc);
 
   const primary_sources = stringArray(value.primary_sources);
   const related_sources = stringArray(value.related_sources);
   const docs = stringArray(value.docs);
   const depends_on = stringArray(value.depends_on);
   const risk = stringArray(value.risk);
+  const owned_symbols = recordOfStringArrays(value.owned_symbols);
 
   // Preserve the real status vocabulary. Only an empty/non-string value falls
   // back to "current"; unknown statuses like "in-progress" are kept verbatim.
-  const status =
-    typeof value.status === "string" && value.status.trim()
-      ? value.status
-      : "current";
+  const status = typeof value.status === "string" && value.status.trim() ? value.status : "current";
 
   return {
     doc,
@@ -149,15 +147,13 @@ function parseEntry(key: string, value: unknown): RegistryEntry | null {
     risk: uniqSort(risk),
     status,
     ...(value.cohesive === true ? { cohesive: true } : {}),
+    ...(owned_symbols ? { owned_symbols } : {}),
   };
 }
 
 // Fills any missing fields with safe defaults without reordering the arrays a
 // caller supplied (merge semantics, used by updateRegistryEntry).
-function ensureEntryDefaults(
-  key: string,
-  partial: Partial<RegistryEntry>,
-): RegistryEntry {
+function ensureEntryDefaults(key: string, partial: Partial<RegistryEntry>): RegistryEntry {
   const doc = partial.doc ?? `docs/features/${key}.md`;
   return {
     doc,
@@ -169,6 +165,9 @@ function ensureEntryDefaults(
     risk: partial.risk ?? [],
     status: partial.status ?? "current",
     ...(partial.cohesive === true ? { cohesive: true } : {}),
+    ...(partial.owned_symbols && Object.keys(partial.owned_symbols).length > 0
+      ? { owned_symbols: partial.owned_symbols }
+      : {}),
   };
 }
 
@@ -176,6 +175,19 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+// Normalizes a `Record<path, descriptor[]>` map: drops non-array values, keeps
+// only string descriptors, sorts each list and the keys, and returns undefined
+// when nothing survives (so the field stays absent for single-owner files).
+function recordOfStringArrays(value: unknown): Record<string, string[]> | undefined {
+  if (!isRecord(value)) return undefined;
+  const out: Record<string, string[]> = {};
+  for (const path of Object.keys(value).sort()) {
+    const descriptors = uniqSort(stringArray(value[path]));
+    if (descriptors.length > 0) out[path] = descriptors;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function uniqSort(values: string[]): string[] {
@@ -188,9 +200,7 @@ function normalizeDocPath(doc: string): string {
 }
 
 function typeFromDocPath(docPath: string): RegistryEntry["type"] {
-  return docPath.replace(/^docs\//, "").startsWith("features/")
-    ? "feature"
-    : "concept";
+  return docPath.replace(/^docs\//, "").startsWith("features/") ? "feature" : "concept";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
