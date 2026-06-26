@@ -201,6 +201,7 @@
         "src/lib/badge.ts",
         "src/lib/change-state.ts",
         "src/lib/events.ts",
+        "src/lib/fingerprint.ts",
         "src/lib/git.ts",
         "src/lib/report-html.ts",
         "src/lib/two-ref.ts"

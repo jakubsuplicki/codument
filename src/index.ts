@@ -64,6 +64,13 @@ export type {
   ResolvedBase,
   GateErrorKind,
 } from "./lib/two-ref.js";
+export {
+  coarseAdapter,
+  adapterFor,
+  fileContentChange,
+  contentChangedFiles,
+} from "./lib/fingerprint.js";
+export type { LanguageAdapter, FileChange } from "./lib/fingerprint.js";
 export { appendEvent, readRecentEvents } from "./lib/events.js";
 export type { CodumentEvent } from "./lib/events.js";
 export { MODEL_RATES, costOf, mergeRates, loadRates } from "./lib/token-cost.js";
