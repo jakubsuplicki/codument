@@ -204,6 +204,7 @@
         "src/lib/fingerprint.ts",
         "src/lib/git.ts",
         "src/lib/report-html.ts",
+        "src/lib/ts-adapter.ts",
         "src/lib/two-ref.ts"
       ],
       "related_sources": [],

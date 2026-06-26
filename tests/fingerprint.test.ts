@@ -26,22 +26,24 @@ function git(root: string, args: string[]): string {
 }
 
 describe("coarseAdapter", () => {
-  it("is invariant to BOM, CRLF, and a leading BOM (cosmetic churn)", () => {
-    const a = coarseAdapter.fingerprintFile("export const x = 1;\n");
-    const b = coarseAdapter.fingerprintFile("﻿export const x = 1;\r\n");
-    assert.equal(a, b);
+  const fp = (content: string) => coarseAdapter.anchors("x.txt", content)[0].fingerprint;
+  it("emits a single whole-file anchor invariant to BOM/CRLF cosmetic churn", () => {
+    const anchors = coarseAdapter.anchors("x.txt", "a\n");
+    assert.equal(anchors.length, 1);
+    assert.equal(anchors[0].kind, "file");
+    assert.equal(fp("export const x = 1;\n"), fp("﻿export const x = 1;\r\n"));
   });
   it("moves on a real content change and is deterministic", () => {
-    const a = coarseAdapter.fingerprintFile("const x = 1;\n");
-    const b = coarseAdapter.fingerprintFile("const x = 2;\n");
-    assert.notEqual(a, b);
-    assert.equal(coarseAdapter.fingerprintFile("const x = 1;\n"), a);
+    assert.notEqual(fp("const x = 1;\n"), fp("const x = 2;\n"));
+    assert.equal(fp("const x = 1;\n"), fp("const x = 1;\n"));
   });
 });
 
 describe("adapterFor", () => {
-  it("resolves any path to the coarse adapter in Phase 1", () => {
-    assert.equal(adapterFor("src/foo.ts").language, "coarse");
+  it("resolves TS to the precise adapter and everything else to coarse", () => {
+    assert.equal(adapterFor("src/foo.ts").language, "typescript");
+    assert.equal(adapterFor("src/foo.tsx").language, "typescript");
+    assert.equal(adapterFor("src/foo.d.ts").language, "coarse");
     assert.equal(adapterFor("README.md").language, "coarse");
     assert.equal(adapterFor("script.py").language, "coarse");
   });

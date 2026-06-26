@@ -67,10 +67,19 @@ export type {
 export {
   coarseAdapter,
   adapterFor,
+  changedAnchors,
   fileContentChange,
   contentChangedFiles,
 } from "./lib/fingerprint.js";
-export type { LanguageAdapter, FileChange } from "./lib/fingerprint.js";
+export type {
+  Anchor,
+  LanguageAdapter,
+  AnchorChange,
+  AnchorChangeKind,
+  FileChange,
+} from "./lib/fingerprint.js";
+export { tsAdapter } from "./lib/ts-adapter.js";
+export type { TsAnchorKind } from "./lib/ts-adapter.js";
 export { appendEvent, readRecentEvents } from "./lib/events.js";
 export type { CodumentEvent } from "./lib/events.js";
 export { MODEL_RATES, costOf, mergeRates, loadRates } from "./lib/token-cost.js";
