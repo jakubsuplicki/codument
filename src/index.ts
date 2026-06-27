@@ -103,6 +103,8 @@ export {
   symbolMentionLines,
 } from "./lib/co-movement.js";
 export type { ComovementStatus } from "./lib/co-movement.js";
+export { computeDrift } from "./lib/drift.js";
+export type { DriftFinding, DriftResult } from "./lib/drift.js";
 export {
   harvestImports,
   importedFiles,

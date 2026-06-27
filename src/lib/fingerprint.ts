@@ -64,6 +64,11 @@ export interface AnchorChange {
   id: string;
   name: string;
   kind: AnchorChangeKind;
+  /** The base fingerprint (absent for an `added` anchor). */
+  from?: string;
+  /** The head fingerprint (absent for a `removed` anchor). An acknowledgment binds
+   *  to this exact `from`->`to` transition, so it auto-invalidates on the next move. */
+  to?: string;
 }
 
 function anchorsAtRef(root: string, ref: string, path: string): Anchor[] | null {
@@ -83,12 +88,13 @@ function diffAnchorSets(
   const changes: AnchorChange[] = [];
   for (const [id, h] of headById) {
     const b = baseById.get(id);
-    if (!b) changes.push({ id, name: h.name, kind: "added" });
+    if (!b) changes.push({ id, name: h.name, kind: "added", to: h.fingerprint });
     else if (b.fingerprint !== h.fingerprint)
-      changes.push({ id, name: h.name, kind: "changed" });
+      changes.push({ id, name: h.name, kind: "changed", from: b.fingerprint, to: h.fingerprint });
   }
   for (const [id, b] of baseById) {
-    if (!headById.has(id)) changes.push({ id, name: b.name, kind: "removed" });
+    if (!headById.has(id))
+      changes.push({ id, name: b.name, kind: "removed", from: b.fingerprint });
   }
   return changes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }

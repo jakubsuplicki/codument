@@ -208,6 +208,7 @@
         "src/lib/badge.ts",
         "src/lib/change-state.ts",
         "src/lib/co-movement.ts",
+        "src/lib/drift.ts",
         "src/lib/events.ts",
         "src/lib/fingerprint.ts",
         "src/lib/git.ts",

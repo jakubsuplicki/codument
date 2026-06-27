@@ -10,6 +10,8 @@ import {
 import { getWorkingTreeChanges, isGitRepo, getHeadSha } from "../lib/git.js";
 import { worktreeChangesSince, resolveBase, GateError } from "../lib/two-ref.js";
 import { gatherAnchorChanges } from "../lib/fingerprint.js";
+import { computeDrift, type DriftFinding } from "../lib/drift.js";
+import { readAcks } from "../lib/acknowledgment.js";
 import { emitCaught } from "../lib/review-events.js";
 
 interface ReviewOptions {
@@ -28,6 +30,9 @@ export interface ReviewReport {
   changedFileCount: number;
   plan: ApprovedPlan | null;
   state: ChangeState;
+  /** Per-symbol drift detail behind the verdict: which owned symbols moved, their
+   *  co-movement telemetry, and which were cleared by a recorded acknowledgment. */
+  drift: DriftFinding[];
 }
 
 /**
@@ -51,11 +56,21 @@ export function buildReview(
   // Best-effort: coarse/non-TS files degrade to file-grain ownership; parse-error
   // files come back as `unevaluable` (gated file-grain AND surfaced).
   const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, changes);
+  // Resolve per-symbol drift + acknowledgments: an acked move is adjudicated (a
+  // recorded "refactor, no doc change owed" decision) and dropped from the set the
+  // stale-doc verdict sees; co-movement is attached as info-only telemetry.
+  const { findings: drift, filtered } = computeDrift(
+    root,
+    baseRef,
+    registry,
+    anchorChanges,
+    readAcks(root),
+  );
   const state = computeChangeState({
     registry,
     changedFiles: changes,
     planScope: plan?.scope,
-    anchorChanges,
+    anchorChanges: filtered,
     unevaluable,
   });
   return {
@@ -64,6 +79,7 @@ export function buildReview(
     changedFileCount: changes.length,
     plan,
     state,
+    drift,
   };
 }
 
@@ -74,7 +90,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     if (options.json) {
       console.log(
         JSON.stringify(
-          { version: 1, isGitRepo: false, changedFileCount: 0, plan: null, state: null },
+          { version: 1, isGitRepo: false, changedFileCount: 0, plan: null, state: null, drift: [] },
           null,
           2,
         ),
@@ -216,6 +232,26 @@ function printHuman(report: ReviewReport): void {
     pc.yellow("Could not evaluate (parse error — gated whole-file, fix to restore per-symbol)"),
     state.unevaluable.map((f) => `${pc.yellow("⚠")} ${f}`),
   );
+
+  // Per-symbol drift (info-only): owned symbols that moved but whose doc lines did
+  // not reconcile (co-movement telemetry: prose-unchanged / not-referenced) and are
+  // not acknowledged. The deterministic verdict above is the gate; this names the
+  // exact symbols for the agent to reconcile (update the doc, or record an ack).
+  const driftToShow = report.drift.filter(
+    (d) => !d.acknowledged && d.comovement !== "co-moved",
+  );
+  section(
+    pc.dim("Symbol drift (info-only — moved symbol whose doc lines didn't move; heuristic hint)"),
+    driftToShow.map(
+      (d) =>
+        `${pc.dim("•")} ${d.feature}: ${d.symbol} ${pc.dim(`(${d.kind}, ${d.comovement}) → ${d.doc}`)}`,
+    ),
+  );
+  const ackedCount = report.drift.filter((d) => d.acknowledged).length;
+  if (ackedCount > 0) {
+    console.log(pc.dim(`  ${ackedCount} moved symbol(s) cleared by an acknowledgment.`));
+    console.log();
+  }
 
   section(
     pc.yellow("High-risk areas touched"),
