@@ -8,7 +8,8 @@ import {
   type ChangeState,
 } from "../lib/change-state.js";
 import { getWorkingTreeChanges, isGitRepo, getHeadSha } from "../lib/git.js";
-import { worktreeChangesSince, GateError } from "../lib/two-ref.js";
+import { worktreeChangesSince, resolveBase, GateError } from "../lib/two-ref.js";
+import { gatherAnchorChanges } from "../lib/fingerprint.js";
 import { emitCaught } from "../lib/review-events.js";
 
 interface ReviewOptions {
@@ -34,17 +35,26 @@ export interface ReviewReport {
  * the repo state (git changes + registry + approved plan). The same diff always
  * produces the same report — no clock, no randomness, sorted throughout.
  */
-export function buildReview(root: string, changedFiles?: string[]): ReviewReport {
+export function buildReview(
+  root: string,
+  changedFiles?: string[],
+  baseRef = "HEAD",
+): ReviewReport {
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
   // Callers that already computed the working-tree changes (e.g. `watch`, which
   // also needs them for its activity tape) can pass them in to avoid a second
   // `git status` tree scan per refresh; default to computing them here.
   const changes = changedFiles ?? getWorkingTreeChanges(root);
   const plan = detectApprovedPlanScope(root);
+  // Per-symbol anchor diffs for the precise (TS) changed files, base ref vs the
+  // working tree — this is what dissolves the shared-file cascade in the verdict.
+  // Best-effort: degrades to file-grain ownership if a base/file can't be read.
+  const anchorChanges = gatherAnchorChanges(root, baseRef, changes);
   const state = computeChangeState({
     registry,
     changedFiles: changes,
     planScope: plan?.scope,
+    anchorChanges,
   });
   return {
     version: 1,
@@ -79,10 +89,17 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
 
   let report: ReviewReport;
   try {
-    const changes = options.base
-      ? worktreeChangesSince(root, options.base)
-      : undefined;
-    report = buildReview(root, changes);
+    if (options.base) {
+      // Diff the working tree against the merge-base with `options.base` (the
+      // branch's drift since it diverged). Resolve that base once so anchors and
+      // the changed-file set answer the same question.
+      const baseRef = resolveBase(root, options.base, "HEAD").sha;
+      const changes = worktreeChangesSince(root, options.base);
+      report = buildReview(root, changes, baseRef);
+    } else {
+      // Default: working tree vs HEAD (what `git status` shows).
+      report = buildReview(root);
+    }
   } catch (err) {
     // Fail closed: the gate could not run (e.g. an unreachable base on a shallow
     // clone). Distinct from "ran and passed" so CI never treats it as green.
@@ -182,6 +199,14 @@ function printHuman(report: ReviewReport): void {
     pc.yellow("Stale docs (source changed, mapped doc did not)"),
     state.staleDocs.map(
       (d) => `${pc.yellow("⚠")} ${d.feature}: ${d.doc} (changed: ${d.changedSources.join(", ")})`,
+    ),
+  );
+
+  section(
+    pc.yellow("Unassigned shared symbols (set owned_symbols in the registry)"),
+    state.ownershipLints.map(
+      (l) =>
+        `${pc.yellow("⚠")} ${l.file} :: ${l.descriptor} — ${l.kind} across ${l.features.join(", ")}`,
     ),
   );
 

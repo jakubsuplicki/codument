@@ -11,12 +11,14 @@ import {
   isSourceFile,
   type ExclusionSpec,
 } from "./analyze.js";
+import { resolveOwner, splitAnchorId } from "./ownership.js";
+import type { AnchorChange } from "./fingerprint.js";
 
 // Deterministic diff snapshot over the v2 registry. Pure function of (registry,
-// changed files, optional plan scope): no git, no clock, no randomness — sorted
-// throughout. Git extraction and plan detection are separate helpers so this
-// same analyzer backs both `review` (snapshot) and `watch` (live), which can
-// therefore never disagree.
+// changed files, optional plan scope, optional per-file anchor changes): no git,
+// no clock, no randomness — sorted throughout. Git extraction, plan detection,
+// and anchor computation are separate (impure) helpers so this same analyzer
+// backs both `review` (snapshot) and `watch` (live), which can never disagree.
 
 export interface ChangeStateInput {
   registry: Registry;
@@ -26,6 +28,17 @@ export interface ChangeStateInput {
   planScope?: string[];
   exclusion?: ExclusionSpec;
   highFanoutThreshold?: number;
+  /** Per-file anchor changes between base and the head being evaluated, keyed by
+   *  repo-relative source path. Present ONLY for precise (per-symbol) files the
+   *  caller computed: each changed anchor resolves PER-SYMBOL to its owning
+   *  feature (via `resolveOwner`), dissolving the shared-file cascade — a one-
+   *  symbol edit wakes only that symbol's owning doc. A file present with an empty
+   *  array changed only cosmetically (no symbol moved) and wakes nothing. A changed
+   *  source file ABSENT from this map (coarse/non-TS, or anchors uncomputable)
+   *  falls back to file-grain ownership over `primary_sources`. Drives the stale-
+   *  doc verdict only; `byFeature`/`riskTouches`/`dependents` stay the broad
+   *  primary+related impact view. */
+  anchorChanges?: Record<string, AnchorChange[]>;
 }
 
 export interface FeatureGroup {
@@ -55,6 +68,18 @@ export interface DependentFeature {
   dependsOn: string;
 }
 
+/** A symbol on a file shared across multiple FEATURES that ownership could not
+ *  resolve to a single owner: `unassigned` (no co-owner claims it in
+ *  `owned_symbols`) or `ambiguous` (two+ claim it). The gate fails loud rather
+ *  than silently waking all co-owners — it wakes every candidate AND surfaces this
+ *  so the registry's `owned_symbols` map is corrected. */
+export interface OwnershipLint {
+  file: string;
+  descriptor: string;
+  kind: "unassigned" | "ambiguous";
+  features: string[];
+}
+
 export interface ChangeState {
   changedSources: string[];
   changedDocs: string[];
@@ -80,6 +105,8 @@ export interface ChangeState {
   outOfPlan: string[];
   /** True when a plan scope was provided (so outOfPlan is meaningful). */
   planScoped: boolean;
+  /** Shared-file symbols ownership could not resolve (fail-loud; see OwnershipLint). */
+  ownershipLints: OwnershipLint[];
 }
 
 function sortStrings(values: Iterable<string>): string[] {
@@ -148,22 +175,108 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([feature, files]) => ({ feature, files: sortStrings(files) }));
 
-  // which features had a source change
+  // which features had a source change (broad, primary+related, file grain) —
+  // drives the IMPACT views (dependents below; riskTouches uses `groups`).
   const changedFeatures = new Set(groups.keys());
 
-  // stale docs: feature's source changed but none of its docs changed
+  // ── Symbol-grained doc-staleness ownership ──────────────────────────────
+  // Doc-staleness is the precise DRIFT verdict, distinct from the broad impact
+  // views above. Ownership is `primary_sources` only (related = impact, not
+  // ownership), resolved PER-SYMBOL when the caller supplied anchor changes for a
+  // file — so a one-symbol edit to a shared file wakes only that symbol's owning
+  // doc, dissolving the cascade. Concept umbrellas (a `type:"concept"` entry that
+  // narrates a directory file-by-file) are never per-symbol owners: they wake at
+  // file grain whenever an owned file's content moves.
+  const featurePrimary = new Map<string, string[]>();
+  const conceptPrimary = new Map<string, string[]>();
+  for (const [key, entry] of entries) {
+    const idx = entry.type === "concept" ? conceptPrimary : featurePrimary;
+    for (const src of entry.primary_sources) {
+      const list = idx.get(src) ?? [];
+      if (!list.includes(key)) list.push(key);
+      idx.set(src, list);
+    }
+  }
+
+  // feature/concept -> the changed files that woke it (for staleDoc.changedSources)
+  const wokenFiles = new Map<string, Set<string>>();
+  const wake = (key: string, file: string) => {
+    const set = wokenFiles.get(key) ?? new Set<string>();
+    set.add(file);
+    wokenFiles.set(key, set);
+  };
+  const wakeConcepts = (file: string) => {
+    for (const c of conceptPrimary.get(file) ?? []) wake(c, file);
+  };
+
+  const ownershipLints: OwnershipLint[] = [];
+
+  for (const file of changedSources) {
+    const precise = input.anchorChanges?.[file];
+    if (precise !== undefined) {
+      // PER-SYMBOL: each changed anchor resolves to exactly its owning feature.
+      for (const ch of precise) {
+        const res = resolveOwner(registry, ch.id);
+        if (res.kind === "owned") {
+          wake(res.feature, file);
+        } else if (res.kind === "unassigned") {
+          // fail loud: a shared symbol no co-owner claims — wake every candidate
+          // (never under-wake) AND surface so `owned_symbols` is corrected.
+          for (const c of res.candidates) wake(c, file);
+          ownershipLints.push({
+            file,
+            descriptor: splitAnchorId(ch.id).descriptor,
+            kind: "unassigned",
+            features: res.candidates,
+          });
+        } else if (res.kind === "ambiguous") {
+          for (const o of res.owners) wake(o, file);
+          ownershipLints.push({
+            file,
+            descriptor: splitAnchorId(ch.id).descriptor,
+            kind: "ambiguous",
+            features: res.owners,
+          });
+        }
+        // "unowned": no feature owns it per-symbol; a concept umbrella (below) may.
+      }
+      // Concept umbrellas wake at file grain whenever the file's content moved.
+      if (precise.length > 0) wakeConcepts(file);
+    } else {
+      // FILE-GRAIN FALLBACK (coarse/non-TS, or anchors uncomputable): every
+      // PRIMARY owner — feature or concept — wakes; related_sources never does.
+      for (const key of featurePrimary.get(file) ?? []) wake(key, file);
+      wakeConcepts(file);
+    }
+  }
+
+  ownershipLints.sort((a, b) =>
+    a.file !== b.file
+      ? a.file < b.file
+        ? -1
+        : 1
+      : a.descriptor < b.descriptor
+        ? -1
+        : a.descriptor > b.descriptor
+          ? 1
+          : 0,
+  );
+
+  // stale docs: a feature/concept whose OWNED source changed but whose docs did
+  // not (symbol-grained for features, file-grain for concepts and the fallback).
   const staleDocs: StaleDoc[] = [];
   const docsChangedWithoutSource: string[] = [];
   for (const [key, entry] of entries) {
     const featureDocs = [entry.doc, ...entry.docs];
     const aDocChanged = featureDocs.some((d) => changed.has(d));
-    const sourceChanged = changedFeatures.has(key);
+    const woken = wokenFiles.get(key);
+    const sourceChanged = woken !== undefined && woken.size > 0;
 
     if (sourceChanged && !aDocChanged) {
       staleDocs.push({
         feature: key,
         doc: entry.doc,
-        changedSources: sortStrings(groups.get(key) ?? []),
+        changedSources: sortStrings(woken),
       });
     }
     if (aDocChanged && !sourceChanged) {
@@ -236,6 +349,7 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     dependents,
     outOfPlan,
     planScoped,
+    ownershipLints,
   };
 }
 

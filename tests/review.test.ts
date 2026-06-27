@@ -138,10 +138,13 @@ describe("buildReview (temp git repo)", () => {
     assert.equal(getWorkingTreeChanges(tmp).length, 0);
     assert.equal(buildReview(tmp).state.staleDocs.length, 0);
 
-    // the two-ref view (merge-base..working-tree) surfaces the committed drift
+    // the two-ref view (merge-base..working-tree) surfaces the committed drift.
+    // The per-symbol anchor diff must use the SAME base as the changed-file set,
+    // else HEAD (which already has the commit) shows no symbol movement — exactly
+    // what `review --base` passes via resolveBase.
     const since = worktreeChangesSince(tmp, baseSha);
     assert.ok(since.includes("src/auth/login.ts"), "two-ref sees the committed change");
-    const baseReport = buildReview(tmp, since);
+    const baseReport = buildReview(tmp, since, baseSha);
     assert.ok(
       baseReport.state.staleDocs.map((d) => d.feature).includes("auth"),
       "two-ref view flags auth's stale doc",

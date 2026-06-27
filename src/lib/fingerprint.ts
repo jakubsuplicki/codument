@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { basename } from "node:path";
-import { byteNormalize, readBlobAtRef } from "./two-ref.js";
+import { basename, join } from "node:path";
+import { byteNormalize, readBlobAtRef, refReachable } from "./two-ref.js";
 import { tsAdapter } from "./ts-adapter.js";
 
 // An anchor binds an identity to a content fingerprint. The coarse adapter emits
@@ -70,23 +71,15 @@ function anchorsAtRef(root: string, ref: string, path: string): Anchor[] | null 
   return content === null ? null : adapterFor(path).anchors(path, content);
 }
 
-// The anchors that changed for a file between two refs, by id: present only at
-// head = "added", only at base = "removed", a differing fingerprint = "changed".
-// For TS this is PER-SYMBOL (cascade-dissolving — a single-symbol edit yields one
-// change); for coarse it is the single whole-file anchor. Fails loud (GateError)
-// via readBlobAtRef on an unresolvable ref. Sorted by id.
-export function changedAnchors(
-  root: string,
-  base: string,
-  head: string,
-  path: string,
+// Diff two anchor sets by id: present only at head = "added", only at base =
+// "removed", a differing fingerprint = "changed". A null set means the file was
+// absent at that ref (added/removed wholesale). Sorted by id.
+function diffAnchorSets(
+  base: Anchor[] | null,
+  head: Anchor[] | null,
 ): AnchorChange[] {
-  const baseById = new Map(
-    (anchorsAtRef(root, base, path) ?? []).map((a) => [a.id, a]),
-  );
-  const headById = new Map(
-    (anchorsAtRef(root, head, path) ?? []).map((a) => [a.id, a]),
-  );
+  const baseById = new Map((base ?? []).map((a) => [a.id, a]));
+  const headById = new Map((head ?? []).map((a) => [a.id, a]));
   const changes: AnchorChange[] = [];
   for (const [id, h] of headById) {
     const b = baseById.get(id);
@@ -98,6 +91,74 @@ export function changedAnchors(
     if (!headById.has(id)) changes.push({ id, name: b.name, kind: "removed" });
   }
   return changes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+// The anchors that changed for a file between two refs, by id. For TS this is
+// PER-SYMBOL (cascade-dissolving — a single-symbol edit yields one change); for
+// coarse it is the single whole-file anchor. Fails loud (GateError) via
+// readBlobAtRef on an unresolvable ref. Sorted by id. This is the CI path (two
+// committed refs); `review`/`watch` evaluate the working tree via the helper below.
+export function changedAnchors(
+  root: string,
+  base: string,
+  head: string,
+  path: string,
+): AnchorChange[] {
+  return diffAnchorSets(anchorsAtRef(root, base, path), anchorsAtRef(root, head, path));
+}
+
+// True when a precise (per-symbol) adapter handles this path — i.e. the symbol-
+// grained gate applies rather than the coarse whole-file fallback. Used by callers
+// to decide which changed files get per-symbol anchor diffs.
+export function isPreciseFile(path: string): boolean {
+  return adapterFor(path) !== coarseAdapter;
+}
+
+// Per-symbol anchor changes between a base REF and the current WORKING TREE (the
+// file on disk) — the head `review`/`watch` actually evaluate (default base HEAD,
+// or the merge-base for `review --base`). Base content is read from git; head from
+// disk and byte-normalized so it hashes identically to a committed blob. Throws
+// GateError (via readBlobAtRef) when `base` is unreachable; a file absent from disk
+// (deleted) reads as all-anchors-removed.
+export function changedAnchorsAgainstWorktree(
+  root: string,
+  base: string,
+  path: string,
+): AnchorChange[] {
+  const baseAnchors = anchorsAtRef(root, base, path);
+  let headContent: string | null;
+  try {
+    headContent = byteNormalize(readFileSync(join(root, path), "utf-8"));
+  } catch {
+    headContent = null; // deleted / unreadable in the working tree
+  }
+  const headAnchors =
+    headContent === null ? null : adapterFor(path).anchors(path, headContent);
+  return diffAnchorSets(baseAnchors, headAnchors);
+}
+
+// Best-effort per-symbol anchor changes for the precise (TS) files among `paths`,
+// keyed by repo-relative path, comparing `base` to the working tree. Coarse/non-TS
+// files are omitted so the change-state falls back to file-grain ownership for
+// them; if `base` is unreachable (e.g. a fresh repo with no HEAD) the whole map is
+// empty and the gate degrades to file-grain rather than throwing. Reads git + disk,
+// no clock — deterministic for a fixed tree.
+export function gatherAnchorChanges(
+  root: string,
+  base: string,
+  paths: string[],
+): Record<string, AnchorChange[]> {
+  const out: Record<string, AnchorChange[]> = {};
+  if (!refReachable(root, base)) return out;
+  for (const path of paths) {
+    if (!isPreciseFile(path)) continue;
+    try {
+      out[path] = changedAnchorsAgainstWorktree(root, base, path);
+    } catch {
+      // unreachable mid-loop / read failure → skip → file-grain fallback
+    }
+  }
+  return out;
 }
 
 export type FileChange = "added" | "removed" | "changed" | "unchanged";

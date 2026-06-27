@@ -42,6 +42,7 @@ export type {
   DependentFeature,
   FeatureGroup,
   HighFanoutChange,
+  OwnershipLint,
   RiskTouch,
   StaleDoc,
 } from "./lib/change-state.js";
@@ -68,6 +69,9 @@ export {
   coarseAdapter,
   adapterFor,
   changedAnchors,
+  changedAnchorsAgainstWorktree,
+  gatherAnchorChanges,
+  isPreciseFile,
   fileContentChange,
   contentChangedFiles,
 } from "./lib/fingerprint.js";
