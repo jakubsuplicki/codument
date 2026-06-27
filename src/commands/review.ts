@@ -136,11 +136,20 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // Identities, not counts, so the ledger can count distinct things caught. Off
   // by default to avoid a surprise file write; `commit-work` runs it at commit.
   if (options.log) {
+    const d = report.drift;
     emitCaught(root, {
       commit: getHeadSha(root),
-      staleDocs: report.state.staleDocs.map((d) => d.doc),
+      staleDocs: report.state.staleDocs.map((s) => s.doc),
       riskTouches: report.state.riskTouches.map((r) => r.feature),
       offPlan: report.state.outOfPlan,
+      // Per-symbol drift tally — the soak signal (friction = acked vs reconciled).
+      drift: {
+        flagged: d.length,
+        coMoved: d.filter((f) => f.comovement === "co-moved").length,
+        proseUnchanged: d.filter((f) => f.comovement === "prose-unchanged").length,
+        notReferenced: d.filter((f) => f.comovement === "not-referenced").length,
+        acknowledged: d.filter((f) => f.acknowledged).length,
+      },
     });
   }
 

@@ -11,6 +11,13 @@ function caught(data: {
   staleDocs?: string[];
   riskTouches?: string[];
   offPlan?: string[];
+  drift?: {
+    flagged: number;
+    coMoved: number;
+    proseUnchanged: number;
+    notReferenced: number;
+    acknowledged: number;
+  };
 }): CodumentEvent {
   return {
     ts: "2026-06-22T10:00:00.000Z",
@@ -20,6 +27,7 @@ function caught(data: {
       staleDocs: data.staleDocs ?? [],
       riskTouches: data.riskTouches ?? [],
       offPlan: data.offPlan ?? [],
+      ...(data.drift ? { drift: data.drift } : {}),
     },
   };
 }
@@ -46,6 +54,28 @@ describe("summarizeImpact — provable line", () => {
     const ledger = summarizeImpact([caught({}), caught({})]);
     assert.equal(ledger.provable.snapshots, 2);
     assert.equal(ledger.hasProvable, false);
+  });
+});
+
+describe("summarizeImpact — drift soak line", () => {
+  it("sums drift tallies across snapshots and computes the friction rate", () => {
+    const ledger = summarizeImpact([
+      caught({ drift: { flagged: 5, coMoved: 3, proseUnchanged: 1, notReferenced: 0, acknowledged: 1 } }),
+      caught({ drift: { flagged: 4, coMoved: 1, proseUnchanged: 0, notReferenced: 0, acknowledged: 3 } }),
+    ]);
+    assert.equal(ledger.drift.flagged, 9);
+    assert.equal(ledger.drift.coMoved, 4);
+    assert.equal(ledger.drift.acknowledged, 4);
+    // friction = acked / (acked + coMoved) = 4 / 8 = 0.5
+    assert.equal(ledger.drift.frictionRate, 0.5);
+    assert.equal(ledger.hasDrift, true);
+  });
+
+  it("is inert (no friction, hidden) when no snapshot carried drift", () => {
+    const ledger = summarizeImpact([caught({ staleDocs: ["docs/a.md"] })]);
+    assert.equal(ledger.drift.flagged, 0);
+    assert.equal(ledger.drift.frictionRate, 0);
+    assert.equal(ledger.hasDrift, false);
   });
 });
 

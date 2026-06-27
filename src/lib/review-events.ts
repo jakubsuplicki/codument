@@ -66,6 +66,23 @@ export function emitReview(root: string, fix: ReviewFix, meta: EmitMeta = {}): v
   });
 }
 
+/** Per-snapshot tally of the per-symbol drift findings — the soak / calibration
+ *  signal. Counts (not identities) because each fingerprint transition is unique;
+ *  summed across snapshots they give the friction readout that decides if the
+ *  deterministic gate is quiet enough to become a required CI check. */
+export interface DriftTally {
+  /** Moved owned anchors evaluated this snapshot. */
+  flagged: number;
+  /** Doc's symbol-scoped lines moved (co-movement telemetry: likely reconciled). */
+  coMoved: number;
+  /** Symbol referenced but its doc lines did not move. */
+  proseUnchanged: number;
+  /** The doc does not mention the symbol at all. */
+  notReferenced: number;
+  /** Cleared by a recorded acknowledgment (a "refactor, no doc owed" decision). */
+  acknowledged: number;
+}
+
 /** Deterministic snapshot of what the analyzer flagged at a commit boundary. Identities, not counts. */
 export interface CaughtSnapshot {
   /** HEAD sha the pending change sits on, or null (fresh repo / no git). Provenance, not a dedup key. */
@@ -76,6 +93,8 @@ export interface CaughtSnapshot {
   riskTouches: string[];
   /** File paths that fell outside the approved plan. */
   offPlan: string[];
+  /** Per-symbol drift tally (soak signal), when the caller computed drift. */
+  drift?: DriftTally;
 }
 
 /**
@@ -91,7 +110,13 @@ export function emitCaught(root: string, snapshot: CaughtSnapshot, meta: EmitMet
   appendEvent(root, {
     type: "caught",
     message: `${staleDocs.length} stale, ${riskTouches.length} risk, ${offPlan.length} off-plan`,
-    data: { commit: snapshot.commit, staleDocs, riskTouches, offPlan },
+    data: {
+      commit: snapshot.commit,
+      staleDocs,
+      riskTouches,
+      offPlan,
+      ...(snapshot.drift ? { drift: snapshot.drift } : {}),
+    },
     ...(meta.ts !== undefined ? { ts: meta.ts } : {}),
   });
 }

@@ -61,9 +61,12 @@ Both lines are cumulative across all sessions, read from `events.jsonl` (consist
 Caught (all sessions)
   Provable    23 stale docs flagged · 4 high-risk touches · 2 off-plan changes
   Reported    11 review issues fixed before commit   (agent self-reported · correctness)
+  soak        9 symbol move(s) · 4 reconciled · 4 acked   (friction 50% · info-only)
 ```
 
 It renders under the existing cost block, after the per-feature spend. On a project with no logged catches yet, the whole section is omitted (empty = absent, matching the verdict's empty-findings behavior). The `Reported` line is omitted independently when no `review` events exist, so a repo that never emits self-reported fixes shows only the provable line.
+
+**Soak line (drift calibration, info-only).** A `caught` event also carries a `DriftTally` — the per-symbol drift outcome for that snapshot: how many owned anchors moved, how many had their doc's symbol-scoped lines reconcile (`coMoved`), how many were cleared by a recorded acknowledgment, and how many are still unreconciled. Summed across snapshots by `summarizeImpact` into a `DriftLedger`, this is the **soak signal** for the freshness gate: `frictionRate = acknowledged / (acknowledged + coMoved)` — the fraction of *resolved* fires that turned out to need no doc change. It is the number that calibrates whether the deterministic stale-doc verdict is quiet enough to become a required CI check (the info-only → blocking flip). It never blends into the provable/reported headline and is always labeled info-only.
 
 ### Honesty rules
 

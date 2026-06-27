@@ -417,7 +417,7 @@ export function renderFrame(
   // review-fixes are a separate, labeled line. Never blended into one number.
   // Hidden until there is something to show.
   const impact = summarizeImpact(events);
-  if (impact.hasProvable || impact.hasReported) {
+  if (impact.hasProvable || impact.hasReported || impact.hasDrift) {
     lines.push(pc.dim("  caught (all sessions)"));
     if (impact.hasProvable) {
       const p = impact.provable;
@@ -433,6 +433,13 @@ export function renderFrame(
       if (r.fixed.minor > 0) main += pc.dim(` · +${r.fixed.minor} minor`);
       lines.push(
         `    ${pc.cyan("reported")}  ${main}   ${pc.dim("(agent self-reported · correctness)")}`,
+      );
+    }
+    if (impact.hasDrift) {
+      const d = impact.drift;
+      const pct = Math.round(d.frictionRate * 100);
+      lines.push(
+        `    ${pc.cyan("soak")}      ${d.flagged} symbol move(s) · ${d.coMoved} reconciled · ${d.acknowledged} acked   ${pc.dim(`(friction ${pct}% · info-only)`)}`,
       );
     }
     lines.push("");

@@ -2,6 +2,7 @@ import { readAllEvents, type CodumentEvent } from "./events.js";
 import {
   isCaughtEvent,
   isReviewEvent,
+  type DriftTally,
   type ReviewTier,
   type ReviewResolution,
 } from "./review-events.js";
@@ -34,13 +35,30 @@ export interface ReportedLedger {
   total: number;
 }
 
+/** The soak / calibration ledger: per-symbol drift summed across all snapshots.
+ *  `frictionRate` is the fraction of RESOLVED fires that were waved off as needing
+ *  no doc change (acknowledged vs reconciled) — the number that decides whether the
+ *  deterministic gate is quiet enough to become a required CI check. Info-only. */
+export interface DriftLedger {
+  flagged: number;
+  coMoved: number;
+  proseUnchanged: number;
+  notReferenced: number;
+  acknowledged: number;
+  /** acknowledged / (acknowledged + coMoved); 0 when nothing has resolved yet. */
+  frictionRate: number;
+}
+
 export interface ImpactLedger {
   provable: ProvableLedger;
   reported: ReportedLedger;
+  drift: DriftLedger;
   /** True when the analyzer caught at least one distinct thing — the provable line renders. */
   hasProvable: boolean;
   /** True when at least one well-formed self-reported finding exists — the reported line renders. */
   hasReported: boolean;
+  /** True when any drift was evaluated — the soak line renders. */
+  hasDrift: boolean;
 }
 
 /** Pure tally over an event list (the reader splits I/O from logic for testability). */
@@ -54,6 +72,15 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
   const deferred: Record<ReviewTier, number> = { correctness: 0, minor: 0 };
   let total = 0;
 
+  const drift: DriftLedger = {
+    flagged: 0,
+    coMoved: 0,
+    proseUnchanged: 0,
+    notReferenced: 0,
+    acknowledged: 0,
+    frictionRate: 0,
+  };
+
   for (const e of events) {
     if (isCaughtEvent(e)) {
       snapshots++;
@@ -61,10 +88,18 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
         staleDocs: string[];
         riskTouches: string[];
         offPlan: string[];
+        drift?: DriftTally;
       };
       for (const x of d.staleDocs) stale.add(x);
       for (const x of d.riskTouches) risk.add(x);
       for (const x of d.offPlan) off.add(x);
+      if (d.drift) {
+        drift.flagged += d.drift.flagged;
+        drift.coMoved += d.drift.coMoved;
+        drift.proseUnchanged += d.drift.proseUnchanged;
+        drift.notReferenced += d.drift.notReferenced;
+        drift.acknowledged += d.drift.acknowledged;
+      }
     } else if (isReviewEvent(e)) {
       total++;
       const d = e.data as { tier: ReviewTier; resolution: ReviewResolution };
@@ -86,13 +121,18 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
     total,
   };
 
+  const resolved = drift.acknowledged + drift.coMoved;
+  drift.frictionRate = resolved > 0 ? drift.acknowledged / resolved : 0;
+
   return {
     provable,
     reported,
+    drift,
     // A clean snapshot (analyzer ran, caught nothing) does not light up the line —
     // the section is about what was caught, not that review ran.
     hasProvable: provable.staleDocs + provable.riskTouches + provable.offPlan > 0,
     hasReported: total > 0,
+    hasDrift: drift.flagged > 0,
   };
 }
 
