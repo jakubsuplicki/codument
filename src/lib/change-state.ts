@@ -39,6 +39,12 @@ export interface ChangeStateInput {
    *  doc verdict only; `byFeature`/`riskTouches`/`dependents` stay the broad
    *  primary+related impact view. */
   anchorChanges?: Record<string, AnchorChange[]>;
+  /** Changed precise-by-extension TS files that could not be parsed (caller-
+   *  classified; see `gatherAnchorChanges`). Echoed into `ChangeState.unevaluable`
+   *  so a parse error is surfaced (fail-loud) rather than silently coarse-gated;
+   *  they are already gated file-grain by virtue of being absent from
+   *  `anchorChanges`. */
+  unevaluable?: string[];
 }
 
 export interface FeatureGroup {
@@ -107,6 +113,9 @@ export interface ChangeState {
   planScoped: boolean;
   /** Shared-file symbols ownership could not resolve (fail-loud; see OwnershipLint). */
   ownershipLints: OwnershipLint[];
+  /** Changed TS files that could not be parsed — gated file-grain (never fresh) and
+   *  surfaced so the parse error is fixed. Empty unless the caller classified. */
+  unevaluable: string[];
 }
 
 function sortStrings(values: Iterable<string>): string[] {
@@ -350,6 +359,7 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     outOfPlan,
     planScoped,
     ownershipLints,
+    unevaluable: sortStrings(input.unevaluable ?? []),
   };
 }
 

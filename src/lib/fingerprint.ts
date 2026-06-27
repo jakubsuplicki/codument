@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, join } from "node:path";
 import { byteNormalize, readBlobAtRef, refReachable } from "./two-ref.js";
-import { tsAdapter } from "./ts-adapter.js";
+import { classifyTsFile, tsAdapter } from "./ts-adapter.js";
 
 // An anchor binds an identity to a content fingerprint. The coarse adapter emits
 // one whole-file anchor; the precise TS adapter emits one per exported symbol —
@@ -137,28 +137,60 @@ export function changedAnchorsAgainstWorktree(
   return diffAnchorSets(baseAnchors, headAnchors);
 }
 
-// Best-effort per-symbol anchor changes for the precise (TS) files among `paths`,
-// keyed by repo-relative path, comparing `base` to the working tree. Coarse/non-TS
-// files are omitted so the change-state falls back to file-grain ownership for
-// them; if `base` is unreachable (e.g. a fresh repo with no HEAD) the whole map is
-// empty and the gate degrades to file-grain rather than throwing. Reads git + disk,
-// no clock — deterministic for a fixed tree.
+export interface GatheredAnchors {
+  /** Per-file anchor changes for files classified `precise` (≥1 per-symbol anchor),
+   *  keyed by repo-relative path. The change-state resolves these per-symbol. */
+  anchorChanges: Record<string, AnchorChange[]>;
+  /** Precise-by-extension TS files that did not parse (syntax errors, conflict
+   *  markers, syntax newer than the pinned parser). They are OMITTED from
+   *  `anchorChanges` so the gate falls back to file-grain (never read as fresh) AND
+   *  surfaced so the parse error is fixed rather than silently coarse-gated. */
+  unevaluable: string[];
+}
+
+// Best-effort per-symbol anchor changes for the changed files among `paths`,
+// comparing `base` to the working tree. A file is classified from its head content
+// (`classifyTsFile`): only `precise` files (≥1 exported symbol) get per-symbol
+// anchors; `coarse` files (non-TS, declaration/generated, re-export barrels,
+// `export =`, namespace, comments-only) are omitted so the change-state falls back
+// to file-grain ownership — this is what stops a `.ts` file whose real surface the
+// precise extractor can't anchor from reading as fresh through an empty anchor set;
+// `unevaluable` files (parse errors) are omitted (file-grain) AND surfaced. If
+// `base` is unreachable (e.g. a fresh repo with no HEAD) the result is empty and
+// the gate degrades to file-grain. Reads git + disk, no clock — deterministic.
 export function gatherAnchorChanges(
   root: string,
   base: string,
   paths: string[],
-): Record<string, AnchorChange[]> {
-  const out: Record<string, AnchorChange[]> = {};
-  if (!refReachable(root, base)) return out;
+): GatheredAnchors {
+  const anchorChanges: Record<string, AnchorChange[]> = {};
+  const unevaluable: string[] = [];
+  if (!refReachable(root, base)) return { anchorChanges, unevaluable };
   for (const path of paths) {
-    if (!isPreciseFile(path)) continue;
+    if (!isPreciseFile(path)) continue; // non-TS → coarse → file-grain (omit)
+    let headContent: string;
     try {
-      out[path] = changedAnchorsAgainstWorktree(root, base, path);
+      headContent = byteNormalize(readFileSync(join(root, path), "utf-8"));
     } catch {
-      // unreachable mid-loop / read failure → skip → file-grain fallback
+      continue; // deleted/unreadable in the working tree → file-grain
+    }
+    const klass = classifyTsFile(path, headContent);
+    if (klass.mode === "unevaluable") {
+      unevaluable.push(path);
+      continue; // omit → file-grain (never fresh) + surfaced
+    }
+    if (klass.mode !== "precise") continue; // coarse → file-grain (omit)
+    try {
+      anchorChanges[path] = diffAnchorSets(
+        anchorsAtRef(root, base, path),
+        adapterFor(path).anchors(path, headContent),
+      );
+    } catch {
+      // base unreadable mid-loop → omit → file-grain fallback
     }
   }
-  return out;
+  unevaluable.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return { anchorChanges, unevaluable };
 }
 
 export type FileChange = "added" | "removed" | "changed" | "unchanged";

@@ -48,13 +48,15 @@ export function buildReview(
   const plan = detectApprovedPlanScope(root);
   // Per-symbol anchor diffs for the precise (TS) changed files, base ref vs the
   // working tree — this is what dissolves the shared-file cascade in the verdict.
-  // Best-effort: degrades to file-grain ownership if a base/file can't be read.
-  const anchorChanges = gatherAnchorChanges(root, baseRef, changes);
+  // Best-effort: coarse/non-TS files degrade to file-grain ownership; parse-error
+  // files come back as `unevaluable` (gated file-grain AND surfaced).
+  const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, changes);
   const state = computeChangeState({
     registry,
     changedFiles: changes,
     planScope: plan?.scope,
     anchorChanges,
+    unevaluable,
   });
   return {
     version: 1,
@@ -208,6 +210,11 @@ function printHuman(report: ReviewReport): void {
       (l) =>
         `${pc.yellow("⚠")} ${l.file} :: ${l.descriptor} — ${l.kind} across ${l.features.join(", ")}`,
     ),
+  );
+
+  section(
+    pc.yellow("Could not evaluate (parse error — gated whole-file, fix to restore per-symbol)"),
+    state.unevaluable.map((f) => `${pc.yellow("⚠")} ${f}`),
   );
 
   section(

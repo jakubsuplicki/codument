@@ -307,4 +307,40 @@ describe("gate wiring — end-to-end (temp git repo, real anchor diff)", () => {
       "no symbol fingerprint moved → no stale doc",
     );
   });
+
+  // ── Phase 2d: classification routes coarse/unevaluable files to file-grain ──
+
+  it("a parse error is surfaced AND gated file-grain (never read as fresh)", async () => {
+    await scaffold({
+      "src/shared.ts": SHARED_SRC + "<<<<<<< HEAD\n=======\n>>>>>>> branch\n",
+    });
+    const report = buildReview(tmp);
+    assert.deepStrictEqual(
+      report.state.unevaluable,
+      ["src/shared.ts"],
+      "the parse error is surfaced (fail-loud)",
+    );
+    // omitted from per-symbol → file-grain fallback wakes BOTH primary owners
+    assert.deepStrictEqual(
+      report.state.staleDocs.map((d) => d.feature).sort(),
+      ["alpha", "beta"],
+      "an un-evaluable owned file never reads as fresh",
+    );
+  });
+
+  it("a file with no anchorable content wakes its owners file-grain (not fresh)", async () => {
+    // replace the precise file with comments only: zero precise anchors. Pre-2d
+    // this produced an empty anchor set that read as fresh; now it is coarse →
+    // file-grain, so a real change still wakes the owning docs.
+    await scaffold({
+      "src/shared.ts": "// the implementation moved elsewhere\n// nothing exported here now\n",
+    });
+    const report = buildReview(tmp);
+    assert.deepStrictEqual(report.state.unevaluable, [], "comments-only is coarse, not an error");
+    assert.deepStrictEqual(
+      report.state.staleDocs.map((d) => d.feature).sort(),
+      ["alpha", "beta"],
+      "a coarse owned file change still wakes its owners",
+    );
+  });
 });

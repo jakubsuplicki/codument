@@ -81,9 +81,10 @@ export type {
   AnchorChange,
   AnchorChangeKind,
   FileChange,
+  GatheredAnchors,
 } from "./lib/fingerprint.js";
-export { tsAdapter, MODULE_ANCHOR_NAME } from "./lib/ts-adapter.js";
-export type { TsAnchorKind } from "./lib/ts-adapter.js";
+export { tsAdapter, MODULE_ANCHOR_NAME, classifyTsFile } from "./lib/ts-adapter.js";
+export type { TsAnchorKind, TsFileMode, TsClassification } from "./lib/ts-adapter.js";
 export { resolveOwner, splitAnchorId } from "./lib/ownership.js";
 export type { OwnershipResolution } from "./lib/ownership.js";
 export {

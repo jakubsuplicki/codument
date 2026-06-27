@@ -295,11 +295,69 @@ function tsAnchors(path: string, content: string): Anchor[] {
   return anchors;
 }
 
+export type TsFileMode = "precise" | "coarse" | "unevaluable";
+
+export interface TsClassification {
+  /** Whether the per-symbol gate applies (`precise`), the file is gated whole —
+   *  `coarse` (a declaration/generated file, a re-export barrel, a side-effect
+   *  module, `export =`, or namespace-only) — or it cannot be trusted at all,
+   *  `unevaluable` (a parse error / conflict markers / syntax newer than the
+   *  pinned parser): fail loud, never an anchor set that reads as fresh. */
+  mode: TsFileMode;
+  reason: string;
+}
+
+// A generated-code banner near the file head — the portable, content-only signal
+// for codegen output committed as `.ts` (outDir-based detection needs tsconfig and
+// is deferred). Matched case-insensitively in the first lines only.
+const GENERATED_BANNER = /@generated\b|do not edit|auto-?generated/i;
+
+// Classify a TS file for the gate: does the precise per-symbol path fully apply,
+// is it only coarse-gatable, or is it un-evaluable (fail loud)? This is what keeps
+// a file whose real surface the precise extractor does not anchor (a re-export
+// barrel, `export =`, a namespace, generated output) from silently reading as
+// fresh through an empty/partial precise anchor set — such files are routed to the
+// coarse file-grain gate instead, and a parse error is surfaced rather than trusted.
+export function classifyTsFile(path: string, content: string): TsClassification {
+  if (path.endsWith(".d.ts")) {
+    return { mode: "coarse", reason: "declaration file" };
+  }
+  const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, /* setParentNodes */ true);
+  const diags = (sf as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] })
+    .parseDiagnostics;
+  if (diags && diags.length > 0) {
+    const n = diags.length;
+    return { mode: "unevaluable", reason: `parse error (${n} diagnostic${n === 1 ? "" : "s"})` };
+  }
+  if (GENERATED_BANNER.test(content.slice(0, 2000))) {
+    return { mode: "coarse", reason: "generated banner" };
+  }
+  const anchors = tsAnchors(path, content);
+  const preciseCount = anchors.filter((a) => a.kind !== "module").length;
+  if (preciseCount > 0) {
+    return {
+      mode: "precise",
+      reason: `${preciseCount} exported symbol${preciseCount === 1 ? "" : "s"}`,
+    };
+  }
+  if (anchors.length > 0) {
+    // Only the residual `<module>` backstop survived: a re-export barrel, a
+    // side-effect-only module, `export =`, or namespace members — gated whole-file.
+    return {
+      mode: "coarse",
+      reason: "no precise exports (re-export / side-effect / export= / namespace)",
+    };
+  }
+  // No anchors at all (comments / whitespace only): nothing to gate per-symbol; the
+  // coarse file hash still catches any change, so this is coarse, not an error.
+  return { mode: "coarse", reason: "no anchorable content" };
+}
+
 export const tsAdapter: LanguageAdapter = {
   language: "typescript",
   // Precise for hand-written TS/TSX. `.d.ts` is a declaration/generated artifact
-  // and falls through to the coarse adapter (Phase 2e refines generated/barrel
-  // classification).
+  // and falls through to the coarse adapter; `classifyTsFile` refines generated /
+  // barrel / unsupported-export-form / parse-error classification for the gate.
   matches: (path) => /\.(ts|tsx|mts|cts)$/.test(path) && !path.endsWith(".d.ts"),
   anchors: tsAnchors,
 };
