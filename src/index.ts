@@ -88,6 +88,16 @@ export type { TsAnchorKind, TsFileMode, TsClassification } from "./lib/ts-adapte
 export { resolveOwner, splitAnchorId } from "./lib/ownership.js";
 export type { OwnershipResolution } from "./lib/ownership.js";
 export {
+  ackCovers,
+  ackFileName,
+  isIndependent,
+  parseAck,
+  readAcks,
+  writeAck,
+  ACKS_DIR,
+} from "./lib/acknowledgment.js";
+export type { Acknowledgment } from "./lib/acknowledgment.js";
+export {
   harvestImports,
   importedFiles,
   resolveSpecifier,

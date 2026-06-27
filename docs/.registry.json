@@ -203,6 +203,7 @@
         "src/commands/report.ts",
         "src/commands/review.ts",
         "src/commands/watch.ts",
+        "src/lib/acknowledgment.ts",
         "src/lib/analyze.ts",
         "src/lib/badge.ts",
         "src/lib/change-state.ts",

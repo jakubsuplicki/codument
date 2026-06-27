@@ -118,7 +118,7 @@ Reads the package version from `package.json` at the package root. Used by the C
 
 ## Key files
 
-- `src/index.ts` — Public package exports for registry, analyzer, and agent-profile helpers
+- `src/index.ts` — Public package exports for the registry, analyzer, change-control gate (two-ref, fingerprint/anchors, ownership, acknowledgments), and agent-profile helpers
 - `src/lib/agent-profiles.ts` — Agent profile definitions, profile detection, agent id parsing, and core delivery skill list
 - `src/lib/analyze.ts` — Shared deterministic coverage + lint analyzer over the v2 registry; canonical exclusion spec and source discovery
 - `src/lib/badge.ts` — No-network static SVG coverage badge renderer
