@@ -207,6 +207,7 @@
         "src/lib/analyze.ts",
         "src/lib/badge.ts",
         "src/lib/change-state.ts",
+        "src/lib/co-movement.ts",
         "src/lib/events.ts",
         "src/lib/fingerprint.ts",
         "src/lib/git.ts",

@@ -98,6 +98,12 @@ export {
 } from "./lib/acknowledgment.js";
 export type { Acknowledgment } from "./lib/acknowledgment.js";
 export {
+  classifyComovement,
+  normalizeProse,
+  symbolMentionLines,
+} from "./lib/co-movement.js";
+export type { ComovementStatus } from "./lib/co-movement.js";
+export {
   harvestImports,
   importedFiles,
   resolveSpecifier,

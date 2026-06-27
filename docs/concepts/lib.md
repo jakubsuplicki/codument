@@ -80,6 +80,10 @@ The precise TS adapter, registered ahead of the coarse one for `.ts`/`.tsx` (not
 
 First-party import harvesting from the same syntactic parse the anchors use, for two consumers: seeding shared-file symbol ownership (a shared-file symbol that references feature X's exclusively-owned files is attributed to X) and the facts/graph data contract (feature → file → file edges). `resolveSpecifier(fromPath, specifier)` maps a relative specifier to a repo-relative source path — `.js`/`.jsx`/`.mjs`/`.cjs` (ESM output extensions) fold back to `.ts`/`.tsx`/`.mts`/`.cts`, `..` normalizes, and a bare/`node:`/package specifier returns null (external). `harvestImports` returns every named/default/namespace/aliased binding (`local` name → `resolved` path; type-only imports included, side-effect imports excluded since they bind no name); `importedFiles` returns the deduped, sorted first-party edges (side-effect imports included). Pure — it never touches the filesystem, so the caller intersects `resolved` with the real file set.
 
+### Co-movement (`co-movement.ts`) and acknowledgments (`acknowledgment.ts`)
+
+`classifyComovement` is an **info-only telemetry** signal (never a verdict input): for a moved owned anchor it asks "did the primary doc's lines that mention this symbol change?" — `co-moved` / `not-referenced` / `prose-unchanged` / `no-doc`. `normalizeProse` strips frontmatter (so a `last_updated` bump never counts) and link URLs (keeps link text); `symbolMentionLines` matches the symbol as a whole identifier (not a substring). It is logged for the soak, not gated on, because the name-match is fuzzy (default exports, common-word names, renames) — the agent in the loop is the real judge of whether a doc still describes a changed symbol. `acknowledgment.ts` records the agent/human decision that a moved anchor needs no doc change: a loose, reviewable `.codument/acks/*.json` file scoped to `{anchorId, fromHash, toHash, reason, signer}`. The gate never verifies the reason — only that the ack exists, is attributed, and names the exact moved fingerprint (`ackCovers`), so it **auto-invalidates** the next time the anchor moves. `isIndependent` is the opt-in second-party check; `readAcks`/`writeAck` round-trip the loose files with a deterministic `ackFileName` digest.
+
 ### Events (`events.ts`)
 
 `appendEvent`/`readRecentEvents` manage the append-only `.codument/events.jsonl` flow-event log that `watch` tails — review summaries, work-step notes, and the review-effectiveness notes from [[review-effectiveness-metric]]. Timestamps here are wall-clock because it is a live log, not the deterministic coverage artifact, so it never feeds any score. Writing is opt-in (e.g. `review --log`) to avoid surprise file writes.
@@ -118,7 +122,7 @@ Reads the package version from `package.json` at the package root. Used by the C
 
 ## Key files
 
-- `src/index.ts` — Public package exports for the registry, analyzer, change-control gate (two-ref, fingerprint/anchors, ownership, acknowledgments), and agent-profile helpers
+- `src/index.ts` — Public package exports for the registry, analyzer, change-control gate (two-ref, fingerprint/anchors, ownership, co-movement, acknowledgments), and agent-profile helpers
 - `src/lib/agent-profiles.ts` — Agent profile definitions, profile detection, agent id parsing, and core delivery skill list
 - `src/lib/analyze.ts` — Shared deterministic coverage + lint analyzer over the v2 registry; canonical exclusion spec and source discovery
 - `src/lib/badge.ts` — No-network static SVG coverage badge renderer
