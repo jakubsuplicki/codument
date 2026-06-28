@@ -337,12 +337,22 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     }
   }
 
+  // Entries that some other entry depends on. An entry others build on is a
+  // foundation layer: it legitimately depends on nothing, so empty depends_on
+  // is the expected state for it, not a gap. Both the dependency ratio and the
+  // empty-depends-on lint use this to avoid penalizing a true foundation.
+  const dependedUpon = new Set<string>();
+  for (const [, entry] of entries) {
+    for (const dep of entry.depends_on) dependedUpon.add(dep);
+  }
+
   const coverage = computeCoverage(
     root,
     entries,
     inScopeFiles,
     fileToFeatures,
     exclusion,
+    dependedUpon,
   );
   const lint = computeLint(
     root,
@@ -352,6 +362,7 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     exclusion,
     highFanoutThreshold,
     bloat,
+    dependedUpon,
   );
 
   return { coverage, lint, inScopeSourceCount: inScopeFiles.length };
@@ -363,6 +374,7 @@ function computeCoverage(
   inScopeFiles: string[],
   fileToFeatures: Map<string, string[]>,
   exclusion: ExclusionSpec,
+  dependedUpon: Set<string>,
 ): CoverageReport {
   // ownership: in-scope source files that have a documented owner. The numerator
   // counts a file only if it is itself in-scope, so generated/test paths listed
@@ -378,18 +390,24 @@ function computeCoverage(
   );
 
   // dependency: mature entries (own ≥1 in-scope source, status not planned) that
-  // declare at least one dependency.
+  // declare at least one dependency. A foundation entry — one other entries
+  // depend on that itself declares nothing — has no deps to declare, so it is a
+  // vacuous case excluded from the ratio entirely (like a zero denominator),
+  // never counted as a miss that drags the score down.
   const matureEntries = entries.filter(
     ([, entry]) =>
       isMatureEntry(entry) &&
       allSources(entry).some((s) => isSourceFile(s, exclusion)),
   );
-  const withDeps = matureEntries.filter(([, e]) => e.depends_on.length > 0);
+  const dependencyEntries = matureEntries.filter(
+    ([key, e]) => !(e.depends_on.length === 0 && dependedUpon.has(key)),
+  );
+  const withDeps = dependencyEntries.filter(([, e]) => e.depends_on.length > 0);
   const dependency = buildRatio(
     "dependency",
     "dependency (mature entries declaring depends_on)",
     withDeps.length,
-    matureEntries.length,
+    dependencyEntries.length,
   );
 
   // risk: declared high-risk areas (non-empty risk) that carry a durable doc.
@@ -420,6 +438,7 @@ function computeLint(
   exclusion: ExclusionSpec,
   highFanoutThreshold: number,
   bloat: BloatThresholds,
+  dependedUpon: Set<string>,
 ): LintFinding[] {
   const findings: LintFinding[] = [];
 
@@ -500,11 +519,15 @@ function computeLint(
       }
     }
 
-    // empty depends_on on mature entries
+    // empty depends_on on mature entries — but only on an entry nothing depends
+    // on. An entry others build on is a foundation layer, and a foundation
+    // legitimately depends on nothing; the genuinely suspicious case is an
+    // isolated mature entry (nothing depends on it and it depends on nothing) —
+    // a probable wiring omission.
     const mature =
       isMatureEntry(entry) &&
       allSources(entry).some((s) => isSourceFile(s, exclusion));
-    if (mature && entry.depends_on.length === 0) {
+    if (mature && entry.depends_on.length === 0 && !dependedUpon.has(key)) {
       findings.push({
         id: "empty-depends-on",
         severity: "warn",

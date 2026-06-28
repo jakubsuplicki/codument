@@ -26,11 +26,12 @@ describe("buildReport (change-control fixture)", () => {
     assert.equal(report.registryExists, true);
     assert.equal(report.version, 1);
     assert.equal(report.inScopeSourceCount, 6);
-    assert.equal(report.coverage.percent, 78);
+    assert.equal(report.coverage.percent, 83);
 
     assert.equal(report.lint.byId["missing-source"], 1);
     assert.equal(report.lint.byId["generated-leakage"], 1);
-    assert.equal(report.lint.byId["empty-depends-on"], 2);
+    // only notifications (an island); db is a foundation auth + tasks depend on.
+    assert.equal(report.lint.byId["empty-depends-on"], 1);
     assert.equal(report.lint.byId["unmapped-source"], 1);
 
     // high-fanout is informational, never an actionable finding: it stays out of
@@ -79,12 +80,12 @@ describe("writeCoverageArtifacts", () => {
 
     const artifact = JSON.parse(readFileSync(jsonPath, "utf-8"));
     assert.equal(artifact.version, 1);
-    assert.equal(artifact.percent, 78);
+    assert.equal(artifact.percent, 83);
     assert.ok(Array.isArray(artifact.ratios));
 
     const svg = readFileSync(svgPath, "utf-8");
     assert.match(svg, /<svg /);
-    assert.match(svg, />78%</);
+    assert.match(svg, />83%</);
   });
 });
 
@@ -96,7 +97,7 @@ describe("codument doctor (CLI)", () => {
     });
     const report = JSON.parse(out);
     assert.equal(report.version, 1);
-    assert.equal(report.coverage.percent, 78);
+    assert.equal(report.coverage.percent, 83);
     assert.ok(Array.isArray(report.lint.findings));
   });
 

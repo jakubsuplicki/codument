@@ -142,17 +142,20 @@ describe("analyze coverage (change-control fixture)", () => {
     assert.deepStrictEqual(ownership.detail?.unowned, ["src/lib/validate.ts"]);
 
     const dependency = ratio(result.coverage.ratios, "dependency");
+    // `db` is a foundation concept (auth + tasks depend on it, it depends on
+    // nothing), so it is a vacuous case excluded from the denominator — not a
+    // miss. Denominator is auth, tasks, notifications; auth + tasks declare deps.
     assert.equal(dependency.numerator, 2);
-    assert.equal(dependency.denominator, 4);
-    assert.equal(dependency.ratio, 0.5);
+    assert.equal(dependency.denominator, 3);
+    assert.equal(dependency.ratio, 0.67);
 
     const risk = ratio(result.coverage.ratios, "risk");
     assert.equal(risk.numerator, 2);
     assert.equal(risk.denominator, 2);
     assert.equal(risk.ratio, 1);
 
-    // equal-weight average of the three applicable ratios → 0.78
-    assert.equal(result.coverage.percent, 78);
+    // equal-weight average of the three applicable ratios (0.83, 0.67, 1) → 0.83
+    assert.equal(result.coverage.percent, 83);
     assert.deepStrictEqual(result.coverage.applicable, [
       "ownership",
       "dependency",
@@ -184,13 +187,17 @@ describe("analyze lint (change-control fixture)", () => {
       hasFinding(lint, "unmapped-source", { file: "src/lib/validate.ts" }),
       "unmapped validate.ts",
     );
+    // notifications is an island: nothing depends on it and it depends on
+    // nothing — a probable wiring omission, so it is flagged.
     assert.ok(
       hasFinding(lint, "empty-depends-on", { feature: "notifications" }),
       "notifications empty depends_on",
     );
+    // db is a foundation: auth + tasks depend on it, so its empty depends_on is
+    // the expected leaf state, not a gap — it must NOT be flagged.
     assert.ok(
-      hasFinding(lint, "empty-depends-on", { feature: "db" }),
-      "db empty depends_on",
+      !hasFinding(lint, "empty-depends-on", { feature: "db" }),
+      "db is a foundation — empty depends_on must not be flagged",
     );
 
     const fanout = lint.find((f) => f.id === "high-fanout");
@@ -394,5 +401,60 @@ describe("doc integrity findings (thin-doc + link-rot)", () => {
     assert.match(msgs, /ghost-feature/);
     assert.doesNotMatch(msgs, /also-missing\.md/); // fenced example ignored
     assert.doesNotMatch(msgs, /example\.com/); // external link ignored
+  });
+});
+
+describe("empty-depends-on (foundation exemption)", () => {
+  // app -> util. util is a foundation (app depends on it) that declares nothing;
+  // island depends on nothing and nothing depends on it.
+  const REGISTRY = JSON.stringify({
+    features: {
+      app: {
+        doc: "docs/features/app.md",
+        type: "feature",
+        primary_sources: ["src/app.ts"],
+        depends_on: ["util"],
+        status: "current",
+      },
+      util: {
+        doc: "docs/concepts/util.md",
+        type: "concept",
+        primary_sources: ["src/util.ts"],
+        depends_on: [],
+        status: "current",
+      },
+      island: {
+        doc: "docs/features/island.md",
+        type: "feature",
+        primary_sources: ["src/island.ts"],
+        depends_on: [],
+        status: "current",
+      },
+    },
+  });
+
+  async function lintFor(): Promise<LintFinding[]> {
+    const tmp = await mkdtemp(join(tmpdir(), "codument-foundation-"));
+    try {
+      await mkdir(join(tmp, "docs"), { recursive: true });
+      await mkdir(join(tmp, "src"), { recursive: true });
+      await writeFile(join(tmp, "docs", ".registry.json"), REGISTRY);
+      for (const s of ["app", "util", "island"]) {
+        await writeFile(join(tmp, "src", `${s}.ts`), `export const ${s} = 1;\n`);
+      }
+      const registry = await readRegistry(join(tmp, "docs", ".registry.json"));
+      return analyze({ root: tmp, registry, srcDir: "src" }).lint;
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it("flags an island but never a depended-upon foundation", async () => {
+    const flagged = (await lintFor())
+      .filter((f) => f.id === "empty-depends-on")
+      .map((f) => f.feature)
+      .sort();
+    // island flagged (probable wiring omission); util exempt (foundation).
+    assert.deepStrictEqual(flagged, ["island"]);
   });
 });
