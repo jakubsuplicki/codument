@@ -1,69 +1,52 @@
 ---
-title: Doc Audience Layers
-status: draft
+title: Documentation standard
+status: current
 type: concept
 owner: ""
 sources: []
 depends_on:
   - registry-health-and-change-control
-last_reviewed: 2026-06-16
+last_reviewed: 2026-06-28
 ---
+
+# Documentation standard
 
 ## In plain terms
 
-Codument docs serve two readers at once: the AI agent (which needs dense, complete, structured context) and a human (who, especially a "vibe coder," wants the big picture in plain language and the option to dig in and learn). This concept says how to serve both **without keeping two copies that drift**: keep one doc, write it in labeled layers from plain to technical to machine, and let each surface (CLI, the approval gate, Studio) show the layer that fits.
+A codument doc is the agent's map of one feature: open it and learn what the feature is, why it is built this way, what must never break, and which file to open first, without reading the code. The same doc serves the human at the loop's gates (plan approval, decisions, review). Mechanics (identifiers, signatures, call order, counts) are deliberately absent: the agent greps those live from the code, where they cannot drift. This concept defines the fixed shape every feature and concept doc follows, so the knowledge stays lean, trustworthy, and self-maintaining.
 
-## How it works
+## Design approach
 
-### Principle: one source, layered by altitude, projected per audience
+The standard is one rule, and a structure that follows from it.
 
-Do **not** split into separate human-doc and agent-doc files. Two maintained sets become two sources of truth that drift — the exact failure codument exists to prevent — and the unwritten one ends up lying to the reader. Instead, mirror the coverage analyzer's pattern (one source → human / json / badge): **one doc, multiple reading levels**, where audience is a *presentation* concern, not a storage concern.
+**The rule:** a doc keeps only what survives a behaviour-preserving refactor that renames every symbol and reorders every line. That durable residue is intent, design rationale, invariants, decisions, and the role each file plays. Everything a refactor would change is *mechanism*, and it lives in the code where the agent reads it. Everything that is a *plan* (checklists, acceptance criteria, verification steps) is transient, and it lives in the increment, compacting out on ship.
 
-Separation is **by section, not by file.** A feature or concept doc carries ordered layers:
+The rule comes from how the agent actually works and from the two ways docs rot. The agent greps mechanics live and trusts the doc only for *meaning*; a doc it cannot trust it routes around, re-deriving from code, so trust is the whole game. Docs lose trust two ways: they go **stale** (they restated mechanics the code then changed) or they go **bloated** (delivery scaffolding piled up and buried the signal). The rule forbids both at the source.
 
-```
----
-frontmatter        # machine: registry, status, sources
----
-# Feature Name
+**The structure.** Each section answers a question the agent cannot answer by reading code:
 
-## In plain terms   # non-technical overview: what it does, why, what changes. No jargon.
-## How it works     # technical dive-in (optional): architecture, data flow, trade-offs — the "learn it" layer
-## Decisions        # the durable "why" (ADR-lite)
+- **In plain terms** — what is this, and do I care for my task
+- **Design approach** — why this shape, and what was rejected (at role level)
+- **Invariants & boundaries** — what must hold or is forbidden, each linked to its enforcing test
+- **Decisions** — pointers to the ADRs that hold the durable why
+- **Key files** — the narrative role of each file (orchestrator / analyzer / seam)
+- **machine block** — registry linkage, dependencies, status
 
-<!-- machine block: acceptance criteria, DoD, registry mapping -->
-```
+## Invariants & boundaries
 
-The agent reads everything (density is fine for it). A human reads "In plain terms" and expands "How it works" to learn. Studio renders the overview as a card, the technical layer behind a toggle, the machine block deeper still.
-
-This is orthogonal to the existing feature / concept / ADR split, which is about *content type*. Audience layering applies *within* each doc.
-
-### Floor and ceiling
-
-- **Floor (canonical, deterministic):** the agent authors the "In plain terms" layer during `plan-with-docs`, as a near-free byproduct of writing the summary and steps. It lives in the one doc, works offline and in the plain CLI, needs no AI at render time, and is the single source.
-- **Ceiling (Studio, premium):** Studio re-projects the canonical layer on demand to any reading level (a "new to this" ↔ "senior engineer" slider, diagrams, an "explain this change" button). This is a *presentation* of the canonical source, never a competing copy.
-
-### Why it earns its place (not just more docs)
-
-1. **Accessible approval gate.** Approval is the one human-judgment moment in the loop, yet it currently needs technical literacy. Leading the approval with the plain overview (expandable into full acceptance criteria) lets a non-expert approve meaningfully and learn by expanding.
-2. **"What your agent just did, explained."** Narrating the per-step record and per-diff coverage delta in plain terms turns codument from agent memory into agent memory + a teacher — the vibe-coder learning goal, and a differentiated Studio surface.
-
-### Risk and mitigation
-
-A non-technical layer rots if it is a side artifact. Mitigations: make it the **front door** (read at the approval gate and in Studio, so it cannot be ignored), keep it **cheap** (authored in the same planning pass), and **drift-check it** with the same analyzer built for registry health — a durable doc missing or with a stale "In plain terms" layer is a coverage/explainability signal. Per the determinism boundary, the analyzer can check the layer *exists and is fresh*, not that it is *good*.
+- A doc never carries mechanism: no identifier, literal count or duration, ordered call sequence, or line-number anchor. Role-level flow narrative ("the request reaches the analyzer, the orchestrator fans out, results merge") is allowed because it survives a rename. *(enforced today by review and agent discipline; a prose lint is a planned check — untested)*
+- The registry is the single source for which files a feature owns; prose never restates the file list. Key files carries role, not paths. *(test: ownership resolves from the registry — ownership / change-state suites)*
+- The gate proves a documented symbol **moved**, never that surviving prose is **true**. Structural freshness is automatic; semantic truth is the agent's job at each flagged move, and a test-backed invariant is the only self-verifying claim. *(honest boundary, not a guarantee)*
+- The plan is never the durable doc, and a superseded decision is preserved as an ADR, never deleted. *(the immutable decision chain is what makes the why trustworthy)*
 
 ## Decisions
 
-- One source layered by section; never separate per-audience files.
-- Canonical plain-language layer is **agent-authored at plan time** (offline, single-source, available on the free CLI), with Studio re-projection as the premium ceiling. Rejected alternative: Studio-only AI render, which would leave the CLI and the approval gate with no plain layer — the CLI is the distribution wedge and must carry the learning value too.
-- Layer headings are a convention (`## In plain terms`, `## How it works`) so renderers can locate layers deterministically.
+- One source, layered by section — never separate per-audience files. Two maintained sets become two sources of truth that drift, the exact failure codument exists to prevent.
+- The technical layer is named **Design approach**, not "How it works", so the heading stops inviting a code walkthrough.
+- **Invariants & boundaries** is a required section that carries test pointers. It is the highest-value content for agent certainty, and a test pointer is how a semantic claim becomes self-verifying.
+- Decisions route to ADRs by default; the doc references them and never restates them.
+- Mechanism is excluded from prose and read live from the code; codument ships no generated reference layer. Rejected: a stored, generated symbol catalogue — it is a snapshot that goes stale, and an agent can already read the source instantly, so the registry (which files) plus live reads (what they contain) cover it without a drifting artifact.
 
-## Hooks into the registry-health plan
+## Key files
 
-- **Step 6 (templates): DONE.** The layer-heading convention is decided and applied — `## In plain terms`, `## How it works`, `## Decisions`, then a machine block. `scan`'s generated scaffold and the `templates/feature.md`/`templates/concept.md` templates now emit these layers (with v2 frontmatter) from the start. See [[registry-health-and-change-control]].
-- **Post-Step 4 (analyzer):** an "explainability" coverage signal (plain layer present and fresh) is a natural future addition to the same health analyzer — not yet implemented; the analyzer can deterministically check the layer *exists and is fresh*, never that it is *good*.
-
-## Open questions
-
-- Final layer names and how many levels (two vs three).
-- Whether the public Studio "explain" feature caches re-projections (and how those stay tied to the canonical source).
+This concept is propagated, not implemented in one place: the feature and concept templates are the skeleton agents fill to it, the scaffold's managed contract section is inherited by every install, and the `scan` / `map` generators emit it. The registry holds the authoritative paths.

@@ -156,7 +156,12 @@ describe("buildManagedSection", () => {
     // doc altitude references the FIXED standard (audience layers), not a vibe
     assert.ok(section.includes("Documentation altitude"));
     assert.ok(section.includes("In plain terms"));
+    assert.ok(section.includes("Design approach"));
+    assert.ok(section.includes("Invariants & boundaries"));
     assert.ok(section.includes("doc-audience-layers"));
+    // the one rule (survives a rename-everything refactor) and the test-pointer mandate
+    assert.ok(/renames every symbol/.test(section));
+    assert.ok(/link each to the test/.test(section));
     assert.ok(/symbol mirror/.test(section));
     // queryable-knowledge-base framing: link / estimate / scope
     assert.ok(section.includes("link features, estimate work, and understand scope"));

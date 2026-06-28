@@ -92,13 +92,21 @@ last_reviewed: ${date}
 
 ${seed}
 
-## How it works
+## Design approach
 
-<!-- Optional technical dive-in: architecture, data flow, trade-offs. -->
+<!-- Why it is shaped this way, at role level. No identifiers, counts, or call order — that is mechanism and it lives in the code. -->
+
+## Invariants & boundaries
+
+<!-- What must hold or is forbidden — landmines not visible in local code. Link each to its enforcing test, or mark "untested". -->
 
 ## Decisions
 
-<!-- The durable "why" (ADR-lite). -->
+<!-- Pointers to ADRs. The durable why; reference, never restate. -->
+
+## Key files
+
+- \`${file}\` <!-- narrative role: orchestrator / analyzer / seam -->
 `;
 }
 

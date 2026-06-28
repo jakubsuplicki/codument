@@ -86,7 +86,8 @@ describe("scan command", () => {
     // v2 frontmatter + audience layers (docs/concepts/doc-audience-layers.md)
     assert.ok(content.includes("primary_sources:"));
     assert.ok(content.includes("## In plain terms"));
-    assert.ok(content.includes("## How it works"));
+    assert.ok(content.includes("## Design approach"));
+    assert.ok(content.includes("## Invariants & boundaries"));
     assert.ok(content.includes("## Decisions"));
     assert.ok(content.includes("## Key files"));
     // explicit ambiguity marker for unverified ownership

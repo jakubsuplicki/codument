@@ -55,7 +55,7 @@ Discovers undocumented source files and creates minimal doc scaffolds:
 1. Recursively collects all `.ts/.tsx/.js/.jsx` files, skipping directories from the shared `DEFAULT_EXCLUSION_SPEC` (so source discovery never disagrees with the analyzer) and `.d.ts` files
 2. Groups files by top-level directory under `src/` — each directory becomes a feature or concept
 3. Directories named `lib`, `utils`, `helpers`, `types`, `shared`, or `common` are typed as concepts; everything else as features
-4. For each group not already in the registry, creates a **v2** scaffold doc carrying the audience layers (`In plain terms` / `How it works` / `Decisions`) plus a `codument:ambiguity` marker, and adds a `needs-review` v2 registry entry with every file placed in `primary_sources` (scan cannot infer primary vs related ownership)
+4. For each group not already in the registry, creates a **v2** scaffold doc following the documentation standard (see [doc-audience-layers](../concepts/doc-audience-layers.md)) plus a `codument:ambiguity` marker, and adds a `needs-review` v2 registry entry with every file placed in `primary_sources` (scan cannot infer primary vs related ownership)
 5. Records scan stats in `.codument-meta.json`
 
 Root-level files (directly under `src/`) that aren't `index` are grouped by filename but the `_root` group is skipped — these are expected to be entry points handled elsewhere (like `cli.ts`).
