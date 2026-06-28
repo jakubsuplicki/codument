@@ -9,7 +9,7 @@ Use this after `review-work` is clean, or after the user has approved/deferred e
 
 ## Workflow
 
-1. Check the active plan step is complete.
+1. Check the active plan step is complete. If it was the final step, confirm the `## Delivery Plan` block has been compacted out (plan-with-docs → Compaction on ship) — a shipped feature doc must not commit with a stale delivery checklist still in it.
 2. Check that `review-work` is clean, or that every finding was fixed or explicitly deferred by the user.
 3. Check `git status --short`.
 4. Review the diff and avoid staging unrelated user changes.

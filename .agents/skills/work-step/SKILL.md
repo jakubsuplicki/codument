@@ -17,7 +17,7 @@ Use this when the user says to continue, work the next step, or implement the ap
 6. Implement only that step.
 7. Use `tdd` or the strongest practical verification loop.
 8. Register each NEW source file by running `codument map materialize <file>` (see Feature Map Materialization), then update the mapped docs + registry as part of the same step.
-9. Mark the step complete — in the plan doc, and in the mirrored native to-do list — only after verification passes.
+9. Mark the step complete — in the plan doc, and in the mirrored native to-do list — only after verification passes. If this was the final step, compact the `## Delivery Plan` block per `plan-with-docs` (Compaction on ship): lift surviving decisions into `## Decisions`/ADRs and any newly-true constraint into `## Invariants & boundaries`, then delete the delivery scaffolding so the durable doc is left in the standard's layers.
 10. Outside autopilot, stop and do not start the next delivery-plan step. In an autopilot run, proceed directly to `review-work` for this step without waiting.
 11. Outside autopilot, present the user with end-of-step options:
     - Run `review-work` now (recommended)

@@ -29,18 +29,10 @@ When those questions remain, switch to `grill-with-docs` first. Ask one sharp de
    - Feature behavior: `docs/features/{feature}.md`
    - Cross-cutting model or pattern: `docs/concepts/{concept}.md`
    - Hard-to-reverse architecture decision: `docs/architecture/decisions/{NNN}-{title}.md`
-3. Write or update the plan with:
-   - Summary
-   - Current decision
-   - Non-goals
-   - Delivery plan
-   - Feature Map (whenever the plan introduces source files — see below)
-   - Outcome (what completing every step achieves — the end state, including honest limits)
-   - Acceptance criteria
-   - Verification strategy
-   - Open questions
-4. Mark the plan as awaiting approval.
-5. Show the delivery-plan checklist, the outcome, and the open questions inline (see Approval Summary), then stop and ask the user to approve or change the plan before implementation. Never make the user open the doc to see what they are approving.
+3. Write or update the **durable doc** in the documentation standard's layers (the `doc-audience-layers` concept): `## In plain terms`, `## Design approach`, `## Invariants & boundaries`, `## Decisions`, `## Key files`. Fill these at plan time — they are the knowledge that outlives the work, written at intent altitude (no identifiers, counts, or call order; that is mechanism and lives in code).
+4. Append a **transient `## Delivery Plan`** block — the working artifact, not durable doc content. It carries the step checklist, the Feature Map (when the plan introduces source files — see below), the Outcome, acceptance criteria, verification strategy, and open questions. It compacts out when the work ships (see Compaction on ship).
+5. Mark the Delivery Plan as awaiting approval.
+6. Show the delivery-plan checklist, the outcome, and the open questions inline (see Approval Summary), then stop and ask the user to approve or change the plan before implementation. Never make the user open the doc to see what they are approving.
 
 ## Delivery Plan Format
 
@@ -100,8 +92,13 @@ The user approves from the chat, not by opening the doc — so the approval mess
 - Keep the message to the step list, the outcome, and the open questions, plus a one-line scope / non-goals note; link the doc for full detail, but the inline summary must never be a bare link.
 - When the plan carries a Feature Map, render it inline too (the human approves the *cut*, not just the steps) and run `codument map check --plan docs/features/<name>.md` — surface any malformed rows or a too-coarse-shape flag at the gate, before approval, where it can still be fixed.
 
+## Compaction on ship
+
+The `## Delivery Plan` block is transient. When the final step lands (the last `- [x]`), compact it: lift any decision that outlived the work into `## Decisions` or an ADR, fold any newly-true constraint into `## Invariants & boundaries` (with a pointer to the test that enforces it), then delete the checklist, acceptance criteria, verification strategy, and open questions — the step-by-step record already lives in git history. What remains is the durable doc in the standard's layers. A shipped feature doc that still carries a delivery checklist is the lifecycle bloat the standard exists to prevent. Never delete a superseded decision; move it to an ADR so the decision chain stays intact.
+
 ## Rules
 
+- The durable doc follows the documentation standard's layers; the `## Delivery Plan` is transient and never becomes permanent doc content.
 - Keep implementation steps independently reviewable and commit-sized.
 - Do not mix unrelated features into one plan.
 - Do not begin source edits until approval is explicit.
