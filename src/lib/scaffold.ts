@@ -101,10 +101,13 @@ Use Codument as the durable control plane for agent-led engineering work:
 3. Wait for explicit user approval before implementation.
 4. Implement one planned step at a time.
 5. Build the strongest practical feedback loop, preferring red-green-refactor when it fits.
-6. Materialize each new source file with \`codument map materialize\` and update the mapped docs + \`docs/.registry.json\` as part of the same step.
+6. Update the mapped docs + \`docs/.registry.json\` as part of the same step: materialize each new source file with \`codument map materialize\`; when a symbol moved, update its doc at intent altitude if a contract changed, or \`codument ack\` a pure-internal refactor (never a junk mirror edit to clear the gate).
 7. Review the diff against the approved plan, tests, docs, and architecture.
 8. Commit focused work with a conventional commit, authored as the user with no AI \`Co-Authored-By\` trailer.
 9. Move to the next unchecked step.
+
+### Quality bar
+Aim for the best-effort, durable solution, not the first plausible one. Before calling a plan or a step done, zoom out and check it adversarially — where is this half-baked, what did I assume, what would break it. Resolve issues yourself; pull the user in only for a genuinely load-bearing, unconfirmed call (the assumption gate below), not for work that should just happen.
 
 ### Intent routing
 Use these routing rules at the start of each user request. Do not wait for the user to name a skill when their intent is clear.
@@ -169,7 +172,7 @@ A task is NOT complete until:
 2. The approved plan step is complete and no extra scope was added
 3. \`docs/.registry.json\` is checked for affected source files
 4. New source files are registered in \`docs/.registry.json\`
-5. Corresponding feature docs are created or updated with durable, compact content
+5. Corresponding feature docs are created or updated at intent altitude (contract/why, never a symbol mirror); a contract-neutral symbol move is acknowledged (\`codument ack\`), not papered over with mirror prose
 6. Dependent features are flagged if an interface changed
 7. Review findings are resolved or explicitly deferred
 8. \`codument review --strict\` passes for the step — no new source left unmapped, no mapped doc left stale
@@ -180,6 +183,9 @@ Do not move from a rough idea into source edits automatically. First use the doc
 ### Documentation Registry
 The file \`docs/.registry.json\` maps source files to their documentation.
 Always check it before and after modifying source files.
+
+### Documentation altitude
+Docs follow a fixed standard, not a vibe. Each doc is layered — \`## In plain terms\` -> \`## How it works\` -> \`## Decisions\` -> \`## Key files\` + a machine block — per the \`doc-audience-layers\` concept, the \`update-docs\` skill, and \`templates/feature.md\`/\`templates/concept.md\`. They are the queryable knowledge base the agent reads to link features, estimate work, and understand scope, so every layer earns its place. Write the contract, the design at guide level, and the durable why; do NOT write symbol mirrors ("readRegistry reads the registry"), exhaustive export dumps, revision history, glossaries, or vague filler — that is the overload the standard exists to prevent, as bad as staleness. When a symbol moves, make the two-way call: a documented contract changed -> update the relevant layer at intent altitude; a pure-internal refactor changed no contract -> \`codument ack <path>::<symbol> --reason "<what stayed constant>"\`, never a mirror edit to clear the gate. Default to updating the doc; ack only when you can name the preserved contract in one clause.
 
 ### Documentation Structure
 - Feature docs: \`docs/features/{name}.md\`

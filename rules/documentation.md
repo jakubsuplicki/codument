@@ -13,9 +13,11 @@ When you create or modify ANY source file, documentation MUST be handled as part
 2. Find the file path in any feature's `primary_sources` / `related_sources`
 
 **If the file IS in the registry:**
-- Read the corresponding doc file
-- Update any sections that no longer match your changes (Summary, How It Works, Key Files, API/Interface)
-- If your change affects the public interface (exported functions, types, or behavior), set dependent features' status to `"stale"` via the `depends_on` field
+- Read the corresponding doc file.
+- Make the two-way call on what changed:
+  - **A documented contract or behavior changed** → update the matching section at **intent altitude** — the contract, the why, the shape callers depend on. Never mirror the code or restate symbol names (a doc that just renames functions as sentences, like "readRegistry reads the registry", is the rubbish this gate exists to prevent).
+  - **A pure-internal refactor changed no documented contract** → do NOT edit prose to clear the gate. Record it: `codument ack <path>::<symbol> --reason "<the invariant that stayed constant>"`. Default to updating the doc; ack only when you can name in one clause what stayed constant.
+- If your change affects the public interface (exported functions, types, or behavior), flag dependent features via `depends_on`.
 
 **If the file is NOT in the registry** and contains significant logic (not just types, configs, or one-line re-exports):
 

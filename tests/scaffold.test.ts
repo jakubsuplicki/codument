@@ -147,6 +147,25 @@ describe("buildManagedSection", () => {
     // the generated guidance must not embed an actual agent co-author trailer
     assert.ok(!/Co-Authored-By:\s/.test(section));
   });
+
+  it("encodes the quality bar, the doc-altitude standard, and the ack branch", () => {
+    const section = buildManagedSection();
+    // quality bar: best-effort + adversarial zoom-out before "done"
+    assert.ok(section.includes("Quality bar"));
+    assert.ok(section.includes("zoom out and check it adversarially"));
+    // doc altitude references the FIXED standard (audience layers), not a vibe
+    assert.ok(section.includes("Documentation altitude"));
+    assert.ok(section.includes("In plain terms"));
+    assert.ok(section.includes("doc-audience-layers"));
+    assert.ok(/symbol mirror/.test(section));
+    // queryable-knowledge-base framing: link / estimate / scope
+    assert.ok(section.includes("link features, estimate work, and understand scope"));
+    // the two-way call lives in the contract: update at altitude OR ack
+    assert.ok(section.includes("codument ack"));
+    assert.ok(/pure-internal refactor/.test(section));
+    // regression guard: the removed last_updated mandate must never re-enter the contract
+    assert.ok(!/last_updated/.test(section));
+  });
 });
 
 describe("commit-work skill", () => {

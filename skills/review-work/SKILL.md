@@ -14,7 +14,10 @@ Use this after a planned step has been implemented and before committing.
 3. Inspect the current diff.
 4. Check whether the implementation matches the planned behavior.
 5. Check tests or verification output.
-6. Resolve every `codument review` finding: update each stale doc and its `docs/.registry.json` entry, register unmapped source files, and flag dependents whose interface changed. Re-run `codument review` to confirm the doc/registry findings clear.
+6. Resolve every `codument review` finding inline (autopilot-aligned — no separate human gate). For each **stale doc / symbol-drift** finding, make the two-way call and act in this same step:
+   - **A documented contract or behavior changed** → update the owning doc at **intent altitude** (the contract and why, never a symbol mirror) and its `docs/.registry.json` entry.
+   - **A pure-internal refactor that changed no documented contract** → run the exact `codument ack <path>::<symbol> --reason "..."` line `review` printed, naming the invariant that stayed constant.
+   Default to updating the doc; ack only when you can name in one clause what stayed constant — a bare "refactor" reason is not enough, and writing a mirror sentence just to clear the gate is the rubbish this loop exists to prevent. Also register unmapped source files and flag dependents whose interface changed, then re-run `codument review` to confirm the findings clear. The `Drift resolution` line shows your acked-vs-updated split — an all-ack change should make you re-check that none of those moves actually owed a doc update.
 7. Look for correctness, security, data-loss, performance, type-safety, and maintainability issues beyond what the deterministic pass can see.
 
 ## Output
