@@ -255,7 +255,8 @@
       "docs": [
         "skills/plan-with-docs/SKILL.md",
         "skills/work-step/SKILL.md",
-        "rules/documentation.md"
+        "rules/documentation.md",
+        "docs/architecture/decisions/007-feature-map-approvable-decomposition.md"
       ],
       "depends_on": [
         "change-control-gate",
