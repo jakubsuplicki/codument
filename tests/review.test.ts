@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { buildReview } from "../src/commands/review.js";
 import { getWorkingTreeChanges } from "../src/lib/git.js";
 import { worktreeChangesSince } from "../src/lib/two-ref.js";
+import { writeAck } from "../src/lib/acknowledgment.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, "..", "dist", "cli.js");
@@ -190,6 +191,37 @@ describe("codument review (CLI)", () => {
     const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
     assert.match(out, /Stale docs/);
     assert.match(out, /auth/);
+  });
+
+  it("forks each drift finding (update doc vs ack) with the exact ack command + a resolution summary", async () => {
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => { return 3; };\n",
+    });
+    const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
+    assert.match(out, /Symbol drift/);
+    assert.match(out, /contract changed →/); // the doc-update arm is shown...
+    assert.match(out, /codument ack src\/auth\/login\.ts::login/); // ...alongside the ack arm
+    assert.match(out, /Drift resolution: 1 owned symbol\(s\) moved/);
+    assert.match(out, /1 still flagged/);
+  });
+
+  it("lists applied acknowledgments with their reason and counts them in the summary", async () => {
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => { return 3; };\n",
+    });
+    const f = buildReview(tmp).drift.find((d) => d.symbol === "login");
+    assert.ok(f?.from && f?.to);
+    writeAck(tmp, {
+      anchorId: f!.anchorId,
+      fromHash: f!.from!,
+      toHash: f!.to!,
+      reason: "rename only; same call shape",
+      signer: "agent",
+    });
+    const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
+    assert.match(out, /Acknowledged — no doc change owed/);
+    assert.match(out, /rename only; same call shape/);
+    assert.match(out, /1 acked \(contract-neutral\)/);
   });
 
   it("--log writes a caught snapshot with finding identities", async () => {

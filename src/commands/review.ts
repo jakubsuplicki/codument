@@ -242,25 +242,56 @@ function printHuman(report: ReviewReport): void {
     state.unevaluable.map((f) => `${pc.yellow("⚠")} ${f}`),
   );
 
-  // Per-symbol drift (info-only): owned symbols that moved but whose doc lines did
-  // not reconcile (co-movement telemetry: prose-unchanged / not-referenced) and are
-  // not acknowledged. The deterministic verdict above is the gate; this names the
-  // exact symbols for the agent to reconcile (update the doc, or record an ack).
-  const driftToShow = report.drift.filter(
+  // Per-symbol drift: owned symbols that moved. The deterministic verdict above is
+  // the gate; this names each symbol and BOTH ways to resolve it inline — update the
+  // doc when a contract changed, or `codument ack` when it did not — so the agent's
+  // two-way call is in front of it and the cheap path (ack) is never the only one
+  // shown. Co-movement is info-only telemetry, never a verdict input.
+  const unreconciled = report.drift.filter(
     (d) => !d.acknowledged && d.comovement !== "co-moved",
   );
-  section(
-    pc.dim("Symbol drift (info-only — moved symbol whose doc lines didn't move; heuristic hint)"),
-    driftToShow.map(
-      (d) =>
-        `${pc.dim("•")} ${d.feature}: ${d.symbol} ${pc.dim(`(${d.kind}, ${d.comovement}) → ${d.doc}`)}`,
-    ),
-  );
-  const ackedCount = report.drift.filter((d) => d.acknowledged).length;
-  if (ackedCount > 0) {
-    console.log(pc.dim(`  ${ackedCount} moved symbol(s) cleared by an acknowledgment.`));
+  if (unreconciled.length > 0) {
+    console.log(
+      `  ${pc.bold("Symbol drift")} ${pc.dim("— resolve each: update the doc, or ack a contract-neutral move")}`,
+    );
+    for (const d of unreconciled) {
+      console.log(
+        `    ${pc.dim("•")} ${pc.bold(d.symbol)} ${pc.dim(`(${d.kind}, ${d.comovement}) in ${d.feature}`)}`,
+      );
+      console.log(`        ${pc.dim("contract changed →")} update ${d.doc} ${pc.dim("at intent altitude")}`);
+      console.log(
+        `        ${pc.dim("internal only   →")} ${pc.cyan(`codument ack ${d.anchorId} --reason "..."`)}`,
+      );
+    }
     console.log();
   }
+
+  // First-class drift-resolution summary: an all-ack change is loud here, not a
+  // quiet green — over-acking is visible at the moment of the change, not only in
+  // the aggregate soak telemetry.
+  const moved = report.drift.length;
+  if (moved > 0) {
+    const acked = report.drift.filter((d) => d.acknowledged).length;
+    const reconciled = report.drift.filter(
+      (d) => !d.acknowledged && d.comovement === "co-moved",
+    ).length;
+    console.log(
+      `  ${pc.bold("Drift resolution")}: ${moved} owned symbol(s) moved · ` +
+        `${acked} acked (contract-neutral) · ${reconciled} reconciled in docs · ` +
+        `${unreconciled.length} still flagged`,
+    );
+    console.log();
+  }
+
+  section(
+    pc.dim("Acknowledged — no doc change owed (codument ack --list to manage)"),
+    report.drift
+      .filter((d) => d.acknowledged)
+      .map(
+        (d) =>
+          `${pc.dim("✓")} ${d.symbol}${d.ackReason ? ` — ${d.ackReason}` : ""} ${pc.dim(`→ ${d.doc}`)}`,
+      ),
+  );
 
   section(
     pc.yellow("High-risk areas touched"),

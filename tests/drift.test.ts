@@ -103,7 +103,13 @@ describe("drift wiring — per-symbol findings, acknowledgments, auto-invalidati
 
     const after = buildReview(tmp);
     assert.deepStrictEqual(after.state.staleDocs, [], "ack adjudicates the move -> doc no longer stale");
-    assert.equal(after.drift.find((d) => d.symbol === "foo")?.acknowledged, true);
+    const acked = after.drift.find((d) => d.symbol === "foo");
+    assert.equal(acked?.acknowledged, true);
+    assert.equal(
+      acked?.ackReason,
+      "refactor: return value semantics unchanged",
+      "the finding carries the covering ack's reason for review/--json to show",
+    );
   });
 
   it("the acknowledgment auto-invalidates when the symbol moves again", async () => {

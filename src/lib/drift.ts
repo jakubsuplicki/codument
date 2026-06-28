@@ -34,6 +34,9 @@ export interface DriftFinding {
   comovement: ComovementStatus;
   /** A valid acknowledgment names this exact `from`->`to` transition. */
   acknowledged: boolean;
+  /** The recorded reason of the covering acknowledgment, when `acknowledged` — so
+   *  review/`--json` can show WHY a move was exempted, not just that it was. */
+  ackReason?: string;
 }
 
 export interface DriftResult {
@@ -94,11 +97,11 @@ export function computeDrift(
       const doc = registry.features[owner.feature].doc;
       // Acks bind to an exact `changed` transition; an added/removed symbol cannot
       // be refactor-acked (it genuinely needs doc attention).
-      const acknowledged =
-        ch.kind === "changed" &&
-        ch.from !== undefined &&
-        ch.to !== undefined &&
-        acks.some((a) => ackCovers(a, ch.id, ch.from as string, ch.to as string));
+      const coveringAck =
+        ch.kind === "changed" && ch.from !== undefined && ch.to !== undefined
+          ? acks.find((a) => ackCovers(a, ch.id, ch.from as string, ch.to as string))
+          : undefined;
+      const acknowledged = coveringAck !== undefined;
       const { base, head } = docContents(doc);
       const comovement = classifyComovement(base, head, ch.name, ch.kind, {
         module: ch.name === MODULE_ANCHOR_NAME,
@@ -113,6 +116,7 @@ export function computeDrift(
         to: ch.to,
         comovement,
         acknowledged,
+        ...(coveringAck ? { ackReason: coveringAck.reason } : {}),
       });
       if (!acknowledged) kept.push(ch);
     }
