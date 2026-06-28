@@ -297,3 +297,102 @@ describe("determinism", () => {
     assert.equal(report.percent, null);
   });
 });
+
+describe("doc integrity findings (thin-doc + link-rot)", () => {
+  function entry(doc: string, status: string) {
+    const slug = (doc.split("/").pop() ?? "").replace(".md", "");
+    return {
+      doc,
+      type: "feature",
+      primary_sources: [`src/${slug}.ts`],
+      related_sources: [],
+      docs: [],
+      depends_on: ["plain"],
+      risk: [],
+      status,
+    };
+  }
+
+  const REGISTRY = JSON.stringify({
+    features: {
+      stub: entry("docs/features/stub.md", "current"),
+      summarized: entry("docs/features/summarized.md", "current"),
+      plain: entry("docs/features/plain.md", "current"),
+      fresh: entry("docs/features/fresh.md", "needs-review"),
+      linky: entry("docs/features/linky.md", "current"),
+    },
+  });
+
+  const SRC = Object.fromEntries(
+    ["stub", "summarized", "plain", "fresh", "linky"].map((s) => [
+      `src/${s}.ts`,
+      `export const ${s} = 1;\n`,
+    ]),
+  );
+
+  async function integrityLint(
+    files: Record<string, string>,
+  ): Promise<LintFinding[]> {
+    const tmp = await mkdtemp(join(tmpdir(), "codument-integrity-"));
+    try {
+      for (const [rel, content] of Object.entries(files)) {
+        await mkdir(join(tmp, dirname(rel)), { recursive: true });
+        await writeFile(join(tmp, rel), content);
+      }
+      const registry = await readRegistry(join(tmp, "docs", ".registry.json"));
+      return analyze({ root: tmp, registry, srcDir: "src" }).lint;
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it("thin-doc fires on a mature stub but not on Summary / In-plain-terms / needs-review docs", async () => {
+    const lint = await integrityLint({
+      "docs/.registry.json": REGISTRY,
+      ...SRC,
+      "docs/features/stub.md": "# Stub\n\nNothing under a layer heading.\n",
+      "docs/features/summarized.md": "# Sum\n\n## Summary\n\nReal orientation.\n",
+      "docs/features/plain.md": "# Plain\n\n## In plain terms\n\nReal orientation.\n",
+      "docs/features/fresh.md": "# Fresh\n\nstub scaffold, but needs-review.\n",
+      "docs/features/linky.md": "# Linky\n\n## Summary\n\nok.\n",
+    });
+    const thin = lint.filter((f) => f.id === "thin-doc").map((f) => f.feature);
+    assert.deepStrictEqual(thin.sort(), ["stub"]);
+  });
+
+  it("link-rot flags dangling links and wikilinks, ignoring valid / external / fenced", async () => {
+    const body = [
+      "# Linky",
+      "",
+      "## Summary",
+      "",
+      "A [valid](./plain.md) link and an [external](https://example.com) one.",
+      "A [[plain]] wikilink that resolves.",
+      "",
+      "A [dead](./missing.md) link and a [[ghost-feature]] wikilink.",
+      "",
+      "```md",
+      "An example [fenced](./also-missing.md) link that must be ignored.",
+      "```",
+      "",
+    ].join("\n");
+    const lint = await integrityLint({
+      "docs/.registry.json": REGISTRY,
+      ...SRC,
+      "docs/features/stub.md": "# S\n\n## Summary\n\nx.\n",
+      "docs/features/summarized.md": "# S\n\n## Summary\n\nx.\n",
+      "docs/features/plain.md": "# P\n\n## In plain terms\n\nx.\n",
+      "docs/features/fresh.md": "# F\n\n## Summary\n\nx.\n",
+      "docs/features/linky.md": body,
+    });
+    const rot = lint.filter(
+      (f) => f.id === "link-rot" && f.file === "docs/features/linky.md",
+    );
+    const msgs = rot.map((f) => f.message).join(" | ");
+    assert.equal(rot.length, 2, msgs);
+    assert.match(msgs, /missing\.md/);
+    assert.match(msgs, /ghost-feature/);
+    assert.doesNotMatch(msgs, /also-missing\.md/); // fenced example ignored
+    assert.doesNotMatch(msgs, /example\.com/); // external link ignored
+  });
+});

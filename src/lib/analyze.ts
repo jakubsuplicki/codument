@@ -202,7 +202,9 @@ export type LintFindingId =
   | "bloated-doc"
   | "unmapped-source"
   | "under-decomposed"
-  | "over-decomposed";
+  | "over-decomposed"
+  | "thin-doc"
+  | "link-rot";
 
 // Bloat is measured by three independent signals, never one line count.
 // Conservative defaults, calibrated against fixtures/benchmarks/doc-bloat;
@@ -460,6 +462,31 @@ function computeLint(
         file: entry.doc,
         message: `${key}: mapped doc does not exist: ${entry.doc}`,
       });
+    } else if (
+      // thin doc: a doc claimed done (status "current") that exists but isn't
+      // actually narrated — no orientation layer. A scaffold or in-flight doc
+      // (needs-review / draft / in-progress) is exempt; this catches a stub
+      // passed as current, the "half-documented reads green" hole the freshness
+      // gate cannot see.
+      (entry.doc.startsWith("docs/features/") ||
+        entry.doc.startsWith("docs/concepts/")) &&
+      entry.status === "current"
+    ) {
+      const content = readFileSync(join(root, entry.doc), "utf8");
+      // Orientation can live under the standard "In plain terms" heading or the
+      // older "Summary" one; a genuine stub has content under neither.
+      const plain = sectionBody(content, "In plain terms");
+      const summary = sectionBody(content, "Summary");
+      const oriented = Boolean(plain) || Boolean(summary);
+      if (!oriented) {
+        findings.push({
+          id: "thin-doc",
+          severity: "info",
+          feature: key,
+          file: entry.doc,
+          message: `${key}: doc has no narrated orientation layer (no "In plain terms"/"Summary" content — a stub passed as ${entry.status})`,
+        });
+      }
     }
     for (const doc of entry.docs) {
       if (!existsSync(join(root, doc))) {
@@ -564,7 +591,106 @@ function computeLint(
   // bloated docs (each distinct doc checked once)
   findings.push(...computeBloat(root, entries, bloat));
 
+  // dangling intra-repo links across the whole docs/ knowledge base
+  findings.push(...computeLinkRot(root));
+
   return sortFindings(findings);
+}
+
+/** Text under `## <heading>` up to the next `## ` (or EOF), with HTML comments
+ *  and surrounding whitespace stripped. null when the heading is absent. */
+function sectionBody(content: string, heading: string): string | null {
+  const lines = content.split("\n");
+  const want = `## ${heading}`;
+  const start = lines.findIndex((l) => l.trim() === want);
+  if (start < 0) return null;
+  const body: string[] = [];
+  for (let j = start + 1; j < lines.length; j++) {
+    if (/^##\s/.test(lines[j])) break;
+    body.push(lines[j]);
+  }
+  return body.join("\n").replace(/<!--[\s\S]*?-->/g, "").trim();
+}
+
+/** Every `.md` file under `docs/`, sorted, repo-relative. */
+function listMarkdownDocs(root: string): string[] {
+  const out: string[] = [];
+  const walk = (rel: string): void => {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = readdirSync(join(root, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of [...entries].sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      const child = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(child);
+      else if (e.name.endsWith(".md")) out.push(child);
+    }
+  };
+  walk("docs");
+  return out;
+}
+
+/** Drop fenced and inline code so example links in prose never false-fire. */
+function stripCode(content: string): string {
+  return content.replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]*`/g, "");
+}
+
+/** Resolve a markdown link target to a repo-relative path, or null when it is
+ *  external, a pure anchor, or otherwise not an in-repo file reference. */
+function resolveDocLink(target: string, docDir: string): string | null {
+  const t = target.trim();
+  if (/^[a-z][a-z0-9+.-]*:/i.test(t) || t.startsWith("#")) return null;
+  const hash = t.indexOf("#");
+  const path = (hash >= 0 ? t.slice(0, hash) : t).trim();
+  if (!path) return null;
+  return join(docDir, path);
+}
+
+/** Flag intra-repo links (markdown + `[[wikilink]]`) whose target does not
+ *  exist on disk. Deterministic, file-existence only; anchors are not resolved. */
+function computeLinkRot(root: string): LintFinding[] {
+  const findings: LintFinding[] = [];
+  for (const docRel of listMarkdownDocs(root)) {
+    let content: string;
+    try {
+      content = readFileSync(join(root, docRel), "utf8");
+    } catch {
+      continue;
+    }
+    const scan = stripCode(content);
+    const slash = docRel.lastIndexOf("/");
+    const docDir = slash >= 0 ? docRel.slice(0, slash) : "";
+
+    for (const m of scan.matchAll(/\[[^\]]*\]\(([^)\s]+)[^)]*\)/g)) {
+      const rel = resolveDocLink(m[1], docDir);
+      if (rel && !existsSync(join(root, rel))) {
+        findings.push({
+          id: "link-rot",
+          severity: "warn",
+          file: docRel,
+          message: `${docRel}: dangling link to ${m[1]}`,
+        });
+      }
+    }
+
+    for (const m of scan.matchAll(/\[\[([^\]\n|]+)\]\]/g)) {
+      const slug = m[1].trim();
+      if (
+        !existsSync(join(root, `docs/features/${slug}.md`)) &&
+        !existsSync(join(root, `docs/concepts/${slug}.md`))
+      ) {
+        findings.push({
+          id: "link-rot",
+          severity: "warn",
+          file: docRel,
+          message: `${docRel}: dangling wikilink [[${slug}]] (no matching feature or concept doc)`,
+        });
+      }
+    }
+  }
+  return findings;
 }
 
 /** A pure re-export / index / types module — the only over-decomposition signal
@@ -677,6 +803,8 @@ export const FINDING_ORDER: LintFindingId[] = [
   "unmapped-source",
   "under-decomposed",
   "over-decomposed",
+  "thin-doc",
+  "link-rot",
 ];
 
 function sortFindings(findings: LintFinding[]): LintFinding[] {

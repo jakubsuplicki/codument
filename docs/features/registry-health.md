@@ -27,7 +27,7 @@ last_reviewed: 2026-06-28
 
 The whole frame is the test-coverage analogy. Coverage tooling never claims your tests are good; it reliably tells you what is *un*-tested. `doctor` makes the same trade for documentation: high coverage does not certify quality, but low coverage reliably means undocumented or stale code. That honesty is the product, so the command reports evidence ("here are the repo facts and suspicious gaps"), never a verdict ("this is safe").
 
-Coverage and lint are two **separate** channels that are never merged into one number. Coverage is a scored ratio (registry membership and dependency declarations); lint is ESLint-style findings that flag mess (bloat, duplicate/orphaned mappings, generated leakage). Folding bloat into the coverage percent would make a single number mean two incompatible things — a gradient and a discrete count — so each keeps its own shape.
+Coverage and lint are two **separate** channels that are never merged into one number. Coverage is a scored ratio (registry membership and dependency declarations); lint is ESLint-style findings that flag mess and integrity gaps (bloat, duplicate/orphaned mappings, generated leakage, a doc claimed done but never narrated, a dangling intra-repo link). Folding bloat into the coverage percent would make a single number mean two incompatible things, a gradient and a discrete count, so each keeps its own shape.
 
 The denominator is the load-bearing design choice, because "what should be documented" is a judgment, unlike "every executable line." A naive every-file denominator turns the score into noise, so one canonical, version-controlled exclusion spec removes generated, build, and test files plus trivia, and that *same* spec is applied to both the numerator and the denominator (and shared with every other analyzer). Rejected: a per-analyzer file list, which lets coverage, lint, and the change-control gate silently disagree about what counts.
 
@@ -47,6 +47,8 @@ The badge is a coverage figure, not a quality or correctness score, and absolute
 - `--strict` exits nonzero iff there is at least one actionable (warn) finding; informational notes never affect the exit code, and bare `doctor`'s output and exit code are unchanged. *(test: `doctor.test.ts` `--strict` CLI gating suite)*
 - The badge renders an N/A pill when no ratio applies — never a misleading 0%. *(test: `badge.test.ts` "renders N/A (not 0%)")*
 - Coverage is registry membership plus dependencies, not doc quality; the command states this in its own output so the number is never mistaken for a quality score. *(enforced by the human-output disclaimer; no semantic test)*
+- A doc claimed done (status `current`) but with no narrated orientation layer is flagged as a thin-doc (info) — the "half-documented reads green" gap the freshness gate cannot see, since a fresh-but-unmoved doc passes freshness. A scaffold or in-flight doc (needs-review / draft) is exempt. *(test: `analyze.test.ts` doc-integrity — thin-doc fires on a current stub, not on a Summary/In-plain-terms/needs-review doc)*
+- A dangling intra-repo link or `[[wikilink]]` in any `docs/` file is flagged as link-rot (warn); external URLs and fenced code examples are ignored, and anchors are not resolved (file-existence only). *(test: `analyze.test.ts` doc-integrity — flags dead links and wikilinks, ignores valid/external/fenced)*
 
 ## Decisions
 
