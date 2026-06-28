@@ -23,7 +23,7 @@ When you create or modify ANY source file, documentation MUST be handled as part
 
 - **First, route via the approved plan's Feature Map.** If the active plan carries a `feature-map` block, run `codument map materialize <file>` — it creates or extends the *owning* feature's registry entry + doc scaffold for you. Do not hand-pick a feature name when a Map exists.
 - **An unmapped file with a Map present is a flag, not a lump.** If `codument map materialize` reports the file unmapped or ambiguous, STOP and add/fix a Map row (the file's owner is a decomposition decision) — never fold it into an existing umbrella feature.
-- **Only when there is no Feature Map** (an out-of-loop, ad-hoc edit) fall back to naming the feature from the file's purpose (kebab-case), create `docs/features/{feature-name}.md` (Summary, How It Works, Key Files), and add an entry to `docs/.registry.json`:
+- **Only when there is no Feature Map** (an out-of-loop, ad-hoc edit) fall back to naming the feature from the file's purpose (kebab-case), create `docs/features/{feature-name}.md` following the documentation standard's layers (In plain terms, Design approach, Invariants & boundaries, Decisions, Key files), and add an entry to `docs/.registry.json`:
   ```json
   "feature-name": {
     "doc": "docs/features/feature-name.md",

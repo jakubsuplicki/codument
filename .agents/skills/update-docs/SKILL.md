@@ -15,11 +15,13 @@ You are writing documentation that another developer will read to understand thi
 
 ### What good documentation looks like
 
-- **Summary**: 2-3 sentences a developer can read in 10 seconds to know if this feature is relevant to them
-- **How it works**: The architecture at guide level — data flow, key decisions, trade-offs. A developer should understand the design without reading every line of code
-- **Key files**: Each file with a one-line description of its responsibility — not just the filename, but what it *does*
-- **API/Interface**: Only for features with public exports. Include TypeScript signatures and brief descriptions
-- **Gotchas**: Non-obvious behaviors, surprising edge cases, things that have bitten people before. This is consistently the most valuable section
+Follow the documentation standard (the `doc-audience-layers` concept) — these are its layers, and the test for every line is "would this survive a refactor that renamed every symbol and reordered every line?":
+
+- **In plain terms**: 2-3 sentences a reader takes in 10 seconds to know if this is relevant to them. No jargon.
+- **Design approach**: why it is shaped this way — the forces and the chosen-vs-rejected approach, at role level. No identifiers, counts, or call order; that is mechanism, it drifts, and the agent reads it live from the code.
+- **Invariants & boundaries**: what must always hold or is forbidden — the landmines a reader cannot see in the local code, and what the feature deliberately does NOT do. Link each invariant to the test that enforces it, or mark it "untested". This is consistently the most valuable section.
+- **Decisions**: pointers to the ADRs that hold the durable why. Reference, never restate.
+- **Key files**: each file's one-line narrative role (orchestrator / analyzer / seam) — not its exports. The registry holds the exact file list.
 
 ### What bad documentation looks like — do NOT write this
 
@@ -45,7 +47,7 @@ Fix each finding by its type — the doc fix is **not** the same for every one:
 - **bloated-doc** — *compact, don't rewrite.* The message names the signal that tripped:
   - `N completed-log items` — a `[x]` delivery-plan checklist was never compacted. The work is already recorded in git history; delete or collapse the done log and keep only the durable decisions it produced.
   - `section "X" is N lines` — split that section out, or summarize it down to its decisions.
-  - `N lines (> …)` — trim the doc to its durable core (Summary, How it works, Key files, Gotchas).
+  - `N lines (> …)` — trim the doc to its durable core (the standard's layers: In plain terms, Design approach, Invariants & boundaries, Decisions, Key files). A shipped plan leaves no delivery checklist behind — that is the most common over-size cause.
   - Compact to the durable core, then **stop** — do not shave lines to slip just under the limit. The threshold is a prompt to review length, not a number to hit. If the genuine durable core still exceeds it (every line earns its place), raise `--max-doc-lines` / `--max-section-lines` for the repo rather than cutting content that belongs.
 - **missing-doc** — a registered feature has no doc; create it from the template below.
 - **unmapped-source** — a real source file has no owner; assign it to a feature in `docs/.registry.json`, or split out a new feature doc (see the entry points below).
@@ -62,11 +64,10 @@ After you change code, `codument review` is the companion check — it flags doc
 
 ### 1. Planning a new feature
 
-Developer says "plan out feature X" or "let's build X":
-1. Create `docs/features/{name}.md` with Summary, Definition of Done, Non-goals FIRST
-2. Use this as the planning document — align on scope before writing code
-3. Fill in How It Works and Key Files as you build
-4. By the time DoD is checked off, the doc is already written
+Developer says "plan out feature X" or "let's build X" — this is `plan-with-docs`' job:
+1. Write the durable doc in the standard's layers (In plain terms, Design approach, Invariants & boundaries, Decisions, Key files) plus a transient `## Delivery Plan` block; align on scope before writing code
+2. Fill the durable layers as you build; the Delivery Plan tracks the steps
+3. On ship, the Delivery Plan compacts out (plan-with-docs → Compaction on ship), leaving the durable doc in the standard's layers
 
 ### 2. Filling in scaffold docs (after `codument scan`)
 
@@ -80,7 +81,7 @@ Scan creates doc files with frontmatter and file listings but no content. You ar
    ```
    Read these source files: [list from registry entry's sources array]
    Write documentation to: [doc path from registry entry]
-   Follow this template: Summary, How It Works, Key Files, plus API/Interface if there are public exports, plus Gotchas if you find non-obvious edge cases.
+   Follow the documentation standard's layers: In plain terms, Design approach, Invariants & boundaries (link each invariant to its enforcing test), Decisions (ADR pointers), Key files (narrative role). No mechanism in prose — no signatures, counts, or copy-pasteable examples; the agent reads those live from the code.
    Update docs/.registry.json: set status to "current", update depends_on based on imports, set last_reviewed to today.
    ```
 
@@ -127,48 +128,54 @@ For large refactors touching multiple features, delegate to doc-writer agents pe
 ```markdown
 ---
 title: Feature Name
-status: active | deprecated | experimental
+status: current
 type: feature
-owner: @team-or-person
-sources:
+owner: ""
+primary_sources:
   - src/path/to/file.ts
+related_sources: []
 depends_on: []
+risk: []
 last_reviewed: YYYY-MM-DD
 ---
 
-## Summary
+## In plain terms
 
-2-3 sentences. What this feature does and why it exists.
+2-3 sentences: what this is and whether a reader cares for their task. No jargon.
 
-## Definition of Done
+## Design approach
 
-- [ ] Core functionality implemented
-- [ ] Error handling in place
-- [ ] Tests written and passing
-- [ ] Feature doc complete and reviewed
+Why it is shaped this way — the forces and the chosen-vs-rejected approach, at
+role level. No identifiers, counts, or call order; that is mechanism and lives in
+the code. Would it survive a rename-everything refactor?
 
-## How it works
+## Invariants & boundaries
 
-Technical design at guide level. Enough for a developer to understand the
-architecture without reading every line of code. Focus on trade-offs and
-design decisions, not implementation minutiae.
+What must always hold or is forbidden — the landmines not visible in local code,
+and what the feature deliberately does NOT do. Link each to its enforcing test,
+or mark it "untested".
+
+## Decisions
+
+Pointers to ADRs (docs/architecture/decisions/). The durable why; reference, never restate.
 
 ## Key files
 
-- `src/path/to/file.ts` — What this file handles (not just its name)
+- `src/path/to/file.ts` — narrative role (orchestrator / analyzer / seam)
 ```
 
-### Conditional Sections (add based on feature complexity)
+### The layers are fixed, not conditional
 
-- **API / Interface** — Exported functions and types with TypeScript signatures. 2-3 focused code examples per major concept.
-- **Usage examples** — Start with the simplest case, then one advanced pattern. Must be copy-pasteable with type annotations.
-- **Gotchas / Edge cases** — Non-obvious things, surprising behaviors, known limitations. Write this whenever you handle non-obvious error cases in the code.
-- **Non-goals and boundaries** — What this feature explicitly does NOT handle. Where its responsibilities end and another feature's begin.
-- **Related** — Links to ADRs, dependent feature docs, external resources.
+Use these five layers for every feature. Do not add sections the standard
+excludes: no API/Interface signature dumps or copy-pasteable usage examples
+(that is mechanism — it drifts, and the agent reads it live from the code), no
+revision history, no glossaries. Edge cases and non-goals belong in
+**Invariants & boundaries**; links to ADRs and dependent docs belong in
+**Decisions**.
 
 ## Concept Doc Template
 
-Use for cross-cutting concerns (database layer, error handling, deployment). Same structure but lives in `docs/concepts/`. Omit Definition of Done.
+Use for cross-cutting concerns (data model, error handling, deployment). The same five layers, in `docs/concepts/`.
 
 ## ADR Creation
 
@@ -210,8 +217,7 @@ The registry at `docs/.registry.json` maps source files to their documentation.
 
 - Keep docs lean — dense and high-signal, not exhaustive
 - Never document unverified behavior — if uncertain, use `<!-- NEEDS REVIEW: [specific question] -->`
-- Reference source file paths rather than copy-pasting large code blocks
-- Code examples must be copy-pasteable and include type annotations
-- Every doc MUST have at minimum: Summary, How It Works, Key Files
+- Keep mechanism out of prose — no signatures, counts, ordered call sequences, or copy-pasteable code; the agent reads those live from the code. Key files carries narrative role, not paths the registry already holds.
+- Every doc follows the standard's layers: In plain terms, Design approach, Invariants & boundaries, Decisions, Key files
 - Prefer explaining WHY over WHAT — the code shows what, docs explain why
 - Do NOT add: revision history tables, glossaries, UML diagrams, project timelines
