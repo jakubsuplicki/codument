@@ -115,8 +115,10 @@ Use your judgment. A `lib.md` covering 6 tightly related utility modules is fine
 For single-feature updates, do this inline (no agent needed):
 1. Read `docs/.registry.json`, find the doc mapped to the changed file
 2. Open the doc, compare against your code changes
-3. Update only the sections that are now outdated — don't rewrite the whole doc
-4. If your change affects the feature's public interface, check `depends_on` and set dependent features' status to `"stale"`
+3. Make the two-way call:
+   - **A documented contract or behavior changed** → update only the now-outdated layers at intent altitude (the standard above — the contract, the design, the why; never a symbol mirror or an export dump). Don't rewrite the whole doc.
+   - **A pure-internal refactor changed no documented contract** → do not edit prose to clear `codument review`. Record it: `codument ack <path>::<symbol> --reason "<the invariant that stayed constant>"`. Default to updating the doc; ack only when you can name in one clause what stayed constant.
+4. If your change affects the feature's public interface, check `depends_on` and flag dependent features.
 
 For large refactors touching multiple features, delegate to doc-writer agents per affected feature to avoid context bloat.
 
@@ -185,8 +187,11 @@ The registry at `docs/.registry.json` maps source files to their documentation.
   "feature-name": {
     "doc": "docs/features/feature-name.md",
     "type": "feature",
-    "sources": ["src/path/to/file.ts"],
+    "primary_sources": ["src/path/to/file.ts"],
+    "related_sources": [],
+    "docs": [],
     "depends_on": ["other-feature"],
+    "risk": [],
     "status": "current"
   }
 }
