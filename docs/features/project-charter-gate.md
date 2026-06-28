@@ -177,7 +177,7 @@ demo-grade grilling, and users never learn *why* a choice was made.
 - `skills/establish-charter/SKILL.md` (new) — the interview skill.
 - `templates/charter.md` (new) — durable charter doc template.
 - `src/lib/agent-profiles.ts` — add to `DELIVERY_SKILLS`.
-- `src/lib/scaffold.ts` — the charter-gate routing bullet in `buildManagedSection()` (the shared contract generator, which also carries the quality bar and the documentation-altitude standard — those are change-control concerns, see [[registry-health-and-change-control]]).
+- `src/lib/scaffold.ts` — the charter-gate routing bullet in `buildManagedSection()` (the shared contract generator, which also carries the quality bar and the documentation-altitude standard — those are change-control concerns, see [[change-control-gate]]).
 - `src/commands/init.ts` / `src/commands/update.ts` — inherit install + meta field (mostly no-change).
 - `.codument-meta.json` writer — optional `charter` field.
 - `docs/.registry.json`, `docs/overview.md`, `docs/features/agent-delivery-workflow.md` — docs wiring.

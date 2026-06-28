@@ -6,7 +6,7 @@ owner: ""
 primary_sources: []
 related_sources: []
 depends_on:
-  - registry-health-and-change-control
+  - change-control-gate
   - plan-step-mirroring
   - lib
 risk: []

@@ -10,7 +10,7 @@ sources:
   - src/commands/watch.ts
 depends_on:
   - token-cost-tracking
-  - registry-health-and-change-control
+  - change-control-gate
 last_reviewed: 2026-06-19
 ---
 

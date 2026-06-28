@@ -5,7 +5,7 @@ type: concept
 owner: ""
 sources: []
 depends_on:
-  - registry-health-and-change-control
+  - change-control-gate
   - proof-benchmarks
 last_reviewed: 2026-06-16
 ---
@@ -26,7 +26,7 @@ Codument now measures three different things. Keep them separate; never blend th
 | Lint | is the registry / docs messy? | static state, deterministic |
 | **Review effectiveness** | what the review step caught and fixed | **flow / event, non-deterministic** |
 
-Coverage and lint live in the registry-health work ([[registry-health-and-change-control]]). Review effectiveness is different in kind: review findings are model output, not a function of repo state, so this metric is a **record of what happened**, not a recomputable score. It lives in the events / history log and is **never folded into the deterministic coverage score**.
+Coverage and lint live in the registry-health work ([[registry-health]]). Review effectiveness is different in kind: review findings are model output, not a function of repo state, so this metric is a **record of what happened**, not a recomputable score. It lives in the events / history log and is **never folded into the deterministic coverage score**.
 
 ### The light per-repo scorecard
 
@@ -53,7 +53,7 @@ Per-repo numbers are the agent scoring its own work, so they stay modest. The tr
 
 ## Hooks into the roadmap
 
-- **Events log:** review notes are an event type for the `.codument/events.jsonl` work referenced in the autopilot/watch sections of [[registry-health-and-change-control]]. This metric and the live watcher share that log.
+- **Events log:** review notes are an event type for the `.codument/events.jsonl` work referenced in the autopilot/watch sections of [[change-control-gate]]. This metric and the live watcher share that log.
 - **Benchmark extension:** add a catch-rate / false-positive measurement over seeded-bug fixtures to [[proof-benchmarks]], and a loop-vs-no-loop comparison.
 - **Sequencing:** rides alongside the `review` work, not before it — there is nothing to measure until the review loop produces structured output.
 

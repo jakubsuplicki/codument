@@ -12,7 +12,7 @@ related:
 depends_on:
   - cli
   - lib
-  - registry-health-and-change-control
+  - change-control-gate
 last_reviewed: 2026-06-17
 ---
 

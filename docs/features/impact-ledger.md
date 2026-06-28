@@ -17,7 +17,7 @@ depends_on:
   - review-effectiveness-metric
   - complete-cost-capture
   - token-cost-tracking
-  - registry-health-and-change-control
+  - change-control-gate
 last_reviewed: 2026-06-22
 ---
 
@@ -68,7 +68,7 @@ It renders under the existing cost block, after the per-feature spend. On a proj
 
 **Soak line (drift calibration, info-only).** A `caught` event also carries a `DriftTally` — the per-symbol drift outcome for that snapshot: how many owned anchors moved, how many had their doc's symbol-scoped lines reconcile (`coMoved`), how many were cleared by a recorded acknowledgment, and how many are still unreconciled. Summed across snapshots by `summarizeImpact` into a `DriftLedger`, this is the **soak signal** for the freshness gate: `frictionRate = acknowledged / (acknowledged + coMoved)` — the fraction of *resolved* fires that turned out to need no doc change. It is the number that calibrates whether the deterministic stale-doc verdict is quiet enough to become a required CI check (the info-only → blocking flip). It never blends into the provable/reported headline and is always labeled info-only.
 
-**Ack audit events (change-control, not part of the ledger).** `review-events.ts` also defines `emitAck`/`emitAckRemove`, which append identity-bearing `ack` / `ack-remove` records to the same `events.jsonl` when the change-control gate records or retracts an acknowledgment — carrying the anchor, its `from`→`to` fingerprint, the reason, the signer, and self-vs-independent. They are the durable audit trail that makes an agent's self-resolved drift auditable from the log alone (see [[registry-health-and-change-control]]); they share the log and this module, never the Caught tally.
+**Ack audit events (change-control, not part of the ledger).** `review-events.ts` also defines `emitAck`/`emitAckRemove`, which append identity-bearing `ack` / `ack-remove` records to the same `events.jsonl` when the change-control gate records or retracts an acknowledgment — carrying the anchor, its `from`→`to` fingerprint, the reason, the signer, and self-vs-independent. They are the durable audit trail that makes an agent's self-resolved drift auditable from the log alone (see [[change-control-gate]]); they share the log and this module, never the Caught tally.
 
 ### Honesty rules
 

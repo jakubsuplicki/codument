@@ -41,7 +41,7 @@
         "review-effectiveness-metric",
         "complete-cost-capture",
         "token-cost-tracking",
-        "registry-health-and-change-control"
+        "change-control-gate"
       ],
       "risk": [],
       "status": "in-progress"
@@ -76,7 +76,7 @@
       "depends_on": [
         "cli",
         "lib",
-        "registry-health-and-change-control"
+        "change-control-gate"
       ],
       "risk": [],
       "status": "current"
@@ -100,7 +100,7 @@
       "depends_on": [
         "cli",
         "lib",
-        "registry-health-and-change-control"
+        "change-control-gate"
       ],
       "risk": [],
       "status": "current"
@@ -194,43 +194,6 @@
       "risk": [],
       "status": "current"
     },
-    "registry-health-and-change-control": {
-      "doc": "docs/features/registry-health-and-change-control.md",
-      "type": "feature",
-      "primary_sources": [
-        "src/commands/ack.ts",
-        "src/commands/demo.ts",
-        "src/commands/doctor.ts",
-        "src/commands/report.ts",
-        "src/commands/review.ts",
-        "src/commands/watch.ts",
-        "src/lib/acknowledgment.ts",
-        "src/lib/analyze.ts",
-        "src/lib/badge.ts",
-        "src/lib/change-state.ts",
-        "src/lib/co-movement.ts",
-        "src/lib/drift.ts",
-        "src/lib/events.ts",
-        "src/lib/fingerprint.ts",
-        "src/lib/git.ts",
-        "src/lib/import-graph.ts",
-        "src/lib/ownership.ts",
-        "src/lib/report-html.ts",
-        "src/lib/ts-adapter.ts",
-        "src/lib/two-ref.ts"
-      ],
-      "related_sources": [],
-      "docs": [],
-      "depends_on": [
-        "cli",
-        "commands",
-        "lib"
-      ],
-      "risk": [
-        "data-loss"
-      ],
-      "status": "in-progress"
-    },
     "doc-audience-layers": {
       "doc": "docs/concepts/doc-audience-layers.md",
       "type": "concept",
@@ -238,7 +201,7 @@
       "related_sources": [],
       "docs": [],
       "depends_on": [
-        "registry-health-and-change-control"
+        "change-control-gate"
       ],
       "risk": [],
       "status": "draft"
@@ -251,7 +214,7 @@
       "docs": [],
       "depends_on": [
         "proof-benchmarks",
-        "registry-health-and-change-control"
+        "change-control-gate"
       ],
       "risk": [],
       "status": "draft"
@@ -270,7 +233,7 @@
       "docs": [],
       "depends_on": [
         "token-cost-tracking",
-        "registry-health-and-change-control"
+        "change-control-gate"
       ],
       "risk": [],
       "status": "current"
@@ -295,7 +258,7 @@
         "rules/documentation.md"
       ],
       "depends_on": [
-        "registry-health-and-change-control",
+        "change-control-gate",
         "plan-step-mirroring",
         "lib"
       ],
@@ -332,6 +295,68 @@
         "lib"
       ],
       "risk": [],
+      "status": "current"
+    },
+    "registry-health": {
+      "doc": "docs/features/registry-health.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/commands/doctor.ts",
+        "src/lib/analyze.ts",
+        "src/lib/badge.ts"
+      ],
+      "related_sources": [],
+      "docs": [
+        "docs/architecture/decisions/001-registry-v2-model-no-migration.md",
+        "docs/architecture/decisions/002-doctor-is-documentation-coverage.md"
+      ],
+      "depends_on": [
+        "cli",
+        "commands",
+        "lib"
+      ],
+      "risk": [
+        "data-loss"
+      ],
+      "status": "current"
+    },
+    "change-control-gate": {
+      "doc": "docs/features/change-control-gate.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/commands/ack.ts",
+        "src/commands/demo.ts",
+        "src/commands/report.ts",
+        "src/commands/review.ts",
+        "src/commands/watch.ts",
+        "src/lib/acknowledgment.ts",
+        "src/lib/change-state.ts",
+        "src/lib/co-movement.ts",
+        "src/lib/drift.ts",
+        "src/lib/events.ts",
+        "src/lib/fingerprint.ts",
+        "src/lib/git.ts",
+        "src/lib/import-graph.ts",
+        "src/lib/ownership.ts",
+        "src/lib/report-html.ts",
+        "src/lib/ts-adapter.ts",
+        "src/lib/two-ref.ts"
+      ],
+      "related_sources": [],
+      "docs": [
+        "docs/architecture/decisions/003-deterministic-reproducible-gate.md",
+        "docs/architecture/decisions/004-symbol-grained-derived-first-ownership.md",
+        "docs/architecture/decisions/005-co-movement-info-only-telemetry.md",
+        "docs/architecture/decisions/006-agent-judge-resolution-self-resolve-with-audit-trail.md"
+      ],
+      "depends_on": [
+        "cli",
+        "commands",
+        "lib"
+      ],
+      "risk": [
+        "data-loss"
+      ],
       "status": "current"
     }
   }

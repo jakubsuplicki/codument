@@ -5,7 +5,7 @@ type: concept
 owner: ""
 sources: []
 depends_on:
-  - registry-health-and-change-control
+  - change-control-gate
 last_reviewed: 2026-06-28
 ---
 
