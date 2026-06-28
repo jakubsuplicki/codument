@@ -38,6 +38,29 @@ export function getHeadSha(root: string): string | null {
   }
 }
 
+/**
+ * The configured git identity for this repo ("Name <email>", or whichever of
+ * name/email is set). Used as the default ack signer and to detect a self-ack
+ * (signer == change author). Returns null when git is unavailable or no identity
+ * is configured, so the caller falls back to a generic "agent" rather than
+ * fabricating attribution.
+ */
+export function getGitAuthor(root: string): string | null {
+  if (!isGitRepo(root)) return null;
+  const read = (key: string): string | null => {
+    try {
+      const v = git(root, ["config", key]).trim();
+      return v.length > 0 ? v : null;
+    } catch {
+      return null;
+    }
+  };
+  const name = read("user.name");
+  const email = read("user.email");
+  if (name && email) return `${name} <${email}>`;
+  return name ?? email ?? null;
+}
+
 // Parse one `git status --porcelain` path field, taking the post-rename path and
 // unquoting git's C-style quoting for paths with special characters.
 function parsePath(field: string): string {

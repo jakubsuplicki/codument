@@ -198,6 +198,7 @@
       "doc": "docs/features/registry-health-and-change-control.md",
       "type": "feature",
       "primary_sources": [
+        "src/commands/ack.ts",
         "src/commands/demo.ts",
         "src/commands/doctor.ts",
         "src/commands/report.ts",

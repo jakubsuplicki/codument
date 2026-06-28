@@ -5,6 +5,7 @@ import { createBenchmarkCommand } from "./commands/benchmark.js";
 import { demo } from "./commands/demo.js";
 import { doctor } from "./commands/doctor.js";
 import { emitTokensCommand, emitReviewCommand } from "./commands/emit.js";
+import { ackCommand } from "./commands/ack.js";
 import { init } from "./commands/init.js";
 import { report } from "./commands/report.js";
 import { review } from "./commands/review.js";
@@ -66,6 +67,23 @@ program
   .option("--strict", "Exit 1 if the change left a new source unmapped or a mapped doc stale (the step-sync gate)")
   .option("--base <ref>", "Review the branch's drift since it diverged from <ref> (merge-base..working-tree), not just uncommitted changes")
   .action(review);
+
+program
+  .command("ack")
+  .description(
+    "Acknowledge a moved symbol that owes no doc change — records a fingerprint-bound, auto-invalidating decision so review stops flagging it",
+  )
+  .argument(
+    "[anchor]",
+    "the moved anchor: <path>::<symbol> (run the exact line `codument review` prints), or <path>::<bareName>",
+  )
+  .option("--reason <text>", "why no doc change is owed — name the contract that stayed constant")
+  .option("--base <ref>", "resolve the move against the merge-base with <ref> (match the ref `review --base` used)")
+  .option("--signer <id>", "attribution (defaults to the git author; an independent signer is what strict-mode independence checks)")
+  .option("--list", "list recorded acknowledgments with their handles")
+  .option("--remove <handle>", "remove a recorded acknowledgment by its handle")
+  .option("--root <dir>", "project root (defaults to current directory)")
+  .action((anchor, options) => ackCommand(anchor, options));
 
 program
   .command("report")

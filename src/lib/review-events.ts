@@ -125,6 +125,49 @@ function dedupeStrings(values: string[]): string[] {
   return [...new Set(values.filter((v) => typeof v === "string" && v.length > 0))];
 }
 
+/** A recorded acknowledgment, mirrored into the events log as a durable,
+ *  identity-bearing AUDIT record. The loose `.codument/acks/*.json` file is the
+ *  gate input but is mutable by its author; this append-only event is the trail
+ *  that answers "who exempted what, on what grounds, and was it independent" from
+ *  the log alone. `kind` distinguishes a self-ack (signer == the change author)
+ *  from an independent sign-off. */
+export interface AckEvent {
+  anchorId: string;
+  fromHash: string;
+  toHash: string;
+  reason: string;
+  signer: string;
+  kind: "self" | "independent";
+}
+
+/** Append an `ack` event when an acknowledgment is recorded — full identity, not
+ *  a count, so a self-exemption is auditable (and visible as a self-ack) from the
+ *  events log, not only from a file the author controls. */
+export function emitAck(root: string, ack: AckEvent, meta: EmitMeta = {}): void {
+  appendEvent(root, {
+    type: "ack",
+    message: `ack (${ack.kind}) ${ack.anchorId}`,
+    data: { ...ack },
+    ...(meta.ts !== undefined ? { ts: meta.ts } : {}),
+  });
+}
+
+/** Append an `ack-remove` event when an acknowledgment is retracted, so a cleared
+ *  gate can never be silently un-recorded. */
+export function emitAckRemove(
+  root: string,
+  handle: string,
+  anchorId: string | null,
+  meta: EmitMeta = {},
+): void {
+  appendEvent(root, {
+    type: "ack-remove",
+    message: `ack-remove ${handle}`,
+    data: { handle, anchorId },
+    ...(meta.ts !== undefined ? { ts: meta.ts } : {}),
+  });
+}
+
 /** True for a well-formed self-reported review-fix event (legacy bare-message `review` events are not). */
 export function isReviewEvent(e: CodumentEvent): boolean {
   if (e.type !== "review" || !e.data || typeof e.data !== "object") return false;
