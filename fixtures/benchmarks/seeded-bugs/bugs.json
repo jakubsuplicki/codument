@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "fixture": "seeded-bugs",
+  "taskId": "review-the-transactions-report",
+  "note": "Authoritative answer key. Lives only in the published package, never copied into an initialized scenario, so an agent cannot read it. Each detector is a node:test file that imports the scored target's module via the CODUMENT_TARGET env var and passes iff the bug is fixed.",
+  "bugs": [
+    {
+      "id": "session-expiry-dropped",
+      "title": "Expired sessions still authorize",
+      "file": "src/auth/authorize.js",
+      "tier": "security",
+      "detector": "detectors/session-expiry.test.js",
+      "origin": "change-control fixture",
+      "description": "The expiry re-check was dropped while tidying authorize, so an expired session authorizes."
+    },
+    {
+      "id": "negative-amount-accepted",
+      "title": "Negative amounts pass account guards",
+      "file": "src/wallet/account.js",
+      "tier": "validation",
+      "detector": "detectors/negative-amount.test.js",
+      "description": "The positive-amount guard was dropped, so a negative withdraw inflates the balance and a negative deposit shrinks it."
+    },
+    {
+      "id": "off-by-one-pagination",
+      "title": "Page 1 skips the first window",
+      "file": "src/util/pagination.js",
+      "tier": "edge-case",
+      "detector": "detectors/pagination-boundary.test.js",
+      "description": "The start offset multiplies by page instead of page - 1, so the first window is skipped."
+    },
+    {
+      "id": "silent-parse-default",
+      "title": "Invalid amounts silently become zero",
+      "file": "src/util/parse-amount.js",
+      "tier": "correctness",
+      "detector": "detectors/parse-amount.test.js",
+      "description": "Invalid input falls back to 0 instead of throwing, turning garbage into a silent zero-amount transaction."
+    }
+  ]
+}

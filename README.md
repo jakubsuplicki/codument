@@ -386,6 +386,22 @@ Completed fixture: 9/9 PASS
 ```
 
 To compare a baseline against Codument, initialize two fixture directories and give both agents the same task — one solving directly, one following `AGENTS.md` and the skills — then score both with the same command.
+
+The **catch-rate benchmark** is the ground-truth proof behind the review step. It ships a feature diff that carries planted bugs as uncommitted work over a committed baseline, and scores how many your agent catches before commit — once with the review loop, once without:
+
+```bash
+# no-loop: ship the diff straight to commit
+npx codument benchmark init /tmp/bench-noloop --seeded
+# (commit the diff as-is, then:)
+npx codument benchmark score /tmp/bench-noloop --mode no-loop
+
+# loop: review the diff, fix what you find, then commit
+npx codument benchmark init /tmp/bench-loop --seeded
+# (run codument review + the review-work skill, fix, commit, then:)
+npx codument benchmark score /tmp/bench-loop --mode loop --baseline /tmp/bench-noloop
+```
+
+Each bug has a hidden detector test that passes only when the bug is fixed; the answer key never ships into the scenario, so the agent can't read it. The `--baseline` comparison reports the loop-vs-no-loop delta. Because the no-loop baseline catches ~nothing by construction, the honest claim is "review catches X% that would otherwise ship," not a natural-catch-rate comparison.
 </details>
 
 <details>

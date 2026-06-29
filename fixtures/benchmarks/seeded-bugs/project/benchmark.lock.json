@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "fixture": "seeded-bugs",
+  "lockedFiles": [
+    ".codument/benchmark.json"
+  ],
+  "note": "The scorer compares locked files against the packaged fixture to confirm the scenario identity was not altered. The planted bugs and their detectors live only in the published package, never in this directory, so the agent cannot read the answer key. Do not modify locked files during the task."
+}

@@ -29,6 +29,16 @@
       ]
     },
     {
+      "id": "seeded-bugs",
+      "type": "catch-rate",
+      "path": "seeded-bugs",
+      "status": "active",
+      "commands": [
+        "codument benchmark init <dir> --seeded",
+        "codument benchmark score <dir> --mode <loop|no-loop>"
+      ]
+    },
+    {
       "id": "doc-bloat",
       "type": "doc-bloat",
       "path": "doc-bloat",

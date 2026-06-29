@@ -1,0 +1,8 @@
+{
+  "name": "codument-seeded-bugs-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

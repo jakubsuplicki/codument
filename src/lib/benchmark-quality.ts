@@ -83,8 +83,12 @@ export async function initializeQualityBenchmark(
   await mkdir(dirname(root), { recursive: true });
   await cp(projectSource, root, { recursive: true, force: true });
 
-  await installBenchmarkAgentAssets(root, selectedAgentIds);
-  await writeCodumentMeta(root, selectedAgentIds);
+  await installBenchmarkAgentAssets(root, selectedAgentIds, QUALITY_SOURCE_GLOBS);
+  await writeCodumentMeta(root, selectedAgentIds, {
+    sourceGlobs: QUALITY_SOURCE_GLOBS,
+    fixture: QUALITY_FIXTURE,
+    taskId: QUALITY_TASK_ID,
+  });
   await writeFile(join(root, "BENCHMARK_TASK.md"), taskPrompt);
 
   return {
@@ -181,7 +185,7 @@ export function formatQualityBenchmarkScoreReport(
   return lines.join("\n");
 }
 
-async function assertTargetIsWritable(targetDir: string): Promise<void> {
+export async function assertTargetIsWritable(targetDir: string): Promise<void> {
   if (!existsSync(targetDir)) return;
 
   const targetStat = await stat(targetDir);
@@ -195,9 +199,10 @@ async function assertTargetIsWritable(targetDir: string): Promise<void> {
   }
 }
 
-async function installBenchmarkAgentAssets(
+export async function installBenchmarkAgentAssets(
   root: string,
   agentIds: AgentProfileId[],
+  sourceGlobs: string[],
 ): Promise<void> {
   const profiles = getAgentProfiles(agentIds);
 
@@ -226,7 +231,7 @@ async function installBenchmarkAgentAssets(
       );
       const rule = ruleTemplate.replace(
         /^paths: \[.*\]/m,
-        `paths: ${JSON.stringify(QUALITY_SOURCE_GLOBS)}`,
+        `paths: ${JSON.stringify(sourceGlobs)}`,
       );
       await writeFile(rulesDest, rule);
     }
@@ -250,9 +255,10 @@ async function installBenchmarkAgentAssets(
   }
 }
 
-async function writeCodumentMeta(
+export async function writeCodumentMeta(
   root: string,
   agents: AgentProfileId[],
+  meta: { sourceGlobs: string[]; fixture: string; taskId: string },
 ): Promise<void> {
   const date = new Date().toISOString().split("T")[0];
 
@@ -267,12 +273,12 @@ async function writeCodumentMeta(
           language: "javascript",
           framework: null,
           srcDir: "src",
-          sourceGlobs: QUALITY_SOURCE_GLOBS,
+          sourceGlobs: meta.sourceGlobs,
         },
         benchmark: {
           schemaVersion: 1,
-          fixture: QUALITY_FIXTURE,
-          taskId: QUALITY_TASK_ID,
+          fixture: meta.fixture,
+          taskId: meta.taskId,
         },
       },
       null,
@@ -540,21 +546,25 @@ async function checkRegistryCoverage(root: string): Promise<string> {
 }
 
 async function checkDocsUpdated(root: string): Promise<string> {
-  const doc = await readFile(
-    join(root, "docs", "features", "weekly-plans.md"),
-    "utf-8",
-  );
-  const missingTerms = ["skipDay", "skippedDays", "skipReason"].filter(
+  const doc = (
+    await readFile(join(root, "docs", "features", "weekly-plans.md"), "utf-8")
+  ).toLowerCase();
+  // Codument's own doc standard forbids mirroring symbol names, so check that
+  // the durable skip-day behavior is described in prose (the act of skipping a
+  // day, and the stored reason) rather than grepping for camelCase identifiers.
+  // Otherwise a standard-compliant intent-altitude doc would score as "not
+  // updated" — rewarding the very symbol-mirroring the standard exists to ban.
+  const missingTerms = ["skip", "reason"].filter(
     (term) => !doc.includes(term),
   );
 
   if (missingTerms.length > 0) {
     throw new Error(
-      `docs/features/weekly-plans.md is missing: ${missingTerms.join(", ")}`,
+      `docs/features/weekly-plans.md does not describe the skip-day behavior (missing concept: ${missingTerms.join(", ")})`,
     );
   }
 
-  return "weekly plan docs describe skipDay, skippedDays, and skipReason";
+  return "weekly plan docs describe the skip-day behavior (skipping and the stored reason)";
 }
 
 async function checkSourceBoundary(root: string): Promise<string> {
@@ -626,7 +636,14 @@ function assertEqual(actual: unknown, expected: unknown, message: string): void 
 
 function cleanNodeTestEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  delete env.NODE_TEST_CONTEXT;
+  // Strip variables that can change a `node --test` subprocess's exit code
+  // independently of the scored code (NODE_OPTIONS flags, coverage hooks, the
+  // test-runner context), so a score is a pure function of the final files.
+  delete env.NODE_OPTIONS;
+  delete env.NODE_V8_COVERAGE;
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("NODE_TEST_")) delete env[key];
+  }
   return env;
 }
 

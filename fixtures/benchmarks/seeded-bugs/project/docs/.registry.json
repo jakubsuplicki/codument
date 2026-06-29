@@ -1,0 +1,31 @@
+{
+  "features": {
+    "auth": {
+      "doc": "docs/features/auth.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/auth/authorize.js",
+        "src/auth/session.js"
+      ],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [],
+      "risk": [
+        "security"
+      ],
+      "status": "current"
+    },
+    "wallet": {
+      "doc": "docs/features/wallet.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/wallet/account.js"
+      ],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [],
+      "risk": [],
+      "status": "current"
+    }
+  }
+}

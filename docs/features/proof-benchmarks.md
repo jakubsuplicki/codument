@@ -1,190 +1,62 @@
 ---
-title: Proof Benchmarks
-status: in-progress
+title: Proof benchmarks
+status: current
 type: feature
 owner: ""
-sources:
+primary_sources:
   - src/commands/benchmark.ts
   - src/lib/benchmark-context.ts
   - src/lib/benchmark-quality.ts
+  - src/lib/benchmark-seeded.ts
+  - src/lib/detector-result.ts
+related_sources: []
+docs:
+  - docs/architecture/decisions/008-benchmark-proof-deterministic-not-judge.md
 depends_on:
   - cli
   - commands
   - lib
-last_reviewed: 2026-06-16
+risk: []
+last_reviewed: 2026-06-29
 ---
 
-## Summary
+# Proof benchmarks
 
-Codument should include a self-contained way to demonstrate that docs-backed delivery can reduce context waste and improve output quality. The proof should be runnable from the package without relying on a private project, a human judge, or a hidden evaluation process.
+## In plain terms
 
-The proof has two layers:
+A package-native way to show that docs-backed delivery helps, without a private repo, a human judge, or a hidden evaluation. Three deterministic benchmarks ship with Codument. The context benchmark asks whether registry-guided context routing selects a smaller, more relevant working set than a naive whole-project scan. The quality benchmark ships a fixture task, lets any agent attempt it, and scores the final repo state with tests and rule-based checks. The catch-rate benchmark ships a diff that carries planted bugs and measures how many the review step catches before commit, comparing a review loop against shipping the diff straight to commit. All run with no network and no AI model, so a skeptic can rerun them and get the same numbers. The honest boundary: Codument can deterministically score context selection and final state, but the agent's path between is not deterministic, so the benchmark never claims universal token savings or deterministic agent behavior.
 
-- A deterministic context benchmark that compares naive whole-project context against Codument's registry-guided working set.
-- A deterministic quality benchmark that ships a fixture project, lets any coding agent attempt the same task, and scores the final repo state with tests and rule-based checks.
+## Design approach
 
-The benchmark should be honest about what it proves. Codument can deterministically score context selection and final repo state, but the agent's implementation path remains nondeterministic.
+Proof lives in a `benchmark` command family kept separate from `scan`/`adopt`/the delivery loop, so measurement never tangles with normal work. The surface stays three subcommands: `benchmark context`, `benchmark init <dir>` (the quality task, or the catch-rate scenario with `--seeded`), and `benchmark score <dir>` (with `--mode` and `--baseline` for catch-rate runs).
 
-## Current Decision
+The **context benchmark** runs over a fixed fixture with relevant, adjacent, and irrelevant areas and a registry mapping each task to its docs and sources. For a task it compares a naive context (everything a broad scan would pull) against the registry-guided context (the task feature's docs and sources plus declared dependencies), estimating tokens with a stable local character-count heuristic — the heuristic's exact value matters less than its consistency, since the benchmark compares two strategies over the same fixture. It reports token reduction alongside relevance coverage (required docs found, required sources found, irrelevant files included) and can emit schema-versioned JSON.
 
-Add a `benchmark` command family to Codument rather than folding proof into `scan`, `adopt`, or the normal delivery loop.
+The **quality benchmark** ships a dependency-free fixture app with a constrained, realistic task. `init` copies the fixture, installs the agent profile assets, writes the task prompt to disk, and prints it; the agent does the work; `score` evaluates the final directory with deterministic checks — tests pass, typecheck, black-box behavior, the registry still maps touched sources, required docs updated, source boundaries respected, locked fixture files untouched, and forbidden shortcuts absent. The score is a transparent evidence bundle plus a numeric summary; the bundle is the real proof, the number is for a README screenshot.
 
-The README-facing command sequence should stay small:
+What it deliberately is not: it never claims Codument always cuts raw tokens (a tiny task spends more on workflow than it saves), never needs network, model, or hosted telemetry, never calls a model to benchmark, never uses an agent or human as the primary judge, and never times wall-clock (too variable across agents and machines).
 
-```bash
-codument benchmark context
-codument benchmark init /tmp/codument-bench
-codument benchmark score /tmp/codument-bench
-```
+The **catch-rate benchmark** is the ground-truth proof behind the review gate (see [[review-effectiveness-metric]]). It ships a fixed buggy diff — an agent's "completed" feature branch carrying planted, documented bugs — laid as uncommitted working-tree changes over a committed baseline. The user runs their agent two ways: a *no-loop* run commits the diff as-is, a *loop* run reviews the diff and fixes what it catches. Scoring runs one hidden detector per bug (a test that passes iff that bug is fixed) and reports a catch rate plus the loop-vs-no-loop delta. The load-bearing choice is that the diff is *fixed*, not agent-authored: the planted bugs are reliably present and the score is reproducible. The answer key (the bug manifest and the detectors) lives only in the published package, never in the initialized scenario, and the buggy diff carries no markers naming the planted bugs, so the agent must find them by reviewing the diff rather than read them off the page; `init` lays the baseline as a real git commit so `review` has a base to diff against. The honest boundary on this benchmark: a no-loop baseline is ~0% by construction (no review, no catch), so the comparison is "0% vs X%" — proof that review catches X% that would otherwise ship, not a natural-catch-rate baseline; an agent-implements-the-task variant is a possible later iteration. False-positive rate is out of scope until decoy bugs exist, and a single run is not statistically definitive — the harness scores whatever runs happen and the user can repeat.
 
-`benchmark context` should run without an AI agent and produce deterministic token-estimate and relevance numbers from a fixture repo. This is the strongest package-native proof that Codument can save tokens by routing agents to a smaller, relevant working set.
+## Invariants & boundaries
 
-`benchmark init` should copy a fixture app into a target directory and print the task prompt for the user to give to their agent. `benchmark score` should evaluate the resulting directory deterministically after the agent finishes.
+- `benchmark context` is deterministic and runs with no network and no model: the same package version and fixture always yield the same token and relevance numbers. *(tests: `benchmark.test.ts` "runs the deterministic context benchmark", "scores the context fixture deterministically", "estimates tokens with a stable local heuristic")*
+- The context benchmark works from packed package contents, not only the source repo, and emits stable schema-versioned JSON. *(tests: `benchmark.test.ts` "runs the context benchmark from a packed package", "declares benchmark fixtures as packaged files", "prints the context benchmark as stable JSON")*
+- `benchmark score` exits success only when every required check passes, and tampering with locked benchmark metadata fails the score. *(tests: `benchmark.test.ts` "scores a completed quality benchmark as passing", "scores an incomplete initialized quality benchmark as failed", "fails quality scoring when locked benchmark metadata changes")*
+- The quality score is an evidence bundle, not a single opaque number; the benchmark never calls a model or uses a judge. *(boundary — see ADR 008; enforced by the deterministic-scoring tests above)*
+- The catch-rate scorer is deterministic given the final file state (no clock, network, or model; detectors run in an isolated env and a non-completing detector errors rather than counting as a miss): the raw buggy diff scores 0%, a fully fixed solution scores 100%, and a partial fix scores the exact fraction. *(tests: `benchmark-seeded.test.ts` "scores the raw buggy diff as 0% caught", "scores a fully fixed solution as 100% caught", "scores a partial fix as the correct fraction", "is deterministic — scoring twice yields the same result", "ignores ambient NODE_OPTIONS when running detectors"; `classifyDetectorRun` unit cases)*
+- Neither the bug manifest, the detectors, nor any naming of which bugs are planted is copied into an initialized scenario, so the agent has to find the bugs by reviewing the diff, not by reading an answer key. *(tests: `benchmark-seeded.test.ts` "never copies the answer key into the scenario", "never reveals which bugs are planted inside the scenario")*
+- `init --seeded` lays the feature work as an uncommitted diff over a committed baseline; tampering with the locked scenario identity fails the score and records no comparable result. *(tests: `benchmark-seeded.test.ts` "lays a seeded scenario as an uncommitted feature diff", "fails the score when the locked scenario identity is tampered")*
+- A loop run compares only against a baseline directory that was already scored; an unscored baseline is a clear error, not a silent zero. *(tests: `benchmark-seeded.test.ts` "compares a loop run against a no-loop baseline", "errors clearly when a baseline directory was never scored")*
 
-## Non-goals
+## Decisions
 
-- Do not claim that Codument always reduces raw token usage. Tiny tasks may spend more tokens on workflow than they save.
-- Do not require network access, model APIs, or hosted telemetry.
-- Do not make Codument call an AI model directly for benchmarking.
-- Do not use a human or agent judge as the primary benchmark score.
-- Do not add persistent usage tracking to normal Codument commands as part of this feature.
-- Do not make the quality benchmark depend on timing; wall-clock speed varies too much across agents, machines, and user review habits.
+- The benchmark proof model: a deterministic, package-native `benchmark` command family that never uses a judge: [008-benchmark-proof-deterministic-not-judge](../architecture/decisions/008-benchmark-proof-deterministic-not-judge.md).
 
-## Benchmark Model
+## Key files
 
-### Context Benchmark
-
-The context benchmark should ship a fixed fixture project with:
-
-- source files that include relevant, adjacent, and irrelevant areas
-- feature docs, concept docs, and ADR-like decisions
-- a `docs/.registry.json` mapping touched source areas to docs
-- one or more benchmark tasks with known required docs and source files
-
-For each task, the scorer compares:
-
-- naive context: all candidate source and docs files that a broad scan might include
-- Codument context: registry-guided docs and source files for the task's declared feature area
-
-The score should report estimated token counts using a deterministic local heuristic. The default estimate can be character-count based, with one token approximated as four characters. The exact heuristic matters less than consistency because the benchmark compares two local strategies over the same fixture.
-
-The report should include:
-
-- estimated naive tokens
-- estimated Codument tokens
-- percentage reduction
-- required docs found
-- required source files found
-- irrelevant files included
-- fixture name and task name
-
-### Quality Benchmark
-
-The quality benchmark should ship a fixture app with a deliberately constrained task. The task should be realistic enough to exercise docs, tests, and architecture boundaries, but small enough for README reproduction.
-
-The benchmark should:
-
-1. copy the fixture to a target directory
-2. initialize the fixture with Codument docs and skills
-3. print a task prompt that can be run with Codex, Claude, or another agent
-4. score the final directory after the agent edits it
-
-The scorer should use deterministic checks such as:
-
-- expected tests pass
-- typecheck passes, if the fixture has TypeScript
-- required behavior exists through black-box tests
-- docs registry still maps touched source files
-- required docs were updated
-- forbidden shortcuts are absent
-- expected source boundaries were respected
-- generated output does not modify locked fixture files
-
-The score should be a transparent evidence bundle plus a numeric summary. The numeric summary is useful for README screenshots, but the evidence bundle is the real proof.
-
-## Delivery Plan
-
-Status: approved, Step 5 implemented and awaiting review.
-
-- [x] Step 1: Add the benchmark command shell and fixture packaging strategy, including package `files` updates so fixtures ship in npm tarballs.
-- [x] Step 2: Implement `codument benchmark context` with a deterministic fixture, context strategies, token estimator, and tests for stable scoring.
-- [x] Step 2.5: Add context-benchmark proof hardening for packed-package execution and machine-readable JSON output.
-- [x] Step 3: Implement `codument benchmark init` to copy the quality fixture into a target directory and print the agent task prompt.
-- [x] Step 4: Implement `codument benchmark score` with deterministic quality checks, a transparent evidence bundle, and tests for pass/fail scenarios.
-- [x] Step 5: Update README and feature docs with honest benchmark claims, sample output, and guidance for comparing baseline vs Codument runs.
-
-## What was built in Step 1
-
-- Added a `benchmark` command family with planned `context`, `init <dir>`, and `score <dir>` subcommands.
-- Added `fixtures/benchmarks` with a manifest and reserved fixture homes for context routing and quality scoring.
-- Added `fixtures` to package `files` so benchmark fixtures ship in npm tarballs.
-- Added CLI tests for the benchmark command shell and fixture packaging declaration.
-
-## What was built in Step 2
-
-- Added a deterministic `context-routing` fixture with source files, docs, registry metadata, and a task manifest.
-- Implemented a local token estimator based on character count.
-- Implemented naive context selection from all fixture source/docs files.
-- Implemented Codument context selection from the fixture registry, including declared feature dependencies.
-- Made `codument benchmark context` print token estimates, reduction percentage, required-doc coverage, required-source coverage, and irrelevant-file inclusion.
-- Added tests for the CLI output, token estimator, selected context files, and stable scoring properties.
-- Hardened the benchmark against fake positives by validating fixture file references, stale registry entries, missing transitive dependencies, irrelevant-file over-inclusion, cyclic dependencies, and larger irrelevant context.
-
-## What was built in Step 2.5
-
-- Added `codument benchmark context --json` so README examples and future dashboards can consume a schema-versioned machine-readable report that names the file-context token heuristic.
-- Added a packed-package smoke test that runs `codument benchmark context` from an extracted `npm pack` tarball, proving the command works from package contents and not only from the source repo.
-
-## What was built in Step 3
-
-- Added a dependency-free `quality-app` fixture project with source files, tests, docs, a registry, and a locked benchmark metadata file.
-- Implemented `codument benchmark init <dir>` so it copies the fixture into an empty target directory, installs selected Codument agent profile assets, writes benchmark metadata, and writes `BENCHMARK_TASK.md`.
-- Made the init command print the same task prompt it writes to disk, so users can hand the task to Codex, Claude, or another coding agent.
-- Added tests proving the initialized fixture is self-contained, its existing tests pass, and non-empty target directories are not overwritten.
-
-## What was built in Step 4
-
-- Implemented `codument benchmark score <dir>` for the quality fixture.
-- Added a transparent evidence bundle with deterministic checks for benchmark metadata, locked files, package tests, black-box skip-day behavior, updated tests, docs registry coverage, docs updates, source boundaries, and benchmark-specific shortcuts.
-- Made the score command exit successfully only when every required check passes.
-- Added tests for incomplete fixture failure, completed fixture success, and locked benchmark metadata tampering.
-
-## What was built in Step 5
-
-- Added README benchmark usage for `benchmark context`, `benchmark init`, and `benchmark score`.
-- Added the current context benchmark sample output and named the token heuristic.
-- Documented that the benchmark proves fixture-local context routing and deterministic final-state scoring, not universal token savings or deterministic agent behavior.
-- Added guidance for comparing a direct baseline run against a Codument-guided run with the same quality fixture and scorer.
-
-## Acceptance Criteria
-
-- The package exposes a benchmark command family from the main `codument` CLI.
-- `codument benchmark context` runs without network access or an AI agent.
-- The context benchmark produces stable output for the same package version and fixture.
-- The context benchmark reports both token-estimate reduction and relevance coverage.
-- The context benchmark can emit a stable JSON report.
-- The context benchmark works from packed package contents, not only from the source repo.
-- `codument benchmark init <dir>` creates a self-contained fixture repo in the requested directory.
-- The quality fixture includes enough tests and docs to evaluate an agent's final output deterministically.
-- `codument benchmark score <dir>` can score the fixture after an agent modifies it.
-- The quality score reports evidence, not only a single opaque number.
-- README language distinguishes deterministic scoring from nondeterministic agent generation.
-- Tests cover the command parser, fixture copying, token estimator, context scoring, and quality scoring.
-
-## Verification Strategy
-
-- Unit test the token estimator against fixed strings so the heuristic remains stable.
-- Unit test context scoring with a fixture manifest that declares required and irrelevant files.
-- Smoke test the context benchmark from an extracted packed tarball.
-- Unit test fixture copying into a temporary directory.
-- Unit test quality scoring against known passing and failing fixture states.
-- Add CLI-level tests for `benchmark context`, `benchmark init`, and `benchmark score`.
-- Run `npm run typecheck`, `npm test`, `npm run build`, and `npm pack --dry-run` so fixture files are proven to ship.
-
-## Open Questions
-
-- Should the command be named `benchmark` or `proof`? `benchmark` is more precise for deterministic scoring, while `proof` is stronger product language.
-- Should the context benchmark support scoring the user's current repo later, or stay fixture-only for the first version?
-- Should quality fixtures include both a baseline task and a Codument task, or should Codument only provide the scorer and let users run each mode manually?
-- Should the score file be written to `.codument/benchmark-results.json`, printed only, or both?
-- Planned extension: add a review-loop catch-rate benchmark — seed fixtures with known injected bugs and measure whether the `review-work` step catches them (catch rate + false-positive rate), comparing loop vs no-loop. This is the ground-truth proof behind the per-repo review-effectiveness scorecard. See `docs/concepts/review-effectiveness-metric.md`.
+- `src/commands/benchmark.ts` — the `benchmark` command family wiring the `context`, `init <dir>`, and `score <dir>` subcommands.
+- `src/lib/benchmark-context.ts` — the deterministic context-routing scorer: naive vs registry-guided selection, the token estimator, and relevance coverage.
+- `src/lib/benchmark-quality.ts` — the quality-fixture lifecycle: `init` copies the fixture and writes the task; `score` runs the deterministic final-state checks and the evidence bundle. Also owns the shared scaffolding helpers (target guard, agent-asset install, meta) the seeded benchmark reuses.
+- `src/lib/benchmark-seeded.ts` — the catch-rate lifecycle: `init --seeded` lays the buggy diff over a committed baseline; `score` runs the hidden per-bug detectors, reports the catch rate and per-bug breakdown, and compares loop vs no-loop runs.
+- `src/lib/detector-result.ts` — the dependency-free rule that turns a detector's process result into caught / survived, and refuses to score a run that did not complete.

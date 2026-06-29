@@ -143,17 +143,21 @@
       "primary_sources": [
         "src/commands/benchmark.ts",
         "src/lib/benchmark-context.ts",
-        "src/lib/benchmark-quality.ts"
+        "src/lib/benchmark-quality.ts",
+        "src/lib/benchmark-seeded.ts",
+        "src/lib/detector-result.ts"
       ],
       "related_sources": [],
-      "docs": [],
+      "docs": [
+        "docs/architecture/decisions/008-benchmark-proof-deterministic-not-judge.md"
+      ],
       "depends_on": [
         "cli",
         "commands",
         "lib"
       ],
       "risk": [],
-      "status": "in-progress",
+      "status": "current",
       "owned_symbols": {
         "src/commands/benchmark.ts": [
           "<module>",
@@ -217,7 +221,7 @@
         "change-control-gate"
       ],
       "risk": [],
-      "status": "draft"
+      "status": "current"
     },
     "complete-cost-capture": {
       "doc": "docs/features/complete-cost-capture.md",
