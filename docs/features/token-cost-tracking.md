@@ -1,73 +1,78 @@
 ---
-title: Token Cost Tracking
-status: active
+title: Token cost tracking
+status: current
 type: feature
 owner: ""
-sources:
+primary_sources:
+  - src/commands/cost.ts
   - src/commands/emit.ts
   - src/commands/feed.ts
   - src/lib/claude-feed.ts
   - src/lib/emit-producer.ts
   - src/lib/token-cost.ts
   - src/lib/token-report.ts
-related:
+related_sources:
   - src/commands/watch.ts
+docs:
+  - docs/architecture/decisions/009-token-counts-are-truth-cost-derived-at-render.md
 depends_on:
   - cli
   - lib
   - change-control-gate
-last_reviewed: 2026-06-19
+risk: []
+last_reviewed: 2026-06-29
 ---
 
-## Summary
+# Token cost tracking
 
-Tracks the agent's token spend and attributes an estimated dollar cost per feature, step, and model — surfaced live in `codument watch` (a glanceable top-3 of where it went) and in full via `codument cost` (the complete per-feature/model/step ledger).
+## In plain terms
 
-codument never calls an LLM, so it cannot meter tokens itself. Usage counts arrive one of two ways: an agent reports them explicitly via `codument emit tokens`, or `codument feed` auto-tails the agent's own session transcript (Claude Code today) and normalizes per-turn usage into the log for you. Either way a `type: "tokens"` event lands in `.codument/events.jsonl`. Cost is **derived at read time** from a rate table and is never persisted — so the figure is always an estimate, never a bill, and old logs never carry a stale dollar amount when rates change.
+This is the answer to "how much is the agent spending, and on what." It attributes token usage to a feature, step, and model, and surfaces it two ways: a glanceable top-of-spend headline in `codument watch`, and the full ledger in `codument cost`. The number is always labelled an *estimate*, never a bill.
 
-Rates are **user-configurable with built-in defaults**: codument ships accurate Claude rates and merges an optional project `.codument/rates.json` over them (`loadRates`), so any other model (Codex/GPT, Gemini, a fine-tune) can be priced without a codument release. This keeps the feature agent-neutral, matching codument's neutrality everywhere else.
+The load-bearing design choice: codument never calls an LLM, so it can never meter tokens itself. It records the **raw counts the agent reports**, and the dollar figure is **derived at render time** from a rate table. Cost is never persisted. That has two payoffs that the whole feature is built around: re-pricing when rates change is free (just re-render), and no log can ever carry a stale dollar amount, because no log carries a dollar amount at all.
 
-## How it works
+## Design approach
 
-1. **Producers** — two ways usage enters the log:
-   - `codument emit tokens --model opus-4.8 --input N --output N --cache-read N --cache-create N [--feature F] [--step S]` records one explicit event. `emitTokens()` writes all four token buckets unconditionally (even when 0) and omits `feature`/`step` entirely when absent. Counts only — no cost field is stored.
-   - `codument feed` (`claude-feed.ts`) tails **every** Claude Code session transcript whose recorded `cwd` matches the repo — not just the newest — under `~/.claude/projects/<slug>/<session>.jsonl`, reads each assistant turn's exact per-turn usage, attributes it to a feature via the registry's file→feature map, and appends the same `type: "tokens"` events. Following all matching sessions (via `resolveSessionLogs`, each pumped from its own byte offset) is what keeps concurrent windows from under-counting and stops the live total jumping between them. Zero extra token cost (it reads telemetry that already exists), idempotent (safe alongside `watch`), and best-effort/defensive against the internal transcript format changing. `watch` auto-runs it unless `--no-feed`.
-   - `codument feed --backfill` (`backfillFeed`) ingests every matching transcript from offset 0, appending only turns not already captured (idempotent by turn `uuid`) — the retroactive complement to live tailing: a session that was never watched is picked up after the fact, since the agent keeps its transcripts whether or not `watch` ran. Additive and non-destructive (existing feed events, manual `emit`s, and `review` notes are untouched); it advances each session's cursor to end-of-file so the live pump won't re-emit what was backfilled.
-   - `codument feed --reset` (`resetFeed`) rebuilds the feed-sourced events from the transcript(s) under the *current* normalization — the cure for stale events left by an older `normalizeModelId` (e.g. a model id that used to read `unpriced`). It rebuilds from **every matching transcript** (all sessions whose `cwd` matches, not just the newest or the cursor-touched — so concurrent history present at reset time is captured), **preserves manual `emit`s and `review` notes**, and keeps any feed event whose transcript is gone verbatim rather than dropping it (so a rebuild can never silently lose cost data it can't re-derive). The new log is assembled in memory and written **once, atomically** — no backup, but also no destroy-before-rebuild window. Feed events are identified by an unconditional `source: "feed"` marker (legacy `session`/`uuid` stamps are still honored for older logs).
-2. **Pricing** — `costOf(usage, model, rates)` prices the four buckets independently from the resolved rate table (USD per million tokens; defaults to built-in `MODEL_RATES`). `loadRates(root)` resolves the table by merging `.codument/rates.json` over the defaults via the pure `mergeRates`; per-bucket override for known models, absent buckets default to `$0` for new ones, malformed/negative values and prototype-polluting keys are rejected. The buckets have very different prices: cache reads are ~0.1× input (10× cheaper) and dominate token counts in agentic coding, while cache creation is ~1.25× input and output is ~5× input. Model lookup is exact-key only; an unknown id yields an all-zero breakdown flagged `unpriced: true` rather than a plausible-but-wrong bill.
-3. **Reducer** — `summarizeTokens(events)` folds the (untrusted) event log into totals plus per-feature / per-step / per-model rollups, defensively coercing every field (a numeric string like `"5000"` coerces to `0`, never `5000`). Token counts include every attributable event; cost prices only the known-model portion.
-4. **Live view** — `renderFrame` in `watch.ts` leads with a plain-words **verdict** (`clean` / `drifting` / `at-risk` / `off-plan`, see `verdict.ts`) over a cost headline: the **all-sessions** estimated total with its provenance (`N sessions · Hh`), a `+$X this session` live delta (cost since the watch run started), and a per-feature "where it went" breakdown — plus an "unpriced models" note when an unknown model appears. The total sums **all** sessions in the log (the feed now captures them all), not just the active one. The block sits below the not-a-git-repo early return and is hidden until a token event exists.
-5. **Full ledger** — `codument cost` (`cost.ts`) prints the complete breakdown the `watch` top-3 can't: the all-sessions estimated total, then **every** feature, model, and (when attributed) step sorted by spend, each with its share of the total. It is a pure read of the captured log — it does **not** tail or mutate it (refresh with `feed`/`watch` first) and needs no git repo, just a `.codument/events.jsonl`. `--json` emits the raw `TokenSummary`; unknown models are listed as "unpriced" rather than priced wrong. Share percents use **largest-remainder rounding** (`sharePercents`) so the column sums to exactly 100 rather than drifting from per-row rounding, and a real-but-tiny row reads `<1%` rather than a misleading `0%`.
+The pipeline is producers, a pricing layer, a reducer, and two views, all riding the append-only event log.
+
+**Counts in, two producers.** Usage enters as `type: "tokens"` events: either an agent reports them explicitly (the vendor-neutral seam any agent can target), or the feed auto-tails the agent's own session transcript and normalizes its per-turn usage into the same events. The explicit seam is the contract other agents implement; the feed is a Claude-specific convenience built on top of it, not a dependency of it. Producers store counts only, never cost.
+
+**The feed is best-effort by design.** It reads Claude Code's internal transcript format, which codument does not own, so every field is read defensively and a shape change degrades to fewer events, never a crash. It follows *every* transcript whose recorded working directory matches the repo, not just the newest, because concurrent agent windows each write their own session file and following only one under-counts and makes the live total jump between windows. Tailing is cheap (it reads telemetry that already exists) and idempotent (per-session byte cursors mean a restart never double-counts). Three maintenance modes round it out: live tail, a retroactive backfill that ingests never-watched sessions keyed by turn so re-running adds nothing, and a reset that rebuilds feed-sourced events under the current normalization to re-price events left stale by an older model-id mapping.
+
+**Pricing is a pure lookup, agent-neutral.** Cost is derived per bucket from a rate table of USD-per-million-token rates. Anthropic usage splits into four buckets (fresh input, output, cache read, cache create) with very different prices, and the trap the design exists to avoid is summing them at one rate: cache reads are roughly ten times cheaper than fresh input yet dominate the token count in agentic coding, so a single-rate sum massively over-bills. Built-in rates cover Claude and stay accurate; any other model is priced from a user-supplied rate file merged over the defaults, so a new vendor or fine-tune is priced without a codument release. Model lookup is exact-match only: a typo or an unknown id surfaces visibly as "unpriced" rather than as a plausible-but-wrong bill.
+
+**The reducer is defensive and the log is untrusted.** It folds the event stream into totals plus per-feature, per-step, and per-model rollups, coercing every field (a numeric string is not a number) and never throwing. Token counts include every attributable event; cost prices only the known-model portion. Two cost signals are kept deliberately distinct: an all-zero priced breakdown means "$0, nothing happened," while a null cost means "events exist but none could be priced." Counts stay exact integers; only the derived cost carries floating-point slack.
+
+**Two views, same captured log.** `watch` leads with a verdict and a cost headline (the all-sessions total plus a since-this-run delta and a where-it-went breakdown) and is a live consumer that auto-runs the feed. `cost` prints the complete ledger that the watch top-N omits, sorted by spend, as a pure read that never tails or mutates the log. Its share-percent column uses largest-remainder rounding so it sums to exactly 100 rather than drifting, and a real-but-tiny row reads under one percent rather than a misleading zero.
+
+## Invariants & boundaries
+
+- Producers store raw counts only; no derived cost, total, or dollar field is ever written to an event. *(test: `emit-producer.test.ts` "stores token counts only — never a derived cost")*
+- All four buckets are written, including zeros, and untrusted counts (NaN, Infinity, negative) are clamped so every emitted event passes the strict guard. *(tests: `emit-producer.test.ts` "preserves zero buckets (no falsy drop)" + "normalizes non-finite or negative usage so the emitted event is always guard-valid")*
+- An unknown model id is flagged unpriced with all-zero cost and never throws; lookup is exact-match with no case-fold, trim, or fuzzy match, so a typo can never be silently mispriced. *(tests: `token-cost.test.ts` "marks an unknown model unpriced with all-zero cost and never throws" + "requires an exact key — no case-fold, no trim, no fuzzy match")*
+- Each bucket is priced at its own rate, so a cache-heavy mix is not over-billed by a single-rate sum. *(tests: `token-cost.test.ts` "prices each bucket at its own rate (1M of each, opus-4.8)" + "makes cacheRead 10x cheaper than input (the naive-sum over-bill trap)")*
+- User rates merge over the built-in defaults per bucket, rejecting negatives, non-numbers, and prototype-polluting keys, and a malformed or missing rate file falls back to the defaults without throwing. *(tests: `token-cost.test.ts` mergeRates "accepts an explicit 0 bucket (free), but rejects negatives and non-numbers" + "ignores prototype-polluting keys"; loadRates "falls back to defaults on invalid JSON without throwing")*
+- The reducer treats the log as untrusted: every count field is coerced (a numeric string coerces to 0, not its value) and the fold never throws. *(test: `token-report.test.ts` "coerces wrong-typed buckets to 0 (numeric string '5000' -> 0, not 5000)")*
+- An empty log yields all-zero *priced* totals, while a group with events but no priced model yields a *null* cost: the two are kept distinct. *(tests: `token-report.test.ts` "returns all-zero priced totals for an empty log (NOT null cost)" + "counts unknown-model tokens but leaves their cost null and lists them unpriced")*
+- Token counts stay exact integers; the reducer is order-independent and associative across partitions. *(tests: `token-report.test.ts` "keeps large token counts exact integers" + "is order-independent" + "is deterministic and associative across partitions")*
+- The full ledger is a pure read: an empty project reports nothing-captured and the command never tails or mutates the log. *(test: `cost.test.ts` "reports nothing-captured for an empty project")*
+- Share percents sum to exactly 100, and a real-but-tiny row renders as under one percent rather than a false zero. *(tests: `cost.test.ts` sharePercents "rounds to whole percents that sum to exactly 100"; renderCost "shows <1% for a real-but-tiny feature, never a false 0%")*
+- The feed tailer is idempotent across restarts and follows every concurrent session, not just the newest, so concurrent windows are fully counted. *(tests: `claude-feed.test.ts` pumpFeed "emits once, resumes without double-emitting, and picks up appended lines" + "pumps every concurrent session, not just the newest")*
+- Backfill ingests a never-watched session and is idempotent by turn id, adding nothing on a re-run; reset rebuilds feed-sourced events at the current normalization while preserving manual emits and review notes, and never drops feed events whose transcript is gone. *(tests: `claude-feed.test.ts` backfillFeed "ingests a never-watched session and is idempotent by uuid"; resetFeed "preserves manual emit and review events while rebuilding feed events" + "preserves feed events whose transcript is gone — never silently loses cost data")*
+- A zero-usage transcript turn (e.g. a synthetic CLI notice) produces no token event, so it cannot inflate the event count or pollute the unpriced-model signal. *(test: `claude-feed.test.ts` recordToEvents "skips the token event for a zero-usage turn (e.g. a <synthetic> CLI notice)")*
+- Claude transcript model ids are canonicalized to rate-table keys, including a stripped context-variant suffix, while an unrecognized id is left untouched so the exact-match typo-safety is preserved. *(tests: `claude-feed.test.ts` normalizeModelId "canonicalizes Claude transcript ids to rate-table keys (and prices them)" + "strips a context-variant suffix like [1m] so the 1M model still prices" + "leaves unrecognized ids untouched (exact-match/typo-safety preserved)")*
+
+## Decisions
+
+- Token counts are the source of truth and cost is derived at render time, never persisted (Codument is not a metering tool): [009-token-counts-are-truth-cost-derived-at-render](../architecture/decisions/009-token-counts-are-truth-cost-derived-at-render.md).
 
 ## Key files
 
-- `src/lib/token-cost.ts` — cost math + rates: `TokenUsage`, `MODEL_RATES`, `RateTable`, `costOf()`, the pure `mergeRates()`, and `loadRates()` (the only I/O — reads `.codument/rates.json`).
-- `src/lib/token-report.ts` — `summarizeTokens()` reducer + the canonical `isTokenEvent()` guard and `TokenEventData`/`TokenRollup`/`TokenSummary` types.
-- `src/lib/emit-producer.ts` — `emitTokens()` producer; re-exports `isTokenEvent` (single source of truth).
-- `src/commands/emit.ts` — `codument emit tokens` CLI action (count parsing + attribution flags).
-- `src/lib/claude-feed.ts` — Claude Code session-transcript adapter: discovers **all** `cwd`-matching session logs (`resolveSessionLogs`, with a per-file cwd cache; `resolveSessionLog` remains for the single-newest case), normalizes per-turn usage + tool activity into events, idempotent multi-session tailing (`pumpFeed`), the additive `backfillFeed`, and the `--reset` rebuild (`resetFeed`) — plus `featureForFile`, `normalizeModelId`.
-- `src/commands/feed.ts` — `codument feed` CLI: one-shot (`--once`), continuous tail, `--backfill` (retroactive ingest of unwatched sessions), or `--reset` rebuild into `.codument/events.jsonl`.
-- `src/commands/cost.ts` — `codument cost` CLI: the full per-feature/model/step ledger from `summarizeTokens` (cost derived at read time via `loadRates`); a pure read (no tail/mutation, no git needed). `--json` emits the raw `TokenSummary`; `--dir`/`--root` target another repo.
-- `src/commands/watch.ts` — renders the estimated token-cost block; auto-runs the feed unless `--no-feed` (related).
-- `src/lib/events.ts` — the append-only `.codument/events.jsonl` log this rides on; `readAllEvents`/`rewriteEvents`/`atomicWriteFileSync` back the selective, crash-safe `--reset` rebuild (related).
-
-## API / Interface
-
-- `costOf(usage: TokenUsage, model: string, rates?: RateTable): CostBreakdown` — `{input, output, cacheRead, cacheCreate, total, unpriced}`; `rates` defaults to `MODEL_RATES`.
-- `mergeRates(base: RateTable, overrides: unknown): RateTable` — pure, defensive merge of user overrides onto a base table.
-- `loadRates(root: string): RateTable` — built-in defaults merged with `.codument/rates.json`; tolerant of a missing/malformed file.
-- `summarizeTokens(events: CodumentEvent[], rates?: RateTable): TokenSummary` — `{totals, byFeature, byStep, byModel, unpriced}`; each rollup is `{usage, cost, eventCount}`.
-- `isTokenEvent(event): event is …` — strict guard (type `tokens`, non-empty string model, four finite buckets).
-- `emitTokens(root, usage, {model, feature?, step?, ts?})` — append one token event (clamps usage so the event is always guard-valid).
-
-## Gotchas
-
-- **`cost === null` vs all-zero.** A group with events but no priced (known-model) tokens has `cost: null`. An empty/idle total has an all-zero priced `CostBreakdown`, not null — "$0 because nothing happened" is distinct from "unknown because the model isn't priced".
-- **Counts exact, cost is floating-point.** Token counts stay exact integers (no division in the fold); only derived cost carries IEEE-754 slack, so cost comparisons use a tolerance and display uses `toFixed(2)`.
-- **Estimate, not a bill.** Built-in `MODEL_RATES` are a snapshot (current as of 2026-06); users keep them current or extend them via `.codument/rates.json`. Re-pricing is retroactive — it answers "what would this usage cost at *today's* rates," not what it cost the day it ran (no per-date rate history). The watch block is explicitly labelled "estimated" and never claims actual/billed spend.
-- **Attribution is an allocation.** Per-feature/step numbers depend on what the producer tags; a single agent turn can touch several features, and grilling/planning usage may be unattributed (`"(none)"`).
-- **Not the context benchmark.** Distinct from `benchmark-context.ts`, whose `chars/4` figure estimates *context-window* savings, not real metered spend.
-- **Zero-usage turns are skipped.** Claude Code writes `<synthetic>` assistant notices (model-selection errors, "No response requested.") with an all-zero usage block. `recordToEvents` drops any turn whose four buckets sum to zero, so these never inflate the event count or pollute the "unpriced models" signal with the non-model id `<synthetic>`. (A turn with even one non-zero bucket is real usage and is kept.)
-- **Auto-tail is Claude-specific and best-effort.** `codument feed` reads Claude Code's *internal* transcript format, so it parses defensively — a format change degrades to fewer events, never a crash. The vendor-neutral seam stays `emit` + the events log; other agents report via `codument emit tokens` (or their own adapter). Model ids from the transcript (`claude-opus-4-8`) are normalized to the rate-table keys (`opus-4.8`) by `normalizeModelId`.
-- **Stale events survive a normalization change — `feed --reset` re-prices them.** The tailer's byte-offset cursor means events already written under an *older* `normalizeModelId` (so they read `unpriced`) aren't re-touched by ordinary pumps. `codument feed --reset` rebuilds them at the current normalization. It's selective by design: feed marks every event with `source: "feed"`, so reset rebuilds exactly those and leaves manual `emit`s and `review` notes (which carry no marker) intact. Events whose transcript no longer exists are kept verbatim rather than dropped — reset never loses cost data it can't re-derive (`preserved` in the result; the CLI prints a yellow warning). Re-pumped events are appended after the kept/preserved ones, so the log isn't globally re-sorted by timestamp — totals are exact, but the activity-tape ordering is approximate after a reset.
-- **`feed --reset` re-derives at the *current* registry across all sessions.** Two consequences: (1) feature attribution is recomputed from today's `docs/.registry.json`, so a since-renamed/removed file may attribute differently than when first fed — attribution is an allocation, not a ledger; (2) reset rebuilds from **all** `cwd`-matching transcripts (not just the active or cursor-touched), so the total can legitimately *rise* to reflect the complete multi-session picture. A session that was never tailed live IS now picked up retroactively — by `--reset` (re-derive everything) or `--backfill` (add only the missing turns). Capture is complete, no longer newest-only.
+- `src/lib/token-cost.ts` — the pricing layer: derives an estimated cost from raw counts at render time, and resolves the agent-neutral rate table by merging user overrides over the built-in Claude defaults.
+- `src/lib/token-report.ts` — the reducer: folds an untrusted event stream into attributed totals and rollups, and owns the canonical token-event guard the producers share.
+- `src/lib/emit-producer.ts` — the vendor-neutral producer: appends a counts-only token event any agent can target.
+- `src/lib/claude-feed.ts` — the Claude Code adapter: discovers and tails the agent's own session transcripts and normalizes per-turn usage into the event log, with backfill and reset maintenance modes.
+- `src/commands/emit.ts` — the `emit` command surface for reporting token usage (and resolved review findings) from the command line.
+- `src/commands/feed.ts` — the `feed` command surface: live tail, one-shot, backfill, and reset.
+- `src/commands/cost.ts` — the full-ledger command: a pure render of the captured log into a per-feature, per-model, and per-step breakdown.
+- `src/commands/watch.ts` — the live consumer that renders the cost headline and auto-runs the feed (related; owned by [[cli]] / watch).

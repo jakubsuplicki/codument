@@ -96,7 +96,9 @@
       "related_sources": [
         "src/commands/watch.ts"
       ],
-      "docs": [],
+      "docs": [
+        "docs/architecture/decisions/009-token-counts-are-truth-cost-derived-at-render.md"
+      ],
       "depends_on": [
         "cli",
         "lib",
@@ -175,7 +177,9 @@
         "src/lib/badge.ts",
         "src/lib/benchmark-context.ts",
         "src/lib/benchmark-quality.ts",
+        "src/lib/benchmark-seeded.ts",
         "src/lib/change-state.ts",
+        "src/lib/detector-result.ts",
         "src/lib/claude-feed.ts",
         "src/lib/claude-settings.ts",
         "src/lib/codemod.ts",

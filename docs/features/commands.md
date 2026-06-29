@@ -1,101 +1,64 @@
 ---
 title: Commands
-status: active
+status: current
 type: feature
 owner: ""
-sources:
+primary_sources:
   - src/commands/adopt.ts
   - src/commands/benchmark.ts
   - src/commands/init.ts
   - src/commands/scan.ts
   - src/commands/update.ts
+related_sources: []
+docs: []
 depends_on:
   - lib
-last_reviewed: 2026-06-18
+risk: []
+last_reviewed: 2026-06-29
 ---
 
-## Summary
+# Commands
 
-The CLI commands implement codument's core workflow: `init` bootstraps fresh projects, `adopt` brings existing Codument projects into the current registry/profile model, `scan` discovers existing source files and creates documentation scaffolds, `update` keeps managed profile files in sync after package upgrades, and `benchmark` hosts the package-native proof benchmark command family.
+## In plain terms
 
-## How it works
+These are the lifecycle commands that stand a project up on codument and keep it there. `init` bootstraps a fresh repo (docs tree, registry, agent profile assets, instruction files), `scan` discovers existing source and writes doc scaffolds so an agent can fill them in, `update` re-syncs the managed files after a package upgrade, `adopt` brings an already-onboarded project forward without re-bootstrapping it, and `benchmark` hosts the package-native proof commands. Reach for this feature when you want to understand how a project gets onboarded, re-synced, or proven, as opposed to the steady-state delivery loop that runs once it is set up.
 
-### init
+## Design approach
 
-Sets up everything a project needs for the docs-backed delivery loop:
+Each command owns a phase of the project lifecycle, and the shape of every command follows from one stance: the user's repo is the source of truth, never the stored metadata. `init` and `scan` are the only commands that create from nothing; everything else reconciles an existing tree against the current package, and reconciliation always re-detects the live project rather than trusting a stale `.codument-meta.json` snapshot, because source globs and frameworks drift between runs.
 
-1. **Detects project** — calls `detectProject()` to identify language (TS/JS), framework, and source directory
-2. **Resolves agent profiles** — uses explicit `--agents`, existing agent files, or defaults to the Claude profile
-3. **Creates docs structure** — `docs/`, `docs/features/`, `docs/concepts/`, `docs/architecture/decisions/`, `docs/guides/`, plus an empty `.registry.json`
-4. **Copies templates** — `overview.md` and `getting-started.md` from the package's `templates/` directory
-5. **Installs core workflow skills** — copies `grill-with-docs`, `plan-with-docs`, `tdd`, `work-step`, `review-work`, `commit-work`, and `update-docs` into each selected profile's skills directory
-6. **Installs profile-specific support** — Claude gets rules, subagents, settings hooks, and `CLAUDE.md`; Codex/generic gets `AGENTS.md` and `.agents/skills`
-7. **Updates instruction files** — inserts a managed delivery-workflow section between marker comments
-8. **Writes `.codument-meta.json`** — records version, init date, selected agents, and detected project info
+The riskiest operation is overwriting a file a user has edited, so `update` is built around a three-way merge: it compares the upstream version, the on-disk version, and a stored hash from the last sync, and only overwrites when the local copy is unchanged from what codument last wrote. When both sides changed, it preserves the user's work by backing it up before applying upstream, never silently clobbering. Instruction files (`AGENTS.md`, `CLAUDE.md`) are the exception: they are co-owned with the user, so codument edits only its own marked-off section and leaves the surrounding prose alone. The whole sync is also failure-isolated: one unwritable or pointer-file entry is skipped with a reason and the run completes, so a single odd entry never strands a half-applied tree.
 
-The `--force` flag overwrites all existing files; without it, existing files are preserved.
+`adopt` is deliberately thin: it normalizes the registry in place (a stray legacy field is dropped on read, with no migration path), refreshes metadata against the live project, then delegates the managed-file work to `update` so onboarding and upgrade share one merge strategy instead of drifting apart. This is why there is no separate "re-init" command. `scan` derives feature boundaries from directory structure alone, a heuristic it cannot verify, so it marks every entry it creates as needs-review, places all files in primary ownership (it cannot tell primary from related), and writes an explicit ambiguity marker into each scaffold. It never narrates content: a scaffold is a typed skeleton an agent fills in via the update-docs flow, per the [[doc-audience-layers]] standard. `scan` shares its file-exclusion spec with the health analyzer so source discovery and coverage can never disagree about what counts.
 
-### adopt
+`benchmark` is fenced off from the onboarding and delivery commands on purpose: measurement must never tangle with normal work, and it proves only what can be scored deterministically (context routing and final repository state), never an agent's path or a quality judgment. The detail lives in [[proof-benchmarks]].
 
-Brings an existing Codument project up to date without treating it as a fresh install:
+## Invariants & boundaries
 
-1. Detects the current project instead of trusting stale `.codument-meta.json` source globs
-2. Resolves selected profiles from `--agents`, stored metadata, or existing agent files
-3. Reads `docs/.registry.json` and normalizes it in place (a stray legacy field is ignored on read; there is no migration path)
-4. Writes `docs/.registry.backup.json` before replacing a changed registry
-5. Refreshes `.codument-meta.json` with the current package version, detected project, and selected agents
-6. Delegates to `update` so skills, instruction files, Claude hooks, and other managed files are refreshed through the normal merge strategy
+- `init` is non-destructive without `--force`: an existing registry or managed file is preserved, and `--force` is the only way to overwrite. *(tests: `init.test.ts` "does not overwrite existing registry without --force" and "overwrites files with --force")*
+- `init` writes a Claude hook idempotently: re-running never duplicates the codument hook, and an outdated hook matcher is upgraded in place. *(tests: `init.test.ts` "does not duplicate hook on re-init" and "updates an existing Claude hook matcher on init")*
+- `init` edits only codument's own marked-off section of an instruction file; pre-existing user content is preserved. *(test: `init.test.ts` "appends to existing AGENTS.md")*
+- `update` refuses to run without `.codument-meta.json`, exiting nonzero. *(test: `update.test.ts` "fails without .codument-meta.json")*
+- `update` overwrites a managed file only when the local copy is unchanged since the last sync; a user-modified file with unchanged upstream is preserved. *(test: `update.test.ts` "preserves user-modified files when upstream unchanged")*
+- `--dry-run` (on `update` and `adopt`) reports the actions it would take and modifies nothing, including the stored metadata version. *(tests: `update.test.ts` "--dry-run does not modify files"; `adopt.test.ts` "dry run does not rewrite legacy registry")*
+- A single unwritable or non-directory (pointer/symlink) managed entry is skipped with a reason and the rest of the `update` run still applies; the blocking entry is left untouched. *(test: `update.test.ts` "skips a pointer-file skill instead of crashing the whole run (ENOTDIR)")*
+- `adopt` normalizes the registry in place, dropping a stray legacy field rather than migrating it, and backs up the prior registry before replacing a changed one. *(test: `adopt.test.ts` "normalizes the registry (dropping stray legacy keys) and installs selected profiles")*
+- `adopt` re-detects the live project rather than trusting stored metadata: the refreshed metadata reflects the current language and source globs, not the stale snapshot. *(test: `adopt.test.ts` "normalizes the registry (dropping stray legacy keys) and installs selected profiles" — asserts re-detected language/globs)*
+- `scan` requires an existing registry and exits nonzero without one. *(test: `scan.test.ts` "exits with error when registry does not exist")*
+- `scan` marks every entry it creates as needs-review and emits a layered scaffold with an ambiguity marker, never narrated content. *(tests: `scan.test.ts` "sets status to needs-review on new entries" and "creates scaffold docs with correct frontmatter")*
+- `scan` never re-touches an already-documented feature; an existing doc is left byte-for-byte unchanged. *(test: `scan.test.ts` "skips already-documented features")*
+- `scan` classifies known utility directory names as concepts and everything else as features, and shares the analyzer exclusion spec so generated/tool directories and `.d.ts` files are skipped. *(tests: `scan.test.ts` "classifies concept directories correctly", "ignores generated and tool directories", "excludes .d.ts files")*
+- `benchmark` is a self-contained command family separate from the delivery loop; its proofs are deterministic, run with no network or model, and the quality benchmark refuses a non-empty target and fails scoring when locked metadata changes. *(tests: `benchmark.test.ts` "exposes the benchmark command family", "does not initialize into a non-empty target directory", "fails quality scoring when locked benchmark metadata changes")*
 
-Use `adopt --dry-run` before applying it to a project with customized skills or docs.
+## Decisions
 
-### scan
-
-Discovers undocumented source files and creates minimal doc scaffolds:
-
-1. Recursively collects all `.ts/.tsx/.js/.jsx` files, skipping directories from the shared `DEFAULT_EXCLUSION_SPEC` (so source discovery never disagrees with the analyzer) and `.d.ts` files
-2. Groups files by top-level directory under `src/` — each directory becomes a feature or concept
-3. Directories named `lib`, `utils`, `helpers`, `types`, `shared`, or `common` are typed as concepts; everything else as features
-4. For each group not already in the registry, creates a **v2** scaffold doc following the documentation standard (see [doc-audience-layers](../concepts/doc-audience-layers.md)) plus a `codument:ambiguity` marker, and adds a `needs-review` v2 registry entry with every file placed in `primary_sources` (scan cannot infer primary vs related ownership)
-5. Records scan stats in `.codument-meta.json`
-
-Root-level files (directly under `src/`) that aren't `index` are grouped by filename but the `_root` group is skipped — these are expected to be entry points handled elsewhere (like `cli.ts`).
-
-### update
-
-Keeps codument's managed files current after a package upgrade using a hash-based merge strategy:
-
-1. Reads `.codument-meta.json` for stored file hashes from the previous version
-2. Resolves stored profiles, or an explicit `--agents` override
-3. Re-detects the current project so generated rules do not use stale source globs
-4. For each managed file (skill, rule, subagent): compares the upstream version, current on-disk version, and stored hash to decide whether to overwrite, skip, or merge
-5. Updates managed instruction sections such as `AGENTS.md` and `CLAUDE.md` using marker-based replacement
-6. Ensures profile hooks such as the Claude PostToolUse hook exist
-7. When both upstream and local have changed, backs up the local file before overwriting
-
-The `--dry-run` flag previews all actions without modifying anything.
-
-### benchmark
-
-Hosts Codument's package-native proof commands.
-
-Current subcommands:
-
-1. `benchmark context` — runs the deterministic no-agent context-routing benchmark against the package fixture. Use `--json` for stable machine-readable output.
-2. `benchmark init <dir>` — copies the quality benchmark fixture into an empty target directory, installs selected agent profile assets, writes `BENCHMARK_TASK.md`, and prints the task prompt.
-3. `benchmark score <dir>` — scores the final quality fixture after an agent attempts the task. The score report includes deterministic evidence checks for metadata, locked files, tests, required behavior, docs, registry coverage, source boundaries, and shortcut scans.
-
-The context benchmark proves registry-guided routing on a fixed fixture. The quality benchmark scores final repository state; it does not call an AI model or claim deterministic agent behavior.
+- The registry v2 model `adopt` reads and normalizes directly, with no migration layer: [001-registry-v2-model-no-migration](../architecture/decisions/001-registry-v2-model-no-migration.md).
+- `benchmark` proves only what is deterministically scorable and is fenced off from the delivery commands: [008-benchmark-proof-deterministic-not-judge](../architecture/decisions/008-benchmark-proof-deterministic-not-judge.md).
 
 ## Key files
 
-- `src/commands/adopt.ts` — Existing-project adoption: registry normalization, metadata refresh, and managed profile update handoff
-- `src/commands/benchmark.ts` — Context and quality proof benchmark subcommands
-- `src/commands/init.ts` — Project bootstrapping: docs structure, selected agent profiles, workflow skills, instruction files, and profile hooks
-- `src/commands/scan.ts` — Source file discovery, directory-based feature grouping, doc scaffold generation
-- `src/commands/update.ts` — Profile-aware managed file sync with overwrite/skip/merge strategy
-
-## Gotchas
-
-- `scan` skips files at the root of `src/` (the `_root` group). If a project has significant logic in top-level files outside `cli.ts`, those won't get documented automatically.
-- `update` backs up managed skill, rule, and agent files to `.backup` when both sides have changes. Instruction files use marker-based section replacement instead.
-- `init` writes the Claude hook command as a hardcoded path (`node node_modules/codument/dist/hooks/check-docs.js`), so the hook assumes the package is installed locally, not globally.
+- `src/commands/init.ts` — the bootstrap command: creates the docs tree, registry, agent profile assets, and instruction sections from nothing.
+- `src/commands/scan.ts` — the discovery command: derives feature/concept boundaries from source layout and writes needs-review scaffolds for an agent to fill in.
+- `src/commands/update.ts` — the re-sync command: the three-way merge engine that keeps managed files current across upgrades without clobbering user edits.
+- `src/commands/adopt.ts` — the forward-migration command: normalizes an existing registry in place and delegates managed-file work to update.
+- `src/commands/benchmark.ts` — the proof command family's entry point: wires the deterministic context and quality benchmarks behind a fenced-off subcommand tree.
