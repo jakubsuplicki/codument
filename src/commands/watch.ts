@@ -439,7 +439,7 @@ export function renderFrame(
       const d = impact.drift;
       const pct = Math.round(d.frictionRate * 100);
       lines.push(
-        `    ${pc.cyan("soak")}      ${d.flagged} symbol move(s) · ${d.coMoved} reconciled · ${d.acknowledged} acked   ${pc.dim(`(friction ${pct}% · info-only)`)}`,
+        `    ${pc.cyan("soak")}      ${d.flagged} symbol move(s) · ${d.docUpdated} resolved by doc update · ${d.acknowledged} acked   ${pc.dim(`(friction ${pct}% · info-only)`)}`,
       );
     }
     lines.push("");

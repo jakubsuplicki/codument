@@ -73,14 +73,18 @@ export function emitReview(root: string, fix: ReviewFix, meta: EmitMeta = {}): v
 export interface DriftTally {
   /** Moved owned anchors evaluated this snapshot. */
   flagged: number;
-  /** Doc's symbol-scoped lines moved (co-movement telemetry: likely reconciled). */
-  coMoved: number;
-  /** Symbol referenced but its doc lines did not move. */
-  proseUnchanged: number;
-  /** The doc does not mention the symbol at all. */
-  notReferenced: number;
+  /** Resolved by a doc update: the owning doc changed in the diff (verdict-derived,
+   *  the same signal `review` shows as "resolved by doc update"). */
+  docUpdated: number;
   /** Cleared by a recorded acknowledgment (a "refactor, no doc owed" decision). */
   acknowledged: number;
+  /** Co-movement telemetry (info-only, never a resolution signal): the doc's
+   *  symbol-scoped lines moved. Kept for calibrating co-movement itself. */
+  coMoved: number;
+  /** Co-movement telemetry: symbol referenced but its doc lines did not move. */
+  proseUnchanged: number;
+  /** Co-movement telemetry: the doc does not mention the symbol at all. */
+  notReferenced: number;
 }
 
 /** Deterministic snapshot of what the analyzer flagged at a commit boundary. Identities, not counts. */

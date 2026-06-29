@@ -205,6 +205,25 @@ describe("codument review (CLI)", () => {
     assert.match(out, /1 still flagged/);
   });
 
+  it("a correct intent-altitude doc edit resolves the drift — the surface mirrors the verdict, not co-movement (ADR 010)", async () => {
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => { return true; };\n",
+      // The doc is updated in plain English, deliberately WITHOUT naming `login`
+      // (the standard forbids symbol mirrors). The verdict clears because the doc
+      // changed; the surface must agree, not nag via co-movement.
+      "docs/features/auth.md": "# auth\n\n## In plain terms\nSign-in now succeeds for valid input.\n",
+    });
+    const report = buildReview(tmp);
+    assert.ok(
+      !report.state.staleDocs.some((d: { feature: string }) => d.feature === "auth"),
+      "verdict: auth is not stale once its doc was edited",
+    );
+    const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
+    assert.match(out, /1 resolved by doc update/);
+    assert.match(out, /0 still flagged/);
+    assert.doesNotMatch(out, /Symbol drift/);
+  });
+
   it("lists applied acknowledgments with their reason and counts them in the summary", async () => {
     await scaffold({
       "src/auth/login.ts": "export const login = () => { return 3; };\n",

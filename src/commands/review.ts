@@ -131,6 +131,11 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     throw err;
   }
 
+  // A symbol is resolved-by-doc-update iff its feature is NOT stale per the verdict
+  // (ADR 010) — the same verdict-derived rule the human display uses, so the soak
+  // tally and the display agree. Co-movement is never the resolution signal.
+  const staleFeatures = new Set(report.state.staleDocs.map((s) => s.feature));
+
   // Opt-in: snapshot the deterministic catches (stale docs, risk touches,
   // off-plan files) as a `caught` event — the provable line of the impact ledger.
   // Identities, not counts, so the ledger can count distinct things caught. Off
@@ -142,13 +147,17 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       staleDocs: report.state.staleDocs.map((s) => s.doc),
       riskTouches: report.state.riskTouches.map((r) => r.feature),
       offPlan: report.state.outOfPlan,
-      // Per-symbol drift tally — the soak signal (friction = acked vs reconciled).
+      // Per-symbol drift soak tally. Resolution is verdict-derived: a doc update
+      // (the owning doc changed) or an ack. The co-movement fields are info-only
+      // telemetry for calibrating co-movement itself, never a resolution signal.
       drift: {
         flagged: d.length,
+        docUpdated: d.filter((f) => !f.acknowledged && !staleFeatures.has(f.feature))
+          .length,
+        acknowledged: d.filter((f) => f.acknowledged).length,
         coMoved: d.filter((f) => f.comovement === "co-moved").length,
         proseUnchanged: d.filter((f) => f.comovement === "prose-unchanged").length,
         notReferenced: d.filter((f) => f.comovement === "not-referenced").length,
-        acknowledged: d.filter((f) => f.acknowledged).length,
       },
     });
   }
@@ -243,20 +252,24 @@ function printHuman(report: ReviewReport): void {
   );
 
   // Per-symbol drift: owned symbols that moved. The deterministic verdict above is
-  // the gate; this names each symbol and BOTH ways to resolve it inline — update the
-  // doc when a contract changed, or `codument ack` when it did not — so the agent's
-  // two-way call is in front of it and the cheap path (ack) is never the only one
-  // shown. Co-movement is info-only telemetry, never a verdict input.
-  const unreconciled = report.drift.filter(
-    (d) => !d.acknowledged && d.comovement !== "co-moved",
+  // the gate; this names each still-flagged symbol and BOTH ways to resolve it
+  // inline — update the doc when a contract changed, or `codument ack` when it did
+  // not. The surface MIRRORS the verdict (ADR 010): a symbol is still flagged iff
+  // its feature is actually stale (owned source moved, owning doc not edited, not
+  // acked). Co-movement is info-only telemetry (the soak signal in `watch`), never
+  // the resolved/flagged decision here — so a correct intent-altitude doc update
+  // resolves a finding, and a symbol-mirror doc earns no credit.
+  const staleFeatures = new Set(report.state.staleDocs.map((s) => s.feature));
+  const unresolved = report.drift.filter(
+    (d) => !d.acknowledged && staleFeatures.has(d.feature),
   );
-  if (unreconciled.length > 0) {
+  if (unresolved.length > 0) {
     console.log(
       `  ${pc.bold("Symbol drift")} ${pc.dim("— resolve each: update the doc, or ack a contract-neutral move")}`,
     );
-    for (const d of unreconciled) {
+    for (const d of unresolved) {
       console.log(
-        `    ${pc.dim("•")} ${pc.bold(d.symbol)} ${pc.dim(`(${d.kind}, ${d.comovement}) in ${d.feature}`)}`,
+        `    ${pc.dim("•")} ${pc.bold(d.symbol)} ${pc.dim(`(${d.kind}) in ${d.feature}`)}`,
       );
       console.log(`        ${pc.dim("contract changed →")} update ${d.doc} ${pc.dim("at intent altitude")}`);
       console.log(
@@ -268,17 +281,22 @@ function printHuman(report: ReviewReport): void {
 
   // First-class drift-resolution summary: an all-ack change is loud here, not a
   // quiet green — over-acking is visible at the moment of the change, not only in
-  // the aggregate soak telemetry.
+  // the aggregate soak telemetry. "resolved by doc update" is verdict-derived (the
+  // owning doc was edited in this diff), not a co-movement guess.
   const moved = report.drift.length;
   if (moved > 0) {
-    const acked = report.drift.filter((d) => d.acknowledged).length;
-    const reconciled = report.drift.filter(
-      (d) => !d.acknowledged && d.comovement === "co-moved",
-    ).length;
+    // One pass so the three buckets provably partition `moved` — acked +
+    // docUpdated + unresolved cannot silently diverge from a future predicate edit.
+    let acked = 0;
+    let docUpdated = 0;
+    for (const d of report.drift) {
+      if (d.acknowledged) acked++;
+      else if (!staleFeatures.has(d.feature)) docUpdated++;
+    }
     console.log(
       `  ${pc.bold("Drift resolution")}: ${moved} owned symbol(s) moved · ` +
-        `${acked} acked (contract-neutral) · ${reconciled} reconciled in docs · ` +
-        `${unreconciled.length} still flagged`,
+        `${acked} acked (contract-neutral) · ${docUpdated} resolved by doc update · ` +
+        `${unresolved.length} still flagged`,
     );
     console.log();
   }

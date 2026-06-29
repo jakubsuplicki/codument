@@ -69,6 +69,7 @@ The gate is split into two parts that must not be confused: a **deterministic en
 - Symbol-grained, derived-first ownership — [004-symbol-grained-derived-first-ownership.md](../architecture/decisions/004-symbol-grained-derived-first-ownership.md)
 - Co-movement demoted to info-only telemetry — [005-co-movement-info-only-telemetry.md](../architecture/decisions/005-co-movement-info-only-telemetry.md)
 - Agent-judge resolution: self-resolve with a durable audit trail — [006-agent-judge-resolution-self-resolve-with-audit-trail.md](../architecture/decisions/006-agent-judge-resolution-self-resolve-with-audit-trail.md)
+- Freshness resolution: detect deterministically, verify by tests, resolve agent-driven — never by symbol-name matching — [010-freshness-resolution-detect-test-verify-agent-driven.md](../architecture/decisions/010-freshness-resolution-detect-test-verify-agent-driven.md)
 
 The info-only → blocking flip is **soak-data-dependent and not yet made**: the false-fire threshold and soak window come from live `events.jsonl` data, so it cannot be finished without real soak time. The gate is TS-precise today with non-TS on the coarse hash; second-party independence on an ack is an opt-in strict mode, deferred.
 

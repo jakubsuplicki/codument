@@ -13,6 +13,7 @@ function caught(data: {
   offPlan?: string[];
   drift?: {
     flagged: number;
+    docUpdated: number;
     coMoved: number;
     proseUnchanged: number;
     notReferenced: number;
@@ -58,17 +59,37 @@ describe("summarizeImpact — provable line", () => {
 });
 
 describe("summarizeImpact — drift soak line", () => {
-  it("sums drift tallies across snapshots and computes the friction rate", () => {
+  it("computes friction from acked-vs-doc-update (verdict-derived), not co-movement", () => {
     const ledger = summarizeImpact([
-      caught({ drift: { flagged: 5, coMoved: 3, proseUnchanged: 1, notReferenced: 0, acknowledged: 1 } }),
-      caught({ drift: { flagged: 4, coMoved: 1, proseUnchanged: 0, notReferenced: 0, acknowledged: 3 } }),
+      caught({ drift: { flagged: 5, docUpdated: 2, acknowledged: 1, coMoved: 3, proseUnchanged: 1, notReferenced: 0 } }),
+      caught({ drift: { flagged: 4, docUpdated: 2, acknowledged: 3, coMoved: 0, proseUnchanged: 0, notReferenced: 1 } }),
     ]);
     assert.equal(ledger.drift.flagged, 9);
-    assert.equal(ledger.drift.coMoved, 4);
+    assert.equal(ledger.drift.docUpdated, 4);
     assert.equal(ledger.drift.acknowledged, 4);
-    // friction = acked / (acked + coMoved) = 4 / 8 = 0.5
+    // co-movement is summed as separate info-only telemetry (3), and must NOT feed friction
+    assert.equal(ledger.drift.coMoved, 3);
+    // friction = acked / (acked + docUpdated) = 4 / 8 = 0.5  (would be 4/7 if it used coMoved)
     assert.equal(ledger.drift.frictionRate, 0.5);
     assert.equal(ledger.hasDrift, true);
+  });
+
+  it("treats a pre-docUpdated snapshot's missing field as 0 (backward compatible)", () => {
+    // An old `caught` event logged before docUpdated existed.
+    const legacy = {
+      ts: "2026-06-22T10:00:00.000Z",
+      type: "caught" as const,
+      data: {
+        commit: null,
+        staleDocs: [],
+        riskTouches: [],
+        offPlan: [],
+        drift: { flagged: 3, coMoved: 2, proseUnchanged: 0, notReferenced: 1, acknowledged: 1 },
+      },
+    } as unknown as CodumentEvent;
+    const ledger = summarizeImpact([legacy]);
+    assert.equal(ledger.drift.docUpdated, 0);
+    assert.equal(ledger.drift.frictionRate, 1); // acked 1 / (1 + 0)
   });
 
   it("is inert (no friction, hidden) when no snapshot carried drift", () => {

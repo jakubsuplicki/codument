@@ -36,16 +36,20 @@ export interface ReportedLedger {
 }
 
 /** The soak / calibration ledger: per-symbol drift summed across all snapshots.
- *  `frictionRate` is the fraction of RESOLVED fires that were waved off as needing
- *  no doc change (acknowledged vs reconciled) — the number that decides whether the
- *  deterministic gate is quiet enough to become a required CI check. Info-only. */
+ *  `frictionRate` is the fraction of RESOLVED fires that were internal-refactor
+ *  acks (no doc change owed) rather than real doc updates — high means the gate is
+ *  mostly firing on internal moves, the signal for whether it is quiet enough to
+ *  become a required CI check. The co-movement fields are info-only telemetry for
+ *  calibrating co-movement itself, never a resolution signal. Info-only. */
 export interface DriftLedger {
   flagged: number;
+  /** Resolved by a doc update (verdict-derived: the owning doc changed). */
+  docUpdated: number;
+  acknowledged: number;
   coMoved: number;
   proseUnchanged: number;
   notReferenced: number;
-  acknowledged: number;
-  /** acknowledged / (acknowledged + coMoved); 0 when nothing has resolved yet. */
+  /** acknowledged / (acknowledged + docUpdated); 0 when nothing has resolved yet. */
   frictionRate: number;
 }
 
@@ -74,10 +78,11 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
 
   const drift: DriftLedger = {
     flagged: 0,
+    docUpdated: 0,
+    acknowledged: 0,
     coMoved: 0,
     proseUnchanged: 0,
     notReferenced: 0,
-    acknowledged: 0,
     frictionRate: 0,
   };
 
@@ -95,10 +100,12 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
       for (const x of d.offPlan) off.add(x);
       if (d.drift) {
         drift.flagged += d.drift.flagged;
+        // `?? 0`: snapshots logged before docUpdated existed carry no such field.
+        drift.docUpdated += d.drift.docUpdated ?? 0;
+        drift.acknowledged += d.drift.acknowledged;
         drift.coMoved += d.drift.coMoved;
         drift.proseUnchanged += d.drift.proseUnchanged;
         drift.notReferenced += d.drift.notReferenced;
-        drift.acknowledged += d.drift.acknowledged;
       }
     } else if (isReviewEvent(e)) {
       total++;
@@ -121,7 +128,7 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
     total,
   };
 
-  const resolved = drift.acknowledged + drift.coMoved;
+  const resolved = drift.acknowledged + drift.docUpdated;
   drift.frictionRate = resolved > 0 ? drift.acknowledged / resolved : 0;
 
   return {
