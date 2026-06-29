@@ -60,6 +60,17 @@ describe("exclusion spec", () => {
     assert.equal(isExcluded("src/auth/login.spec.ts"), true);
     assert.equal(isExcluded("src/types/index.d.ts"), true);
     assert.equal(isExcluded("node_modules/x/index.ts"), true);
+    // A root-level test-fixture tree is excluded (its own source is a test
+    // asset, not governed first-party source)...
+    assert.equal(
+      isExcluded("fixtures/benchmarks/seeded-bugs/project/src/auth/authorize.js"),
+      true,
+    );
+    // ...but the rule is root-anchored: real first-party source under a nested
+    // `fixtures/` dir (or a file merely named fixtures) stays in scope, so the
+    // opinionated default cannot silently swallow a project's product code.
+    assert.equal(isExcluded("src/fixtures/factory.ts"), false);
+    assert.equal(isExcluded("src/fixtures.ts"), false);
     assert.equal(isExcluded("src/auth/login.ts"), false);
   });
 
@@ -401,6 +412,37 @@ describe("doc integrity findings (thin-doc + link-rot)", () => {
     assert.match(msgs, /ghost-feature/);
     assert.doesNotMatch(msgs, /also-missing\.md/); // fenced example ignored
     assert.doesNotMatch(msgs, /example\.com/); // external link ignored
+  });
+
+  it("link-rot handles balanced parens in a path (route groups), not truncating at the inner paren", async () => {
+    const body = [
+      "# Linky",
+      "",
+      "## Summary",
+      "",
+      "A [valid route group](./app/(tabs)/settings.md) that resolves.",
+      "A [dead route group](./app/(tabs)/missing.md) that does not.",
+      "",
+    ].join("\n");
+    const lint = await integrityLint({
+      "docs/.registry.json": REGISTRY,
+      ...SRC,
+      "docs/features/stub.md": "# S\n\n## Summary\n\nx.\n",
+      "docs/features/summarized.md": "# S\n\n## Summary\n\nx.\n",
+      "docs/features/plain.md": "# P\n\n## In plain terms\n\nx.\n",
+      "docs/features/fresh.md": "# F\n\n## Summary\n\nx.\n",
+      "docs/features/linky.md": body,
+      "docs/features/app/(tabs)/settings.md": "exists\n",
+    });
+    const rot = lint.filter(
+      (f) => f.id === "link-rot" && f.file === "docs/features/linky.md",
+    );
+    const msgs = rot.map((f) => f.message).join(" | ");
+    // the valid (tabs) link resolves whole and is not flagged; only the missing
+    // one is, proving the path was not truncated at the inner paren.
+    assert.equal(rot.length, 1, msgs);
+    assert.match(msgs, /\(tabs\)\/missing\.md/);
+    assert.doesNotMatch(msgs, /settings\.md/);
   });
 });
 

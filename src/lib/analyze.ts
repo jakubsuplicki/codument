@@ -49,6 +49,10 @@ export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
     "**/*.d.ts",
     "**/*.seed.json",
     "**/generated/**",
+    // Root-level test-fixture trees only — anchored (not a bare `fixtures` dir
+    // name) so a project's real first-party source under e.g. `src/fixtures/`
+    // is NOT silently dropped from governance.
+    "fixtures/**",
     "scripts/generate-*",
   ],
   extensions: [".ts", ".tsx", ".js", ".jsx"],
@@ -686,7 +690,10 @@ function computeLinkRot(root: string): LintFinding[] {
     const slash = docRel.lastIndexOf("/");
     const docDir = slash >= 0 ? docRel.slice(0, slash) : "";
 
-    for (const m of scan.matchAll(/\[[^\]]*\]\(([^)\s]+)[^)]*\)/g)) {
+    // The destination allows balanced one-level parens so a route-group path
+    // (`app/(tabs)/x.tsx`, common in Expo/Next) is captured whole rather than
+    // truncated at the inner `)` and then misreported as dangling.
+    for (const m of scan.matchAll(/\[[^\]]*\]\(((?:[^()\s]|\([^()]*\))+)[^)]*\)/g)) {
       const rel = resolveDocLink(m[1], docDir);
       if (rel && !existsSync(join(root, rel))) {
         findings.push({
