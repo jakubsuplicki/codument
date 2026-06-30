@@ -32,6 +32,7 @@ import {
   DEFAULT_TEST_SEARCH_DIRS,
 } from "../lib/review-confirm.js";
 import { isExcluded, DEFAULT_EXCLUSION_SPEC } from "../lib/analyze.js";
+import { MODULE_ANCHOR_NAME } from "../lib/ts-adapter.js";
 
 interface ReviewOptions {
   root?: string;
@@ -257,6 +258,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
         deletionCount: realDeletions.length,
         riskTouchCount: report.state.riskTouches.length,
         ownershipLintCount: report.state.ownershipLints.length,
+        moduleResidualMoved: report.drift.some((d) => d.symbol === MODULE_ANCHOR_NAME),
         movedSymbolCount: countResolvedMovedSymbols(report.drift.map((d) => d.symbol)),
       },
       confirmedFindings,

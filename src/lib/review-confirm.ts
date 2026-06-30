@@ -141,7 +141,11 @@ export function resolveTestPath(
       continue; // dangling symlink / race → treat as not found
     }
     if (real !== rootReal && !real.startsWith(rootReal + sep)) continue;
-    return candidate;
+    // Return the CANONICAL path, not the (possibly symlinked) candidate: the runner
+    // spawns on what we return, so handing back the realpath we just containment-
+    // checked closes the check-then-spawn gap (a symlink repointed after the check
+    // cannot redirect the spawn out of the tree).
+    return real;
   }
   return null;
 }

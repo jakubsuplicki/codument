@@ -33,9 +33,14 @@ export interface ReviewGateInput {
    *  feature claims). An ambiguity is by definition NOT a confirmable single-symbol
    *  move, so it is never trivial. */
   ownershipLintCount: number;
+  /** Whether the `<module>` residual anchor moved — unresolved module-level content
+   *  (a new side-effecting import, a registered global handler, an env mutation).
+   *  Never provably small, even riding alongside one resolved symbol, so any
+   *  residual move forces a review. */
+  moduleResidualMoved: boolean;
   /** Owned, RESOLVED TS symbols that moved across the diff. Excludes the `<module>`
-   *  residual backstop, which is unresolved module-level content (imports, side
-   *  effects), not a confirmed single symbol — use `countResolvedMovedSymbols`. */
+   *  residual backstop (unresolved module-level content) — use
+   *  `countResolvedMovedSymbols`; the residual is handled by `moduleResidualMoved`. */
   movedSymbolCount: number;
 }
 
@@ -55,13 +60,14 @@ export function countResolvedMovedSymbols(movedSymbols: readonly string[]): numb
 // risk-tagged touch, or an unresolved ownership ambiguity (a shared symbol no
 // feature claims — the fail-loud shape, which cannot be a confirmed single move).
 // The ONLY trivial case is exactly one changed source the analyzer fully resolved
-// as a SINGLE moved symbol — `movedSymbolCount !== 1` covers a coarse/non-TS file,
-// an unmapped/unowned file, an unevaluable parse error, the `<module>` residual
-// (excluded by `countResolvedMovedSymbols`), or a multi-symbol edit, none of which
-// we can confirm is small, so they require a review (the safe full-change-set
-// default). `movedSymbolCount` counts only resolved OWNED symbols, so it can
-// undercount; the ownership-lint and full-change-set checks above are what keep an
-// unowned co-moved symbol from reading trivial.
+// as a SINGLE moved symbol and nothing else — `movedSymbolCount !== 1` covers a
+// coarse/non-TS file, an unmapped/unowned file, an unevaluable parse error, or a
+// multi-symbol edit, and `moduleResidualMoved` covers a `<module>`-residual move
+// (alone OR riding alongside one symbol), none of which we can confirm is small.
+// `movedSymbolCount` counts only resolved OWNED symbols (excludes the residual), so
+// it can undercount; the residual guard, the ownership-lint, and the full-change-set
+// checks above are what keep an unowned or module-level co-moved change from reading
+// trivial.
 export function requiresAdversarialReview(input: ReviewGateInput): boolean {
   if (input.realChangeCount === 0) return false;
   if (input.realChangeCount > 1) return true;
@@ -69,6 +75,11 @@ export function requiresAdversarialReview(input: ReviewGateInput): boolean {
   if (input.otherChangedCount > 0) return true;
   if (input.riskTouchCount > 0) return true;
   if (input.ownershipLintCount > 0) return true;
+  // A moved <module> residual is unresolved module-level content (a side-effecting
+  // import, a registered global handler) — never provably small, even alongside one
+  // resolved symbol, so any residual move forces a review. Only a lone resolved
+  // symbol with no residual is trivial.
+  if (input.moduleResidualMoved) return true;
   return input.movedSymbolCount !== 1;
 }
 

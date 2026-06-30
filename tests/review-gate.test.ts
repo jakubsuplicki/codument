@@ -18,6 +18,7 @@ function input(partial: Partial<ReviewGateInput> = {}): ReviewGateInput {
     deletionCount: 0,
     riskTouchCount: 0,
     ownershipLintCount: 0,
+    moduleResidualMoved: false,
     movedSymbolCount: 1,
     ...partial,
   };
@@ -62,6 +63,18 @@ describe("requiresAdversarialReview — proportionality (full change set)", () =
     // AND a co-moved symbol no feature claims. The owned count alone reads trivial;
     // the ownership lint is what forces the review.
     assert.equal(requiresAdversarialReview(input({ ownershipLintCount: 1 })), true);
+  });
+
+  it("a moved <module> residual requires a review even alongside exactly one resolved symbol", () => {
+    // The false-negative the re-verify caught: a behavior edit PLUS a new
+    // side-effecting import/global handler moves [symbol, <module>]; the resolved
+    // count is 1, so without the residual guard it would read trivial. The residual
+    // is unresolved module-level content → never provably small.
+    assert.equal(requiresAdversarialReview(input({ moduleResidualMoved: true })), true);
+    assert.equal(
+      requiresAdversarialReview(input({ moduleResidualMoved: true, movedSymbolCount: 1 })),
+      true,
+    );
   });
 
   it("a single source moving more than one symbol requires a review", () => {

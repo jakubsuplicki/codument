@@ -66,6 +66,7 @@ program
   .option("--log", "Append a `caught` snapshot (provable catches) to .codument/events.jsonl (for the impact ledger)")
   .option("--strict", "Exit 1 if the change left a new source unmapped or a mapped doc stale (the step-sync gate)")
   .option("--require-review", "Exit 1 if a non-trivial diff has no current adversarial-review artifact, or one with unresolved confirmed findings (opt-in; default-on flip is soak-deferred)")
+  .option("--test-command <argv...>", "argv to run a finding's named test under --require-review; the literal {file} token is the resolved path (default: npx tsx --test {file}). Point at a TAP-emitting runner for non-node:test projects")
   .option("--base <ref>", "Review the branch's drift since it diverged from <ref> (merge-base..working-tree), not just uncommitted changes")
   .action(review);
 

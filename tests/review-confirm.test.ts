@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
-import { writeFileSync, mkdtempSync, symlinkSync, rmSync } from "node:fs";
+import { writeFileSync, mkdtempSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -115,9 +115,10 @@ describe("resolveTestPath", () => {
 
   it("resolves a bare name under tests/ and a path relative to root, else null", () => {
     writeFileSync(join(tmp, "root-level.test.ts"), "");
+    // Returns the canonical (realpath) of the resolved file.
     assert.equal(
       resolveTestPath(tmp, "root-level.test.ts", ["", "tests"]),
-      join(tmp, "root-level.test.ts"),
+      realpathSync(join(tmp, "root-level.test.ts")),
     );
     assert.equal(resolveTestPath(tmp, "missing.test.ts", ["", "tests"]), null);
   });
@@ -141,10 +142,11 @@ describe("resolveTestPath", () => {
     }
   });
 
-  it("still resolves a symlink whose target stays inside root", () => {
+  it("still resolves a symlink whose target stays inside root (to the canonical path)", () => {
     writeFileSync(join(tmp, "real.test.ts"), "");
     symlinkSync(join(tmp, "real.test.ts"), join(tmp, "link.test.ts"));
-    assert.equal(resolveTestPath(tmp, "link.test.ts", [""]), join(tmp, "link.test.ts"));
+    // Resolves, but to the canonical target — the spawn runs the real file, not the link.
+    assert.equal(resolveTestPath(tmp, "link.test.ts", [""]), realpathSync(join(tmp, "real.test.ts")));
   });
 });
 
