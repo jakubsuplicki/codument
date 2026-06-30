@@ -1,5 +1,31 @@
 {
   "features": {
+    "adversarial-review-gate": {
+      "doc": "docs/features/adversarial-review-gate.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/lib/review-bundle.ts",
+        "src/lib/review-artifact.ts",
+        "src/lib/review-confirm.ts",
+        "src/lib/review-gate.ts"
+      ],
+      "related_sources": [
+        "src/commands/review.ts",
+        "src/cli.ts",
+        "src/lib/git.ts",
+        "src/lib/two-ref.ts"
+      ],
+      "docs": [],
+      "depends_on": [
+        "change-control-gate",
+        "agent-delivery-workflow",
+        "cli",
+        "commands",
+        "lib"
+      ],
+      "risk": [],
+      "status": "in-progress"
+    },
     "project-charter-gate": {
       "doc": "docs/features/project-charter-gate.md",
       "type": "feature",

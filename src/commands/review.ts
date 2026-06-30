@@ -7,21 +7,49 @@ import {
   type ApprovedPlan,
   type ChangeState,
 } from "../lib/change-state.js";
-import { getWorkingTreeChanges, isGitRepo, getHeadSha } from "../lib/git.js";
-import { worktreeChangesSince, resolveBase, GateError } from "../lib/two-ref.js";
+import { getWorkingTreeChanges, getWorkingTreeDeletions, isGitRepo, getHeadSha } from "../lib/git.js";
+import {
+  worktreeChangesSince,
+  worktreeDeletionsSince,
+  resolveBase,
+  GateError,
+  EMPTY_TREE_SHA,
+} from "../lib/two-ref.js";
 import { gatherAnchorChanges } from "../lib/fingerprint.js";
 import { computeDrift, type DriftFinding } from "../lib/drift.js";
 import { readAcks } from "../lib/acknowledgment.js";
 import { emitCaught } from "../lib/review-events.js";
+import { findCoveringReview } from "../lib/review-artifact.js";
+import {
+  evaluateReviewGate,
+  countResolvedMovedSymbols,
+  type ReviewGateResult,
+} from "../lib/review-gate.js";
+import {
+  confirmFindings,
+  makeTestRunner,
+  resolveTestPath,
+  DEFAULT_TEST_SEARCH_DIRS,
+} from "../lib/review-confirm.js";
+import { isExcluded, DEFAULT_EXCLUSION_SPEC } from "../lib/analyze.js";
 
 interface ReviewOptions {
   root?: string;
   json?: boolean;
   log?: boolean;
   strict?: boolean;
+  /** Opt-in adversarial-review gate: exit 1 if a non-trivial diff lacks a current,
+   *  fingerprint-bound review artifact (or one with unresolved confirmed findings).
+   *  Default-on flip is soak-deferred, like the change-control gate's blocking flip. */
+  requireReview?: boolean;
   /** Diff against the merge-base with this ref (the branch's drift since it
    *  diverged), not just the uncommitted working tree. */
   base?: string;
+  /** Override the argv used to run a finding's named test (the literal `{file}`
+   *  token is the resolved path). Defaults to codument's own `npx tsx --test`; a
+   *  consumer project whose tests run differently sets this so the gate's
+   *  re-confirmation step is not hardcoded to one toolchain. */
+  testCommand?: string[];
 }
 
 export interface ReviewReport {
@@ -106,6 +134,13 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   }
 
   let report: ReviewReport;
+  // The base the diff (and so the review fingerprint) is computed against. Captured
+  // here so the --require-review gate fingerprints the same change set the report
+  // describes; the artifact writer (the review skill) uses the same convention.
+  let effectiveBase = "HEAD";
+  // Pure deletions, which the change-state path drops — the gate counts them as
+  // real changes (proportionality + fingerprint), per the full-change-set scope.
+  let deletions: string[] = [];
   try {
     if (options.base) {
       // Diff the working tree against the merge-base with `options.base` (the
@@ -114,9 +149,16 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       const baseRef = resolveBase(root, options.base, "HEAD").sha;
       const changes = worktreeChangesSince(root, options.base);
       report = buildReview(root, changes, baseRef);
+      effectiveBase = baseRef;
+      deletions = worktreeDeletionsSince(root, options.base);
     } else {
-      // Default: working tree vs HEAD (what `git status` shows).
+      // Default: working tree vs HEAD (what `git status` shows). Resolve HEAD to a
+      // real object name (the empty tree before the first commit) so the fingerprint
+      // base is a stable sha, never the literal "HEAD" — the step-5 writer records
+      // exactly this value, and a fresh-repo/first-commit boundary cannot flip it.
       report = buildReview(root);
+      effectiveBase = getHeadSha(root) ?? EMPTY_TREE_SHA;
+      deletions = getWorkingTreeDeletions(root);
     }
   } catch (err) {
     // Fail closed: the gate could not run (e.g. an unreachable base on a shallow
@@ -171,9 +213,60 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     !!options.strict &&
     (report.state.unmapped.length > 0 || report.state.staleDocs.length > 0);
 
+  // Adversarial-review gate (opt-in). For a NON-TRIVIAL diff it requires a current,
+  // fingerprint-bound review artifact whose findings — RE-CONFIRMED here by running
+  // each named test — carry no unresolved blocker. Proportionality covers the full
+  // real-change set (sources + config/data + deletions) plus ownership ambiguities,
+  // and excludes the `<module>` residual from the "one trivial symbol" fast-path, so
+  // nothing real reads as trivial. The fingerprint binds both the reviewed sources
+  // AND the tests the findings name, so any real edit — including tampering a test
+  // to clear its finding — auto-invalidates the review. The gate RE-DERIVES finding
+  // statuses (a toolchain failure is unrunnable, never a false block) rather than
+  // trusting the artifact's claim; its honest limit is that an empty/omitted-findings
+  // review still passes (soak/audit territory), so it does not certify thoroughness.
+  let reviewGate: ReviewGateResult | null = null;
+  if (options.requireReview) {
+    const isDocPath = (p: string) => p.startsWith("docs/") && p.endsWith(".md");
+    const realDeletions = deletions.filter(
+      (d) => !isDocPath(d) && !isExcluded(d, DEFAULT_EXCLUSION_SPEC),
+    );
+    const realChangeSet = [
+      ...new Set([
+        ...report.state.changedSources,
+        ...report.state.otherChanged,
+        ...realDeletions,
+      ]),
+    ].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    // A covering review binds both the reviewed sources AND the tests its findings
+    // name; resolveTest locates a finding's test exactly as the runner does, so a
+    // tampered or deleted test moves the fingerprint and reopens the gate.
+    const resolveTest = (ref: string) => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS);
+    const covering = findCoveringReview(root, effectiveBase, realChangeSet, resolveTest);
+    // Re-derive each finding's status by RUNNING its named test — never trust a
+    // status the artifact merely claims. A red test re-promotes to confirmed; a
+    // toolchain failure (missing runner, resolution error) is unrunnable → advisory.
+    const confirmedFindings = covering
+      ? confirmFindings(covering.findings, makeTestRunner({ root, command: options.testCommand }))
+          .findings
+      : null;
+    reviewGate = evaluateReviewGate(
+      {
+        realChangeCount: realChangeSet.length,
+        changedSourceCount: report.state.changedSources.length,
+        otherChangedCount: report.state.otherChanged.length,
+        deletionCount: realDeletions.length,
+        riskTouchCount: report.state.riskTouches.length,
+        ownershipLintCount: report.state.ownershipLints.length,
+        movedSymbolCount: countResolvedMovedSymbols(report.drift.map((d) => d.symbol)),
+      },
+      confirmedFindings,
+    );
+  }
+  const reviewGateFail = !!reviewGate && !reviewGate.passed;
+
   if (options.json) {
-    console.log(JSON.stringify(report, null, 2));
-    if (strictFail) process.exitCode = 1;
+    console.log(JSON.stringify(reviewGate ? { ...report, reviewGate } : report, null, 2));
+    if (strictFail || reviewGateFail) process.exitCode = 1;
     return;
   }
 
@@ -196,6 +289,51 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       ),
     );
     process.exitCode = 1;
+  }
+
+  if (reviewGate) {
+    printReviewGate(reviewGate);
+    if (reviewGateFail) process.exitCode = 1;
+  }
+}
+
+// Render the adversarial-review gate result. Advisory findings are surfaced even
+// when the gate passes — a judgment-call finding must never be silently swallowed.
+function printReviewGate(gate: ReviewGateResult): void {
+  console.log();
+  if (!gate.required) {
+    console.log(pc.dim("  Adversarial review: trivial diff — none required."));
+    return;
+  }
+  if (gate.passed) {
+    console.log(
+      `  ${pc.green("✓")} Adversarial review covers this diff` +
+        (gate.advisoryFindings.length > 0
+          ? pc.dim(` (${gate.advisoryFindings.length} advisory)`)
+          : ""),
+    );
+  } else {
+    console.log(pc.red(`  ✗ --require-review: ${gate.reason}.`));
+    if (!gate.covered) {
+      console.log(
+        pc.dim(
+          "    Run a fresh adversarial review of this diff and record it under .codument/reviews/, then re-run.",
+        ),
+      );
+    } else {
+      for (const f of gate.blockingFindings) {
+        console.log(
+          `    ${pc.red("•")} ${f.citation} — ${f.detail}` +
+            (f.failingTest ? pc.dim(` (test: ${f.failingTest})`) : ""),
+        );
+      }
+    }
+  }
+  if (gate.advisoryFindings.length > 0) {
+    console.log(pc.dim("    Advisory (judgment calls — your decision, non-blocking):"));
+    for (const f of gate.advisoryFindings) {
+      console.log(`      ${pc.dim("•")} ${f.citation} — ${f.detail}`);
+    }
   }
 }
 

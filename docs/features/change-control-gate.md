@@ -83,12 +83,12 @@ The info-only → blocking flip is **soak-data-dependent and not yet made**: the
 - `src/lib/change-state.ts` — the pure analyzer at the centre: turns a registry plus a change set (and optional per-file anchor changes) into the deterministic stale-doc verdict; backs both `review` and `watch`.
 - `src/lib/fingerprint.ts` — the adapter seam and the anchor-diff engine: binds identity to a content fingerprint, dispatches TS to the precise adapter and everything else to coarse, and diffs anchor sets across two refs.
 - `src/lib/ts-adapter.ts` — the precise TypeScript engine: per-exported-symbol token-stream fingerprints, SCIP-shaped order-independent identity, transitive closure over referenced private helpers, and the residual module backstop.
-- `src/lib/two-ref.ts` — the determinism plumbing: ref-blob reads, byte-normalization, single-base resolution, deletion-first-class path classification, and the algo stamp.
+- `src/lib/two-ref.ts` — the determinism plumbing: ref-blob reads, byte-normalization, single-base resolution, deletion-first-class path classification, and the algo stamp. Also exposes the merge-base deletion view the [adversarial-review gate](adversarial-review-gate.md) consumes.
 - `src/lib/ownership.ts` — the ownership resolver: maps an anchor to its owning feature, derived-first, fail-loud on unassigned/ambiguous shared symbols.
 - `src/lib/import-graph.ts` — first-party import harvesting from the same parse: seeds shared-file symbol ownership and feeds the facts/graph data contract.
 - `src/lib/drift.ts` — the per-symbol drift layer: builds precise findings annotated with co-movement telemetry and whether a recorded ack adjudicates the move.
 - `src/lib/co-movement.ts` — the info-only telemetry classifier: the symbol-scoped "did the doc lines mentioning this symbol move?" proxy, with frontmatter and link-URL churn stripped.
 - `src/lib/acknowledgment.ts` — the acknowledgment protocol: parse/validate, fingerprint-bound coverage, auto-invalidation, and the loose reviewable on-disk files.
 - `src/lib/events.ts` — the append-only flow-event log that records every caught / auto-fixed / surfaced action as both the audit trail and the soak's calibration data.
-- `src/lib/git.ts` — git access for the analyzer, shelling out to the required `git` CLI with lock-churn suppression for polling.
+- `src/lib/git.ts` — git access for the analyzer, shelling out to the required `git` CLI with lock-churn suppression for polling. Also exposes the working-tree deletion view the [adversarial-review gate](adversarial-review-gate.md) consumes.
 - `src/lib/report-html.ts` — the self-contained HTML renderer for the report surface.

@@ -197,6 +197,25 @@ export function changedPathsBetween(
   return changes.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
+// Pure deletions between the merge-base of (base, HEAD) and the working tree —
+// the deletions worktreeChangesSince drops. The adversarial-review gate counts a
+// deletion as a real change. Throws GateError when `base` is unreachable.
+export function worktreeDeletionsSince(root: string, base: string): string[] {
+  const { sha } = resolveBase(root, base, "HEAD");
+  const files = new Set<string>();
+  try {
+    const out = git(root, ["diff", "--name-status", "-M", sha]);
+    for (const line of out.split("\n")) {
+      if (!line.trim()) continue;
+      const parts = line.split("\t");
+      if (parts[0].startsWith("D")) files.add(parts[1]);
+    }
+  } catch {
+    // no diff available
+  }
+  return [...files].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
 // Paths changed between the merge-base of (base, HEAD) and the current working
 // tree — the LOCAL two-ref advisory view: everything on this branch since it
 // diverged from `base`, committed or not, which is the same question CI answers

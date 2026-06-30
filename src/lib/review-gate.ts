@@ -1,0 +1,139 @@
+import type { ReviewFinding } from "./review-artifact.js";
+import { MODULE_ANCHOR_NAME } from "./ts-adapter.js";
+
+// The adversarial-review gate decision, kept pure and separate from the `review`
+// command so it is unit-testable. Two parts: a PROPORTIONALITY predicate (does
+// this diff even need an adversarial review?) and the VERDICT (given the findings
+// the caller RE-DERIVED by running their tests, does the gate pass?).
+//
+// The caller hands in findings whose status it just re-computed via the confirm
+// step (running each finding's named test) — the gate never trusts a status the
+// artifact merely claims. A finding blocks only when its test is genuinely red.
+//
+// Honest boundary (do NOT overclaim): this enforces that a review RITUAL happened
+// (a diff-bound artifact exists, enumerating the invariants checked) and verifies
+// every DECLARED finding by reproduction. It cannot force a review to be thorough
+// — an artifact with no findings passes, so a lazy or fabricated-clean review is
+// not caught here. That omission is the audit-trail / soak limit, the same class
+// as the change-control gate's inability to verify an ack's semantic truth.
+
+export interface ReviewGateInput {
+  /** All real changed paths — sources + config/data + deletions, non-doc and
+   *  non-excluded. The proportionality denominator. */
+  realChangeCount: number;
+  /** TS/JS source files changed (subset of realChange). */
+  changedSourceCount: number;
+  /** Config/data / non-source files changed, e.g. package.json (subset). */
+  otherChangedCount: number;
+  /** Files deleted (subset of realChange). */
+  deletionCount: number;
+  /** Risk-tagged features the diff touched. */
+  riskTouchCount: number;
+  /** Unresolved ownership ambiguities the diff surfaced (a shared symbol no
+   *  feature claims). An ambiguity is by definition NOT a confirmable single-symbol
+   *  move, so it is never trivial. */
+  ownershipLintCount: number;
+  /** Owned, RESOLVED TS symbols that moved across the diff. Excludes the `<module>`
+   *  residual backstop, which is unresolved module-level content (imports, side
+   *  effects), not a confirmed single symbol — use `countResolvedMovedSymbols`. */
+  movedSymbolCount: number;
+}
+
+// Owned moved symbols that count toward the "exactly one moved symbol" trivial
+// fast-path. The synthetic `<module>` residual is the analyzer's catch-all for
+// unresolved module-level content (imports, side-effecting statements, unreferenced
+// state) — the OPPOSITE of a precisely-resolved symbol — so a diff whose only moved
+// anchor is the residual is not provably small and must not read as trivial.
+export function countResolvedMovedSymbols(movedSymbols: readonly string[]): number {
+  return movedSymbols.filter((s) => s !== MODULE_ANCHOR_NAME).length;
+}
+
+// Proportionality: a heavyweight adversarial review is required for any
+// non-trivial diff, so a one-line edit never demands one (waste is how a good
+// gate gets disabled), but nothing real slips through as "trivial". Required for
+// more than one real change, any deletion, any non-source (config/data) change, a
+// risk-tagged touch, or an unresolved ownership ambiguity (a shared symbol no
+// feature claims — the fail-loud shape, which cannot be a confirmed single move).
+// The ONLY trivial case is exactly one changed source the analyzer fully resolved
+// as a SINGLE moved symbol — `movedSymbolCount !== 1` covers a coarse/non-TS file,
+// an unmapped/unowned file, an unevaluable parse error, the `<module>` residual
+// (excluded by `countResolvedMovedSymbols`), or a multi-symbol edit, none of which
+// we can confirm is small, so they require a review (the safe full-change-set
+// default). `movedSymbolCount` counts only resolved OWNED symbols, so it can
+// undercount; the ownership-lint and full-change-set checks above are what keep an
+// unowned co-moved symbol from reading trivial.
+export function requiresAdversarialReview(input: ReviewGateInput): boolean {
+  if (input.realChangeCount === 0) return false;
+  if (input.realChangeCount > 1) return true;
+  if (input.deletionCount > 0) return true;
+  if (input.otherChangedCount > 0) return true;
+  if (input.riskTouchCount > 0) return true;
+  if (input.ownershipLintCount > 0) return true;
+  return input.movedSymbolCount !== 1;
+}
+
+export interface ReviewGateResult {
+  /** Did proportionality require an adversarial review for this diff? */
+  required: boolean;
+  /** Is there an artifact whose fingerprint covers the current diff? */
+  covered: boolean;
+  /** Confirmed (test-red) findings left unresolved — these block. */
+  blockingFindings: ReviewFinding[];
+  /** Advisory (judgment-call) findings — surfaced, never blocking. */
+  advisoryFindings: ReviewFinding[];
+  /** The gate verdict. */
+  passed: boolean;
+  /** Why the gate failed, or null when it passed. */
+  reason: string | null;
+}
+
+// The verdict. `findings` are the covering artifact's findings AFTER the caller
+// re-derived their statuses by running each named test (null when no artifact
+// covers the current diff — missing or auto-invalidated). A trivial diff passes
+// with no artifact; a non-trivial diff needs a covering artifact with no
+// unresolved confirmed (test-red) finding.
+export function evaluateReviewGate(
+  input: ReviewGateInput,
+  findings: readonly ReviewFinding[] | null,
+): ReviewGateResult {
+  if (!requiresAdversarialReview(input)) {
+    return {
+      required: false,
+      covered: findings !== null,
+      blockingFindings: [],
+      advisoryFindings: [],
+      passed: true,
+      reason: null,
+    };
+  }
+  if (findings === null) {
+    return {
+      required: true,
+      covered: false,
+      blockingFindings: [],
+      advisoryFindings: [],
+      passed: false,
+      reason: "no current adversarial review covers this diff",
+    };
+  }
+  const blockingFindings = findings.filter((f) => f.status === "confirmed");
+  const advisoryFindings = findings.filter((f) => f.status === "advisory");
+  if (blockingFindings.length > 0) {
+    return {
+      required: true,
+      covered: true,
+      blockingFindings,
+      advisoryFindings,
+      passed: false,
+      reason: `${blockingFindings.length} confirmed finding(s) unresolved`,
+    };
+  }
+  return {
+    required: true,
+    covered: true,
+    blockingFindings: [],
+    advisoryFindings,
+    passed: true,
+    reason: null,
+  };
+}

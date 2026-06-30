@@ -137,3 +137,31 @@ export function getWorkingTreeChanges(root: string): string[] {
   }
   return [...files].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
+
+/**
+ * Pure deletions in the working tree (a file removed, no rename), repo-relative
+ * POSIX, sorted. The complement of getWorkingTreeChanges, which drops these for
+ * the ownership/doc-drift view. The adversarial-review gate needs them: a
+ * deletion is a real, load-bearing change that must count toward proportionality
+ * and move the review fingerprint.
+ */
+export function getWorkingTreeDeletions(root: string): string[] {
+  if (!isGitRepo(root)) return [];
+  let out: string;
+  try {
+    out = git(root, ["status", "--porcelain", "-uall"]);
+  } catch {
+    return [];
+  }
+  const files = new Set<string>();
+  for (const line of out.split("\n")) {
+    if (!line.trim()) continue;
+    const x = line[0];
+    const y = line[1];
+    const field = line.slice(3);
+    if ((x === "D" || y === "D") && !field.includes(" -> ")) {
+      files.add(parsePath(field));
+    }
+  }
+  return [...files].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
