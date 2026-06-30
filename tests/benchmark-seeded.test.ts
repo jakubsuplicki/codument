@@ -302,7 +302,7 @@ describe("seeded-bugs benchmark", () => {
 
       // --test-name-pattern with no match makes `node --test` exit 0 even when
       // assertions would fail; a detector that inherited it would misreport a
-      // present bug as caught. The scorer must strip it.
+      // present bug as caught. The scorer must strip it (cleanNodeTestEnv).
       const score = spawnSync(
         "node",
         [CLI, "benchmark", "score", target, "--mode", "no-loop"],
@@ -311,6 +311,14 @@ describe("seeded-bugs benchmark", () => {
           env: { ...process.env, NODE_OPTIONS: "--test-name-pattern=NOMATCH_ZZZ" },
         },
       );
+
+      // Older Node (the CI matrix's 18/20) rejects --test-name-pattern in
+      // NODE_OPTIONS at startup (exit 9), so the scoring node never even runs — the
+      // exact leak this guards against cannot be set up there. Verify the strip on
+      // the Node versions that do accept the flag; elsewhere it is unreachable.
+      if (score.status !== 0 && /not allowed in NODE_OPTIONS/.test(score.stderr ?? "")) {
+        return;
+      }
 
       assert.equal(score.status, 0);
       assert.ok(
