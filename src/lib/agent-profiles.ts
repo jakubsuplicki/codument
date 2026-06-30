@@ -52,6 +52,19 @@ export const DOMAIN_SKILLS = [
 export const ALL_SKILLS = [...DELIVERY_SKILLS, ...DOMAIN_SKILLS] as const;
 
 /**
+ * Agent definitions (subagent system prompts) installed into a subagent-capable
+ * profile's `agentsDir`. The single source of truth so `init` and `update` cannot
+ * drift apart. `adversarial-reviewer` is the independent reviewer the
+ * adversarial-review gate spawns; the others back the bootstrap/scan/review skills.
+ */
+export const AGENT_DEFINITIONS = [
+  "doc-writer.md",
+  "doc-scanner.md",
+  "code-reviewer.md",
+  "adversarial-reviewer.md",
+] as const;
+
+/**
  * The single seam for which skills install into a profile. No stack gating today
  * (every skill ships to every repo); kept as a function so future per-profile or
  * per-stack gating has one place to live.

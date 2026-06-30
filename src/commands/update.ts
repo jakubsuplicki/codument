@@ -6,6 +6,7 @@ import {
   resolveSkills,
   getAgentProfiles,
   resolveAgentIds,
+  AGENT_DEFINITIONS,
   type AgentProfile,
   type AgentProfileId,
 } from "../lib/agent-profiles.js";
@@ -86,7 +87,7 @@ function getManagedFiles(
     }
 
     if (profile.agentsDir) {
-      for (const agent of ["doc-writer.md", "doc-scanner.md", "code-reviewer.md"]) {
+      for (const agent of AGENT_DEFINITIONS) {
         const relativePath = `${profile.agentsDir}/${agent}`;
         files.set(relativePath, {
           relativePath,

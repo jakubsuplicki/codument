@@ -6,6 +6,7 @@ import {
   resolveSkills,
   getAgentProfiles,
   resolveAgentIds,
+  AGENT_DEFINITIONS,
   type AgentProfile,
   type AgentProfileId,
 } from "../lib/agent-profiles.js";
@@ -175,7 +176,7 @@ async function installProfile(
   if (profile.agentsDir) {
     ensureDir(join(root, profile.agentsDir));
     const agentSource = agentsDir();
-    for (const agent of ["doc-writer.md", "doc-scanner.md", "code-reviewer.md"]) {
+    for (const agent of AGENT_DEFINITIONS) {
       const dest = join(root, profile.agentsDir, agent);
       if (!existsSync(dest) || force) {
         cpSync(join(agentSource, agent), dest);

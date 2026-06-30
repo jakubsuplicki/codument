@@ -15,7 +15,10 @@
         "src/lib/git.ts",
         "src/lib/two-ref.ts"
       ],
-      "docs": [],
+      "docs": [
+        "skills/review-work/SKILL.md",
+        "agents/adversarial-reviewer.md"
+      ],
       "depends_on": [
         "change-control-gate",
         "agent-delivery-workflow",

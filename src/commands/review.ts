@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { join, resolve as resolvePath } from "node:path";
+import { readFileSync } from "node:fs";
 import pc from "picocolors";
 import { readRegistrySync } from "../lib/registry.js";
 import {
@@ -19,7 +20,13 @@ import { gatherAnchorChanges } from "../lib/fingerprint.js";
 import { computeDrift, type DriftFinding } from "../lib/drift.js";
 import { readAcks } from "../lib/acknowledgment.js";
 import { emitCaught } from "../lib/review-events.js";
-import { findCoveringReview } from "../lib/review-artifact.js";
+import {
+  findCoveringReview,
+  gatherReviewFingerprint,
+  writeReview,
+  parseReviewArtifact,
+} from "../lib/review-artifact.js";
+import { gatherReviewBundle } from "../lib/review-bundle.js";
 import {
   evaluateReviewGate,
   countResolvedMovedSymbols,
@@ -51,6 +58,16 @@ interface ReviewOptions {
    *  consumer project whose tests run differently sets this so the gate's
    *  re-confirmation step is not hardcoded to one toolchain. */
   testCommand?: string[];
+  /** Emit the adversarial-review BUNDLE (the oracle: touched features' invariants +
+   *  their test pointers, the diff, ownership/blast facts) as JSON and exit. This is
+   *  what an adversarial reviewer attacks; it adds no new source of truth. */
+  bundle?: boolean;
+  /** Record an adversarial review from a findings JSON file
+   *  (`{invariantsChecked, findings, signer}`): the command computes the
+   *  fingerprint over the current diff AND the findings' named tests and writes the
+   *  artifact, so the writer and the `--require-review` gate share one fingerprint
+   *  contract (an agent cannot hand-compute it). */
+  record?: string;
 }
 
 export interface ReviewReport {
@@ -174,6 +191,59 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     throw err;
   }
 
+  // --bundle: emit the oracle an adversarial reviewer attacks (the touched features'
+  // documented invariants + their test pointers, the diff, ownership/blast facts),
+  // then exit. Pure JSON, no new source of truth — the host pipes it to a fresh
+  // reviewer subagent (Claude) or reads it for the same-agent pass (Codex).
+  if (options.bundle) {
+    const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+    const plan = detectApprovedPlanScope(root);
+    const bundle = gatherReviewBundle(root, effectiveBase, report.state, registry, plan);
+    console.log(JSON.stringify(bundle, null, 2));
+    return;
+  }
+
+  // --record: write a fingerprint-bound review artifact from the reviewer's findings
+  // JSON (`{invariantsChecked, findings, signer}`). The fingerprint is computed HERE
+  // over the SAME real-change set + named tests the gate uses, so the writer can
+  // never drift from the gate's contract (an agent cannot hand-compute a sha256).
+  if (options.record) {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(readFileSync(resolvePath(root, options.record), "utf8"));
+    } catch (err) {
+      console.log(pc.red(`  ✗ could not read findings file: ${(err as Error).message}`));
+      process.exitCode = 1;
+      return;
+    }
+    const r = (raw ?? {}) as { invariantsChecked?: unknown; findings?: unknown; signer?: unknown };
+    // Validate the shape first (placeholder fingerprint), then compute the real
+    // fingerprint from the VALIDATED findings, so a malformed review is rejected
+    // before anything is written.
+    const provisional = parseReviewArtifact({
+      base: effectiveBase,
+      diffFingerprint: "pending",
+      invariantsChecked: r.invariantsChecked,
+      findings: r.findings,
+      signer: r.signer,
+    });
+    if (!provisional) {
+      console.log(
+        pc.red(
+          "  ✗ invalid review: need a non-empty invariantsChecked, a signer, and well-formed findings (citation, detail, status).",
+        ),
+      );
+      process.exitCode = 1;
+      return;
+    }
+    const { set: realChangeSet } = computeRealChange(report, deletions);
+    const resolveTest = (ref: string) => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS);
+    const fp = gatherReviewFingerprint(root, effectiveBase, realChangeSet, provisional.findings, resolveTest);
+    const path = writeReview(root, { ...provisional, diffFingerprint: fp });
+    console.log(`  ${pc.green("✓")} Recorded adversarial review → ${path}`);
+    return;
+  }
+
   // A symbol is resolved-by-doc-update iff its feature is NOT stale per the verdict
   // (ADR 010) — the same verdict-derived rule the human display uses, so the soak
   // tally and the display agree. Co-movement is never the resolution signal.
@@ -227,17 +297,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // review still passes (soak/audit territory), so it does not certify thoroughness.
   let reviewGate: ReviewGateResult | null = null;
   if (options.requireReview) {
-    const isDocPath = (p: string) => p.startsWith("docs/") && p.endsWith(".md");
-    const realDeletions = deletions.filter(
-      (d) => !isDocPath(d) && !isExcluded(d, DEFAULT_EXCLUSION_SPEC),
-    );
-    const realChangeSet = [
-      ...new Set([
-        ...report.state.changedSources,
-        ...report.state.otherChanged,
-        ...realDeletions,
-      ]),
-    ].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const { set: realChangeSet, realDeletions } = computeRealChange(report, deletions);
     // A covering review binds both the reviewed sources AND the tests its findings
     // name; resolveTest locates a finding's test exactly as the runner does, so a
     // tampered or deleted test moves the fingerprint and reopens the gate.
@@ -297,6 +357,24 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     printReviewGate(reviewGate);
     if (reviewGateFail) process.exitCode = 1;
   }
+}
+
+// The full real-change set the adversarial-review gate scopes to: changed sources +
+// config/data + real deletions, with docs and excluded paths dropped. Shared by the
+// `--require-review` gate and the `--record` writer so both fingerprint — and so
+// reason about proportionality over — the identical set.
+function computeRealChange(
+  report: ReviewReport,
+  deletions: string[],
+): { set: string[]; realDeletions: string[] } {
+  const isDocPath = (p: string) => p.startsWith("docs/") && p.endsWith(".md");
+  const realDeletions = deletions.filter(
+    (d) => !isDocPath(d) && !isExcluded(d, DEFAULT_EXCLUSION_SPEC),
+  );
+  const set = [
+    ...new Set([...report.state.changedSources, ...report.state.otherChanged, ...realDeletions]),
+  ].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return { set, realDeletions };
 }
 
 // Render the adversarial-review gate result. Advisory findings are surfaced even

@@ -320,4 +320,74 @@ describe("codument review (CLI)", () => {
     const report = JSON.parse(stdout);
     assert.equal(report.version, 1);
   });
+
+  it("--bundle emits the oracle; --record then --require-review enforces, and a later edit auto-invalidates", async () => {
+    // A risk-tagged source change (auth) is non-trivial → the gate requires a review.
+    await scaffold({ "src/auth/login.ts": "export const login = () => { return 3; };\n" });
+
+    // --bundle reflects the current diff.
+    const bundle = JSON.parse(
+      execFileSync("node", [CLI, "review", "--bundle"], { cwd: tmp, encoding: "utf-8" }),
+    );
+    assert.ok(typeof bundle.base === "string" && bundle.base.length > 0, "bundle has a base");
+    assert.ok(bundle.changedSources.includes("src/auth/login.ts"), "bundle names the changed source");
+
+    const requireReview = (): { status: number; out: string } => {
+      try {
+        return {
+          status: 0,
+          out: execFileSync("node", [CLI, "review", "--require-review"], { cwd: tmp, encoding: "utf-8" }),
+        };
+      } catch (err) {
+        const e = err as { status?: number; stdout?: string };
+        return { status: e.status ?? 0, out: e.stdout ?? "" };
+      }
+    };
+
+    // Before any review, a non-trivial diff fails closed.
+    const before = requireReview();
+    assert.equal(before.status, 1, "unreviewed non-trivial diff is blocked");
+    assert.match(before.out, /no current adversarial review/);
+
+    // Record a clean review — the writer computes the fingerprint over THIS diff.
+    await writeFile(
+      join(tmp, "findings.json"),
+      JSON.stringify({ invariantsChecked: ["login returns a constant"], findings: [], signer: "test" }),
+    );
+    const recordOut = execFileSync("node", [CLI, "review", "--record", "findings.json"], {
+      cwd: tmp,
+      encoding: "utf-8",
+    });
+    assert.match(recordOut, /Recorded adversarial review/);
+
+    // Now the gate is covered and passes.
+    const covered = requireReview();
+    assert.equal(covered.status, 0, "the recorded review covers the diff");
+    assert.match(covered.out, /covers this diff/);
+
+    // Editing a reviewed source moves the fingerprint → the review auto-invalidates.
+    await scaffold({ "src/auth/login.ts": "export const login = () => { return 999; };\n" });
+    const after = requireReview();
+    assert.equal(after.status, 1, "an edit after review reopens the gate");
+    assert.match(after.out, /no current adversarial review/);
+  });
+
+  it("--record rejects a malformed review (empty invariantsChecked) without writing it", async () => {
+    await scaffold({ "src/auth/login.ts": "export const login = () => { return 4; };\n" });
+    await writeFile(
+      join(tmp, "bad.json"),
+      JSON.stringify({ invariantsChecked: [], findings: [], signer: "test" }),
+    );
+    let status = 0;
+    let out = "";
+    try {
+      out = execFileSync("node", [CLI, "review", "--record", "bad.json"], { cwd: tmp, encoding: "utf-8" });
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      status = e.status ?? 0;
+      out = e.stdout ?? "";
+    }
+    assert.equal(status, 1, "a silent-pass review is rejected");
+    assert.match(out, /invalid review/);
+  });
 });
