@@ -5,5 +5,12 @@ dist/
 .codument/
 .codument-private/
 
+# Benchmark fixtures commit a .codument/ scenario-identity lock (the seeded/quality
+# benchmarks copy it into each laid scenario, and the score step verifies it). The
+# blanket .codument/ ignore above would otherwise trap it, so a clean CI checkout
+# could not lay the scenario — keep these fixture locks tracked.
+!fixtures/benchmarks/*/project/.codument/
+!fixtures/benchmarks/*/project/.codument/benchmark.json
+
 # Canonical lockfile is package-lock.json (npm); ignore other package managers'
 bun.lock
