@@ -122,7 +122,7 @@ Use `adopt` when a project already has Codument docs or an older `.codument-meta
 Chat normally. Codument's always-loaded instructions route clear intent into the right delivery skill; slash commands are just explicit overrides when you want to force a phase.
 
 <p align="center">
-  <img src="docs/assets/codument-workflow.png" alt="The codument delivery workflow: charter (new project, once) → grill → plan → approve (you decide) → implement & verify → document → review (you decide) → commit; the CLI finds and reports, your agent fixes" width="760">
+  <img src="docs/assets/codument-workflow.png" alt="The codument delivery workflow: charter (new project, once) → grill → plan → plan adversary (optional) → approve (you decide) → implement & verify → document → review (you decide) → review adversary (optional) → commit; two optional adversarial gates, verify don't trust; the CLI finds and reports, your agent fixes" width="760">
 </p>
 
 ```mermaid
