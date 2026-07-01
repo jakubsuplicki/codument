@@ -7,9 +7,65 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-01
+
+### Added
+- Symbol-grained change control: the stale-doc gate now tracks the individual
+  exported symbol a doc describes, not the whole file, so a one-symbol edit wakes
+  only its owning doc and a shared file no longer cascades onto every doc that
+  references it. The verdict is deterministic and reproducible — per-symbol
+  token-stream fingerprints compared across two git refs with one pinned parser,
+  derived-first ownership, a `<module>` residual backstop, and parse-error files
+  gated file-grain rather than read as fresh.
+- `codument ack`: record a fingerprint-bound, auto-invalidating acknowledgment
+  that a change owes no doc update — `<path>::<symbol>` for a contract-neutral
+  symbol move, or a bare `<path>` (file-grain) for the additive / concept / coarse
+  residue a symbol ack cannot reach. A file-grain ack never masks a moved symbol,
+  and over-acking stays visible in the resolution summary and the soak telemetry.
+- Two adversarial gates, both human-adjudicated. The **plan adversary**: after
+  grilling, an independent pass contests the written plan against its committed
+  grounding (invariants, ADRs, dependency edges, risk tags, surfaced by
+  `map check --plan --json`) and returns grounded objections for you to decide —
+  it never blocks, and "No material objections" is the expected clean result. The
+  opt-in **review gate** (`review --require-review`, with `--bundle`/`--record`):
+  an independent review whose findings block a commit only when a named test,
+  re-run on the spot, actually goes red — it verifies, it does not trust the
+  reviewer's prose.
+- `review --strict`: a step-sync gate that exits nonzero while a step left a new
+  source unmapped or a mapped doc stale, so a CI step (or autopilot) can hold the
+  registry and docs in sync per change.
+- Catch-rate seeded-bug benchmark: `benchmark init --seeded` ships a diff with
+  planted bugs over a committed baseline, and `benchmark score --mode loop|no-loop`
+  scores how many the review loop catches before commit (ADR 008).
+- `doctor`: an opt-in `--strict` flag, plus thin-doc and link-rot integrity checks.
+- A domain-skill layer (senior backend / frontend / architect, frontend-design,
+  motion-craft, code-reviewer) consulted advisorily from the intent router.
+- Implementation-discipline guidance (write the least code that solves the
+  problem; fix bugs at the root, not the symptom) in the agent contract.
+- `plan-with-docs` prints the plan's Outcome at the approval gate.
+- A Biome linter with a tuned, style-matched config, and a GitHub Actions matrix
+  (lint, typecheck, build, test on Node 18 / 20 / 22).
+
 ### Changed
-- Documentation refinements: README and CONTRIBUTING reframed around running
-  from source, with em dashes removed from user-facing copy.
+- The documentation standard: every doc follows fixed audience layers (In plain
+  terms → Design approach → Invariants & boundaries → Decisions → Key files), a
+  plan's delivery scaffolding is transient and compacts out when the work ships,
+  and the features/concepts were rewritten to it (the 525-line flagship split into
+  altitude docs plus ADRs).
+- Freshness resolution is verdict-derived, never symbol-name or co-movement
+  matching; co-movement is kept as info-only soak telemetry, never a gate input
+  (ADR 010).
+- `doctor` exempts depended-upon foundations from dependency coverage and the
+  empty-depends-on lint, so a genuine leaf or a shared base no longer false-fires.
+- README and CONTRIBUTING reframed around running from source, with em dashes
+  removed from user-facing copy.
+
+### Fixed
+- `review`: closed a `<module>`-residual false-negative and hardened the gate.
+- `analyze`: exclude fixture trees from source analysis.
+- Test and CI determinism: force `NO_COLOR`, use `os.tmpdir()` over a hardcoded
+  path, strip ANSI in render assertions, and make the benchmark NODE_OPTIONS-strip
+  test robust across the Node matrix.
 
 ## [0.6.0] - 2026-06-22
 
