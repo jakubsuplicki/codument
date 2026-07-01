@@ -45,11 +45,15 @@ export interface DriftLedger {
   flagged: number;
   /** Resolved by a doc update (verdict-derived: the owning doc changed). */
   docUpdated: number;
+  /** Resolved by a file-grain ack (additive/coarse residue) — a "no doc owed" decision. */
+  fileAcked: number;
   acknowledged: number;
   coMoved: number;
   proseUnchanged: number;
   notReferenced: number;
-  /** acknowledged / (acknowledged + docUpdated); 0 when nothing has resolved yet. */
+  /** (acknowledged + fileAcked) / (acknowledged + fileAcked + docUpdated) — the
+   *  fraction of resolved fires that owed no doc change; 0 when nothing has resolved
+   *  yet. Both ack kinds sit on the friction side; only a real doc update is not. */
   frictionRate: number;
 }
 
@@ -79,6 +83,7 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
   const drift: DriftLedger = {
     flagged: 0,
     docUpdated: 0,
+    fileAcked: 0,
     acknowledged: 0,
     coMoved: 0,
     proseUnchanged: 0,
@@ -100,8 +105,9 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
       for (const x of d.offPlan) off.add(x);
       if (d.drift) {
         drift.flagged += d.drift.flagged;
-        // `?? 0`: snapshots logged before docUpdated existed carry no such field.
+        // `?? 0`: snapshots logged before docUpdated/fileAcked existed carry no such field.
         drift.docUpdated += d.drift.docUpdated ?? 0;
+        drift.fileAcked += d.drift.fileAcked ?? 0;
         drift.acknowledged += d.drift.acknowledged;
         drift.coMoved += d.drift.coMoved;
         drift.proseUnchanged += d.drift.proseUnchanged;
@@ -128,8 +134,12 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
     total,
   };
 
-  const resolved = drift.acknowledged + drift.docUpdated;
-  drift.frictionRate = resolved > 0 ? drift.acknowledged / resolved : 0;
+  // Both ack kinds (per-symbol + file-grain) owe no doc change → the friction side;
+  // only a real doc update is not. A file-ack must not deflate friction as if it
+  // were a doc update.
+  const noDocOwed = drift.acknowledged + drift.fileAcked;
+  const resolved = noDocOwed + drift.docUpdated;
+  drift.frictionRate = resolved > 0 ? noDocOwed / resolved : 0;
 
   return {
     provable,

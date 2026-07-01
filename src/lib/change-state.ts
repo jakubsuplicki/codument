@@ -12,7 +12,8 @@ import {
   type ExclusionSpec,
 } from "./analyze.js";
 import { resolveOwner, splitAnchorId } from "./ownership.js";
-import type { AnchorChange } from "./fingerprint.js";
+import { fileContentTransition, type AnchorChange } from "./fingerprint.js";
+import { ackCovers, isFileGrainAck, type Acknowledgment } from "./acknowledgment.js";
 
 // Deterministic diff snapshot over the v2 registry. Pure function of (registry,
 // changed files, optional plan scope, optional per-file anchor changes): no git,
@@ -45,6 +46,14 @@ export interface ChangeStateInput {
    *  they are already gated file-grain by virtue of being absent from
    *  `anchorChanges`. */
   unevaluable?: string[];
+  /** Files (repo-relative) whose CURRENT content is covered by a valid file-grain
+   *  acknowledgment (`codument ack <path>`), resolved impurely by the caller (see
+   *  `resolveFileGrainAcked`). Such a file's ADDITIVE (added/removed symbol),
+   *  CONCEPT (file-grain umbrella), and COARSE/non-TS staleness contribution is
+   *  cleared. A file-grain ack NEVER masks an unacknowledged moved (`changed`) owned
+   *  symbol — that anchor still wakes its feature, so a real contract change is never
+   *  laundered. Empty unless the caller resolved acks. */
+  fileGrainAcked?: string[];
 }
 
 export interface FeatureGroup {
@@ -219,12 +228,20 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   };
 
   const ownershipLints: OwnershipLint[] = [];
+  // Files whose current content is covered by a file-grain ack (`codument ack
+  // <path>`): their additive/concept/coarse staleness is cleared, but a `changed`
+  // (moved) owned symbol still wakes — a file ack never masks a real contract move.
+  const fileGrainAcked = new Set(input.fileGrainAcked ?? []);
 
   for (const file of changedSources) {
+    const acked = fileGrainAcked.has(file);
     const precise = input.anchorChanges?.[file];
     if (precise !== undefined) {
       // PER-SYMBOL: each changed anchor resolves to exactly its owning feature.
       for (const ch of precise) {
+        // A file-grain ack clears added/removed residue but NEVER a moved symbol:
+        // a `changed` anchor still wakes its owning feature.
+        if (acked && ch.kind !== "changed") continue;
         const res = resolveOwner(registry, ch.id);
         if (res.kind === "owned") {
           wake(res.feature, file);
@@ -249,11 +266,15 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
         }
         // "unowned": no feature owns it per-symbol; a concept umbrella (below) may.
       }
-      // Concept umbrellas wake at file grain whenever the file's content moved.
-      if (precise.length > 0) wakeConcepts(file);
-    } else {
+      // Concept umbrellas wake at file grain whenever the file's content moved — a
+      // file-grain ack clears that file-grain contribution (concepts have no per-
+      // symbol anchor to protect; the moved symbol, if any, still wakes its feature).
+      if (precise.length > 0 && !acked) wakeConcepts(file);
+    } else if (!acked) {
       // FILE-GRAIN FALLBACK (coarse/non-TS, or anchors uncomputable): every
-      // PRIMARY owner — feature or concept — wakes; related_sources never does.
+      // PRIMARY owner — feature or concept — wakes; related_sources never does. A
+      // covering file-grain ack clears the whole fallback wake (a coarse file has no
+      // per-symbol move to protect — the ack is the file-grain judgment for it).
       for (const key of featurePrimary.get(file) ?? []) wake(key, file);
       wakeConcepts(file);
     }
@@ -361,6 +382,38 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     ownershipLints,
     unevaluable: sortStrings(input.unevaluable ?? []),
   };
+}
+
+// ── File-grain acknowledgment resolution ────────────────────────────────
+//
+// Which of the changed files carry a valid, CURRENT-content file-grain ack — the
+// `fileGrainAcked` set the pure analyzer consumes. Impure (reads git + disk to
+// recompute each file's content transition), so it lives beside the analyzer, never
+// inside it. Only files a file-grain ack actually names are transition-checked, so a
+// clean tree pays nothing. A file that just became unevaluable (a fresh parse error)
+// is excluded — the fail-loud stance holds: a broken file is never acked fresh. The
+// ack's `to` must match the file's current content, so a later edit auto-invalidates
+// it exactly like a symbol ack.
+export function resolveFileGrainAcked(
+  root: string,
+  base: string,
+  changedFiles: string[],
+  acks: Acknowledgment[],
+  unevaluable: string[] = [],
+): string[] {
+  const fileAcks = acks.filter(isFileGrainAck);
+  if (fileAcks.length === 0) return [];
+  const ackedIds = new Set(fileAcks.map((a) => a.anchorId));
+  const unevaluableSet = new Set(unevaluable);
+  const covered: string[] = [];
+  for (const file of changedFiles) {
+    if (!ackedIds.has(file)) continue; // no file-grain ack names this path
+    if (unevaluableSet.has(file)) continue; // parse-unevaluable is never acked fresh
+    const { from, to } = fileContentTransition(root, base, file);
+    if (from === null || to === null) continue; // added/deleted — no content transition
+    if (fileAcks.some((a) => ackCovers(a, file, from, to))) covered.push(file);
+  }
+  return covered.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 // ── Approved-plan detection ─────────────────────────────────────────────

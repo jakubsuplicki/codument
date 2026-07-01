@@ -222,6 +222,34 @@ export function fileContentChange(
   return before === after ? "unchanged" : "changed";
 }
 
+// The file's whole-file CONTENT fingerprint transition between a base ref and the
+// WORKING TREE — the coarse (byte-normalized) hash a file-grain acknowledgment
+// binds to (`codument ack <path>`). `from`/`to` are null when the file is absent at
+// that side (added at head → null `from`; deleted from the tree → null `to`).
+// Because the ack records this exact `from`->`to`, it auto-invalidates the next time
+// the file's content moves — exactly as a per-symbol ack binds a symbol's transition.
+// The base is read from git; the head from disk, then byte-normalized by the coarse
+// adapter so it hashes identically to a committed blob.
+export function fileContentTransition(
+  root: string,
+  base: string,
+  path: string,
+): { from: string | null; to: string | null } {
+  const baseContent = readBlobAtRef(root, base, path);
+  let headContent: string | null;
+  try {
+    headContent = readFileSync(join(root, path), "utf-8");
+  } catch {
+    headContent = null; // deleted / unreadable in the working tree
+  }
+  const fp = (content: string): string =>
+    coarseAdapter.anchors(path, content)[0].fingerprint;
+  return {
+    from: baseContent === null ? null : fp(baseContent),
+    to: headContent === null ? null : fp(headContent),
+  };
+}
+
 // The subset of `paths` whose content actually changed between the two refs
 // (added / removed / changed), with cosmetic-only churn filtered out. Sorted,
 // deduped.

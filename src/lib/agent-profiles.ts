@@ -55,13 +55,15 @@ export const ALL_SKILLS = [...DELIVERY_SKILLS, ...DOMAIN_SKILLS] as const;
  * Agent definitions (subagent system prompts) installed into a subagent-capable
  * profile's `agentsDir`. The single source of truth so `init` and `update` cannot
  * drift apart. `adversarial-reviewer` is the independent reviewer the
- * adversarial-review gate spawns; the others back the bootstrap/scan/review skills.
+ * adversarial-review gate spawns and `adversarial-planner` is its plan-time twin
+ * (the plan adversary); the others back the bootstrap/scan/review skills.
  */
 export const AGENT_DEFINITIONS = [
   "doc-writer.md",
   "doc-scanner.md",
   "code-reviewer.md",
   "adversarial-reviewer.md",
+  "adversarial-planner.md",
 ] as const;
 
 /**

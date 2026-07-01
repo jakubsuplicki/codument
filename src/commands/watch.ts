@@ -438,8 +438,9 @@ export function renderFrame(
     if (impact.hasDrift) {
       const d = impact.drift;
       const pct = Math.round(d.frictionRate * 100);
+      const fileAcked = d.fileAcked > 0 ? ` · ${d.fileAcked} file-acked` : "";
       lines.push(
-        `    ${pc.cyan("soak")}      ${d.flagged} symbol move(s) · ${d.docUpdated} resolved by doc update · ${d.acknowledged} acked   ${pc.dim(`(friction ${pct}% · info-only)`)}`,
+        `    ${pc.cyan("soak")}      ${d.flagged} symbol move(s) · ${d.docUpdated} resolved by doc update · ${d.acknowledged} acked${fileAcked}   ${pc.dim(`(friction ${pct}% · info-only)`)}`,
       );
     }
     lines.push("");

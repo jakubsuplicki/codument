@@ -54,6 +54,16 @@ const FENCE_OPEN = /^\s*```feature-map\s*$/;
 const FENCE_CLOSE = /^\s*```\s*$/;
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SECONDARY = /\[secondary:\s*([^\]]*)\]\s*$/i;
+const FEATURE_MAP_HEADING = /^#{1,6}\s+.*feature\s+map\b/i;
+
+/** True when a markdown *heading* line reads "Feature Map" (any level). Used to
+ *  tell "this plan has no Feature Map" (fine for a no-source plan) apart from
+ *  "the author wrote a Feature Map section but not a parseable `feature-map`
+ *  fenced block" (a table or prose) — the latter silently routes nothing and
+ *  must be flagged, not treated as absent. */
+export function hasFeatureMapHeading(markdown: string): boolean {
+  return markdown.split(/\r?\n/).some((line) => FEATURE_MAP_HEADING.test(line));
+}
 
 function toPosix(path: string): string {
   return path.split("\\").join("/");

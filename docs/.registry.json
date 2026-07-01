@@ -29,6 +29,29 @@
       "risk": [],
       "status": "in-progress"
     },
+    "plan-adversary": {
+      "doc": "docs/features/plan-adversary.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/lib/plan-grounding.ts"
+      ],
+      "related_sources": [
+        "src/commands/map.ts",
+        "src/lib/agent-profiles.ts"
+      ],
+      "docs": [
+        "agents/adversarial-planner.md",
+        "docs/architecture/decisions/011-plan-adversary-human-adjudicated-grounded-no-artifact.md"
+      ],
+      "depends_on": [
+        "adversarial-review-gate",
+        "feature-decomposition",
+        "agent-delivery-workflow",
+        "lib"
+      ],
+      "risk": [],
+      "status": "in-progress"
+    },
     "project-charter-gate": {
       "doc": "docs/features/project-charter-gate.md",
       "type": "feature",

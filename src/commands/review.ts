@@ -5,6 +5,7 @@ import { readRegistrySync } from "../lib/registry.js";
 import {
   computeChangeState,
   detectApprovedPlanScope,
+  resolveFileGrainAcked,
   type ApprovedPlan,
   type ChangeState,
 } from "../lib/change-state.js";
@@ -56,7 +57,8 @@ interface ReviewOptions {
   /** Override the argv used to run a finding's named test (the literal `{file}`
    *  token is the resolved path). Defaults to codument's own `npx tsx --test`; a
    *  consumer project whose tests run differently sets this so the gate's
-   *  re-confirmation step is not hardcoded to one toolchain. */
+   *  re-confirmation step is not hardcoded to one toolchain. Accepts either real
+   *  argv or a single whitespace-joined string (see `normalizeTestCommand`). */
   testCommand?: string[];
   /** Emit the adversarial-review BUNDLE (the oracle: touched features' invariants +
    *  their test pointers, the diff, ownership/blast facts) as JSON and exit. This is
@@ -70,6 +72,19 @@ interface ReviewOptions {
   record?: string;
 }
 
+// A test command can arrive as real argv (`["node","--test","{file}"]`) or, because
+// commander's variadic `<argv...>` rejects a leading-dash value like `--test`, as a
+// single quoted string the user passed to dodge that (`"node --test {file}"`). Split
+// the single-string form on whitespace so `--test-command "npx tsx --test {file}"`
+// works. Genuine multi-element argv (no leading-dash args) is passed through as-is.
+export function normalizeTestCommand(command?: string[]): string[] | undefined {
+  if (!command || command.length === 0) return undefined;
+  if (command.length === 1 && /\s/.test(command[0])) {
+    return command[0].trim().split(/\s+/);
+  }
+  return command;
+}
+
 export interface ReviewReport {
   version: 1;
   isGitRepo: boolean;
@@ -79,6 +94,32 @@ export interface ReviewReport {
   /** Per-symbol drift detail behind the verdict: which owned symbols moved, their
    *  co-movement telemetry, and which were cleared by a recorded acknowledgment. */
   drift: DriftFinding[];
+  /** Files whose current content is covered by a file-grain ack (`codument ack
+   *  <path>`) — the additive/concept/coarse staleness cleared this run. Surfaced so
+   *  the resolution summary shows a file-ack AS an ack, never laundered as a doc
+   *  update (over-acking stays visible). */
+  fileGrainAcked: string[];
+}
+
+/** How a moved-owned-symbol drift finding was resolved (or not) — kept in one place
+ *  so the human resolution line and the `--log` soak tally can never diverge. A
+ *  file-grain ack is an ACK (no doc change owed), NOT a doc update, so it sits with
+ *  `acked` on the friction side; a `changed` (moved) symbol is never file-acked. */
+export type DriftResolution = "acked" | "file-acked" | "doc-updated" | "flagged";
+
+export function driftResolution(
+  finding: DriftFinding,
+  staleFeatures: Set<string>,
+  fileGrainAcked: Set<string>,
+): DriftResolution {
+  if (finding.acknowledged) return "acked";
+  if (staleFeatures.has(finding.feature)) return "flagged";
+  // Feature not stale and not symbol-acked → resolved. A file-grain ack over the
+  // file resolves an ADDITIVE (added/removed) finding; a moved symbol never is.
+  const sep = finding.anchorId.indexOf("::");
+  const file = sep === -1 ? finding.anchorId : finding.anchorId.slice(0, sep);
+  if (finding.kind !== "changed" && fileGrainAcked.has(file)) return "file-acked";
+  return "doc-updated";
 }
 
 /**
@@ -102,6 +143,7 @@ export function buildReview(
   // Best-effort: coarse/non-TS files degrade to file-grain ownership; parse-error
   // files come back as `unevaluable` (gated file-grain AND surfaced).
   const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, changes);
+  const acks = readAcks(root);
   // Resolve per-symbol drift + acknowledgments: an acked move is adjudicated (a
   // recorded "refactor, no doc change owed" decision) and dropped from the set the
   // stale-doc verdict sees; co-movement is attached as info-only telemetry.
@@ -110,14 +152,19 @@ export function buildReview(
     baseRef,
     registry,
     anchorChanges,
-    readAcks(root),
+    acks,
   );
+  // File-grain acks (`codument ack <path>`): a bare-path ack covering a file's
+  // current content clears its additive/concept/coarse staleness (never a moved
+  // symbol). Resolved here (git+disk) and passed to the pure analyzer.
+  const fileGrainAcked = resolveFileGrainAcked(root, baseRef, changes, acks, unevaluable);
   const state = computeChangeState({
     registry,
     changedFiles: changes,
     planScope: plan?.scope,
     anchorChanges: filtered,
     unevaluable,
+    fileGrainAcked,
   });
   return {
     version: 1,
@@ -126,6 +173,7 @@ export function buildReview(
     plan,
     state,
     drift,
+    fileGrainAcked,
   };
 }
 
@@ -136,7 +184,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     if (options.json) {
       console.log(
         JSON.stringify(
-          { version: 1, isGitRepo: false, changedFileCount: 0, plan: null, state: null, drift: [] },
+          { version: 1, isGitRepo: false, changedFileCount: 0, plan: null, state: null, drift: [], fileGrainAcked: [] },
           null,
           2,
         ),
@@ -255,18 +303,30 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // by default to avoid a surprise file write; `commit-work` runs it at commit.
   if (options.log) {
     const d = report.drift;
+    const fileGrainAcked = new Set(report.fileGrainAcked);
+    // Partition resolutions with the shared classifier so the calibration data
+    // matches the human summary exactly. A file-grain ack is counted AS an ack (no
+    // doc change owed), never as a doc update, so the friction rate stays honest.
+    let docUpdated = 0;
+    let fileAcked = 0;
+    for (const f of d) {
+      const r = driftResolution(f, staleFeatures, fileGrainAcked);
+      if (r === "doc-updated") docUpdated++;
+      else if (r === "file-acked") fileAcked++;
+    }
     emitCaught(root, {
       commit: getHeadSha(root),
       staleDocs: report.state.staleDocs.map((s) => s.doc),
       riskTouches: report.state.riskTouches.map((r) => r.feature),
       offPlan: report.state.outOfPlan,
       // Per-symbol drift soak tally. Resolution is verdict-derived: a doc update
-      // (the owning doc changed) or an ack. The co-movement fields are info-only
-      // telemetry for calibrating co-movement itself, never a resolution signal.
+      // (the owning doc changed), a symbol ack, or a file-grain ack (additive residue).
+      // The co-movement fields are info-only telemetry for calibrating co-movement
+      // itself, never a resolution signal.
       drift: {
         flagged: d.length,
-        docUpdated: d.filter((f) => !f.acknowledged && !staleFeatures.has(f.feature))
-          .length,
+        docUpdated,
+        fileAcked,
         acknowledged: d.filter((f) => f.acknowledged).length,
         coMoved: d.filter((f) => f.comovement === "co-moved").length,
         proseUnchanged: d.filter((f) => f.comovement === "prose-unchanged").length,
@@ -307,8 +367,10 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // status the artifact merely claims. A red test re-promotes to confirmed; a
     // toolchain failure (missing runner, resolution error) is unrunnable → advisory.
     const confirmedFindings = covering
-      ? confirmFindings(covering.findings, makeTestRunner({ root, command: options.testCommand }))
-          .findings
+      ? confirmFindings(
+          covering.findings,
+          makeTestRunner({ root, command: normalizeTestCommand(options.testCommand) }),
+        ).findings
       : null;
     reviewGate = evaluateReviewGate(
       {
@@ -499,22 +561,35 @@ function printHuman(report: ReviewReport): void {
 
   // First-class drift-resolution summary: an all-ack change is loud here, not a
   // quiet green — over-acking is visible at the moment of the change, not only in
-  // the aggregate soak telemetry. "resolved by doc update" is verdict-derived (the
+  // the aggregate soak telemetry. A file-grain ack shows AS a (file) ack, never
+  // laundered as a doc update. "resolved by doc update" is verdict-derived (the
   // owning doc was edited in this diff), not a co-movement guess.
   const moved = report.drift.length;
   if (moved > 0) {
-    // One pass so the three buckets provably partition `moved` — acked +
-    // docUpdated + unresolved cannot silently diverge from a future predicate edit.
+    // One pass, shared classifier so the four buckets provably partition `moved` —
+    // acked + fileAcked + docUpdated + unresolved cannot silently diverge.
+    const fileGrainAcked = new Set(report.fileGrainAcked);
     let acked = 0;
+    let fileAcked = 0;
     let docUpdated = 0;
     for (const d of report.drift) {
-      if (d.acknowledged) acked++;
-      else if (!staleFeatures.has(d.feature)) docUpdated++;
+      switch (driftResolution(d, staleFeatures, fileGrainAcked)) {
+        case "acked":
+          acked++;
+          break;
+        case "file-acked":
+          fileAcked++;
+          break;
+        case "doc-updated":
+          docUpdated++;
+          break;
+      }
     }
     console.log(
       `  ${pc.bold("Drift resolution")}: ${moved} owned symbol(s) moved · ` +
-        `${acked} acked (contract-neutral) · ${docUpdated} resolved by doc update · ` +
-        `${unresolved.length} still flagged`,
+        `${acked} acked (contract-neutral) · ` +
+        (fileAcked > 0 ? `${fileAcked} file-acked (additive) · ` : "") +
+        `${docUpdated} resolved by doc update · ${unresolved.length} still flagged`,
     );
     console.log();
   }

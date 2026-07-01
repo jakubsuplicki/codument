@@ -28,14 +28,14 @@ depends_on:
   - commands
   - lib
 risk: []
-last_reviewed: 2026-06-28
+last_reviewed: 2026-07-01
 ---
 
 # Change-control gate
 
 ## In plain terms
 
-This is the safety check that catches a doc going stale the moment the code it describes moves. When an agent (or a person) changes a symbol but leaves its owning feature doc untouched, the gate flags it; the agent then resolves it inline as part of the same change, by updating the doc at intent altitude or by recording a one-line acknowledgment that the move was a contract-neutral refactor. `review` is the snapshot you run against a diff; `watch` is the live terminal view of the same signal while work happens. The whole point is that correct docs fall out as a byproduct of the work, with no separate chore.
+This is the safety check that catches a doc going stale the moment the code it describes moves. When an agent (or a person) changes a symbol but leaves its owning feature doc untouched, the gate flags it; the agent then resolves it inline as part of the same change. Three resolutions: update the doc at intent altitude; record a one-line **per-symbol acknowledgment** that a moved symbol was a contract-neutral refactor; or — for a purely additive change (a new exported helper) or a concept doc with no single symbol to point at — a **file-grain acknowledgment** (`ack <path>`) that the file's current content owes no doc change. `review` is the snapshot you run against a diff; `watch` is the live terminal view of the same signal while work happens. The whole point is that correct docs fall out as a byproduct of the work, with no separate chore.
 
 ## Design approach
 
@@ -55,6 +55,8 @@ The gate is split into two parts that must not be confused: a **deterministic en
 - **Co-movement is never a verdict input.** It is info-only telemetry — a soak signal measuring its own false-fire rate — and never clears or trips the gate. *(test: co-movement.test.ts classifies the signal in isolation; drift.test.ts surfaces it on findings without it changing `staleDocs`)*
 - **An acknowledgment auto-invalidates when the anchor moves again.** It is bound to the exact `from`→`to` transition, so a later move produces a `to` no prior ack matches — no ride-forever exemption. *(test: acknowledgment.test.ts ackCovers auto-invalidation; ack.test.ts and drift.test.ts re-move re-fires the gate end-to-end)*
 - **The gate verifies an ack's form, never its semantic truth.** It checks the ack exists, is attributed (non-empty fields), and names the exact moved fingerprint; code/doc equivalence is undecidable and the gate never claims to decide it. *(test: acknowledgment.test.ts parseAck rejects empty/missing fields and ackCovers requires the exact anchor + transition)*
+- **A file-grain ack (`ack <path>`) clears a file's additive / concept / coarse staleness, and NEVER masks a moved symbol.** A bare-path ack binds the file's content fingerprint (so it auto-invalidates on the next change) and clears the added/removed-symbol, concept-umbrella, and coarse/non-TS contribution a per-symbol ack cannot reach; a `changed` (moved) owned symbol still wakes its feature, so a real contract change is never laundered. *(test: change-state.test.ts file-grain ack honoring — additive/concept/coarse cleared, moved symbol never masked; ack.test.ts records + guides on a remaining moved symbol and auto-invalidates)*
+- **A file-grain ack counts AS an ack, never as a doc update.** The resolution summary and the soak friction tally bucket it on the no-doc-change-owed side (a distinct `file-acked` line), so over-acking stays visible and the friction rate — the info-only→blocking soak signal — is not deflated by file acks. A parse-unevaluable file cannot be file-acked into freshness (the fail-loud stance holds). *(test: impact-ledger.test.ts friction counts a file ack on the ack side; ack.test.ts refuses an unevaluable file; review output shows `file-acked (additive)`)*
 - **A signature change is the highest-signal behavior proxy and should be ineligible for the ack fast-path** (a doc update is owed). This is a named, deferred hardening: anchors are body-inclusive today, so signature-vs-body ineligibility is not yet enforced — honesty rests on the visible ack-rate and the audit trail until anchors split. *(untested — deferred enhancement)*
 - **A born-wrong or already-drifted doc is out of scope.** The gate enforces code/doc *co-movement*, never prose *correctness*; only anchors that moved within the two-ref window are evaluated, so pre-existing drift is grandfathered by construction. *(honest ceiling — the label-noise limit)*
 - **Non-TS files are never un-gated.** TS gets precise per-symbol anchors; every other file (and `.d.ts`, generated, barrel, `export =`, namespace-only, parse-error, side-effect-only TS) falls back to a coarse whole-file content hash on file grain. A file that fails to parse is surfaced as un-evaluable and gated file-grain, never read as fresh. *(test: ts-adapter.test.ts classifyTsFile precise|coarse|unevaluable; gate-wiring.test.ts file-grain fallback for coarse and parse-error files)*
@@ -70,6 +72,7 @@ The gate is split into two parts that must not be confused: a **deterministic en
 - Co-movement demoted to info-only telemetry — [005-co-movement-info-only-telemetry.md](../architecture/decisions/005-co-movement-info-only-telemetry.md)
 - Agent-judge resolution: self-resolve with a durable audit trail — [006-agent-judge-resolution-self-resolve-with-audit-trail.md](../architecture/decisions/006-agent-judge-resolution-self-resolve-with-audit-trail.md)
 - Freshness resolution: detect deterministically, verify by tests, resolve agent-driven — never by symbol-name matching — [010-freshness-resolution-detect-test-verify-agent-driven.md](../architecture/decisions/010-freshness-resolution-detect-test-verify-agent-driven.md)
+- File-grain acknowledgment: conservative (never masks a moved symbol), binds file content, over-acking stays visible — [012-file-grain-acknowledgment-conservative-additive-residue.md](../architecture/decisions/012-file-grain-acknowledgment-conservative-additive-residue.md)
 
 The info-only → blocking flip is **soak-data-dependent and not yet made**: the false-fire threshold and soak window come from live `events.jsonl` data, so it cannot be finished without real soak time. The gate is TS-precise today with non-TS on the coarse hash; second-party independence on an ack is an opt-in strict mode, deferred.
 
@@ -77,7 +80,7 @@ The info-only → blocking flip is **soak-data-dependent and not yet made**: the
 
 - `src/commands/review.ts` — the snapshot orchestrator: resolves the base, gathers the change set, runs the analyzer, and renders each drift finding as a two-arm fork (update the doc, or run the printed `ack` command) with a per-run resolution summary.
 - `src/commands/watch.ts` — the live view: the same analyzer rendered on a cheap refresh loop, tailing the event log so you can watch the gate while the agent works.
-- `src/commands/ack.ts` — the reachable agent-judge surface: turns a copy-pasteable command (or a unique bare symbol name) into a fingerprint-bound, audited acknowledgment, recomputing the transition itself so no fingerprint is ever copied.
+- `src/commands/ack.ts` — the reachable agent-judge surface: turns a copy-pasteable command (a `<path>::<symbol>`, a unique bare symbol name, or a bare `<path>` for a file-grain ack) into a fingerprint-bound, audited acknowledgment, recomputing the transition itself so no fingerprint is ever copied; the file-grain form guides on any moved symbol it does not cover.
 - `src/commands/demo.ts` — the showcase driver: builds a throwaway fixture and runs the full gate so the machinery (caught / auto-fixed / surfaced) is visible end to end.
 - `src/commands/report.ts` — emits the shareable static HTML report of a review.
 - `src/lib/change-state.ts` — the pure analyzer at the centre: turns a registry plus a change set (and optional per-file anchor changes) into the deterministic stale-doc verdict; backs both `review` and `watch`.

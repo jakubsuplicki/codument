@@ -147,6 +147,22 @@ describe("init command", () => {
     );
   });
 
+  it("installs both adversary agent defs on the subagent-capable Claude profile", () => {
+    runInit("--agents", "claude");
+    // the implementation adversary and its plan-time twin both ship where a host
+    // can spawn a fresh, independent subagent
+    assert.ok(existsSync(join(tmp, ".claude", "agents", "adversarial-reviewer.md")));
+    assert.ok(existsSync(join(tmp, ".claude", "agents", "adversarial-planner.md")));
+  });
+
+  it("installs no agent defs on the Codex profile (no subagents to spawn)", () => {
+    runInit("--agents", "codex");
+    // Codex has no agentsDir; the plan adversary degrades to a manual handoff in
+    // the skill prose, never a self-critiquing subagent
+    assert.ok(!existsSync(join(tmp, ".claude", "agents")));
+    assert.ok(!existsSync(join(tmp, ".agents", "agents")));
+  });
+
   it("updates AGENTS.md with managed section", async () => {
     runInit();
 

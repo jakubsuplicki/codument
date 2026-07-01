@@ -76,7 +76,11 @@ export interface DriftTally {
   /** Resolved by a doc update: the owning doc changed in the diff (verdict-derived,
    *  the same signal `review` shows as "resolved by doc update"). */
   docUpdated: number;
-  /** Cleared by a recorded acknowledgment (a "refactor, no doc owed" decision). */
+  /** Cleared by a file-grain ack (`codument ack <path>`): an additive/coarse residue
+   *  the file ack vouched for. Counted with acks (no doc change owed), not with doc
+   *  updates, so the friction rate stays honest. */
+  fileAcked: number;
+  /** Cleared by a recorded per-symbol acknowledgment (a "refactor, no doc owed" decision). */
   acknowledged: number;
   /** Co-movement telemetry (info-only, never a resolution signal): the doc's
    *  symbol-scoped lines moved. Kept for calibrating co-movement itself. */

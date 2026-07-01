@@ -11,7 +11,7 @@ depends_on:
   - commands
   - lib
 risk: []
-last_reviewed: 2026-06-29
+last_reviewed: 2026-07-01
 ---
 
 # CLI

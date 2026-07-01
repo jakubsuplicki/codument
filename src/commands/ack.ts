@@ -2,11 +2,13 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import pc from "picocolors";
 import {
+  fileContentTransition,
   gatherAnchorChanges,
   type AnchorChange,
 } from "../lib/fingerprint.js";
 import {
   ACKS_DIR,
+  ackCovers,
   ackFileName,
   isIndependent,
   readAcks,
@@ -16,6 +18,8 @@ import {
 import { getGitAuthor } from "../lib/git.js";
 import { resolveBase } from "../lib/two-ref.js";
 import { emitAck, emitAckRemove } from "../lib/review-events.js";
+import { readRegistrySync, type Registry } from "../lib/registry.js";
+import { resolveOwner } from "../lib/ownership.js";
 
 // `codument ack` — the reachable surface for the agent-judge loop. When a review
 // finding is a pure-internal refactor that owes no doc change, the agent records a
@@ -66,7 +70,10 @@ export function ackCommand(anchor: string | undefined, options: AckCliOptions): 
   }
   const sep = anchor.indexOf("::");
   if (sep === -1) {
-    fail(`anchor must be <path>::<symbol> (got "${anchor}")`);
+    // A bare path (no `::descriptor`) is a file-grain ack: it vouches for the whole
+    // file's current content, clearing additive / concept / coarse staleness a
+    // per-symbol ack cannot reach — while never masking a moved symbol.
+    ackFile(root, anchor, options);
     return;
   }
   const file = anchor.slice(0, sep);
@@ -128,6 +135,123 @@ export function ackCommand(anchor: string | undefined, options: AckCliOptions): 
   );
   console.log(`  ${pc.dim("reason:")} ${ack.reason}`);
   console.log(`  ${pc.dim(`signer: ${signer} · handle ${handleOf(ack)}`)}`);
+  console.log(pc.dim("  Re-run `codument review` to confirm the finding cleared."));
+}
+
+// `codument ack <path>` — the file-grain surface. A purely-additive change (a new
+// exported helper) or a concept doc (whose ownership is file-grain, no per-symbol
+// anchor) has no symbol to ack; without this, the only way to clear the gate is to
+// touch the doc (a weak, non-fingerprint-bound `last_reviewed` bump). This records a
+// real, attributed, fingerprint-bound decision that the file's CURRENT content owes
+// no doc change, bound to the file's content transition so it auto-invalidates on the
+// next change to the file — exactly like a symbol ack. It never masks a moved symbol:
+// any still-unacknowledged moved anchor is named so it is resolved properly.
+function ackFile(root: string, file: string, options: AckCliOptions): void {
+  const baseLabel = options.base ? `merge-base with ${options.base}` : "HEAD";
+  let baseRef = "HEAD";
+  if (options.base) {
+    try {
+      baseRef = resolveBase(root, options.base, "HEAD").sha;
+    } catch (err) {
+      fail((err as Error).message);
+      return;
+    }
+  }
+
+  // A parse-unevaluable file is never acked into freshness (the fail-loud stance the
+  // symbol path also takes) — fix the parse error, then ack.
+  const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, [file]);
+  if (unevaluable.includes(file)) {
+    fail(`${file} does not parse — fix the parse error before acking`);
+    return;
+  }
+
+  const { from, to } = fileContentTransition(root, baseRef, file);
+  if (from === null && to === null) {
+    fail(`${file} is absent at ${baseLabel} and in the working tree — nothing to ack`);
+    return;
+  }
+  if (from === null || to === null) {
+    fail(
+      `${file} was ${from === null ? "added" : "deleted"}, not changed — a new or removed file needs doc attention, not a file ack`,
+    );
+    return;
+  }
+  if (from === to) {
+    fail(`${file} content is unchanged against ${baseLabel} — nothing to ack`);
+    return;
+  }
+
+  const author = getGitAuthor(root) ?? "agent";
+  const signer = options.signer ?? author;
+  const ack: Acknowledgment = {
+    anchorId: file,
+    fromHash: from,
+    toHash: to,
+    reason: options.reason!.trim(),
+    signer,
+  };
+  writeAck(root, ack);
+  const kind = isIndependent(ack, author) ? "independent" : "self";
+  emitAck(root, { ...ack, kind });
+
+  console.log(
+    `${pc.green("✓")} acknowledged file ${pc.bold(file)} ${pc.dim(
+      `(${short(from)}→${short(to)}, ${kind})`,
+    )}`,
+  );
+  console.log(`  ${pc.dim("reason:")} ${ack.reason}`);
+  console.log(`  ${pc.dim(`signer: ${signer} · handle ${handleOf(ack)}`)}`);
+
+  // Guide, don't blanket: a file ack never clears a moved OWNED symbol. Name any
+  // still-unacknowledged moved anchor that a feature owns (so it stays flagged) so it
+  // is resolved (doc update or a per-symbol ack) rather than mistaken for covered. An
+  // unowned move (a concept-only file) is fully cleared by the file ack, so it is not
+  // warned about; a non-precise file has no per-symbol anchors at all.
+  const acks = readAcks(root);
+  let registry: Registry | null = null;
+  try {
+    registry = readRegistrySync(join(root, "docs", ".registry.json"));
+  } catch {
+    registry = null; // no registry → nothing is owned/gated → no guidance to give
+  }
+  const stillMoved = !registry
+    ? []
+    : (anchorChanges[file] ?? []).filter(
+        (ch) =>
+          ch.kind === "changed" &&
+          ch.from !== undefined &&
+          ch.to !== undefined &&
+          resolveOwner(registry as Registry, ch.id).kind === "owned" &&
+          !acks.some((a) => ackCovers(a, ch.id, ch.from as string, ch.to as string)),
+      );
+  if (stillMoved.length > 0) {
+    console.log();
+    console.log(
+      pc.yellow(`  ⚠ ${stillMoved.length} moved symbol(s) here are NOT cleared by a file ack:`),
+    );
+    for (const ch of stillMoved) console.log(`      ${pc.dim("•")} ${ch.id}`);
+    console.log(
+      pc.dim("    Update the owning doc at intent altitude, or codument ack <path>::<symbol> each."),
+    );
+  }
+  // Make the API growth visible: an added/removed OWNED export IS cleared by this
+  // file ack (additive residue), but it changed the surface — surface it (info-only,
+  // not a warning) so the vouch is a conscious call, not a silent sweep.
+  const clearedExports = !registry
+    ? []
+    : (anchorChanges[file] ?? []).filter(
+        (ch) => ch.kind !== "changed" && resolveOwner(registry as Registry, ch.id).kind === "owned",
+      );
+  if (clearedExports.length > 0) {
+    console.log();
+    console.log(
+      pc.dim(
+        `  This file ack cleared ${clearedExports.length} added/removed export(s) — confirm they owe no doc line:`,
+      ),
+    );
+    for (const ch of clearedExports) console.log(`      ${pc.dim(`• ${ch.name} (${ch.kind})`)}`);
+  }
   console.log(pc.dim("  Re-run `codument review` to confirm the finding cleared."));
 }
 

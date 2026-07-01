@@ -5,7 +5,7 @@ import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildReview } from "../src/commands/review.js";
+import { buildReview, normalizeTestCommand } from "../src/commands/review.js";
 import { getWorkingTreeChanges } from "../src/lib/git.js";
 import { worktreeChangesSince } from "../src/lib/two-ref.js";
 import { writeAck } from "../src/lib/acknowledgment.js";
@@ -389,5 +389,31 @@ describe("codument review (CLI)", () => {
     }
     assert.equal(status, 1, "a silent-pass review is rejected");
     assert.match(out, /invalid review/);
+  });
+});
+
+describe("normalizeTestCommand", () => {
+  it("splits a single quoted-string command on whitespace (the leading-dash workaround)", () => {
+    assert.deepEqual(normalizeTestCommand(["npx tsx --test {file}"]), [
+      "npx",
+      "tsx",
+      "--test",
+      "{file}",
+    ]);
+    assert.deepEqual(normalizeTestCommand(["vitest run {file}"]), ["vitest", "run", "{file}"]);
+  });
+  it("passes real multi-element argv through unchanged", () => {
+    assert.deepEqual(normalizeTestCommand(["vitest", "run", "{file}"]), [
+      "vitest",
+      "run",
+      "{file}",
+    ]);
+  });
+  it("leaves a single whitespace-free token as a one-element argv", () => {
+    assert.deepEqual(normalizeTestCommand(["./run-tests"]), ["./run-tests"]);
+  });
+  it("returns undefined for empty / missing input", () => {
+    assert.equal(normalizeTestCommand(undefined), undefined);
+    assert.equal(normalizeTestCommand([]), undefined);
   });
 });

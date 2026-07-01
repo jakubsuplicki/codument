@@ -117,6 +117,105 @@ describe("computeChangeState (change-control fixture diff)", () => {
   });
 });
 
+// ── File-grain acknowledgment honoring (the conservative property) ──────────
+//
+// Pure golden tests over synthetic anchor changes: the `fileGrainAcked` set clears
+// additive / concept / coarse staleness but NEVER an unacknowledged moved symbol.
+
+import type { Registry, RegistryEntry } from "../src/lib/registry.js";
+import type { AnchorChange } from "../src/lib/fingerprint.js";
+
+function fgEntry(partial: Partial<RegistryEntry>): RegistryEntry {
+  return {
+    doc: "",
+    type: "feature",
+    primary_sources: [],
+    related_sources: [],
+    docs: [],
+    depends_on: [],
+    risk: [],
+    status: "current",
+    ...partial,
+  };
+}
+
+// alpha owns src/a.ts per-symbol; lib is a concept umbrella over the same file.
+const FG_REGISTRY: Registry = {
+  features: {
+    alpha: fgEntry({ doc: "docs/features/alpha.md", primary_sources: ["src/a.ts"] }),
+    lib: fgEntry({ doc: "docs/concepts/lib.md", type: "concept", primary_sources: ["src/a.ts"] }),
+  },
+};
+
+const changed = (from: string, to: string): AnchorChange => ({
+  id: "src/a.ts::foo().",
+  name: "foo",
+  kind: "changed",
+  from,
+  to,
+});
+const added: AnchorChange = { id: "src/a.ts::bar().", name: "bar", kind: "added", to: "h_bar" };
+
+function fgStale(
+  anchorChanges: Record<string, AnchorChange[]>,
+  fileGrainAcked?: string[],
+): string[] {
+  return computeChangeState({
+    registry: FG_REGISTRY,
+    changedFiles: ["src/a.ts"],
+    anchorChanges,
+    fileGrainAcked,
+  })
+    .staleDocs.map((d) => d.feature)
+    .sort();
+}
+
+describe("computeChangeState — file-grain ack honoring", () => {
+  it("clears an ADDITIVE (added symbol) feature wake when the file is file-grain acked", () => {
+    // bar() was added; alpha wakes. Without a file ack it is stale; with one it clears.
+    assert.deepStrictEqual(fgStale({ "src/a.ts": [added] }), ["alpha", "lib"]);
+    assert.deepStrictEqual(fgStale({ "src/a.ts": [added] }, ["src/a.ts"]), []);
+  });
+
+  it("NEVER masks an unacknowledged moved (changed) symbol, even when file-grain acked", () => {
+    // foo() moved (a real contract-changing anchor still in the filtered set = not
+    // symbol-acked). alpha stays flagged despite the file ack; only the concept clears.
+    assert.deepStrictEqual(fgStale({ "src/a.ts": [changed("h0", "h1")] }), ["alpha", "lib"]);
+    assert.deepStrictEqual(fgStale({ "src/a.ts": [changed("h0", "h1")] }, ["src/a.ts"]), ["alpha"]);
+  });
+
+  it("clears the additive residue but keeps the moved symbol flagged (per-anchor, not whole-file)", () => {
+    // A file with BOTH a moved foo() and an added bar(): alpha stays stale (foo), and
+    // symbol-acking foo (dropping it from the filtered set) then lets the file ack
+    // clear the additive residue.
+    assert.deepStrictEqual(fgStale({ "src/a.ts": [changed("h0", "h1"), added] }, ["src/a.ts"]), [
+      "alpha",
+    ]);
+    // foo symbol-acked → only the added bar() remains → file ack clears alpha too.
+    assert.deepStrictEqual(fgStale({ "src/a.ts": [added] }, ["src/a.ts"]), []);
+  });
+
+  it("clears a CONCEPT umbrella's file-grain wake even when the file has a moved symbol", () => {
+    // The concept (lib) wakes file-grain on any content move; a file ack clears that
+    // contribution. The moved foo() still wakes its feature (alpha) — never masked.
+    const s = fgStale({ "src/a.ts": [changed("h0", "h1")] }, ["src/a.ts"]);
+    assert.ok(s.includes("alpha"), "moved symbol keeps its feature flagged");
+    assert.ok(!s.includes("lib"), "concept file-grain wake cleared");
+  });
+
+  it("clears the COARSE / file-grain fallback wake (non-precise file, no anchor changes)", () => {
+    // No anchorChanges entry for src/a.ts → the file-grain fallback wakes every
+    // primary owner (alpha + concept lib). A file ack clears the whole fallback wake.
+    assert.deepStrictEqual(fgStale({}), ["alpha", "lib"]);
+    assert.deepStrictEqual(fgStale({}, ["src/a.ts"]), []);
+  });
+
+  it("is inert for a file with no covering ack (only the named file clears)", () => {
+    // A file ack for some OTHER path does not clear src/a.ts.
+    assert.deepStrictEqual(fgStale({ "src/a.ts": [added] }, ["src/other.ts"]), ["alpha", "lib"]);
+  });
+});
+
 describe("detectApprovedPlanScope (fixture plan)", () => {
   it("reads scope only from list items, not explanatory prose", () => {
     const plan = detectApprovedPlanScope(FIXTURE);

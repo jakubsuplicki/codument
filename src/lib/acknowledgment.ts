@@ -55,6 +55,17 @@ export function ackCovers(
   return ack.anchorId === anchorId && ack.fromHash === fromHash && ack.toHash === toHash;
 }
 
+// A file-grain acknowledgment vouches for a whole file's CURRENT content, not a
+// single symbol: its `anchorId` is a bare repo-relative path (no `::descriptor`),
+// and its `from`->`to` bind the file's coarse content fingerprint. It clears the
+// additive / concept / coarse staleness a per-symbol ack cannot reach, and — by the
+// conservative resolution rule — never masks a moved (changed) owned symbol. It is
+// told apart from a symbol ack purely by the anchorId shape: a symbol ack's id is
+// always `<path>::<descriptor>`.
+export function isFileGrainAck(ack: Acknowledgment): boolean {
+  return !ack.anchorId.includes("::");
+}
+
 // A deterministic filename for an ack (no clock / no randomness): a short digest
 // of the anchor + transition, so re-recording the same decision is idempotent and
 // two acks for the same transition never collide-but-differ.

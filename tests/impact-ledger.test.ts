@@ -18,6 +18,7 @@ function caught(data: {
     proseUnchanged: number;
     notReferenced: number;
     acknowledged: number;
+    fileAcked?: number;
   };
 }): CodumentEvent {
   return {
@@ -72,6 +73,18 @@ describe("summarizeImpact — drift soak line", () => {
     // friction = acked / (acked + docUpdated) = 4 / 8 = 0.5  (would be 4/7 if it used coMoved)
     assert.equal(ledger.drift.frictionRate, 0.5);
     assert.equal(ledger.hasDrift, true);
+  });
+
+  it("counts a file-grain ack on the friction side (no doc owed), not as a doc update", () => {
+    const ledger = summarizeImpact([
+      caught({
+        drift: { flagged: 3, docUpdated: 1, fileAcked: 1, acknowledged: 1, coMoved: 0, proseUnchanged: 0, notReferenced: 0 },
+      }),
+    ]);
+    assert.equal(ledger.drift.fileAcked, 1);
+    assert.equal(ledger.drift.docUpdated, 1);
+    // friction = (acked + fileAcked) / (acked + fileAcked + docUpdated) = 2 / 3
+    assert.equal(ledger.drift.frictionRate, 2 / 3);
   });
 
   it("treats a pre-docUpdated snapshot's missing field as 0 (backward compatible)", () => {

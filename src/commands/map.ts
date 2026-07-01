@@ -4,11 +4,13 @@ import { join, dirname, isAbsolute, relative } from "node:path";
 import {
   parseFeatureMap,
   routeFile,
+  hasFeatureMapHeading,
   type FeatureMap,
   type FeatureMapRow,
 } from "../lib/feature-map.js";
 import { findActivePlans } from "../lib/plan-steps.js";
 import { readRegistrySync, updateRegistryEntry } from "../lib/registry.js";
+import { gatherPlanGrounding } from "../lib/plan-grounding.js";
 import { ensureDir } from "../lib/scaffold.js";
 
 // `codument map` — the deterministic consumer of the plan doc's Feature Map.
@@ -243,8 +245,57 @@ export function mapCheck(options: MapCliOptions = {}): void {
   const errors = map.errors;
   const warnings = shapeWarnings(map);
 
+  // A plan that WROTE a "Feature Map" heading but produced no parseable rows and
+  // no errors authored the routing table in the wrong form (a table or prose
+  // instead of a fenced ```feature-map``` block). That is NOT the same as a plan
+  // with no Feature Map at all: the former silently routes nothing, so the plan
+  // adversary's proportionality skip would wrongly bypass it. Flag it loudly.
+  const malformedMap =
+    map.rows.length === 0 && errors.length === 0 && hasFeatureMapHeading(resolved.markdown);
+  const noBlockMessage = malformedMap
+    ? "a `Feature Map` heading is present but no parseable ```feature-map``` block was found — write the routing table as a fenced ```feature-map``` block (`path | feature | type | responsibility`), not a table or prose"
+    : "no `feature-map` block in the plan";
+
+  // --json is the adversary's channel: alongside the shape verdict it emits the
+  // plan grounding (the committed invariants/tests/deps/risk of every feature the
+  // Map routes to) so the plan adversary attacks a real contract instead of
+  // hallucinating one. The human `check` output below stays lean and unchanged.
+  if (options.json) {
+    const grounding =
+      map.rows.length > 0
+        ? gatherPlanGrounding(
+            root,
+            map.rows,
+            readRegistrySync(join(root, "docs", ".registry.json")),
+          )
+        : { features: [], unknownFeatures: [] };
+    console.log(
+      JSON.stringify(
+        {
+          ok: errors.length === 0 && map.rows.length > 0,
+          hasMap: map.rows.length > 0,
+          // The plan intended a Feature Map but it did not parse — the skill must
+          // flag this, not treat the plan as source-free and skip the adversary.
+          malformedMap,
+          rows: map.rows.length,
+          errors: errors.map((e) => ({ line: e.line, message: e.message })),
+          warnings: warnings.map((w) => w.message),
+          grounding,
+        },
+        null,
+        2,
+      ),
+    );
+    if (errors.length > 0 || map.rows.length === 0) process.exitCode = 1;
+    return;
+  }
+
   if (map.rows.length === 0 && errors.length === 0) {
-    console.log(pc.yellow("codument map check: no `feature-map` block in the plan"));
+    console.log(
+      malformedMap
+        ? pc.red("  ✗ " + noBlockMessage)
+        : pc.yellow("codument map check: " + noBlockMessage),
+    );
     process.exitCode = 1;
     return;
   }

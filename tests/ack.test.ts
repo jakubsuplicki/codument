@@ -257,6 +257,159 @@ describe("ack loop end-to-end through the real CLI (the headline ergonomics)", (
   });
 });
 
+// ── File-grain ack: `codument ack <path>` ───────────────────────────────────
+//
+// The additive/concept/coarse residue a per-symbol ack cannot reach, cleared with a
+// real fingerprint-bound decision instead of a `last_reviewed` date bump — while
+// never masking a moved owned symbol.
+
+const FG_REGISTRY = {
+  features: {
+    alpha: {
+      doc: "docs/features/alpha.md",
+      type: "feature",
+      primary_sources: ["src/a.ts"],
+      status: "current",
+    },
+    util: {
+      doc: "docs/concepts/util.md",
+      type: "concept",
+      primary_sources: ["src/u.ts"],
+      status: "current",
+    },
+  },
+};
+
+const U_SRC = "export function helper() {\n  return 10;\n}\n";
+const staleFeatures = (root: string): string[] =>
+  buildReview(root).state.staleDocs.map((d) => d.feature).sort();
+
+describe("codument ack <path> — the file-grain surface", () => {
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-ackfile-"));
+    await scaffold({
+      "docs/.registry.json": JSON.stringify(FG_REGISTRY, null, 2),
+      "docs/features/alpha.md": "# alpha\n\nThe foo() helper returns a number.\n",
+      "docs/concepts/util.md": "# util\n\nShared helpers for the util layer.\n",
+      "src/a.ts": A_SRC,
+      "src/u.ts": U_SRC,
+    });
+    gitInit(tmp);
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("clears an ADDITIVE change's stale-doc verdict, fingerprint-bound and auto-invalidating", async () => {
+    // A new exported helper — "added, not changed": no symbol to ack, so today the
+    // only clear is a doc/last_reviewed touch. The file ack replaces that.
+    await scaffold({ "src/a.ts": A_SRC + "export function bar() {\n  return 2;\n}\n" });
+    assert.deepStrictEqual(staleFeatures(tmp), ["alpha"], "the added helper wakes alpha");
+
+    const r = capture(() =>
+      ackCommand("src/a.ts", { reason: "internal helper; no public contract added", root: tmp }),
+    );
+    assert.equal(r.code, undefined, r.err);
+    assert.match(r.out, /acknowledged file src\/a\.ts/);
+    assert.doesNotMatch(r.out, /NOT cleared/, "an added symbol is not a moved symbol — no warning");
+    // The API growth is still made visible (info-only) — a conscious vouch, not a silent sweep.
+    assert.match(r.out, /cleared 1 added\/removed export\(s\)/);
+    assert.match(r.out, /bar \(added\)/);
+
+    const acks = readAcks(tmp);
+    assert.equal(acks.length, 1);
+    assert.equal(acks[0].anchorId, "src/a.ts", "a bare path — a file-grain ack");
+    assert.deepStrictEqual(staleFeatures(tmp), [], "the file ack clears the additive staleness");
+
+    // Auto-invalidation: a further edit moves the file content → the ack no longer covers.
+    await scaffold({
+      "src/a.ts": A_SRC + "export function bar() {\n  return 2;\n}\nexport const K = 3;\n",
+    });
+    assert.deepStrictEqual(staleFeatures(tmp), ["alpha"], "a later change re-fires the gate");
+  });
+
+  it("clears a CONCEPT umbrella's file-grain staleness (and does not false-warn on its unowned move)", async () => {
+    // src/u.ts is owned only by the `util` concept (file-grain). Moving its symbol
+    // wakes the concept with no per-symbol anchor to ack.
+    await scaffold({ "src/u.ts": U_SRC.replace("return 10;", "return 11;") });
+    assert.deepStrictEqual(staleFeatures(tmp), ["util"], "the concept woke file-grain");
+
+    const r = capture(() =>
+      ackCommand("src/u.ts", { reason: "reordered internals; util contract unchanged", root: tmp }),
+    );
+    assert.equal(r.code, undefined, r.err);
+    // The moved symbol is unowned (concept-only) → fully cleared by the file ack →
+    // no misleading "moved symbol NOT cleared" warning.
+    assert.doesNotMatch(r.out, /NOT cleared/);
+    assert.deepStrictEqual(staleFeatures(tmp), [], "the file ack clears the concept staleness");
+  });
+
+  it("NEVER masks a moved owned symbol: records + warns, and the feature stays flagged until resolved", async () => {
+    // foo() moves (a real contract-changing anchor) AND a helper is added.
+    await scaffold({
+      "src/a.ts": A_SRC.replace("return 1;", "return 2;") + "export function bar() {\n  return 9;\n}\n",
+    });
+    assert.deepStrictEqual(staleFeatures(tmp), ["alpha"]);
+
+    // File ack: records, but names the still-flagged moved owned symbol.
+    const r = capture(() => ackCommand("src/a.ts", { reason: "additive helper only", root: tmp }));
+    assert.equal(r.code, undefined, r.err);
+    assert.match(r.out, /1 moved symbol\(s\) here are NOT cleared/);
+    assert.match(r.out, /src\/a\.ts::foo/);
+    assert.deepStrictEqual(staleFeatures(tmp), ["alpha"], "the moved foo() keeps alpha flagged");
+
+    // Resolve the move with a symbol ack — now the file ack's additive residue clears.
+    const r2 = capture(() =>
+      ackCommand("src/a.ts::foo", { reason: "same return shape", root: tmp }),
+    );
+    assert.equal(r2.code, undefined, r2.err);
+    assert.deepStrictEqual(
+      staleFeatures(tmp),
+      [],
+      "moved symbol acked + additive residue file-acked → clean",
+    );
+  });
+
+  it("refuses to ack a file that does not parse (fail-loud stance preserved)", async () => {
+    await scaffold({ "src/a.ts": "export function foo( {\n  return 1;\n" }); // syntax error
+    const r = capture(() => ackCommand("src/a.ts", { reason: "x", root: tmp }));
+    assert.equal(r.code, 1);
+    assert.match(r.err, /does not parse/);
+    assert.equal(readAcks(tmp).length, 0);
+  });
+
+  it("refuses when there is no content change (nothing to ack)", () => {
+    const r = capture(() => ackCommand("src/a.ts", { reason: "x", root: tmp }));
+    assert.equal(r.code, 1);
+    assert.match(r.err, /unchanged.*nothing to ack/);
+    assert.equal(readAcks(tmp).length, 0);
+  });
+
+  it("refuses an added (untracked) file — it needs doc attention, not a file ack", async () => {
+    await scaffold({ "src/new.ts": "export const z = 1;\n" });
+    const r = capture(() => ackCommand("src/new.ts", { reason: "x", root: tmp }));
+    assert.equal(r.code, 1);
+    assert.match(r.err, /was added, not changed/);
+  });
+
+  it("still requires a reason for the bare-path form", () => {
+    const r = capture(() => ackCommand("src/a.ts", { root: tmp }));
+    assert.equal(r.code, 1);
+    assert.match(r.err, /--reason is required/);
+  });
+
+  it("review's resolution summary shows a file-ack AS a file-ack, never laundered as a doc update", async () => {
+    await scaffold({ "src/a.ts": A_SRC + "export function bar() {\n  return 2;\n}\n" });
+    execFileSync("node", [CLI, "ack", "src/a.ts", "--reason", "internal helper; no contract added"], {
+      cwd: tmp,
+      encoding: "utf-8",
+    });
+    const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
+    assert.match(out, /1 file-acked \(additive\)/, "over-acking stays visible as a file ack");
+    assert.doesNotMatch(out, /1 resolved by doc update/, "not counted as a doc update");
+  });
+});
+
 describe("getGitAuthor", () => {
   beforeEach(async () => {
     tmp = await mkdtemp(join(tmpdir(), "codument-author-"));

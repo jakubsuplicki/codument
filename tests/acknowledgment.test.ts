@@ -6,6 +6,7 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import {
   ackCovers,
   ackFileName,
+  isFileGrainAck,
   isIndependent,
   parseAck,
   readAcks,
@@ -61,6 +62,17 @@ describe("ackFileName", () => {
   });
   it("differs when the transition differs", () => {
     assert.notEqual(ackFileName(ACK), ackFileName({ ...ACK, toHash: "cccc" }));
+  });
+});
+
+describe("isFileGrainAck (anchorId shape)", () => {
+  it("a bare repo-relative path is a file-grain ack", () => {
+    assert.equal(isFileGrainAck({ ...ACK, anchorId: "src/lib/foo.ts" }), true);
+    assert.equal(isFileGrainAck({ ...ACK, anchorId: "docs/concepts/lib.ts" }), true);
+  });
+  it("a `<path>::<descriptor>` id is a symbol ack, not file-grain", () => {
+    assert.equal(isFileGrainAck(ACK), false); // src/lib/foo.ts::bar().
+    assert.equal(isFileGrainAck({ ...ACK, anchorId: "src/a.ts::foo()." }), false);
   });
 });
 

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   parseFeatureMap,
   routeFile,
+  hasFeatureMapHeading,
   type FeatureMapRow,
 } from "../src/lib/feature-map.js";
 
@@ -116,5 +117,19 @@ describe("routeFile", () => {
     const r = routeFile(glob, "src/x.ts");
     assert.equal(r.ambiguous, true);
     assert.equal(r.feature, null);
+  });
+});
+
+describe("hasFeatureMapHeading", () => {
+  it("is true for a Feature Map heading at any level", () => {
+    assert.equal(hasFeatureMapHeading("## Feature Map\n\nx"), true);
+    assert.equal(hasFeatureMapHeading("### Feature Map (required when...)\n"), true);
+    assert.equal(hasFeatureMapHeading("# The Feature Map\n"), true);
+  });
+  it("is false for prose that merely mentions a feature map (not a heading)", () => {
+    assert.equal(hasFeatureMapHeading("The feature map routes files to owners."), false);
+  });
+  it("is false when there is no Feature Map heading at all", () => {
+    assert.equal(hasFeatureMapHeading("# Plan\n\n## Steps\n- [ ] do a thing\n"), false);
   });
 });
