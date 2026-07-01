@@ -1,6 +1,6 @@
 # codument
 
-A deterministic, git-native change-control safety layer for AI-made changes — plus optional adversarial gates and the docs-backed delivery workflow that produces them.
+A deterministic, git-native change-control safety layer for AI-made changes — plus independent adversarial gates and the docs-backed delivery workflow that produces them.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
@@ -12,11 +12,11 @@ A deterministic, git-native change-control safety layer for AI-made changes — 
 
 ## What it is
 
-Codument has **two sides** that work together, and an **optional third layer** you can turn on when you want more than facts:
+Codument has **two sides** that work together, and an **independent adversarial layer** for when you want more than facts:
 
 - **A delivery workflow your agent runs.** Docs-backed planning, source-to-doc ownership, review discipline, and commit hygiene. You just chat; your agent routes intent into the right phase from the installed instructions. Core loop: `grill → plan → approve → implement → verify → document → review → commit`.
 - **Deterministic CLI checks you run.** Local, no-network, no-AI commands that read the repo and report the facts: `doctor` (coverage + lint), `review` (what a change touched, what went stale, per-symbol drift), `watch` (a live view). Same repo state → same output. This core stays honestly deterministic — no model, no network, reproducible.
-- **Two optional adversarial gates — verify, don't trust.** On top of the deterministic core sit two opt-in gates that *do* involve an AI reviewer but never ask you to trust its word. A **plan adversary** contests the written plan before code exists (`map check --plan`); it only ever raises grounded objections and it **never blocks** — the human adjudicates. A **review adversary** contests the diff after the work (`review --require-review`), handed a fingerprint-bound bundle to attack; it blocks **only** when a finding's named test is genuinely red on a live re-run. The AI proposes; a deterministic oracle (a re-run test, a grounding projection, an auto-invalidating ack) decides. That is why adding AI here does not undercut "deterministic by default": every verdict the gates hand back is pinned to something reproducible.
+- **Two independent adversarial gates — verify, don't trust.** On top of the deterministic core sit two gates that *do* involve an AI reviewer but never ask you to trust its word. They are **proportional**, not skippable extras: they fire on the work that warrants them and are skipped on trivial edits. A **plan adversary** contests the written plan before code exists (`map check --plan`); it only ever raises grounded objections and it **never blocks** — the human adjudicates. A **review adversary** contests any non-trivial diff after the work (`review --require-review`), handed a fingerprint-bound bundle to attack; it blocks **only** when a finding's named test is genuinely red on a live re-run. The AI proposes; a deterministic oracle (a re-run test, a grounding projection, an auto-invalidating ack) decides. That is why adding AI here does not undercut "deterministic by default": every verdict the gates hand back is pinned to something reproducible.
 
 The link between all of it is **`docs/.registry.json`** — a registry mapping each source file to the feature/doc that owns it. The workflow writes it as it builds; the checks read it to reason about every change; the gates project it into the contract an adversary attacks.
 
@@ -29,7 +29,7 @@ flowchart TB
   subgraph CLI["Deterministic checks · no AI, no network"]
     C["doctor · review · watch"]
   end
-  subgraph ADV["Optional adversarial gates · opt-in · verify, don't trust"]
+  subgraph ADV["Independent adversarial gates · proportional · verify, don't trust"]
     PA["plan adversary<br/>map check --plan<br/>never blocks"]
     RA["review adversary<br/>review --require-review<br/>blocks only on a red re-run test"]
   end
@@ -122,7 +122,7 @@ Use `adopt` when a project already has Codument docs or an older `.codument-meta
 Chat normally. Codument's always-loaded instructions route clear intent into the right delivery skill; slash commands are just explicit overrides when you want to force a phase.
 
 <p align="center">
-  <img src="docs/assets/codument-workflow.png" alt="The codument delivery workflow: charter (new project, once) → grill → plan → plan adversary (optional) → approve (you decide) → implement & verify → document → review (you decide) → review adversary (optional) → commit; two optional adversarial gates, verify don't trust; the CLI finds and reports, your agent fixes" width="760">
+  <img src="docs/assets/codument-workflow.png" alt="The codument delivery workflow: charter (new project, once) → grill → plan → plan adversary (proportional) → approve (you decide) → implement & verify → document → review (you decide) → review adversary (proportional) → commit; two independent adversarial gates, verify don't trust; the CLI finds and reports, your agent fixes" width="760">
 </p>
 
 ```mermaid
@@ -155,7 +155,7 @@ The installed skills:
 
 Keep working state compact. Feature docs should capture durable decisions, the current plan, acceptance criteria, verification strategy, gotchas, and key files — not a transcript of every agent turn. (To run an approved plan end-to-end without per-step prompts, see **Autopilot** in Reference.)
 
-## 3 · Check — terminal (deterministic core + optional adversarial gates)
+## 3 · Check — terminal (deterministic core + independent adversarial gates)
 
 The commands below are local, need no network and no AI model, and produce the same output for the same repo state — they read the registry, the filesystem, and `git`. The two **adversarial gates** at the end of this section are the opt-in exception: they involve an AI reviewer but decide every verdict with a deterministic oracle (a re-run test, a grounding projection), so the default path stays reproducible.
 
@@ -340,9 +340,9 @@ by model
 
 It's a pure read — it never tails or mutates the log (refresh capture with `feed`/`watch` first) and needs no git repo, just a `.codument/events.jsonl`. Cost is derived from the rate table at read time (an **estimate**, never a bill); an unknown model is flagged `unpriced` rather than priced wrong.
 
-### The two adversarial gates (optional, opt-in)
+### The two adversarial gates (independent, proportional)
 
-Alongside the deterministic checks, Codument can run two **adversarial** gates. Both are optional, both project the same committed docs and registry into a contract an independent reviewer attacks, and neither introduces a new source of truth or a model call on the verdict path. The principle is **verify, don't trust**: an AI raises the objection or finding; a deterministic oracle decides what it means.
+Alongside the deterministic checks, Codument can run two **adversarial** gates. Both are proportional (they fire on the work that warrants them, not on trivial edits), both project the same committed docs and registry into a contract an independent reviewer attacks, and neither introduces a new source of truth or a model call on the verdict path. The principle is **verify, don't trust**: an AI raises the objection or finding; a deterministic oracle decides what it means.
 
 **Plan adversary — `codument map check --plan <path>`.** Before any code is written, an independent adversary reads *only* the plan plus a deterministic grounding projection over `docs/.registry.json` and the committed feature docs (invariants, test pointers, dependency edges, risk tags, Feature-Map rows — emit it with `map check --plan <path> --json`). It surfaces only **grounded** objections — each must cite a committed constraint the plan contradicts or name a load-bearing assumption the grill left unresolved — one tight line each, most-serious-first, folded into the same open-questions block of the approval summary you already read. It **never blocks**, never rewrites the plan, never reopens the grill; the **human adjudicates** at the existing approve/change gate. "No material objections" is the correct, expected output for a well-grilled plan, not a failure. A plan with no Feature Map runs no adversary (proportionality skip).
 *Honest limit:* its quality is **prompt-enforced, not test-backed**. A plan has no executable oracle, so groundedness — not correctness — is the only honest deterministic analog; no mechanism can prove an objection is grounded or catch a fabricated one, and manufacturing a weak objection is the cardinal failure the mandate guards against but cannot mechanically prevent. On a host without subagents no automatic independent pass runs at all — it degrades to a manual handoff (grounding + a paste-ready prompt + a plain statement that no independent pass ran), so the guarantee is genuinely weaker there. And because it never blocks, a wrong plan a human waves through is not stopped by the tool.
