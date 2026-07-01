@@ -1,6 +1,6 @@
 # codument
 
-A deterministic, git-native change-control safety layer for AI-made changes — plus the docs-backed delivery workflow that produces them.
+A deterministic, git-native change-control safety layer for AI-made changes — plus optional adversarial gates and the docs-backed delivery workflow that produces them.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
@@ -12,12 +12,13 @@ A deterministic, git-native change-control safety layer for AI-made changes — 
 
 ## What it is
 
-Codument has **two sides** that work together:
+Codument has **two sides** that work together, and an **optional third layer** you can turn on when you want more than facts:
 
 - **A delivery workflow your agent runs.** Docs-backed planning, source-to-doc ownership, review discipline, and commit hygiene. You just chat; your agent routes intent into the right phase from the installed instructions. Core loop: `grill → plan → approve → implement → verify → document → review → commit`.
-- **Deterministic CLI checks you run.** Local, no-network, no-AI commands that read the repo and report the facts: `doctor` (coverage + lint), `review` (what a change touched, what went stale), `watch` (a live view). Same repo state → same output.
+- **Deterministic CLI checks you run.** Local, no-network, no-AI commands that read the repo and report the facts: `doctor` (coverage + lint), `review` (what a change touched, what went stale, per-symbol drift), `watch` (a live view). Same repo state → same output. This core stays honestly deterministic — no model, no network, reproducible.
+- **Two optional adversarial gates — verify, don't trust.** On top of the deterministic core sit two opt-in gates that *do* involve an AI reviewer but never ask you to trust its word. A **plan adversary** contests the written plan before code exists (`map check --plan`); it only ever raises grounded objections and it **never blocks** — the human adjudicates. A **review adversary** contests the diff after the work (`review --require-review`), handed a fingerprint-bound bundle to attack; it blocks **only** when a finding's named test is genuinely red on a live re-run. The AI proposes; a deterministic oracle (a re-run test, a grounding projection, an auto-invalidating ack) decides. That is why adding AI here does not undercut "deterministic by default": every verdict the gates hand back is pinned to something reproducible.
 
-The link between them is **`docs/.registry.json`** — a registry mapping each source file to the feature/doc that owns it. The workflow writes it as it builds; the checks read it to reason about every change.
+The link between all of it is **`docs/.registry.json`** — a registry mapping each source file to the feature/doc that owns it. The workflow writes it as it builds; the checks read it to reason about every change; the gates project it into the contract an adversary attacks.
 
 ```mermaid
 flowchart TB
@@ -28,8 +29,13 @@ flowchart TB
   subgraph CLI["Deterministic checks · no AI, no network"]
     C["doctor · review · watch"]
   end
+  subgraph ADV["Optional adversarial gates · opt-in · verify, don't trust"]
+    PA["plan adversary<br/>map check --plan<br/>never blocks"]
+    RA["review adversary<br/>review --require-review<br/>blocks only on a red re-run test"]
+  end
   WF -->|writes &amp; updates docs as it builds| REG
   REG -->|read to reason about every change| CLI
+  REG -.->|projected into the contract an adversary attacks| ADV
 ```
 
 ## How you run it
@@ -121,8 +127,8 @@ Chat normally. Codument's always-loaded instructions route clear intent into the
 
 ```mermaid
 flowchart LR
-  CH[charter?] --> G[grill] --> P[plan] --> A{approved?}
-  A -->|yes| I[implement] --> V[verify] --> D[document] --> R[review] --> C[commit]
+  CH[charter?] --> G[grill] --> P[plan] --> PADV{{"plan adversary<br/>grounded · never blocks"}} --> A{approved?}
+  A -->|yes| I[implement] --> V[verify] --> D[document] --> R[review] --> RADV{{"review adversary<br/>blocks only on a red re-run test"}} --> C[commit]
   C -->|next step| G
   A -->|not yet| P
 ```
@@ -149,9 +155,9 @@ The installed skills:
 
 Keep working state compact. Feature docs should capture durable decisions, the current plan, acceptance criteria, verification strategy, gotchas, and key files — not a transcript of every agent turn. (To run an approved plan end-to-end without per-step prompts, see **Autopilot** in Reference.)
 
-## 3 · Check — terminal, deterministic (no AI)
+## 3 · Check — terminal (deterministic core + optional adversarial gates)
 
-These commands are local, need no network and no AI model, and produce the same output for the same repo state. They read the registry, the filesystem, and `git`.
+The commands below are local, need no network and no AI model, and produce the same output for the same repo state — they read the registry, the filesystem, and `git`. The two **adversarial gates** at the end of this section are the opt-in exception: they involve an AI reviewer but decide every verdict with a deterministic oracle (a re-run test, a grounding projection), so the default path stays reproducible.
 
 ### `codument doctor` — documentation coverage
 
@@ -188,6 +194,46 @@ npx codument review --json
 - **unmapped changes**, high-fanout files, and dependent features that may need re-review
 
 It reports repo facts and gaps — it does not certify that a change is safe.
+
+The `review` command has grown beyond the default report. Every flag below is optional; with no flags it is the deterministic reporter above.
+
+```bash
+npx codument review --strict          # step-sync gate: exit 1 on new unmapped source or a stale mapped doc
+npx codument review --base main       # review branch drift since the merge-base with <ref>, not just uncommitted changes
+npx codument review --log             # append a caught snapshot to .codument/events.jsonl (impact ledger)
+npx codument review --bundle          # emit the adversarial-review bundle as JSON, then exit
+npx codument review --record findings.json   # record a fingerprint-bound review from a findings JSON, then enforce it
+npx codument review --require-review  # exit 1 if a non-trivial diff has no current review artifact, or one with unresolved findings
+npx codument review --require-review --test-command "npx tsx --test {file}"   # how a finding's named test is re-run ({file} = resolved path)
+```
+
+- **`--strict`** is the **step-sync gate**: it exits 1 while a step left a new source unmapped or a mapped doc stale. It is what Autopilot runs before checking a step off — materialize the file(s) and update the stale doc(s), then re-run until clean.
+- **`--base <ref>`** reviews the whole branch's drift (merge-base..working-tree), not just uncommitted changes — pair it with `codument ack --base <ref>` so a symbol move resolves against the same ref.
+- **`--bundle`** emits the adversarial-review bundle (the documented invariants + their tests + the diff) as JSON — the contract an independent reviewer attacks. The deterministic oracle that *decides* is the re-run of a finding's named test, never the bundle itself. **`--record <file>`** records a fingerprint-bound review from a findings JSON (`{invariantsChecked, findings, signer}`) that **`--require-review`** then enforces — exiting 1 on a non-trivial diff with no current artifact, or one carrying unresolved confirmed findings. A finding **blocks only** when its named test is red on a live re-run (`--test-command`, `{file}` = the resolved path; default `npx tsx --test {file}`); point it at a TAP-emitting runner for non-`node:test` projects. Opt-in today; the default-on flip is soak-deferred.
+
+**Per-symbol drift.** Staleness is resolved **per symbol**, not per whole file. `review` fingerprints each exported declaration's token stream across two git refs; when a documented symbol **moved** and its owning doc did not, only that symbol's owning feature wakes — the old whole-file cascade is dissolved. The verdict is a pure, reproducible function of `(base, head, codument version, algoStamp)` with no clock input. It enforces that a moved documented symbol and its owning doc stay **in sync** (waking the feature when they don't), not that the prose is correct — a born-wrong or already-drifted doc is out of scope by construction. A separate name-match signal (does the doc even mention the symbol) is kept as **info-only telemetry**, never a verdict input. A local-variable rename is a known token-stream false-fire, cleared by an ack.
+
+### `codument ack` — clear a change that owes no doc change
+
+When a symbol moves but no documented contract changed, you don't paper over the gate with a mirror edit — you **acknowledge** it. An ack records a fingerprint-bound, **auto-invalidating** decision so `review` stops flagging it, and it takes two forms.
+
+```bash
+# per-symbol: a moved symbol was a contract-neutral refactor
+npx codument ack src/registry.ts::readRegistry --reason "return shape unchanged"
+
+# file-grain (bare path): a changed source file's current content owes no doc change
+npx codument ack src/registry.ts --reason "added a helper export; no contract change"
+
+npx codument ack --list                 # list recorded acks with their handles
+npx codument ack --remove <handle>      # remove one by handle
+npx codument ack src/foo.ts::bar --base main --signer alice   # match review --base; attribute the signer
+```
+
+- **Per-symbol ack (`<path>::<symbol>`)** is the agent-judge resolution that a **moved** symbol was a contract-neutral refactor owing no doc change. It is bound to the exact `from → to` fingerprint transition, so it **auto-invalidates the next time the anchor moves** — no ride-forever exemption. The gate verifies the ack's **form** only (it exists, is attributed with non-empty fields, and names the exact moved fingerprint), **never its semantic truth** — code/doc equivalence is undecidable, so honesty rests on the visible ack-rate and the durable audit trail, not a truth check.
+- **File-grain ack (bare `<path>`, per ADR 012)** vouches that a changed source file's **current content** owes no doc change. It clears only **additive** (added/removed-symbol), **concept-umbrella**, and **coarse/non-TS** staleness, bound to the file's content fingerprint (auto-invalidating on the next change). It **never masks a moved symbol**: a `changed` (moved) owned symbol still wakes its feature, so a real contract change is never laundered. It **counts as an ack** — a distinct `file-acked` line on the no-doc-change-owed side, never as a doc update — so over-acking stays visible and the friction rate is not deflated. A parse-unevaluable file **cannot** be file-acked into freshness (the fail-loud stance holds).
+- **Flags:** `--reason <text>` names the contract that stayed constant; `--base <ref>` resolves the move against the merge-base with `<ref>` (match the ref `review --base` used); `--signer <id>` sets attribution (defaults to the git author; an independent signer is what strict-mode independence checks); `--list` / `--remove <handle>` manage recorded acks; `--root <dir>` sets the project root.
+
+*Honest limit:* the additive-owes-no-doc judgment (like the per-symbol ack's semantic claim) is **prose-enforced, not test-backed** — the gate checks the ack's form and fingerprint, never whether the human was right that no doc was owed.
 
 ### `codument report` — the same review as a shareable HTML page
 
@@ -294,13 +340,23 @@ by model
 
 It's a pure read — it never tails or mutates the log (refresh capture with `feed`/`watch` first) and needs no git repo, just a `.codument/events.jsonl`. Cost is derived from the rate table at read time (an **estimate**, never a bill); an unknown model is flagged `unpriced` rather than priced wrong.
 
+### The two adversarial gates (optional, opt-in)
+
+Alongside the deterministic checks, Codument can run two **adversarial** gates. Both are optional, both project the same committed docs and registry into a contract an independent reviewer attacks, and neither introduces a new source of truth or a model call on the verdict path. The principle is **verify, don't trust**: an AI raises the objection or finding; a deterministic oracle decides what it means.
+
+**Plan adversary — `codument map check --plan <path>`.** Before any code is written, an independent adversary reads *only* the plan plus a deterministic grounding projection over `docs/.registry.json` and the committed feature docs (invariants, test pointers, dependency edges, risk tags, Feature-Map rows — emit it with `map check --plan <path> --json`). It surfaces only **grounded** objections — each must cite a committed constraint the plan contradicts or name a load-bearing assumption the grill left unresolved — one tight line each, most-serious-first, folded into the same open-questions block of the approval summary you already read. It **never blocks**, never rewrites the plan, never reopens the grill; the **human adjudicates** at the existing approve/change gate. "No material objections" is the correct, expected output for a well-grilled plan, not a failure. A plan with no Feature Map runs no adversary (proportionality skip).
+*Honest limit:* its quality is **prompt-enforced, not test-backed**. A plan has no executable oracle, so groundedness — not correctness — is the only honest deterministic analog; no mechanism can prove an objection is grounded or catch a fabricated one, and manufacturing a weak objection is the cardinal failure the mandate guards against but cannot mechanically prevent. On a host without subagents no automatic independent pass runs at all — it degrades to a manual handoff (grounding + a paste-ready prompt + a plain statement that no independent pass ran), so the guarantee is genuinely weaker there. And because it never blocks, a wrong plan a human waves through is not stopped by the tool.
+
+**Review adversary — `codument review --require-review`.** After the work, an independent adversary presumed to be hunting for failure is handed a precise **bundle** to attack (`review --bundle`): the diff, the documented invariants it must not break and the tests that pin them, the relevant plan slice, and ownership/blast facts. The verdict is **verify, don't trust** — a finding hard-**blocks only** when its named test is genuinely red when the gate **re-runs it on the spot** (a nonzero exit counts as red only with TAP evidence the runner actually executed tests); the fix flips it green. The gate re-derives every status and never trusts what an artifact claims. The artifact (`.codument/reviews/<id>.json`) is fingerprint-bound over the full change set *and* the named tests, so editing the diff or tampering a test after review auto-reopens the gate. It is opt-in; proportionality skips trivial edits; non-testable/judgment findings are recorded and routed to the review decision point, never auto-blocked.
+*Honest limit:* an **empty or omitted-findings review still passes** — the gate enforces the review *ritual* (a diff-bound artifact enumerating the invariants checked) and verifies *declared* findings, but it does **not** certify thoroughness. Requiring TAP evidence to call a red test blocking means a runner that does not emit TAP (vitest/jest in default reporters) makes a real red test read as unrunnable → advisory (**fail-open**); a non-`node:test` project must point `--test-command` at a TAP-emitting runner or its findings stay advisory. Default-on is soak-deferred, so it is opt-in today, and only a finding reducible to a runnable failing test can ever block.
+
 ## 4 · Fix — from findings to clean
 
 `doctor` and `review` report findings; they never auto-fix — codument stays a deterministic checker, so there is no `codument fix`. You clear findings the way you build features: your agent fixes them with the installed skills, then you re-run the check to confirm. A finding that re-runs clean is the "done" signal. The finding's *type* tells you which lever to pull:
 
 | Finding | What it means | How to clear it |
 | --- | --- | --- |
-| **stale doc** (`review`) | a source changed but its mapped doc did not | `/update-docs` — update the doc from the current source |
+| **stale doc** (`review`) | a source changed but its mapped doc did not | `/update-docs` — update the doc from the current source; or, for a contract-neutral move, `codument ack <path>::<symbol>` instead of editing prose |
 | **bloated-doc** | a doc is too long, has an oversized section, or carries a never-compacted `[x]` completed-log | `/update-docs` — **compact** it: drop the done log (it lives in git history), split big sections, keep the durable decisions. Not a rewrite. |
 | **missing-doc** | a registered feature has no doc | `/update-docs` — write it from the template |
 | **unmapped-source** | a real source file has no owning feature | add it to a feature's `primary_sources` in `docs/.registry.json` (or `codument scan` to propose mappings) |
@@ -462,7 +518,7 @@ cd /path/to/codument
 npm --cache /private/tmp/codument-npm-cache pack
 
 cd /path/to/existing-project
-npm install -D ../codument/codument-0.5.0.tgz
+npm install -D ../codument/codument-0.7.0.tgz
 npx codument adopt --agents codex,claude
 ```
 </details>
