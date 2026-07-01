@@ -59,6 +59,11 @@ Use Codument as the durable control plane for agent-led engineering work:
 ### Quality bar
 Aim for the best-effort, durable solution, not the first plausible one. Before calling a plan or a step done, zoom out and check it adversarially — where is this half-baked, what did I assume, what would break it. Resolve issues yourself; pull the user in only for a genuinely load-bearing, unconfirmed call (the assumption gate below), not for work that should just happen.
 
+### Implementation discipline
+Write the least code that solves the understood problem — the over-engineering guard that complements the quality bar above. Before adding code, check whether it needs to exist at all: the plan's non-goals may rule it out; the codebase may already have the helper or pattern to reuse; the language, runtime, or an installed dependency may already do it. Only then write new code, and add no dependency or abstraction the plan did not ask for. This runs after you understand the change, never instead of it: the smallest diff in the wrong place is a second bug, not a lazy win.
+
+Fix bugs at the root, not the symptom. A report names one broken path; find the shared function it runs through, guard it once, and check the sibling callers that path implies. A per-caller patch that leaves a sibling caller broken is not a fix.
+
 ### Intent routing
 Use these routing rules at the start of each user request. Do not wait for the user to name a skill when their intent is clear.
 
