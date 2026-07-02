@@ -6,6 +6,8 @@ import {
   cpSync,
   copyFileSync,
   readdirSync,
+  statSync,
+  writeFileSync,
 } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { tmpdir } from "node:os";
@@ -102,6 +104,24 @@ function scene(title: string, blurb: string): void {
   console.log();
 }
 
+// demo owns and recreates its target directory, so it must wipe it first. This
+// marker file, dropped inside the dir on creation, is how a re-run recognises a
+// directory it created and may safely delete again.
+const DEMO_MARKER = ".codument-demo";
+
+// Guard the single destructive `rmSync` below: only recreate a path we can prove
+// is ours to destroy. Nonexistent or empty → nothing to lose; the auto-chosen
+// default temp path → managed by us; a directory carrying our marker → a prior
+// demo run. Anything else (a real, populated directory the user pointed us at)
+// is refused rather than silently deleted.
+function isSafeToRecreate(dir: string, isDefault: boolean): boolean {
+  if (!existsSync(dir)) return true;
+  if (!statSync(dir).isDirectory()) return false;
+  if (readdirSync(dir).length === 0) return true;
+  if (isDefault) return true;
+  return existsSync(join(dir, DEMO_MARKER));
+}
+
 export async function demo(options: DemoOptions = {}): Promise<void> {
   const auto = options.auto ?? false;
   const interactive = !!process.stdin.isTTY && !auto;
@@ -112,9 +132,23 @@ export async function demo(options: DemoOptions = {}): Promise<void> {
     return;
   }
 
+  const isDefaultDir = options.dir === undefined;
   const dir = options.dir ?? join(tmpdir(), "codument-demo");
+  if (!isSafeToRecreate(dir, isDefaultDir)) {
+    console.log(
+      pc.red(`  codument demo: ${dir} already exists and is not an empty directory.`),
+    );
+    console.log(
+      pc.dim(
+        "  demo recreates whatever directory you point --dir at; pass a new or empty path so nothing is destroyed.",
+      ),
+    );
+    process.exitCode = 1;
+    return;
+  }
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, DEMO_MARKER), "");
   cpSync(join(fixture, "project"), dir, { recursive: true });
 
   try {

@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -42,6 +42,47 @@ describe("codument demo --auto", () => {
     assert.match(html, /add rate limiting to the login path/i);
     assert.match(html, /what this checks/);
     assert.match(html, /Without codument/);
+  });
+});
+
+describe("codument demo --dir safety", () => {
+  it("refuses to recreate a non-empty directory it did not create, leaving it untouched", () => {
+    const victim = join(tmp, "important");
+    mkdirSync(victim, { recursive: true });
+    const keep = join(victim, "data.txt");
+    writeFileSync(keep, "precious");
+
+    let threw = false;
+    let output = "";
+    try {
+      execFileSync("node", [CLI, "demo", "--auto", "--dir", victim], {
+        encoding: "utf-8",
+      });
+    } catch (e) {
+      threw = true;
+      const err = e as { status?: number; stdout?: string; stderr?: string };
+      output = (err.stdout ?? "") + (err.stderr ?? "");
+      assert.equal(err.status, 1);
+    }
+    assert.ok(threw, "expected demo to exit non-zero on a populated --dir");
+    assert.match(output, /already exists and is not an empty directory/);
+    // the user's data is still there — nothing was deleted
+    assert.ok(existsSync(keep));
+    assert.equal(readFileSync(keep, "utf-8"), "precious");
+  });
+
+  it("re-runs cleanly against its own demo directory (marker recognised)", () => {
+    const repo = join(tmp, "repo");
+    execFileSync("node", [CLI, "demo", "--auto", "--dir", repo], {
+      encoding: "utf-8",
+    });
+    assert.ok(existsSync(join(repo, ".codument-demo")), "marker written on first run");
+    // second run recognises its own dir and recreates it without refusing
+    const out = execFileSync("node", [CLI, "demo", "--auto", "--dir", repo], {
+      encoding: "utf-8",
+    });
+    assert.match(out, /documentation coverage/i);
+    assert.ok(existsSync(join(repo, ".codument", "report.html")));
   });
 });
 

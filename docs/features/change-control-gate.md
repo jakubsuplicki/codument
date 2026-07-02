@@ -64,6 +64,7 @@ The gate is split into two parts that must not be confused: a **deterministic en
 - **Concept umbrellas wake at file grain and never fragment a feature's per-symbol ownership.** A file owned by one feature plus any number of concept umbrellas still resolves derived. *(test: ownership.test.ts concept co-owner does not fragment; gate-wiring.test.ts concept umbrellas wake at file grain)*
 - **`review` and `watch` cannot disagree.** Both derive from one pure change-state analyzer over the same git-extracted change set. *(test: review.test.ts a passed-in change set equals the self-computed report; watch.test.ts renders the same shared state)*
 - **The two-ref base is single and printed**, with the empty tree when refs share no common ancestor and fail-closed on an unreachable base. *(test: two-ref.test.ts resolveBase — single merge-base, empty-tree fallback, unreachable-base GateError)*
+- **The showcase never destroys a directory it did not create.** `demo` recreates its target each run, so it refuses any populated directory it cannot prove is its own; an empty, nonexistent, or prior-demo `--dir` proceeds, a real project pointed at `--dir` is left untouched. *(test: demo.test.ts — a populated foreign --dir is refused and left intact; a repeat run against demo's own dir succeeds)*
 
 ## Decisions
 

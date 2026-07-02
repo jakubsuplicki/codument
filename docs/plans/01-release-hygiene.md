@@ -47,11 +47,11 @@ Plan 04 fixes the scope parser.
 
 ## Delivery Plan
 
-- [ ] Step 1: Reword the three "studio" references so the contract is justified intrinsically
+- [x] Step 1: Reword the three "studio" references so the contract is justified intrinsically
       (e.g. "for `watch` and any downstream consumer of `.codument/events.jsonl`"). Add
       `tests/oss-hygiene.test.ts`: a test that scans `src/`, `templates/`, `skills/`, `agents/`,
       `rules/` for `/studio/i` and fails on any hit, so the rule is mechanically enforced from now on.
-- [ ] Step 2: Make `demo --dir` non-destructive. On dir creation write a marker file
+- [x] Step 2: Make `demo --dir` non-destructive. On dir creation write a marker file
       (e.g. `.codument-demo`) inside the demo dir. Before any `rmSync`: allow deletion only when the
       target is the default temp path or contains the marker; otherwise, if the dir exists and is
       non-empty, exit 1 with a message telling the user to pass a new/empty directory. Add tests:
