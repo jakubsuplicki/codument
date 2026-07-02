@@ -57,7 +57,7 @@ Plan 04 fixes the scope parser.
       non-empty, exit 1 with a message telling the user to pass a new/empty directory. Add tests:
       (a) pointing --dir at a pre-existing non-empty dir refuses and leaves it untouched,
       (b) re-running with the same --dir (marker present) still works.
-- [ ] Step 3: Add `"prepublishOnly": "npm run build && npm test"` to package.json scripts, then
+- [x] Step 3: Add `"prepublishOnly": "npm run build && npm test"` to package.json scripts, then
       `npm run build` so dist reflects the reworded strings; verify `node dist/cli.js feed --help`
       no longer mentions studio.
 

@@ -283,6 +283,11 @@ describe("benchmark command", () => {
           cwd: ROOT,
           encoding: "utf-8",
           timeout: 20000,
+          // Stay hermetic when this suite runs inside a publish lifecycle
+          // (prepublishOnly): `npm publish --dry-run` exports
+          // npm_config_dry_run=true, which the nested pack would otherwise
+          // inherit and skip writing the tarball.
+          env: { ...process.env, npm_config_dry_run: "false" },
         },
       );
       const packInfo = JSON.parse(packOutput)[0] as { filename: string };
