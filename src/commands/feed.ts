@@ -24,7 +24,7 @@ const NO_SESSION = (root: string): void => {
 /**
  * Producer side of the live view: tail the active Claude Code transcript and
  * normalize its per-turn token usage + tool activity into
- * .codument/events.jsonl, which `watch` (and a future studio) consume. Idempotent
+ * .codument/events.jsonl, which `watch` and any reader of the event stream consume. Idempotent
  * — safe to run alongside `watch` or restart at will.
  */
 export async function feed(options: FeedOptions = {}): Promise<void> {

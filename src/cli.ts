@@ -122,7 +122,7 @@ program
 program
   .command("feed")
   .description(
-    "Tail the active Claude Code session log and normalize per-turn token usage + tool activity into .codument/events.jsonl (for watch / studio)",
+    "Tail the active Claude Code session log and normalize per-turn token usage + tool activity into .codument/events.jsonl (consumed by watch and any reader of the event stream)",
   )
   .option("--once", "Single backfill pass and exit")
   .option("--interval <ms>", "Poll interval in milliseconds (default 1000)")

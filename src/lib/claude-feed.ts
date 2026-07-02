@@ -27,8 +27,8 @@ import {
 // turns) plus the tool calls it made. We tail that file — the agent's existing
 // "exhaust" — and normalize it into .codument/events.jsonl, attributing each
 // turn to a feature via the registry's file→feature map. Zero token cost (we
-// read what already exists), no model instrumentation, and `watch` / a future
-// studio consume the one normalized stream.
+// read what already exists), no model instrumentation, and `watch` — along with
+// any downstream reader of the event stream — consumes the one normalized stream.
 //
 // The transcript is an internal Claude Code format, so this is a best-effort
 // adapter: every field is read defensively and a shape change degrades to fewer
