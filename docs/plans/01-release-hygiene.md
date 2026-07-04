@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 01: Release hygiene — publish blockers
@@ -11,13 +11,13 @@ publish flow is `npm run build && npm publish`; today nothing enforces that).
 
 Verified findings this plan fixes:
 
-1. **"studio" references leak into the OSS repo** — a hard project rule says this repo must contain
-   zero indication any companion product exists; the JSON/event contracts must be justified
+1. **Companion-product references leak into the OSS repo** — a hard project rule says this repo must
+   contain zero indication any companion product exists; the JSON/event contracts must be justified
    intrinsically. Three tracked hits, one user-facing:
-   - `src/cli.ts:125` — the `feed` command description ends "(for watch / studio)". This prints in
-     `codument feed --help` and is baked into `dist/cli.js`.
-   - `src/lib/claude-feed.ts:31` — comment "// studio consume the one normalized stream."
-   - `src/commands/feed.ts:27` — JSDoc "which `watch` (and a future studio) consume".
+   - `src/cli.ts:125` — the `feed` command description ends its "(for watch / …)" parenthetical with
+     a companion-product name. This prints in `codument feed --help` and is baked into `dist/cli.js`.
+   - `src/lib/claude-feed.ts:31` — a comment names the companion product as a stream consumer.
+   - `src/commands/feed.ts:27` — JSDoc names a "future" companion product as a consumer.
 2. **`codument demo --dir <path>` recursively deletes whatever directory it is pointed at.**
    `src/commands/demo.ts:115-117` runs `rmSync(dir, { recursive: true, force: true })` on the
    user-supplied path with no existence/emptiness check and no confirmation. Reproduced live: a
@@ -47,10 +47,11 @@ Plan 04 fixes the scope parser.
 
 ## Delivery Plan
 
-- [x] Step 1: Reword the three "studio" references so the contract is justified intrinsically
-      (e.g. "for `watch` and any downstream consumer of `.codument/events.jsonl`"). Add
+- [x] Step 1: Reword the three companion-product references so the contract is justified
+      intrinsically (e.g. "for `watch` and any downstream consumer of `.codument/events.jsonl`"). Add
       `tests/oss-hygiene.test.ts`: a test that scans `src/`, `templates/`, `skills/`, `agents/`,
-      `rules/` for `/studio/i` and fails on any hit, so the rule is mechanically enforced from now on.
+      `rules/` for the forbidden marker (held encoded in the test, so the literal term is itself
+      absent from the repo) and fails on any hit, so the rule is mechanically enforced from now on.
 - [x] Step 2: Make `demo --dir` non-destructive. On dir creation write a marker file
       (e.g. `.codument-demo`) inside the demo dir. Before any `rmSync`: allow deletion only when the
       target is the default temp path or contains the marker; otherwise, if the dir exists and is
@@ -59,7 +60,7 @@ Plan 04 fixes the scope parser.
       (b) re-running with the same --dir (marker present) still works.
 - [x] Step 3: Add `"prepublishOnly": "npm run build && npm test"` to package.json scripts, then
       `npm run build` so dist reflects the reworded strings; verify `node dist/cli.js feed --help`
-      no longer mentions studio.
+      no longer names the companion product.
 
 ## Outcome
 
@@ -69,7 +70,8 @@ or absent build. After this plan the pending `npm publish` is unblocked.
 
 ## Acceptance criteria
 
-- `grep -ri studio src/ templates/ skills/ agents/ rules/` returns nothing; the new test enforces it.
+- The shipped surface (`src/ templates/ skills/ agents/ rules/`) carries no companion-product marker;
+  the new test enforces it.
 - `codument demo --dir <existing non-empty dir>` exits 1 without deleting anything; default
   `codument demo` and repeat runs against its own dir still work.
 - `npm publish --dry-run` triggers build+test via prepublishOnly.

@@ -13,7 +13,13 @@ const repoRoot = join(here, "..");
 // enforces the rule across the directories that define the shipped surface, so a
 // stray reference fails CI instead of leaking into a published package.
 const ENFORCED_DIRS = ["src", "templates", "skills", "agents", "rules"];
-const FORBIDDEN = /studio/i;
+
+// The forbidden markers are held base64-encoded so the literal terms are
+// themselves absent from this repository (the rule applies to this test too).
+// Decode with Buffer.from(m, "base64") to audit the list.
+const FORBIDDEN_MARKERS = ["c3R1ZGlv"].map((m) =>
+  Buffer.from(m, "base64").toString("utf8").toLowerCase(),
+);
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -29,14 +35,20 @@ function walk(dir: string): string[] {
 }
 
 describe("oss hygiene", () => {
+  it("has a live, non-empty forbidden-marker list", () => {
+    // Guard against a broken encoding silently disabling the whole check.
+    assert.ok(FORBIDDEN_MARKERS.length > 0);
+    assert.ok(FORBIDDEN_MARKERS.every((m) => m.length > 2));
+  });
+
   it("no companion-product references in the shipped surface", () => {
     const hits: string[] = [];
     for (const dir of ENFORCED_DIRS) {
       for (const file of walk(join(repoRoot, dir))) {
-        const text = readFileSync(file, "utf8");
-        const lines = text.split("\n");
+        const lines = readFileSync(file, "utf8").split("\n");
         lines.forEach((line, i) => {
-          if (FORBIDDEN.test(line)) {
+          const lower = line.toLowerCase();
+          if (FORBIDDEN_MARKERS.some((m) => lower.includes(m))) {
             hits.push(`${relative(repoRoot, file)}:${i + 1}: ${line.trim()}`);
           }
         });
@@ -45,7 +57,7 @@ describe("oss hygiene", () => {
     assert.deepEqual(
       hits,
       [],
-      `Forbidden references found (justify contracts intrinsically):\n${hits.join("\n")}`,
+      `Forbidden companion-product references found (justify contracts intrinsically):\n${hits.join("\n")}`,
     );
   });
 });
