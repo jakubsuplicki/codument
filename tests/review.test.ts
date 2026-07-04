@@ -179,7 +179,8 @@ describe("codument review (CLI)", () => {
       encoding: "utf-8",
     });
     const report = JSON.parse(out);
-    assert.equal(report.version, 1);
+    assert.equal(report.version, 2);
+    assert.equal(report.gate, "ok");
     assert.equal(report.isGitRepo, true);
     assert.ok(report.state.staleDocs.some((d: { feature: string }) => d.feature === "auth"));
   });
@@ -318,7 +319,8 @@ describe("codument review (CLI)", () => {
     }
     assert.equal(status, 1);
     const report = JSON.parse(stdout);
-    assert.equal(report.version, 1);
+    assert.equal(report.version, 2);
+    assert.equal(report.gate, "ok");
   });
 
   it("--bundle emits the oracle; --record then --require-review enforces, and a later edit auto-invalidates", async () => {
@@ -415,5 +417,58 @@ describe("normalizeTestCommand", () => {
   it("returns undefined for empty / missing input", () => {
     assert.equal(normalizeTestCommand(undefined), undefined);
     assert.equal(normalizeTestCommand([]), undefined);
+  });
+});
+
+describe("review in a non-git directory (fail closed)", () => {
+  let nonGit: string;
+  beforeEach(async () => {
+    nonGit = await mkdtemp(join(tmpdir(), "codument-nongit-"));
+  });
+  afterEach(async () => {
+    await rm(nonGit, { recursive: true, force: true });
+  });
+
+  function run(args: string[]): { status: number; stdout: string } {
+    try {
+      const stdout = execFileSync("node", [CLI, ...args], {
+        cwd: nonGit,
+        encoding: "utf-8",
+      });
+      return { status: 0, stdout };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { status: e.status ?? 1, stdout: e.stdout ?? "" };
+    }
+  }
+
+  it("bare review stays informational (exit 0)", () => {
+    const r = run(["review"]);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Not a git repository/);
+  });
+
+  it("--strict fails closed (exit 1, gate could not run)", () => {
+    const r = run(["review", "--strict"]);
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /gate could not run/);
+  });
+
+  it("--require-review fails closed (exit 1)", () => {
+    assert.equal(run(["review", "--require-review"]).status, 1);
+  });
+
+  it("--json emits a valid discriminated shape, never a null state", () => {
+    const j = JSON.parse(run(["review", "--json"]).stdout);
+    assert.equal(j.version, 2);
+    assert.equal(j.gate, "unavailable");
+    assert.equal(j.isGitRepo, false);
+    assert.ok(!("state" in j), "unavailable shape carries no state field");
+  });
+
+  it("--json --strict emits the shape and exits 1", () => {
+    const r = run(["review", "--json", "--strict"]);
+    assert.equal(r.status, 1);
+    assert.equal(JSON.parse(r.stdout).gate, "unavailable");
   });
 });

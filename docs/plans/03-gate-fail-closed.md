@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 03: Gate fail-closed — the I/O layer
@@ -68,7 +68,7 @@ Verified findings this plan fixes (all confirmed; reproduced live):
 
 ## Delivery Plan
 
-- [ ] Step 1: Non-git fail-closed. Rework `review.ts:183-200` per the decision above; add the JSON
+- [x] Step 1: Non-git fail-closed. Rework `review.ts:183-200` per the decision above; add the JSON
       discriminant. Tests: `--strict` and `--require-review` exit 1 in a non-git dir; `--json`
       output parses and has no null state; bare `review` still exits 0.
 - [ ] Step 2: maxBuffer + spawn-error handling. Set a large explicit `maxBuffer` on every git

@@ -86,7 +86,11 @@ export function normalizeTestCommand(command?: string[]): string[] | undefined {
 }
 
 export interface ReviewReport {
-  version: 1;
+  version: 2;
+  /** Discriminant: `"ok"` means the gate ran and this report is its verdict.
+   *  The non-git `--json` output instead emits `{ gate: "unavailable", reason }`,
+   *  so a consumer never has to interpret a null/absent `state` as "passed". */
+  gate: "ok";
   isGitRepo: boolean;
   changedFileCount: number;
   plan: ApprovedPlan | null;
@@ -167,7 +171,8 @@ export function buildReview(
     fileGrainAcked,
   });
   return {
-    version: 1,
+    version: 2,
+    gate: "ok",
     isGitRepo: isGitRepo(root),
     changedFileCount: changes.length,
     plan,
@@ -181,18 +186,29 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   const root = options.root ?? process.cwd();
 
   if (!isGitRepo(root)) {
+    // The gate could not run — no repo to diff. Under a gating flag this fails
+    // closed (never a silent green), exactly like an unreachable base. Bare
+    // `review` stays informational (exit 0). `--json` always emits a valid
+    // discriminated shape, never a type-violating `state: null`.
+    const failClosed = !!options.strict || !!options.requireReview;
     if (options.json) {
       console.log(
         JSON.stringify(
-          { version: 1, isGitRepo: false, changedFileCount: 0, plan: null, state: null, drift: [], fileGrainAcked: [] },
+          { version: 2, gate: "unavailable", reason: "not a git repository", isGitRepo: false },
           null,
           2,
         ),
       );
+      if (failClosed) process.exitCode = 1;
       return;
     }
     console.log(pc.bold("codument review"));
     console.log();
+    if (failClosed) {
+      console.log(pc.red("  ✗ not a git repository (gate could not run)"));
+      process.exitCode = 1;
+      return;
+    }
     console.log(
       pc.yellow("  Not a git repository — review inspects the working-tree diff."),
     );
