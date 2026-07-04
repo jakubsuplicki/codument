@@ -107,6 +107,40 @@ describe("adopt command", () => {
     assert.equal(settings.hooks.PostToolUse[0].matcher, "Write|Edit|MultiEdit");
   });
 
+  it("preserves accumulated meta across adopt", async () => {
+    await writeFile(
+      join(tmp, ".codument-meta.json"),
+      JSON.stringify({
+        version: "0.1.0",
+        initialized: "2026-04-20",
+        project: {
+          language: "javascript",
+          srcDir: ".",
+          sourceGlobs: ["./**/*.js"],
+          framework: null,
+        },
+        fileHashes: { "src/x.ts": "cafef00d" },
+        lastScan: { at: "2026-04-21" },
+        charter: { seriousness: "serious" },
+      }),
+    );
+    await writeFile(
+      join(tmp, "docs", ".registry.json"),
+      JSON.stringify({ features: {} }, null, 2) + "\n",
+    );
+
+    runAdopt("--agents", "codex");
+
+    const meta = JSON.parse(
+      await readFile(join(tmp, ".codument-meta.json"), "utf-8"),
+    );
+    // adopt refreshes version/agents/project and update augments fileHashes with
+    // the managed files it installs, but the pre-existing accumulated fields survive.
+    assert.equal(meta.fileHashes["src/x.ts"], "cafef00d", "seeded fileHash preserved");
+    assert.deepEqual(meta.lastScan, { at: "2026-04-21" });
+    assert.deepEqual(meta.charter, { seriousness: "serious" });
+  });
+
   it("dry run does not rewrite legacy registry", async () => {
     const registryPath = join(tmp, "docs", ".registry.json");
     const legacyRegistry = JSON.stringify(

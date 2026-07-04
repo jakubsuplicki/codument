@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { atomicWriteFileSync } from "./events.js";
 import { join } from "node:path";
 
 // A recorded, attributed, fingerprint-bound decision that a moved anchor needs no
@@ -108,7 +109,7 @@ export function writeAck(root: string, ack: Acknowledgment): string {
   const dir = join(root, ACKS_DIR);
   mkdirSync(dir, { recursive: true });
   const path = join(dir, ackFileName(ack));
-  writeFileSync(path, JSON.stringify(ack, null, 2) + "\n");
+  atomicWriteFileSync(path, JSON.stringify(ack, null, 2) + "\n");
   return path;
 }
 

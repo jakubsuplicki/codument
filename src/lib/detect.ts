@@ -24,18 +24,28 @@ export async function detectProject(root: string): Promise<ProjectInfo> {
   let framework: string | null = null;
   const pkgPath = join(root, "package.json");
   if (existsSync(pkgPath)) {
-    const pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
-    const deps = {
-      ...(pkg.dependencies ?? {}),
-      ...(pkg.devDependencies ?? {}),
-    };
-    if (deps["next"]) framework = "nextjs";
-    else if (deps["@remix-run/node"] || deps["@remix-run/react"]) framework = "remix";
-    else if (deps["express"]) framework = "express";
-    else if (deps["@nestjs/core"]) framework = "nestjs";
-    else if (deps["react"]) framework = "react";
-    else if (deps["vue"]) framework = "vue";
-    else if (deps["svelte"]) framework = "svelte";
+    // The target project's package.json is the user's file, read only for a
+    // best-effort framework hint. A malformed one must not crash onboarding with
+    // a raw SyntaxError on the very first command: warn once and carry on with no
+    // detected framework (unlike codument's own state files, which fail loud).
+    try {
+      const pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
+      const deps = {
+        ...(pkg.dependencies ?? {}),
+        ...(pkg.devDependencies ?? {}),
+      };
+      if (deps["next"]) framework = "nextjs";
+      else if (deps["@remix-run/node"] || deps["@remix-run/react"]) framework = "remix";
+      else if (deps["express"]) framework = "express";
+      else if (deps["@nestjs/core"]) framework = "nestjs";
+      else if (deps["react"]) framework = "react";
+      else if (deps["vue"]) framework = "vue";
+      else if (deps["svelte"]) framework = "svelte";
+    } catch {
+      console.warn(
+        "  codument: could not parse package.json — skipping framework detection",
+      );
+    }
   }
 
   return { language: hasTs ? "typescript" : "javascript", srcDir, sourceGlobs, framework };

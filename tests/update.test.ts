@@ -182,6 +182,22 @@ describe("update command", () => {
     assert.equal(settings.hooks.PostToolUse[0].matcher, "Write|Edit|MultiEdit");
   });
 
+  it("refuses a corrupt Claude settings.json rather than rewriting it to just the hook", async () => {
+    await setupInitializedProject();
+    runCli("update", "--agents", "claude");
+
+    const settingsPath = join(tmp, ".claude", "settings.json");
+    const corrupt = '{ "permissions": { "allow": ["Bash"] }, }'; // trailing comma
+    await writeFile(settingsPath, corrupt);
+
+    const result = runCli("update");
+
+    assert.equal(result.exitCode, 1, "update exits nonzero on corrupt settings");
+    assert.match(result.stdout, /unreadable/);
+    // The user's permissions survive — never rewritten down to just the hook.
+    assert.equal(await readFile(settingsPath, "utf-8"), corrupt);
+  });
+
   it("updates an existing Claude hook matcher", async () => {
     await setupInitializedProject();
     runCli("update", "--agents", "claude");

@@ -67,6 +67,7 @@ export async function adopt(options: AdoptOptions): Promise<void> {
     project: { ...project },
     lastScan: existingMeta?.lastScan,
     fileHashes: existingMeta?.fileHashes,
+    charter: existingMeta?.charter,
   };
 
   if (!dryRun) {

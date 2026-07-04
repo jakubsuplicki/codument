@@ -4,24 +4,24 @@
       "doc": "docs/features/adversarial-review-gate.md",
       "type": "feature",
       "primary_sources": [
-        "src/lib/review-bundle.ts",
         "src/lib/review-artifact.ts",
+        "src/lib/review-bundle.ts",
         "src/lib/review-confirm.ts",
         "src/lib/review-gate.ts"
       ],
       "related_sources": [
-        "src/commands/review.ts",
         "src/cli.ts",
+        "src/commands/review.ts",
         "src/lib/git.ts",
         "src/lib/two-ref.ts"
       ],
       "docs": [
-        "skills/review-work/SKILL.md",
-        "agents/adversarial-reviewer.md"
+        "agents/adversarial-reviewer.md",
+        "skills/review-work/SKILL.md"
       ],
       "depends_on": [
-        "change-control-gate",
         "agent-delivery-workflow",
+        "change-control-gate",
         "cli",
         "commands",
         "lib"
@@ -45,8 +45,8 @@
       ],
       "depends_on": [
         "adversarial-review-gate",
-        "feature-decomposition",
         "agent-delivery-workflow",
+        "feature-decomposition",
         "lib"
       ],
       "risk": [],
@@ -76,24 +76,24 @@
       "doc": "docs/features/impact-ledger.md",
       "type": "feature",
       "primary_sources": [
-        "src/lib/review-events.ts",
-        "src/lib/impact-ledger.ts"
+        "src/lib/impact-ledger.ts",
+        "src/lib/review-events.ts"
       ],
       "related_sources": [
-        "src/commands/emit.ts",
-        "src/commands/review.ts",
-        "src/lib/git.ts",
         "src/cli.ts",
-        "src/commands/watch.ts",
+        "src/commands/emit.ts",
         "src/commands/report.ts",
+        "src/commands/review.ts",
+        "src/commands/watch.ts",
+        "src/lib/git.ts",
         "src/lib/report-html.ts"
       ],
       "docs": [],
       "depends_on": [
-        "review-effectiveness-metric",
+        "change-control-gate",
         "complete-cost-capture",
-        "token-cost-tracking",
-        "change-control-gate"
+        "review-effectiveness-metric",
+        "token-cost-tracking"
       ],
       "risk": [],
       "status": "in-progress"
@@ -117,8 +117,8 @@
       "doc": "docs/features/plan-step-mirroring.md",
       "type": "feature",
       "primary_sources": [
-        "src/lib/plan-steps.ts",
-        "src/commands/steps.ts"
+        "src/commands/steps.ts",
+        "src/lib/plan-steps.ts"
       ],
       "related_sources": [
         "src/cli.ts",
@@ -126,9 +126,9 @@
       ],
       "docs": [],
       "depends_on": [
+        "change-control-gate",
         "cli",
-        "lib",
-        "change-control-gate"
+        "lib"
       ],
       "risk": [],
       "status": "current"
@@ -152,9 +152,9 @@
         "docs/architecture/decisions/009-token-counts-are-truth-cost-derived-at-render.md"
       ],
       "depends_on": [
+        "change-control-gate",
         "cli",
-        "lib",
-        "change-control-gate"
+        "lib"
       ],
       "risk": [],
       "status": "current"
@@ -231,22 +231,23 @@
         "src/lib/benchmark-quality.ts",
         "src/lib/benchmark-seeded.ts",
         "src/lib/change-state.ts",
-        "src/lib/detector-result.ts",
         "src/lib/claude-feed.ts",
         "src/lib/claude-settings.ts",
         "src/lib/codemod.ts",
         "src/lib/detect.ts",
+        "src/lib/detector-result.ts",
+        "src/lib/emit-producer.ts",
         "src/lib/events.ts",
         "src/lib/git.ts",
         "src/lib/markers.ts",
-        "src/lib/emit-producer.ts",
         "src/lib/registry.ts",
         "src/lib/report-html.ts",
         "src/lib/scaffold.ts",
         "src/lib/token-cost.ts",
         "src/lib/token-report.ts",
         "src/lib/verdict.ts",
-        "src/lib/version.ts"
+        "src/lib/version.ts",
+        "src/lib/state-io.ts"
       ],
       "related_sources": [],
       "docs": [],
@@ -273,8 +274,8 @@
       "related_sources": [],
       "docs": [],
       "depends_on": [
-        "proof-benchmarks",
-        "change-control-gate"
+        "change-control-gate",
+        "proof-benchmarks"
       ],
       "risk": [],
       "status": "current"
@@ -286,14 +287,14 @@
         "src/lib/verdict.ts"
       ],
       "related_sources": [
-        "src/lib/claude-feed.ts",
         "src/commands/feed.ts",
-        "src/commands/watch.ts"
+        "src/commands/watch.ts",
+        "src/lib/claude-feed.ts"
       ],
       "docs": [],
       "depends_on": [
-        "token-cost-tracking",
-        "change-control-gate"
+        "change-control-gate",
+        "token-cost-tracking"
       ],
       "risk": [],
       "status": "current"
@@ -302,26 +303,26 @@
       "doc": "docs/features/feature-decomposition.md",
       "type": "feature",
       "primary_sources": [
-        "src/lib/feature-map.ts",
-        "src/commands/map.ts"
+        "src/commands/map.ts",
+        "src/lib/feature-map.ts"
       ],
       "related_sources": [
-        "src/lib/analyze.ts",
         "src/cli.ts",
+        "src/commands/watch.ts",
+        "src/lib/analyze.ts",
         "src/lib/registry.ts",
-        "src/lib/verdict.ts",
-        "src/commands/watch.ts"
+        "src/lib/verdict.ts"
       ],
       "docs": [
-        "skills/plan-with-docs/SKILL.md",
-        "skills/work-step/SKILL.md",
+        "docs/architecture/decisions/007-feature-map-approvable-decomposition.md",
         "rules/documentation.md",
-        "docs/architecture/decisions/007-feature-map-approvable-decomposition.md"
+        "skills/plan-with-docs/SKILL.md",
+        "skills/work-step/SKILL.md"
       ],
       "depends_on": [
         "change-control-gate",
-        "plan-step-mirroring",
-        "lib"
+        "lib",
+        "plan-step-mirroring"
       ],
       "risk": [],
       "status": "current"
@@ -331,26 +332,26 @@
       "type": "feature",
       "primary_sources": [],
       "related_sources": [
-        "src/lib/agent-profiles.ts",
-        "src/lib/scaffold.ts",
         "src/commands/init.ts",
         "src/commands/update.ts",
-        "src/lib/benchmark-quality.ts"
+        "src/lib/agent-profiles.ts",
+        "src/lib/benchmark-quality.ts",
+        "src/lib/scaffold.ts"
       ],
       "docs": [
-        "skills/senior-backend/SKILL.md",
-        "skills/senior-architect/SKILL.md",
-        "skills/senior-frontend/SKILL.md",
-        "skills/senior-frontend/references/react.md",
-        "skills/senior-frontend/references/react-native.md",
+        "skills/code-reviewer/SKILL.md",
         "skills/frontend-design/SKILL.md",
         "skills/motion-craft/SKILL.md",
-        "skills/motion-craft/references/web.md",
-        "skills/motion-craft/references/react-native.md",
-        "skills/motion-craft/references/examples.md",
         "skills/motion-craft/references/bridges.md",
-        "skills/code-reviewer/SKILL.md",
-        "skills/review-codebase/SKILL.md"
+        "skills/motion-craft/references/examples.md",
+        "skills/motion-craft/references/react-native.md",
+        "skills/motion-craft/references/web.md",
+        "skills/review-codebase/SKILL.md",
+        "skills/senior-architect/SKILL.md",
+        "skills/senior-backend/SKILL.md",
+        "skills/senior-frontend/SKILL.md",
+        "skills/senior-frontend/references/react-native.md",
+        "skills/senior-frontend/references/react.md"
       ],
       "depends_on": [
         "lib"

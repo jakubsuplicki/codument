@@ -1,8 +1,10 @@
 import { existsSync } from "node:fs";
-import { readFile, writeFile, readdir } from "node:fs/promises";
+import { writeFile, readdir } from "node:fs/promises";
 import { join, relative, dirname } from "node:path";
 import pc from "picocolors";
 import { readRegistry, writeRegistry } from "../lib/registry.js";
+import { atomicWriteFileSync } from "../lib/events.js";
+import { readJsonFileOrThrow } from "../lib/state-io.js";
 import { DEFAULT_EXCLUSION_SPEC } from "../lib/analyze.js";
 import { ensureDir } from "../lib/scaffold.js";
 
@@ -52,34 +54,45 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
 
   for (const feature of features) {
     const existingEntry = registry.features[feature.name];
+    // Fully documented already (entry + its doc on disk): leave it untouched.
     if (existingEntry && existsSync(join(root, existingEntry.doc))) {
       skipped++;
       continue;
     }
 
+    // Keep an existing entry's own doc path; only derive one for a new feature.
     const docDir = feature.type === "feature" ? "features" : "concepts";
-    const docPath = `docs/${docDir}/${feature.name}.md`;
+    const docPath = existingEntry?.doc ?? `docs/${docDir}/${feature.name}.md`;
     const fullDocPath = join(root, docPath);
 
-    ensureDir(dirname(fullDocPath));
+    // Never overwrite a doc that already exists on disk — a human-authored file
+    // (or one owned by another entry) is left exactly as-is. Scaffold only when
+    // the path is free.
+    if (existsSync(fullDocPath)) {
+      skipped++;
+      console.log(`  ${pc.dim(`Skipped ${docPath} — file already exists`)}`);
+    } else {
+      ensureDir(dirname(fullDocPath));
+      await writeFile(fullDocPath, scaffoldDoc(feature, today));
+      console.log(`  ${pc.green("✓")} Created ${pc.dim(docPath)}`);
+      created++;
+    }
 
-    // Create minimal scaffold — an agent fills in the content via update-docs.
-    const docContent = scaffoldDoc(feature, today);
-    await writeFile(fullDocPath, docContent);
-
-    registry.features[feature.name] = {
-      doc: docPath,
-      type: feature.type,
-      primary_sources: feature.sources,
-      related_sources: [],
-      docs: [],
-      depends_on: [],
-      risk: [],
-      status: "needs-review",
-    };
-
-    console.log(`  ${pc.green("✓")} Created ${pc.dim(docPath)}`);
-    created++;
+    // Preserve a human-curated entry's fields (depends_on, risk, related_sources,
+    // docs, status); refresh only the scanned sources. A brand-new feature gets a
+    // fresh needs-review entry.
+    registry.features[feature.name] = existingEntry
+      ? { ...existingEntry, primary_sources: feature.sources }
+      : {
+          doc: docPath,
+          type: feature.type,
+          primary_sources: feature.sources,
+          related_sources: [],
+          docs: [],
+          depends_on: [],
+          risk: [],
+          status: "needs-review",
+        };
   }
 
   if (skipped > 0) {
@@ -90,16 +103,11 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
   console.log();
   console.log(`  ${pc.green("✓")} Updated docs/.registry.json`);
 
-  // Track scan results in .codument-meta.json
+  // Track scan results in .codument-meta.json. Fail loud on a corrupt meta
+  // rather than dropping the fields it already carries.
   const metaPath = join(root, ".codument-meta.json");
-  let meta: Record<string, unknown> = {};
-  if (existsSync(metaPath)) {
-    try {
-      meta = JSON.parse(await readFile(metaPath, "utf-8"));
-    } catch {
-      meta = {};
-    }
-  }
+  const meta =
+    readJsonFileOrThrow<Record<string, unknown>>(metaPath, "project metadata") ?? {};
   meta.lastScan = {
     date: today,
     featuresFound: features.length,
@@ -107,7 +115,7 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
     skipped,
     sourceFiles: sourceFiles.length,
   };
-  await writeFile(metaPath, JSON.stringify(meta, null, 2) + "\n");
+  atomicWriteFileSync(metaPath, JSON.stringify(meta, null, 2) + "\n");
 
   console.log();
   console.log(pc.bold("  Summary:"));

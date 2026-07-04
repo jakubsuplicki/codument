@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { atomicWriteFileSync } from "./events.js";
 import { join } from "node:path";
 import { byteNormalize } from "./two-ref.js";
 
@@ -267,7 +268,7 @@ export function writeReview(root: string, artifact: ReviewArtifact): string {
   const dir = join(root, REVIEWS_DIR);
   mkdirSync(dir, { recursive: true });
   const path = join(dir, reviewFileName(artifact));
-  writeFileSync(path, JSON.stringify(artifact, null, 2) + "\n");
+  atomicWriteFileSync(path, JSON.stringify(artifact, null, 2) + "\n");
   return path;
 }
 

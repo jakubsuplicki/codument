@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { atomicWriteFileSync } from "./events.js";
+import { StateFileError } from "./state-io.js";
 
 export interface FileHash {
   path: string;
@@ -44,8 +46,10 @@ export async function readMeta(root: string): Promise<MetaFile | null> {
   if (!existsSync(metaPath)) return null;
   try {
     return JSON.parse(await readFile(metaPath, "utf-8"));
-  } catch {
-    return null;
+  } catch (err) {
+    // Fail loud: a corrupt meta must not read as "absent" and let a re-init,
+    // adopt, or update overwrite the fileHashes/charter it carries.
+    throw new StateFileError(metaPath, "project metadata", err);
   }
 }
 
@@ -54,7 +58,7 @@ export async function writeMeta(
   meta: MetaFile,
 ): Promise<void> {
   const metaPath = join(root, ".codument-meta.json");
-  await writeFile(metaPath, JSON.stringify(meta, null, 2) + "\n");
+  atomicWriteFileSync(metaPath, JSON.stringify(meta, null, 2) + "\n");
 }
 
 /**

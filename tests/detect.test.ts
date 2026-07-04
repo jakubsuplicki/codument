@@ -174,4 +174,20 @@ describe("detectProject", () => {
     const info = await detectProject(tmp);
     assert.equal(info.framework, null);
   });
+
+  it("does not crash on a malformed package.json (framework detection skipped)", async () => {
+    await writeFile(join(tmp, "tsconfig.json"), "{}");
+    await mkdir(join(tmp, "src"));
+    // Trailing comma → invalid JSON in the user's own file.
+    await writeFile(
+      join(tmp, "package.json"),
+      '{ "dependencies": { "next": "1", }',
+    );
+
+    // Proceeds with a clean result rather than throwing a raw SyntaxError on the
+    // very first onboarding command.
+    const info = await detectProject(tmp);
+    assert.equal(info.framework, null);
+    assert.equal(info.language, "typescript");
+  });
 });

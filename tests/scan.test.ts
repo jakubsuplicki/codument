@@ -235,4 +235,57 @@ describe("scan command", () => {
     const reg = await readRegistry(join(tmp, "docs", ".registry.json"));
     assert.equal(reg.features.auth.status, "needs-review");
   });
+
+  it("recreates a missing doc but preserves the entry's human-authored fields", async () => {
+    await setupProject({
+      "src/auth/login.ts": "export function login() {}",
+    });
+    const regPath = join(tmp, "docs", ".registry.json");
+    // Entry with curated ownership/deps/risk, but its doc file is missing.
+    await writeRegistry(regPath, {
+      features: {
+        auth: {
+          doc: "docs/features/auth.md",
+          type: "feature",
+          primary_sources: ["src/auth/login.ts"],
+          related_sources: ["src/lib/session.ts"],
+          docs: ["docs/guides/auth.md"],
+          depends_on: ["lib"],
+          risk: ["security"],
+          status: "current",
+        },
+      },
+    });
+
+    await scan({ root: tmp });
+
+    const e = (await readRegistry(regPath)).features.auth;
+    // The bug replaced the whole entry with a fresh literal; these must survive.
+    assert.deepEqual(e.related_sources, ["src/lib/session.ts"]);
+    assert.deepEqual(e.depends_on, ["lib"]);
+    assert.deepEqual(e.risk, ["security"]);
+    assert.deepEqual(e.docs, ["docs/guides/auth.md"]);
+    assert.equal(e.status, "current");
+    // and the missing doc is recreated
+    assert.ok(existsSync(join(tmp, "docs", "features", "auth.md")));
+  });
+
+  it("never overwrites an existing doc file on a name collision", async () => {
+    const HUMAN = "# Auth\n\nHand-written. Do not clobber.\n";
+    await setupProject({
+      "src/auth/login.ts": "export function login() {}",
+    });
+    // A doc already exists where scan would scaffold, but no entry maps it.
+    const docPath = join(tmp, "docs", "features", "auth.md");
+    await mkdir(join(docPath, ".."), { recursive: true });
+    await writeFile(docPath, HUMAN);
+
+    await scan({ root: tmp });
+
+    // The human-authored content is left exactly as-is.
+    assert.equal(await readFile(docPath, "utf-8"), HUMAN);
+    // but the existing doc is still mapped into the registry.
+    const reg = await readRegistry(join(tmp, "docs", ".registry.json"));
+    assert.ok(reg.features.auth, "existing doc gets a registry entry");
+  });
 });

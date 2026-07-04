@@ -164,4 +164,27 @@ describe("codument doctor --strict (CLI gating)", () => {
   it("exits 1 with --strict on a missing-registry repo", () => {
     assert.equal(run(["doctor", "--strict"], missing).status, 1);
   });
+
+  it("fails loud on a corrupt registry — even bare, and never touches the file", async () => {
+    const corrupt = await mkdtemp(join(tmpdir(), "codument-corrupt-"));
+    try {
+      const registryPath = join(corrupt, "docs", ".registry.json");
+      // Valid intent, invalid JSON (trailing comma).
+      const original = '{ "features": { "auth": { "doc": "docs/features/auth.md", } } }';
+      await mkdir(join(corrupt, "docs"), { recursive: true });
+      await writeFile(registryPath, original);
+
+      // A corrupt registry is a hard read error, not a soft finding: bare doctor
+      // fails closed too (unlike lint findings, which only fail under --strict).
+      const bare = run(["doctor"], corrupt);
+      assert.equal(bare.status, 1);
+      assert.match(bare.stdout, /unreadable/);
+      assert.equal(run(["doctor", "--strict"], corrupt).status, 1);
+
+      // The tool refused to read it as empty; it must not have rewritten it.
+      assert.equal(readFileSync(registryPath, "utf-8"), original);
+    } finally {
+      await rm(corrupt, { recursive: true, force: true });
+    }
+  });
 });

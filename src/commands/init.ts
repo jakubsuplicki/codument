@@ -1,7 +1,10 @@
 import { existsSync, cpSync, readFileSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import pc from "picocolors";
+import { atomicWriteFileSync } from "../lib/events.js";
+import { readJsonFileOrThrow } from "../lib/state-io.js";
+import type { MetaFile } from "../lib/codemod.js";
 import {
   resolveSkills,
   getAgentProfiles,
@@ -81,9 +84,11 @@ export async function init(options: InitOptions): Promise<void> {
     }
   }
 
-  // Create empty registry
+  // Create empty registry only when absent. --force overwrites codument-managed
+  // scaffolds, but the registry carries human-authored ownership; never reset a
+  // populated one. Re-scaffolding requires deleting the file deliberately.
   const registryPath = join(docsDir, ".registry.json");
-  if (!existsSync(registryPath) || options.force) {
+  if (!existsSync(registryPath)) {
     const emptyRegistry: Registry = { features: {} };
     await writeRegistry(registryPath, emptyRegistry);
     console.log(`  ${pc.green("✓")} Created docs/.registry.json`);
@@ -106,14 +111,20 @@ export async function init(options: InitOptions): Promise<void> {
     console.log(`  ${pc.green("✓")} Updated ${file}`);
   }
 
-  // Write meta file
+  // Write meta file. Read-merge so a re-init preserves the fields codument
+  // accumulates (fileHashes, lastScan, charter) and the original init date, which
+  // `update`'s three-way merge and the change detector depend on. A corrupt meta
+  // is refused (StateFileError), never overwritten.
   const metaPath = join(root, ".codument-meta.json");
-  await writeFile(
+  const existingMeta = readJsonFileOrThrow<MetaFile>(metaPath, "project metadata");
+  atomicWriteFileSync(
     metaPath,
     JSON.stringify(
       {
+        ...existingMeta,
         version: pkgVersion,
-        initialized: new Date().toISOString().split("T")[0],
+        initialized:
+          existingMeta?.initialized ?? new Date().toISOString().split("T")[0],
         agents: agentIds,
         project,
       },
@@ -186,7 +197,7 @@ async function installProfile(
   }
 
   if (profile.settingsFile) {
-    await writeSettings(join(root, profile.settingsFile), force);
+    await writeSettings(join(root, profile.settingsFile));
     console.log(`  ${pc.green("✓")} Updated ${profile.settingsFile}`);
   }
 }
@@ -199,19 +210,14 @@ Shared agent guidance lives in \`AGENTS.md\`. Follow that file as the canonical 
 ${buildManagedSection()}`;
 }
 
-async function writeSettings(
-  settingsPath: string,
-  force?: boolean,
-): Promise<void> {
-  let settings: Record<string, unknown> = {};
-  if (existsSync(settingsPath) && !force) {
-    try {
-      settings = JSON.parse(await readFile(settingsPath, "utf-8"));
-    } catch {
-      settings = {};
-    }
-  }
-
+async function writeSettings(settingsPath: string): Promise<void> {
+  // Always read-merge, even under --force: --force overwrites codument-managed
+  // FILES, never the non-codument keys (permissions, other hooks, env) in a
+  // shared settings file. We upsert only our hook. A present-but-unparseable
+  // settings file is refused here (StateFileError), never silently rewritten
+  // down to just the hook.
+  const settings =
+    readJsonFileOrThrow<Record<string, unknown>>(settingsPath, "settings") ?? {};
   const result = ensureClaudeDocsHook(settings);
-  await writeFile(settingsPath, JSON.stringify(result.settings, null, 2) + "\n");
+  atomicWriteFileSync(settingsPath, JSON.stringify(result.settings, null, 2) + "\n");
 }

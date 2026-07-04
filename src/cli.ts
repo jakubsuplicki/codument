@@ -16,6 +16,8 @@ import { stepsCommand } from "./commands/steps.js";
 import { scan } from "./commands/scan.js";
 import { update } from "./commands/update.js";
 import { mapRoute, mapCheck, mapMaterialize } from "./commands/map.js";
+import { RegistryError } from "./lib/registry.js";
+import { StateFileError } from "./lib/state-io.js";
 import { version } from "./lib/version.js";
 
 const program = new Command();
@@ -255,4 +257,21 @@ emit
 
 program.addCommand(createBenchmarkCommand());
 
-program.parse();
+// Fail closed on a corrupt state file: any command that reads an unparseable
+// registry or config (settings, project metadata, a target package.json) throws
+// rather than reading it as empty (which would let the next write destroy it).
+// Render it red and exit non-zero here, at the one boundary every command
+// dispatches through.
+program.parseAsync().catch((err) => {
+  if (err instanceof RegistryError || err instanceof StateFileError) {
+    console.log(pc.red(`  ✗ ${err.message}`));
+    console.log(
+      pc.dim(
+        `    Fix or restore ${err.path} — codument will not overwrite a state file it could not first read.`,
+      ),
+    );
+    process.exitCode = 1;
+    return;
+  }
+  throw err;
+});

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
-import { allSources, readRegistrySync } from "../lib/registry.js";
+import { allSources, readRegistrySync, RegistryError } from "../lib/registry.js";
 
 // This hook runs after Write/Edit tool use.
 // It checks if a source file was modified and reminds the developer that
@@ -62,7 +62,16 @@ if (!/\.(ts|tsx|js|jsx)$/.test(relPath)) process.exit(0);
 
 if (!existsSync(registryPath)) process.exit(0);
 
-const registry = readRegistrySync(registryPath);
+// Fail safe: this hook is advisory and silent-on-doubt, so an unreadable
+// registry no-ops exactly like an absent one — never a crash, never noise on
+// every edit. The loud "fix your registry" belongs to review/doctor/watch.
+let registry;
+try {
+  registry = readRegistrySync(registryPath);
+} catch (err) {
+  if (err instanceof RegistryError) process.exit(0);
+  throw err;
+}
 
 const matches: string[] = [];
 for (const [name, entry] of Object.entries(registry.features)) {

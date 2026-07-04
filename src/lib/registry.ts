@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { atomicWriteFileSync } from "./events.js";
 
 // The registry entry is THE model the analyzers read. It splits ownership into
 // owned (`primary_sources`) versus impacted (`related_sources`), adds durable
@@ -29,6 +30,24 @@ export interface Registry {
   features: Record<string, RegistryEntry>;
 }
 
+// A present-but-unparseable registry is a loud error, never an empty default.
+// Reading a corrupt registry as `{ features: {} }` makes every downstream write
+// (which starts from that object) overwrite the real registry with a single
+// entry — silent, total data loss. Callers surface this red and fail closed;
+// they never proceed as if the project had no registry.
+export class RegistryError extends Error {
+  constructor(
+    readonly path: string,
+    cause?: unknown,
+  ) {
+    super(
+      `registry unreadable: ${path} exists but does not parse` +
+        (cause instanceof Error ? ` (${cause.message})` : ""),
+    );
+    this.name = "RegistryError";
+  }
+}
+
 // Statuses that mean "not built yet". A registry entry with one of these is not
 // considered "mature" for coverage ratios (e.g. an empty `depends_on` on a draft
 // entry should not be penalized).
@@ -50,31 +69,34 @@ export function isMatureEntry(entry: RegistryEntry): boolean {
   return entry.primary_sources.length > 0 && !PLANNED_STATUSES.has(entry.status);
 }
 
+// Missing file → an empty registry (the project has none yet, a valid state).
+// Present-but-unparseable → RegistryError (never an empty default; see above).
+function parseRegistryOrThrow(content: string, registryPath: string): Registry {
+  try {
+    return normalizeRegistry(JSON.parse(content));
+  } catch (err) {
+    throw new RegistryError(registryPath, err);
+  }
+}
+
 export async function readRegistry(registryPath: string): Promise<Registry> {
   if (!existsSync(registryPath)) {
     return { features: {} };
   }
-  const content = await readFile(registryPath, "utf-8");
-  try {
-    return normalizeRegistry(JSON.parse(content));
-  } catch {
-    return { features: {} };
-  }
+  return parseRegistryOrThrow(await readFile(registryPath, "utf-8"), registryPath);
 }
 
 export function readRegistrySync(registryPath: string): Registry {
   if (!existsSync(registryPath)) {
     return { features: {} };
   }
-  try {
-    return normalizeRegistry(JSON.parse(readFileSync(registryPath, "utf-8")));
-  } catch {
-    return { features: {} };
-  }
+  return parseRegistryOrThrow(readFileSync(registryPath, "utf-8"), registryPath);
 }
 
 export async function writeRegistry(registryPath: string, registry: Registry): Promise<void> {
-  await writeFile(registryPath, JSON.stringify(registry, null, 2) + "\n");
+  // Atomic (tmp + fsync + rename): a crash or a concurrent reader never sees a
+  // torn registry — the corrupt-file state that used to trigger silent data loss.
+  atomicWriteFileSync(registryPath, JSON.stringify(registry, null, 2) + "\n");
 }
 
 export function updateRegistryEntry(
@@ -84,15 +106,13 @@ export function updateRegistryEntry(
 ): Registry {
   let registry: Registry = { features: {} };
   if (existsSync(registryPath)) {
-    try {
-      registry = normalizeRegistry(JSON.parse(readFileSync(registryPath, "utf-8")));
-    } catch {
-      registry = { features: {} };
-    }
+    // Refuse to write when the existing registry does not parse: starting from an
+    // empty object here would drop every real entry on the next line.
+    registry = parseRegistryOrThrow(readFileSync(registryPath, "utf-8"), registryPath);
   }
   const existing = registry.features[key];
   registry.features[key] = ensureEntryDefaults(key, { ...existing, ...entry });
-  writeFileSync(registryPath, JSON.stringify(registry, null, 2) + "\n");
+  atomicWriteFileSync(registryPath, JSON.stringify(registry, null, 2) + "\n");
   return registry;
 }
 

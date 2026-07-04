@@ -215,17 +215,102 @@ describe("init command", () => {
     assert.ok(reg.features.x);
   });
 
-  it("overwrites files with --force", async () => {
+  it("does not reset a populated registry under --force", async () => {
     runInit();
 
-    // Modify registry
+    // Populate the registry with human-authored ownership.
     const regPath = join(tmp, "docs", ".registry.json");
     await writeFile(regPath, JSON.stringify({ features: { x: {} } }));
 
     runInit("--force");
 
+    // --force overwrites codument-managed scaffolds, never the registry's
+    // human-authored content. Re-scaffolding requires deleting the file.
     const reg = JSON.parse(await readFile(regPath, "utf-8"));
-    assert.deepStrictEqual(reg, { features: {} });
+    assert.ok(reg.features.x, "populated registry preserved under --force");
+  });
+
+  it("preserves non-codument settings keys under --force", async () => {
+    await mkdir(join(tmp, ".claude"), { recursive: true });
+    await writeFile(
+      join(tmp, ".claude", "settings.json"),
+      JSON.stringify({
+        permissions: { allow: ["Bash(ls:*)"] },
+        env: { FOO: "bar" },
+        hooks: {
+          PreToolUse: [
+            { matcher: "Bash", hooks: [{ type: "command", command: "echo hi" }] },
+          ],
+        },
+      }),
+    );
+
+    runInit("--force", "--agents", "claude");
+
+    const settings = JSON.parse(
+      await readFile(join(tmp, ".claude", "settings.json"), "utf-8"),
+    );
+    // --force must not discard the user's permissions, env, or other hooks.
+    assert.deepEqual(settings.permissions, { allow: ["Bash(ls:*)"] });
+    assert.deepEqual(settings.env, { FOO: "bar" });
+    assert.ok(settings.hooks.PreToolUse?.length > 0, "foreign hook preserved");
+    assert.ok(codumentHookEntries(settings).length > 0, "codument hook upserted");
+  });
+
+  it("preserves accumulated meta (fileHashes, lastScan) on re-init", async () => {
+    runInit("--agents", "claude");
+    const metaPath = join(tmp, ".codument-meta.json");
+    const meta = JSON.parse(await readFile(metaPath, "utf-8"));
+    meta.fileHashes = { "src/x.ts": "deadbeef" };
+    meta.lastScan = { at: "2026-01-01" };
+    await writeFile(metaPath, JSON.stringify(meta, null, 2));
+
+    runInit("--agents", "claude");
+
+    const after = JSON.parse(await readFile(metaPath, "utf-8"));
+    assert.deepEqual(after.fileHashes, { "src/x.ts": "deadbeef" });
+    assert.deepEqual(after.lastScan, { at: "2026-01-01" });
+  });
+
+  it("refuses a corrupt settings.json rather than overwriting it", async () => {
+    await mkdir(join(tmp, ".claude"), { recursive: true });
+    const settingsPath = join(tmp, ".claude", "settings.json");
+    const corrupt = '{ "permissions": { "allow": ["Bash"] }, }'; // trailing comma
+    await writeFile(settingsPath, corrupt);
+
+    let status = 0;
+    let output = "";
+    try {
+      runInit("--force", "--agents", "claude");
+    } catch (e) {
+      const err = e as { status?: number; stdout?: string };
+      status = err.status ?? 1;
+      output = err.stdout ?? "";
+    }
+    assert.equal(status, 1, "init exits non-zero on a corrupt settings file");
+    assert.match(output, /unreadable/);
+    // The user's file is left exactly as it was — never rewritten to just the hook.
+    assert.equal(await readFile(settingsPath, "utf-8"), corrupt);
+  });
+
+  it("refuses a corrupt .codument-meta.json rather than dropping its fields", async () => {
+    runInit("--agents", "claude");
+    const metaPath = join(tmp, ".codument-meta.json");
+    const corrupt = '{ "fileHashes": { "src/x.ts": "abc" }, }'; // trailing comma
+    await writeFile(metaPath, corrupt);
+
+    let status = 0;
+    let output = "";
+    try {
+      runInit("--agents", "claude");
+    } catch (e) {
+      const err = e as { status?: number; stdout?: string };
+      status = err.status ?? 1;
+      output = err.stdout ?? "";
+    }
+    assert.equal(status, 1, "init exits non-zero on corrupt project metadata");
+    assert.match(output, /unreadable/);
+    assert.equal(await readFile(metaPath, "utf-8"), corrupt);
   });
 
   it("preserves existing settings.json entries", async () => {

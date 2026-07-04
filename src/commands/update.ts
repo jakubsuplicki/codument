@@ -11,6 +11,7 @@ import {
   type AgentProfileId,
 } from "../lib/agent-profiles.js";
 import { ensureClaudeDocsHook } from "../lib/claude-settings.js";
+import { readJsonFileOrThrow } from "../lib/state-io.js";
 import { detectProject } from "../lib/detect.js";
 import {
   readMeta,
@@ -350,12 +351,11 @@ async function updateSettings(
     return { file: relativePath, action: "create", reason: "file missing" };
   }
 
-  let current: Record<string, unknown>;
-  try {
-    current = JSON.parse(await readFile(settingsPath, "utf-8"));
-  } catch {
-    current = {};
-  }
+  // Fail loud on a corrupt settings file rather than rewriting it down to just
+  // the hook (destroying the user's permissions/env/other hooks). The caller
+  // catches this, leaves the file untouched, and exits nonzero.
+  const current =
+    readJsonFileOrThrow<Record<string, unknown>>(settingsPath, "settings") ?? {};
   const result = ensureClaudeDocsHook(current);
   if (!result.changed) {
     return { file: relativePath, action: "skip", reason: "hook already present" };

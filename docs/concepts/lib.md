@@ -59,6 +59,8 @@ Each module's behavior, invariants, and decisions live where it is owned. This d
 - One canonical exclusion spec (`DEFAULT_EXCLUSION_SPEC`) is shared by every analyzer and applied identically to discovery, numerator, and denominator, so coverage, lint, and the gate can never disagree about what counts. *(test: `analyze.test.ts` exclusion spec)*
 - A fingerprint is invariant to cosmetic churn (BOM, CRLF, reformatting, comments) but moves on a real token change, so the gate cannot be cleared by a re-save or a date bump. *(tests: `fingerprint.test.ts` cosmetic-churn; `ts-adapter.test.ts` token-stream reformatting)*
 - Side effects are confined to seams: the analyzers never read the clock or the network; git and event-log access live in `git.ts` and `events.ts`. *(boundary — per-module invariants live in the owning feature docs)*
+- A present-but-unparseable registry is a loud error, never a silent empty default: reads raise rather than return empty, and a write refuses rather than start from empty. No reader proceeds as if the project were unmapped and no writer overwrites a registry it could not first read. *(test: `registry.test.ts` "fail-loud on a corrupt registry")*
+- Every state-file write (registry, meta, acks, review and coverage artifacts) goes through the shared atomic writer — a sibling temp file, fsync, then rename over the target — so a crash or a concurrent reader never observes a torn or truncated state file. *(test: `registry.test.ts` "atomic state writes")*
 
 ## Decisions
 
@@ -72,6 +74,7 @@ Foundation utilities owned here:
 
 - `src/index.ts` — public package barrel; re-exports the registry, analyzer, gate primitives, and agent-profile helpers for programmatic consumers.
 - `src/lib/registry.ts` — typed read, write, and single-entry update for the v2 `docs/.registry.json` model every analyzer reads.
+- `src/lib/state-io.ts` — the fail-loud state-file primitive: reads config JSON, returning nothing when absent but raising rather than defaulting when present-but-unparseable, so a writer never overwrites what it could not read.
 - `src/lib/agent-profiles.ts` — maps the neutral delivery workflow onto agent-specific output (which instruction files, skills, and directories each profile writes) and the ordered core skill list.
 - `src/lib/codemod.ts` — the hash-based overwrite/skip/merge strategy behind `codument update`, plus the `.codument-meta.json` round-trip.
 - `src/lib/claude-settings.ts` — normalizes `.claude/settings.json` down to one idempotent docs hook without disturbing unrelated hooks.

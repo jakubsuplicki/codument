@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import pc from "picocolors";
+import { atomicWriteFileSync } from "../lib/events.js";
 import { readRegistrySync } from "../lib/registry.js";
 import { renderCoverageBadge } from "../lib/badge.js";
 import {
@@ -50,8 +51,8 @@ export function writeCoverageArtifacts(
   };
   const jsonPath = join(dir, "coverage.json");
   const svgPath = join(dir, "coverage.svg");
-  writeFileSync(jsonPath, JSON.stringify(artifact, null, 2) + "\n");
-  writeFileSync(svgPath, renderCoverageBadge(report.coverage.percent));
+  atomicWriteFileSync(jsonPath, JSON.stringify(artifact, null, 2) + "\n");
+  atomicWriteFileSync(svgPath, renderCoverageBadge(report.coverage.percent));
   return { jsonPath, svgPath };
 }
 

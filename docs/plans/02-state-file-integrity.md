@@ -1,5 +1,5 @@
 ---
-status: draft
+status: shipped
 ---
 
 # Plan 02: State-file integrity — stop destroying user state
@@ -44,8 +44,11 @@ Verified findings this plan fixes (all confirmed against source; several reprodu
 ## Scope
 
 - `src/lib/registry.ts`
-- `src/lib/events.ts`
-- `src/lib/state-io.ts` (new, optional — see feature map)
+- `src/cli.ts` (Step 1/3: the shared fail-closed dispatch boundary that renders state-file errors)
+- `src/hooks/check-docs.ts` (Step 1: the hook stays a silent no-op on an unreadable registry)
+- `src/lib/events.ts` (home of the shared `atomicWriteFileSync`, imported by the write sites)
+- `src/lib/state-io.ts` (new; Step 3: `StateFileError` + fail-loud JSON read for config files)
+- `src/lib/codemod.ts` (Step 2: `writeMeta` atomic; Step 3: `readMeta` fail-loud)
 - `src/commands/init.ts`
 - `src/commands/update.ts`
 - `src/commands/scan.ts`
@@ -61,11 +64,14 @@ Verified findings this plan fixes (all confirmed against source; several reprodu
 - `tests/scan.test.ts`
 
 ```feature-map
-src/lib/state-io.ts | lib | concept | shared atomic write + fail-loud parse helpers for state files
+src/lib/state-io.ts | lib | concept | fail-loud JSON read for state/config files (missing→undefined, unparseable→StateFileError)
 ```
 
-(Only if Step 2 extracts a new module; re-exporting from `events.ts` is equally acceptable — then no
-new file and no map row. If created, run `codument map materialize src/lib/state-io.ts`.)
+Step 2 kept the existing `atomicWriteFileSync` in `events.ts` (no cycle: `events.ts` imports nothing
+first-party) rather than putting the atomic writer in `state-io.ts`; the cross-cutting atomicity
+guarantee is documented once in `docs/concepts/lib.md`. Step 3 created `state-io.ts` for the shared
+fail-loud parse primitives (`StateFileError` + `readJsonFileOrThrow`) that config readers reuse; run
+`codument map materialize src/lib/state-io.ts`.
 
 ## Non-goals
 
@@ -85,30 +91,30 @@ new file and no map row. If created, run `codument map materialize src/lib/state
 
 ## Delivery Plan
 
-- [ ] Step 1: Registry fail-loud. In `registry.ts`, distinguish file-missing (→ empty registry, OK)
+- [x] Step 1: Registry fail-loud. In `registry.ts`, distinguish file-missing (→ empty registry, OK)
       from file-unparseable (→ throw a typed error carrying path + cause). Update every caller:
       review/watch/doctor/map/scan/ack render a red "registry unreadable — fix or restore
       docs/.registry.json" and exit 1; `updateRegistryEntry` refuses to write when an existing
       registry does not parse. Tests: trailing-comma registry → materialize exits 1 and the file is
       byte-identical afterwards; doctor/review exit 1 with the diagnostic.
-- [ ] Step 2: Atomic state writes. Export the existing `atomicWriteFileSync` (from `events.ts` or a
+- [x] Step 2: Atomic state writes. Export the existing `atomicWriteFileSync` (from `events.ts` or a
       new `state-io.ts`) and route registry, `.codument-meta.json`, acks, review artifacts, and the
       doctor artifact through it. Test: the tmp-then-rename behavior (no partial file visible under
       a simulated crash between write and rename is hard to test directly; assert the helper is used
       and that a write never truncates-then-writes in place).
-- [ ] Step 3: `init` preservation. Always read-merge existing `.claude/settings.json` (upsert only
+- [x] Step 3: `init` preservation. Always read-merge existing `.claude/settings.json` (upsert only
       the codument hook, `--force` included); read-merge `.codument-meta.json` preserving
       `fileHashes`/`lastScan`/charter (mirror `adopt.ts:63-70`, and make adopt preserve charter
       too); remove the registry reset from the `--force` path. Tests: settings with
       permissions/env/other-hooks survive `init --force`; meta hashes survive plain re-init;
       populated registry survives `init --force`.
-- [ ] Step 4: `update` refuses on corrupt settings. Unparseable settings.json → exit 1 naming the
+- [x] Step 4: `update` refuses on corrupt settings. Unparseable settings.json → exit 1 naming the
       file, no write, no backup-then-replace. Test with a JSONC-style file.
-- [ ] Step 5: `scan` merges, never clobbers. Existing registry entry → update machine fields only
+- [x] Step 5: `scan` merges, never clobbers. Existing registry entry → update machine fields only
       (sources), preserve `depends_on`/`risk`/`related_sources`/`docs`/`status`; never write a
       scaffold over an existing doc file (skip + note in output). Tests: entry-with-missing-doc keeps
       its human fields; name-collision case leaves the existing doc content untouched.
-- [ ] Step 6: Guard `detect.ts:27` (try/catch → framework null + one-line warning naming the file),
+- [x] Step 6: Guard `detect.ts:27` (try/catch → framework null + one-line warning naming the file),
       matching every sibling reader. Test: malformed package.json → `init` proceeds with the warning.
 
 ## Outcome

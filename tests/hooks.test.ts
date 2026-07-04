@@ -118,6 +118,25 @@ describe("check-docs hook", () => {
     }
   });
 
+  it("no-ops silently on an unreadable registry (never crashes the edit)", async () => {
+    const tmp = await createProject();
+    try {
+      // Valid intent, invalid JSON (trailing comma). runHook uses execFileSync,
+      // which throws on a non-zero exit — so a clean return here proves the hook
+      // exited 0, and the empty output proves it stayed silent-on-doubt.
+      await writeFile(
+        join(tmp, "docs", ".registry.json"),
+        '{ "features": { "feature": { "doc": "x", } } }',
+      );
+
+      const output = runHook(tmp, join(tmp, "src", "feature.ts"));
+
+      assert.equal(output.trim(), "");
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("reads the payload from stdin when no CLAUDE_TOOL_INPUT env is set", async () => {
     const tmp = await createProject();
     try {

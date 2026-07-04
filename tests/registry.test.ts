@@ -1,8 +1,9 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, rm, readFile, writeFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { atomicWriteFileSync } from "../src/lib/events.js";
 import {
   allSources,
   isMatureEntry,
@@ -11,6 +12,7 @@ import {
   readRegistrySync,
   writeRegistry,
   updateRegistryEntry,
+  RegistryError,
 } from "../src/lib/registry.js";
 import type { Registry, RegistryEntry } from "../src/lib/registry.js";
 
@@ -282,5 +284,74 @@ describe("updateRegistryEntry", () => {
     const onDisk = JSON.parse(await readFile(path, "utf-8"));
     assert.ok(onDisk.features.scan);
     assert.equal(onDisk.features.scan.status, "needs-review");
+  });
+});
+
+describe("fail-loud on a corrupt registry", () => {
+  // A registry with a real feature plus a trailing comma: valid intent, invalid
+  // JSON. The old behavior read this as empty, then the next write destroyed it.
+  const CORRUPT = `{
+  "features": {
+    "auth": {
+      "doc": "docs/features/auth.md",
+      "type": "feature",
+      "primary_sources": ["src/auth.ts"],
+    }
+  }
+}`;
+
+  it("readRegistrySync throws RegistryError, never an empty default", async () => {
+    const path = join(tmp, "registry.json");
+    await writeFile(path, CORRUPT);
+    assert.throws(() => readRegistrySync(path), (err) => {
+      assert.ok(err instanceof RegistryError);
+      assert.equal(err.path, path);
+      return true;
+    });
+  });
+
+  it("readRegistry (async) rejects with RegistryError", async () => {
+    const path = join(tmp, "registry.json");
+    await writeFile(path, CORRUPT);
+    await assert.rejects(readRegistry(path), (err) => err instanceof RegistryError);
+  });
+
+  it("updateRegistryEntry refuses to write and leaves the file byte-identical", async () => {
+    const path = join(tmp, "registry.json");
+    await writeFile(path, CORRUPT);
+    assert.throws(
+      () => updateRegistryEntry(path, "scan", { primary_sources: ["src/scan.ts"] }),
+      (err) => err instanceof RegistryError,
+    );
+    // The real (if malformed) registry is untouched — no partial rewrite.
+    assert.equal(await readFile(path, "utf-8"), CORRUPT);
+  });
+
+  it("still treats a missing file as an empty registry, not an error", async () => {
+    const reg = readRegistrySync(join(tmp, "does-not-exist.json"));
+    assert.deepStrictEqual(reg, { features: {} });
+  });
+});
+
+describe("atomic state writes", () => {
+  it("replaces content via tmp + rename and leaves no temp residue", async () => {
+    const path = join(tmp, "state.json");
+    atomicWriteFileSync(path, "first\n");
+    atomicWriteFileSync(path, "second\n");
+    assert.equal(await readFile(path, "utf-8"), "second\n");
+    const siblings = await readdir(tmp);
+    assert.ok(!siblings.some((f) => f.includes(".tmp-")), "no temp file left behind");
+  });
+
+  it("routes registry writes through the atomic path (no torn or temp file)", async () => {
+    const path = join(tmp, "registry.json");
+    await writeRegistry(path, { features: {} });
+    updateRegistryEntry(path, "auth", { primary_sources: ["src/auth.ts"] });
+    assert.deepEqual(
+      readRegistrySync(path).features.auth.primary_sources,
+      ["src/auth.ts"],
+    );
+    const siblings = await readdir(tmp);
+    assert.ok(!siblings.some((f) => f.includes(".tmp-")), "no temp file left behind");
   });
 });
