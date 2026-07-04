@@ -71,7 +71,7 @@ Verified findings this plan fixes (all confirmed; reproduced live):
 - [x] Step 1: Non-git fail-closed. Rework `review.ts:183-200` per the decision above; add the JSON
       discriminant. Tests: `--strict` and `--require-review` exit 1 in a non-git dir; `--json`
       output parses and has no null state; bare `review` still exits 0.
-- [ ] Step 2: maxBuffer + spawn-error handling. Set a large explicit `maxBuffer` on every git
+- [x] Step 2: maxBuffer + spawn-error handling. Set a large explicit `maxBuffer` on every git
       `execFileSync`/`spawnSync` in `git.ts` and `two-ref.ts`; convert catch-to-empty on
       change-listing helpers into thrown `GateError`s that review renders red. Tests: a spawn error
       surfaces as exit 1 "gate could not run" (inject via an unreadable ref or a stubbed failing

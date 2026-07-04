@@ -32,7 +32,7 @@ One command is a signpost, not an action: `run` (aliased `autopilot`) exists onl
 
 - The version the binary reports is read from the package manifest at runtime, so it cannot diverge from the published package version. *(untested)*
 - The entry point only registers commands and dispatches; each command's behaviour is owned and tested through its own handler, never here. The command surface is exercised end-to-end by invoking the built binary in the per-command suites. *(test: `ack.test.ts` "ack loop end-to-end through the real CLI (the headline ergonomics)", which spawns the built `cli.js` and asserts dispatch + exit codes; the same pattern covers the other commands' suites)*
-- The dispatch boundary fails closed on an unreadable registry: any command that reads an unparseable `docs/.registry.json` surfaces one red diagnostic and exits non-zero here, so no command runs against a silently-empty registry. *(test: `doctor.test.ts` "fails loud on a corrupt registry")*
+- The dispatch boundary fails closed on an unrecoverable error a command did not render itself: an unreadable registry or state file, or a gate that could not run (`GateError`), surfaces one red diagnostic and exits non-zero here rather than crashing with a raw stack, so no command runs against a silently-empty registry or a gate it could not evaluate. *(test: `doctor.test.ts` "fails loud on a corrupt registry"; `git.test.ts` "git change-listing fails closed")*
 - `codument run` performs no work: it is a signpost whose only effect is explaining that codument does not run the user's agent and that the loop lives in the agent's instructions. *(untested)*
 
 ## Key files

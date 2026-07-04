@@ -1,9 +1,14 @@
 import { execFileSync } from "node:child_process";
+import { GateError } from "./two-ref.js";
 
 // Git access for the diff analyzer. Codument is positioned as git-native, so we
 // shell out to the already-required `git` CLI rather than add a dependency.
 // GIT_OPTIONAL_LOCKS=0 keeps `git status` polling (especially from `watch`) from
 // creating index lock churn that could re-trigger the agent.
+
+// See two-ref.ts: the default 1MB maxBuffer let a large tree's git output throw
+// ENOBUFS, which the catch-to-empty helpers below swallowed into a false "clean."
+const GIT_MAX_BUFFER = 512 * 1024 * 1024;
 
 function git(root: string, args: string[]): string {
   return execFileSync("git", args, {
@@ -11,6 +16,7 @@ function git(root: string, args: string[]): string {
     encoding: "utf-8",
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
     stdio: ["ignore", "pipe", "ignore"],
+    maxBuffer: GIT_MAX_BUFFER,
   });
 }
 
@@ -120,8 +126,11 @@ export function getWorkingTreeChanges(root: string): string[] {
   let out: string;
   try {
     out = git(root, ["status", "--porcelain", "-uall"]);
-  } catch {
-    return [];
+  } catch (err) {
+    // Fail closed: `git status` does not legitimately fail inside a work tree, so
+    // a throw is a broken/oversized invocation. Never read it as "Working tree
+    // clean" — that silently passes the gate on a repo it could not see.
+    throw new GateError(`git status failed: ${(err as Error).message}`, "git-failed");
   }
   const files = new Set<string>();
   for (const line of out.split("\n")) {
@@ -150,8 +159,9 @@ export function getWorkingTreeDeletions(root: string): string[] {
   let out: string;
   try {
     out = git(root, ["status", "--porcelain", "-uall"]);
-  } catch {
-    return [];
+  } catch (err) {
+    // Fail closed for the same reason as getWorkingTreeChanges.
+    throw new GateError(`git status failed: ${(err as Error).message}`, "git-failed");
   }
   const files = new Set<string>();
   for (const line of out.split("\n")) {

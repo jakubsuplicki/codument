@@ -23,12 +23,20 @@ export function algoStamp(): string {
   return `parser=tworef;ts=${ts.version};algo=${ALGO_VERSION}`;
 }
 
+// execFileSync's default maxBuffer is 1MB; git output on a large tree (e.g.
+// `status --porcelain` with tens of thousands of untracked files) exceeds it and
+// throws ENOBUFS. Without a generous cap that throw was swallowed into an empty
+// change set — the gate reading green because it could not see the repo. 512MB
+// is a limit, not a preallocation, so it costs nothing on small repos.
+const GIT_MAX_BUFFER = 512 * 1024 * 1024;
+
 function git(root: string, args: string[]): string {
   return execFileSync("git", args, {
     cwd: root,
     encoding: "utf-8",
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
     stdio: ["ignore", "pipe", "ignore"],
+    maxBuffer: GIT_MAX_BUFFER,
   });
 }
 
@@ -42,7 +50,7 @@ export function byteNormalize(content: string): string {
   return s.replace(/\r\n?/g, "\n");
 }
 
-export type GateErrorKind = "bad-ref" | "unreachable-base" | "ambiguous-base";
+export type GateErrorKind = "bad-ref" | "unreachable-base" | "ambiguous-base" | "git-failed";
 
 // A gate-level failure that must fail CLOSED (red, blocking) — the gate could not
 // run, which is distinct from "ran and passed." Branch protection requires the
@@ -175,8 +183,13 @@ export function changedPathsBetween(
   let out: string;
   try {
     out = git(root, ["diff", "--name-status", "-M", base, head]);
-  } catch {
-    return [];
+  } catch (err) {
+    // Fail closed: with valid refs this diff does not legitimately fail, so a
+    // throw here is a broken/oversized git invocation, never "no changes."
+    throw new GateError(
+      `git diff ${base}..${head} failed: ${(err as Error).message}`,
+      "git-failed",
+    );
   }
   const changes: ChangedPath[] = [];
   for (const line of out.split("\n")) {

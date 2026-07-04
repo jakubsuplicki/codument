@@ -18,6 +18,7 @@ import { update } from "./commands/update.js";
 import { mapRoute, mapCheck, mapMaterialize } from "./commands/map.js";
 import { RegistryError } from "./lib/registry.js";
 import { StateFileError } from "./lib/state-io.js";
+import { GateError } from "./lib/two-ref.js";
 import { version } from "./lib/version.js";
 
 const program = new Command();
@@ -270,6 +271,13 @@ program.parseAsync().catch((err) => {
         `    Fix or restore ${err.path} — codument will not overwrite a state file it could not first read.`,
       ),
     );
+    process.exitCode = 1;
+    return;
+  }
+  // A GateError that no command caught locally (review renders its own): the gate
+  // could not run, so fail closed here rather than crash with a raw stack.
+  if (err instanceof GateError) {
+    console.log(pc.red(`  ✗ ${err.message} (gate could not run)`));
     process.exitCode = 1;
     return;
   }

@@ -610,7 +610,12 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
   scheduleAnim();
   const dataTimer = setInterval(() => {
     if (feedOn) pumpFeed(root); // tail new session-log turns before recomputing
-    cache = gatherFrameData(root);
+    try {
+      cache = gatherFrameData(root);
+    } catch {
+      // A transient git failure mid-session must not crash the monitor: keep
+      // rendering the last good frame until a later tick recovers.
+    }
   }, dataMs);
 
   const stop = () => {
