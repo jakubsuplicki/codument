@@ -50,7 +50,12 @@ export function byteNormalize(content: string): string {
   return s.replace(/\r\n?/g, "\n");
 }
 
-export type GateErrorKind = "bad-ref" | "unreachable-base" | "ambiguous-base" | "git-failed";
+export type GateErrorKind =
+  | "bad-ref"
+  | "unreachable-base"
+  | "ambiguous-base"
+  | "git-failed"
+  | "wrong-root";
 
 // A gate-level failure that must fail CLOSED (red, blocking) — the gate could not
 // run, which is distinct from "ran and passed." Branch protection requires the

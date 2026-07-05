@@ -2,6 +2,8 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import pc from "picocolors";
 import { atomicWriteFileSync } from "../lib/events.js";
+import { assertRootIsRepoToplevel } from "../lib/git.js";
+import { GateError } from "../lib/two-ref.js";
 import { readRegistrySync } from "../lib/registry.js";
 import { renderCoverageBadge } from "../lib/badge.js";
 import {
@@ -141,6 +143,24 @@ function num(value: string | number | undefined): number | undefined {
 
 export async function doctor(options: DoctorOptions = {}): Promise<void> {
   const root = options.root ?? process.cwd();
+  // A subdirectory root is refused for the same reason the gate refuses it: the
+  // rest of the toolchain rejects this root as wrong, and a health score
+  // published for a root the gate refuses would let the two surfaces disagree.
+  // Under --json the refusal is still machine-readable — a discriminated shape,
+  // never human text a JSON consumer would crash on; the human path lets the
+  // cli boundary render the GateError.
+  try {
+    assertRootIsRepoToplevel(root);
+  } catch (err) {
+    if (err instanceof GateError && options.json) {
+      console.log(
+        JSON.stringify({ version: 1, gate: "unavailable", reason: err.message }, null, 2),
+      );
+      process.exitCode = 1;
+      return;
+    }
+    throw err;
+  }
   const bloat: Partial<BloatThresholds> = {};
   const wholeDocLines = num(options.maxDocLines);
   const sectionLines = num(options.maxSectionLines);

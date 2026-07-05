@@ -9,7 +9,13 @@ import {
   type ApprovedPlan,
   type ChangeState,
 } from "../lib/change-state.js";
-import { getWorkingTreeChanges, getWorkingTreeDeletions, isGitRepo, getHeadSha } from "../lib/git.js";
+import {
+  assertRootIsRepoToplevel,
+  getWorkingTreeChanges,
+  getWorkingTreeDeletions,
+  isGitRepo,
+  getHeadSha,
+} from "../lib/git.js";
 import {
   worktreeChangesSince,
   worktreeDeletionsSince,
@@ -224,6 +230,9 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // real changes (proportionality + fingerprint), per the full-change-set scope.
   let deletions: string[] = [];
   try {
+    // A subdirectory root produces WRONG answers (everything unmapped, every doc
+    // fresh), not absent ones — assert loudly before any verdict is computed.
+    assertRootIsRepoToplevel(root);
     if (options.base) {
       // Diff the working tree against the merge-base with `options.base` (the
       // branch's drift since it diverged). Resolve that base once so anchors and
@@ -244,8 +253,21 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     }
   } catch (err) {
     // Fail closed: the gate could not run (e.g. an unreachable base on a shallow
-    // clone). Distinct from "ran and passed" so CI never treats it as green.
+    // clone, or a subdirectory root). Distinct from "ran and passed" so CI never
+    // treats it as green. `--json` gets the same discriminated shape as the
+    // non-git case, never broken output a consumer could misread.
     if (err instanceof GateError) {
+      if (options.json) {
+        console.log(
+          JSON.stringify(
+            { version: 2, gate: "unavailable", reason: err.message, isGitRepo: true },
+            null,
+            2,
+          ),
+        );
+        process.exitCode = 1;
+        return;
+      }
       console.log(pc.bold("codument review"));
       console.log();
       console.log(pc.red(`  ✗ ${err.message} (gate could not run)`));

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { renderReviewReportHtml } from "../src/lib/report-html.js";
 import { buildReportData, writeReport } from "../src/commands/report.js";
@@ -230,5 +231,30 @@ describe("report command (temp git repo)", () => {
     const data = buildReportData(tmp, "t");
     assert.equal(data.previousPercent, 100);
     assert.equal(typeof data.coveragePercent, "number");
+  });
+
+  it("refuses a subdirectory root — never persists a wrong-verdict artifact", async () => {
+    // The report renders the same gate verdict review refuses from a subdir;
+    // exit 0 + a shareable HTML saying "no owned changes" would be the wrong
+    // verdict made durable.
+    await writeFile(join(tmp, "src", "auth", "login.ts"), "export const a = 4;\n");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const CLI = join(here, "..", "dist", "cli.js");
+    let status = 0;
+    let stdout = "";
+    try {
+      execFileSync("node", [CLI, "report", "--no-open"], {
+        cwd: join(tmp, "src"),
+        encoding: "utf-8",
+      });
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      status = e.status ?? 1;
+      stdout = e.stdout ?? "";
+    }
+    assert.equal(status, 1);
+    assert.match(stdout, /subdirectory/);
+    assert.match(stdout, /gate could not run/);
+    assert.ok(!existsSync(join(tmp, "src", ".codument", "report.html")), "no artifact written");
   });
 });

@@ -1,8 +1,8 @@
-import { describe, it, beforeEach, afterEach } from "node:test";
+import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { mkdtemp, rm, mkdir, writeFile, cp } from "node:fs/promises";
+import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -18,6 +18,18 @@ const FIXTURE = join(
   "change-control",
   "project",
 );
+
+// The CLI suites run doctor with cwd at a project root. The in-repo fixture
+// cannot be that cwd anymore: it sits inside the codument work tree, so the
+// toplevel assertion (correctly) refuses it. Run them against a standalone copy.
+let fixtureCwd: string;
+before(async () => {
+  fixtureCwd = join(await mkdtemp(join(tmpdir(), "codument-doctor-cli-")), "project");
+  await cp(FIXTURE, fixtureCwd, { recursive: true });
+});
+after(async () => {
+  await rm(dirname(fixtureCwd), { recursive: true, force: true });
+});
 
 describe("buildReport (change-control fixture)", () => {
   it("reports the golden coverage percent and lint composition", () => {
@@ -92,7 +104,7 @@ describe("writeCoverageArtifacts", () => {
 describe("codument doctor (CLI)", () => {
   it("--json emits the stable contract and exits 0", () => {
     const out = execFileSync("node", [CLI, "doctor", "--json"], {
-      cwd: FIXTURE,
+      cwd: fixtureCwd,
       encoding: "utf-8",
     });
     const report = JSON.parse(out);
@@ -103,7 +115,7 @@ describe("codument doctor (CLI)", () => {
 
   it("human output leads with documentation coverage", () => {
     const out = execFileSync("node", [CLI, "doctor"], {
-      cwd: FIXTURE,
+      cwd: fixtureCwd,
       encoding: "utf-8",
     });
     assert.ok(out.includes("Documentation coverage"));
@@ -140,11 +152,11 @@ describe("codument doctor --strict (CLI gating)", () => {
   });
 
   it("exits 1 on the dirty fixture when findings are present", () => {
-    assert.equal(run(["doctor", "--strict"], FIXTURE).status, 1);
+    assert.equal(run(["doctor", "--strict"], fixtureCwd).status, 1);
   });
 
   it("leaves bare doctor at exit 0 on the same dirty fixture", () => {
-    assert.equal(run(["doctor"], FIXTURE).status, 0);
+    assert.equal(run(["doctor"], fixtureCwd).status, 0);
   });
 
   it("exits 0 with --strict on a clean repo (no findings)", () => {
@@ -152,8 +164,8 @@ describe("codument doctor --strict (CLI gating)", () => {
   });
 
   it("exits 1 with --strict --json but keeps the JSON contract byte-identical", () => {
-    const plain = run(["doctor", "--json"], FIXTURE);
-    const strict = run(["doctor", "--json", "--strict"], FIXTURE);
+    const plain = run(["doctor", "--json"], fixtureCwd);
+    const strict = run(["doctor", "--json", "--strict"], fixtureCwd);
     assert.equal(plain.status, 0);
     assert.equal(strict.status, 1);
     // --strict must not change stdout: same JSON either way, only the exit differs.
@@ -163,6 +175,51 @@ describe("codument doctor --strict (CLI gating)", () => {
 
   it("exits 1 with --strict on a missing-registry repo", () => {
     assert.equal(run(["doctor", "--strict"], missing).status, 1);
+  });
+
+  it("errors loudly from a subdirectory of a git repo (never a wrong-root score)", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "codument-doctor-subdir-"));
+    try {
+      const g = (args: string[]) =>
+        execFileSync("git", args, { cwd: repo, stdio: "ignore" });
+      g(["init"]);
+      await mkdir(join(repo, "packages", "app"), { recursive: true });
+      const sub = run(["doctor"], join(repo, "packages", "app"));
+      assert.equal(sub.status, 1);
+      assert.match(sub.stdout, /subdirectory/);
+      assert.match(sub.stdout, /gate could not run/);
+      // Names both paths: the offending root and the toplevel to run from.
+      const top = realpathSync.native(repo);
+      assert.ok(sub.stdout.includes(join(top, "packages", "app")));
+      assert.ok(sub.stdout.includes(`run it from ${top}`));
+
+      // --json stays machine-readable: a discriminated shape, never human text
+      // a JSON consumer would crash on.
+      const json = run(["doctor", "--json"], join(repo, "packages", "app"));
+      assert.equal(json.status, 1);
+      const shape = JSON.parse(json.stdout);
+      assert.equal(shape.gate, "unavailable");
+      assert.match(shape.reason, /subdirectory/);
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("scores normally at a genuine git toplevel (the assertion pass-path)", async () => {
+    // Every other doctor CLI test runs in a non-git tmp dir and so takes the
+    // assertion's non-git short-circuit; this pins the toplevel pass-path with
+    // real git present — same golden number as the non-git copy.
+    const wrap = await mkdtemp(join(tmpdir(), "codument-doctor-toplevel-"));
+    try {
+      const repo = join(wrap, "project");
+      await cp(FIXTURE, repo, { recursive: true });
+      execFileSync("git", ["init"], { cwd: repo, stdio: "ignore" });
+      const out = run(["doctor", "--json"], repo);
+      assert.equal(out.status, 0);
+      assert.equal(JSON.parse(out.stdout).coverage.percent, 83);
+    } finally {
+      await rm(wrap, { recursive: true, force: true });
+    }
   });
 
   it("fails loud on a corrupt registry — even bare, and never touches the file", async () => {

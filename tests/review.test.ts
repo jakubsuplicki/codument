@@ -2,6 +2,7 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -458,6 +459,45 @@ describe("codument review (CLI)", () => {
     }
     assert.equal(status, 1, "a silent-pass review is rejected");
     assert.match(out, /invalid review/);
+  });
+});
+
+describe("review from a subdirectory of a repo (fail closed)", () => {
+  function run(args: string[], cwd: string): { status: number; stdout: string } {
+    try {
+      const stdout = execFileSync("node", [CLI, ...args], { cwd, encoding: "utf-8" });
+      return { status: 0, stdout };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { status: e.status ?? 1, stdout: e.stdout ?? "" };
+    }
+  }
+
+  it("errors loudly, naming both paths — never a wrong verdict", () => {
+    // From src/ git reports toplevel-relative paths that can never match the
+    // package-relative registry: every file would read unmapped and every doc
+    // fresh. The gate must refuse to answer the wrong question.
+    const { status, stdout } = run(["review"], join(tmp, "src"));
+    assert.equal(status, 1, "exit 1 even without --strict: the verdict would be wrong");
+    assert.match(stdout, /subdirectory/);
+    assert.match(stdout, /gate could not run/);
+    // The message must name BOTH paths: the offending root and the toplevel to
+    // run from. The child realpaths its cwd (macOS /var → /private/var), so
+    // compare against the canonical spelling.
+    const top = realpathSync.native(tmp);
+    assert.ok(stdout.includes(join(top, "src")), "names the offending subdirectory");
+    assert.ok(stdout.includes(`run it from ${top}`), "names the toplevel as the fix");
+    assert.doesNotMatch(stdout, /Working tree clean/);
+  });
+
+  it("--json emits the discriminated unavailable shape and exits 1", () => {
+    const { status, stdout } = run(["review", "--json"], join(tmp, "src"));
+    assert.equal(status, 1);
+    const report = JSON.parse(stdout);
+    assert.equal(report.version, 2);
+    assert.equal(report.gate, "unavailable");
+    assert.match(report.reason, /subdirectory/);
+    assert.ok(!("state" in report), "no state emitted for a gate that could not run");
   });
 });
 

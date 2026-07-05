@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { GateError } from "./two-ref.js";
 
 // Git access for the diff analyzer. Codument is positioned as git-native, so we
@@ -25,6 +26,62 @@ export function isGitRepo(root: string): boolean {
     return git(root, ["rev-parse", "--is-inside-work-tree"]).trim() === "true";
   } catch {
     return false;
+  }
+}
+
+/**
+ * Absolute path of the work-tree toplevel that contains `root`, or null when
+ * git is unavailable or `root` is not inside a work tree.
+ */
+export function getRepoToplevel(root: string): string | null {
+  try {
+    const p = git(root, ["rev-parse", "--show-toplevel"]).trim();
+    return p.length > 0 ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+// Canonical identity for a directory: symlink-stable (macOS tmpdirs live
+// behind /var → /private/var) AND kernel-canonical in case/Unicode form via
+// the native realpath — git's --show-toplevel reports the kernel spelling, so
+// a user-typed `--dir .../caserepo` naming the on-disk `.../CaseRepo` must
+// compare equal, not be falsely refused. A path that cannot be resolved is
+// compared as given (it then never equals a real toplevel — a loud mismatch,
+// never a false pass).
+function dirIdentity(p: string): string {
+  try {
+    return realpathSync.native(p);
+  } catch {
+    return p;
+  }
+}
+
+/**
+ * Assert that `root` IS the repository toplevel, not a subdirectory of it.
+ * Everything codument computes is keyed by registry-relative paths under
+ * `root`, while git reports toplevel-relative paths — run from a package
+ * subdirectory the two can never match, so every file would read unmapped and
+ * every doc fresh: the gate answering the wrong question. Fail loud instead.
+ * A non-git `root` is not asserted here; each command keeps its own
+ * informational non-git handling.
+ */
+export function assertRootIsRepoToplevel(root: string): void {
+  if (!isGitRepo(root)) return;
+  const toplevel = getRepoToplevel(root);
+  if (!toplevel) {
+    // Inside a work tree but the toplevel is unresolvable — a broken git.
+    throw new GateError(
+      `git rev-parse --show-toplevel failed under ${root}`,
+      "git-failed",
+    );
+  }
+  if (dirIdentity(root) !== dirIdentity(toplevel)) {
+    throw new GateError(
+      `${root} is a subdirectory of the git repository at ${toplevel}; ` +
+        `codument must run at the repository root — run it from ${toplevel}`,
+      "wrong-root",
+    );
   }
 }
 

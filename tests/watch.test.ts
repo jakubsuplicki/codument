@@ -527,4 +527,27 @@ describe("codument watch --once (CLI, temp git repo)", () => {
     assert.match(out, /codument watch/);
     assert.match(out, /docs coverage/);
   });
+
+  it("errors loudly from a subdirectory of a repo — even under --once", async () => {
+    await mkdir(join(tmp, "src"), { recursive: true });
+    await writeFile(join(tmp, "src", "a.ts"), "export const a = 1;\n");
+    gitInit(tmp);
+
+    // A subdir frame would be WRONG (everything unmapped), not just empty.
+    let status = 0;
+    let stdout = "";
+    try {
+      execFileSync("node", [CLI, "watch", "--once"], {
+        cwd: join(tmp, "src"),
+        encoding: "utf-8",
+      });
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      status = e.status ?? 1;
+      stdout = e.stdout ?? "";
+    }
+    assert.equal(status, 1);
+    assert.match(stdout, /subdirectory/);
+    assert.match(stdout, /gate could not run/);
+  });
 });

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { platform } from "node:os";
 import pc from "picocolors";
+import { assertRootIsRepoToplevel } from "../lib/git.js";
 import { buildReview } from "./review.js";
 import { buildReport } from "./doctor.js";
 import { buildImpactLedger } from "../lib/impact-ledger.js";
@@ -82,6 +83,10 @@ export function openInBrowser(path: string): boolean {
 
 export async function report(options: ReportOptions = {}): Promise<void> {
   const root = options.root ?? process.cwd();
+  // The report renders the same gate verdict review refuses to compute from a
+  // subdirectory root — refusing here too keeps the wrong verdict off the one
+  // surface that persists and gets shared (the cli boundary renders the error).
+  assertRootIsRepoToplevel(root);
   const out = writeReport(root, options.out);
 
   console.log(pc.bold("codument report"));

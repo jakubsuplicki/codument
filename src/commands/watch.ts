@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import pc from "picocolors";
 import { buildReview, type ReviewReport } from "./review.js";
 import { buildReport, type DoctorReport } from "./doctor.js";
-import { isGitRepo, getWorkingTreeChanges } from "../lib/git.js";
+import { assertRootIsRepoToplevel, isGitRepo, getWorkingTreeChanges } from "../lib/git.js";
 import { readRecentEvents, type CodumentEvent } from "../lib/events.js";
 import { summarizeImpact } from "../lib/impact-ledger.js";
 import { summarizeTokens } from "../lib/token-report.js";
@@ -542,6 +542,10 @@ export function buildFrame(root: string, now: string, tick = 0): string {
 
 export async function watch(options: WatchOptions = {}): Promise<void> {
   const root = options.root ?? options.dir ?? process.cwd();
+  // A subdirectory root renders a WRONG frame (everything unmapped, docs fresh),
+  // including under --once — fail loud (the cli boundary renders the GateError)
+  // before the feed pump writes into the wrong .codument directory.
+  assertRootIsRepoToplevel(root);
   // Auto-tail the agent's session log into events.jsonl so a single `watch`
   // shows live token cost + reads/edits. Harmless no-op when no session matches.
   const feedOn = options.feed !== false;

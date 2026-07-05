@@ -39,11 +39,15 @@ Verified findings this plan fixes (all confirmed; reproduced live):
 ## Scope
 
 - `src/commands/review.ts`
+- `src/commands/watch.ts`
+- `src/commands/doctor.ts`
+- `src/commands/report.ts` (step 4 — persists the same verdict the gate refuses)
 - `src/lib/git.ts`
 - `src/lib/two-ref.ts`
 - `tests/review.test.ts`
 - `tests/git.test.ts`
 - `tests/two-ref.test.ts`
+- `tests/watch.test.ts`, `tests/doctor.test.ts`, `tests/report.test.ts` (step 4)
 
 ## Non-goals
 
@@ -79,9 +83,14 @@ Verified findings this plan fixes (all confirmed; reproduced live):
 - [x] Step 3: `-z` parsing in both stacks; delete the C-style unquoting remnant in `git.ts:66-78`.
       Test: e2e with a registered `src/föo.ts` (and a CJK filename) — edit flags the owning doc
       stale with per-symbol drift; nothing lands in `unmapped`.
-- [ ] Step 4: Toplevel assertion. Resolve `git rev-parse --show-toplevel` once at review/watch/doctor
-      startup; when `root` != toplevel, exit 1 with a message naming both paths and the fix (run from
-      the repo root, or pass `--dir`). Test: running from a subdirectory of a repo errors loudly.
+- [x] Step 4: Toplevel assertion. Resolve `git rev-parse --show-toplevel` once at review/watch/doctor
+      startup — and at `report`, which persists the same verdict (added on review) — comparing
+      kernel-canonical paths so a symlinked/differently-cased spelling of the true toplevel is never
+      falsely refused; when `root` != toplevel, exit 1 with a message naming both paths and the fix
+      (run from the toplevel; only `watch` has `--dir`, so the shipped copy names the cd fix for all).
+      `--json` surfaces (review, doctor) emit a discriminated `gate: "unavailable"` shape, never human
+      text. Test: running from a subdirectory errors loudly naming both paths; unit tests pin the
+      `wrong-root`/`git-failed` kinds and the symlink pass-path.
 
 ## Outcome
 
