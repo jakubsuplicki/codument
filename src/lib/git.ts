@@ -197,9 +197,11 @@ export function listIgnoredPaths(root: string): string[] {
 
 /**
  * Changed paths in the working tree (modified, added, renamed, and untracked),
- * repo-relative and POSIX, sorted and deduped. Deletions are excluded — a deleted
- * file is not a "change to review" for ownership/doc-drift purposes. Returns an
- * empty array when `git` is unavailable or the directory is not a repo.
+ * repo-relative and POSIX, sorted and deduped. Deletions are excluded from THIS
+ * list because it carries extant paths only; they are a first-class change in
+ * their own right and travel via getWorkingTreeDeletions →
+ * ChangeStateInput.deletedFiles, where a deleted owned source wakes its owners'
+ * docs. Returns an empty array when the directory is not a repo.
  */
 export function getWorkingTreeChanges(root: string): string[] {
   if (!isGitRepo(root)) return [];
@@ -225,10 +227,10 @@ export function getWorkingTreeChanges(root: string): string[] {
 
 /**
  * Pure deletions in the working tree (a file removed, no rename), repo-relative
- * POSIX, sorted. The complement of getWorkingTreeChanges, which drops these for
- * the ownership/doc-drift view. The adversarial-review gate needs them: a
- * deletion is a real, load-bearing change that must count toward proportionality
- * and move the review fingerprint.
+ * POSIX, sorted. The complement of getWorkingTreeChanges (which carries extant
+ * paths only). Both gates consume these: the change-control gate wakes a deleted
+ * owned source's docs file-grain, and the adversarial-review gate counts a
+ * deletion toward proportionality and the review fingerprint.
  */
 export function getWorkingTreeDeletions(root: string): string[] {
   if (!isGitRepo(root)) return [];

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 04: Verdict semantics — deletions, umbrella acks, approval, plan scope
@@ -80,10 +80,13 @@ Verified findings this plan fixes:
 
 ## Delivery Plan
 
-- [ ] Step 1: Wire deletions into the change flow (worktree and `--base` paths), wake primary owners
+- [x] Step 1: Wire deletions into the change flow (worktree and `--base` paths), wake primary owners
       file-grain, and make `--strict` fail on a deleted-owned-source with an unchanged doc. Fix the
       false comment at `two-ref.ts:223-224`. E2E tests: delete a mapped primary source →
       staleDocs fires + `--strict` exits 1; registry-entry-removed-in-same-change still flags the doc.
+      (Shipped additions: deletion ownership resolves against the BASE registry read with honest
+      absence semantics — a broken git read fails loud, never a silent fallback that would re-open
+      the dodge; the gate doc's deletion invariant also landed here rather than waiting for Step 5.)
 - [ ] Step 2: Fix the concept-umbrella wake (`change-state.ts:272` keys off the pre-filter set +
       file-grain-ack check). Golden tests per ADR-012: symbol ack clears the feature but NOT the
       concept; file-grain ack clears the concept residue.
@@ -92,8 +95,9 @@ Verified findings this plan fixes:
       approved; `Status: **approved**` is approved for BOTH steps and scope detection.
 - [ ] Step 4: Scope parser accepts root-level files; warn on multiple approved plans in `steps` and
       `review` output. Tests for both.
-- [ ] Step 5: Update `docs/features/change-control-gate.md` invariants (deletions now first-class,
-      with the new test pointers) and `docs/plans/README.md` (drop the root-level-scope caveat).
+- [ ] Step 5: Update `docs/features/change-control-gate.md` invariants (the deletion invariant
+      itself landed with Step 1; sweep what Steps 2-4 add) and `docs/plans/README.md` (drop the
+      root-level-scope caveat).
 
 ## Outcome
 

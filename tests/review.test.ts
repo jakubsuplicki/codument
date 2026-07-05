@@ -501,6 +501,102 @@ describe("review from a subdirectory of a repo (fail closed)", () => {
   });
 });
 
+describe("deletions are first-class in the verdict", () => {
+  function run(args: string[], cwd: string): { status: number; stdout: string } {
+    try {
+      const stdout = execFileSync("node", [CLI, ...args], { cwd, encoding: "utf-8" });
+      return { status: 0, stdout };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { status: e.status ?? 1, stdout: e.stdout ?? "" };
+    }
+  }
+
+  it("deleting a mapped primary source flags its doc stale and fails --strict", async () => {
+    await rm(join(tmp, "src", "auth", "login.ts"));
+
+    const report = buildReview(tmp);
+    assert.deepEqual(report.deletions, ["src/auth/login.ts"]);
+    assert.ok(report.changedFileCount >= 1, "a deletion-only tree is not clean");
+    assert.deepEqual(report.state.deletedSources, ["src/auth/login.ts"]);
+    assert.ok(
+      report.state.staleDocs.some((d) => d.feature === "auth"),
+      "the owning doc is woken by the deletion",
+    );
+
+    const strict = run(["review", "--strict"], tmp);
+    assert.equal(strict.status, 1, "--strict fails on a deleted owned source with an unchanged doc");
+    assert.match(strict.stdout, /deleted/i);
+    assert.doesNotMatch(strict.stdout, /Working tree clean/);
+  });
+
+  it("removing the registry entry in the same change cannot dodge the wake", async () => {
+    await rm(join(tmp, "src", "auth", "login.ts"));
+    // the dodge: drop auth from the registry in the same change
+    const gutted = JSON.parse(JSON.stringify(REGISTRY)) as typeof REGISTRY;
+    delete (gutted.features as Record<string, unknown>).auth;
+    await scaffold({ "docs/.registry.json": JSON.stringify(gutted, null, 2) });
+
+    const report = buildReview(tmp);
+    assert.ok(
+      report.state.staleDocs.some((d) => d.feature === "auth" && d.doc === "docs/features/auth.md"),
+      "the entry that owned the file at base still flags its doc",
+    );
+    assert.equal(run(["review", "--strict"], tmp).status, 1);
+  });
+
+  it("wholesale removal (source + doc + entry) is resolved, not stale", async () => {
+    await rm(join(tmp, "src", "auth", "login.ts"));
+    await rm(join(tmp, "docs", "features", "auth.md"));
+    const gutted = JSON.parse(JSON.stringify(REGISTRY)) as typeof REGISTRY;
+    delete (gutted.features as Record<string, unknown>).auth;
+    await scaffold({ "docs/.registry.json": JSON.stringify(gutted, null, 2) });
+
+    const report = buildReview(tmp);
+    assert.ok(
+      !report.state.staleDocs.some((d) => d.feature === "auth"),
+      "deleting the doc with its source is the doc attention owed",
+    );
+  });
+
+  it("a corrupt registry AT THE BASE fails loud — never a silent fallback to the current one", async () => {
+    // The base registry is what makes the entry-removal dodge impossible; if it
+    // cannot be parsed the gate must say so, not quietly resolve deletions
+    // against whatever the working tree claims.
+    await scaffold({ "docs/.registry.json": '{ "features": { "auth": broken' });
+    gitCommitAll(tmp, "corrupt registry");
+    await scaffold({ "docs/.registry.json": JSON.stringify(REGISTRY, null, 2) });
+    await rm(join(tmp, "src", "auth", "login.ts"));
+
+    const { status, stdout } = run(["review"], tmp);
+    assert.equal(status, 1);
+    assert.match(stdout, /unreadable/);
+    assert.match(stdout, /@HEAD|HEAD/);
+  });
+
+  it("--base surfaces a COMMITTED deletion the working-tree view misses", async () => {
+    const baseline = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: tmp,
+      encoding: "utf-8",
+    }).trim();
+    await rm(join(tmp, "src", "auth", "login.ts"));
+    gitCommitAll(tmp, "delete login");
+
+    // working-tree view: clean (the deletion is committed)
+    assert.equal(buildReview(tmp).state.staleDocs.length, 0);
+
+    // two-ref view since the baseline: the deletion wakes auth
+    const { status, stdout } = run(["review", "--base", baseline, "--json"], tmp);
+    assert.equal(status, 0);
+    const report = JSON.parse(stdout);
+    assert.deepEqual(report.state.deletedSources, ["src/auth/login.ts"]);
+    assert.ok(
+      report.state.staleDocs.some((d: { feature: string }) => d.feature === "auth"),
+      "the committed deletion flags the doc against the merge-base",
+    );
+  });
+});
+
 describe("normalizeTestCommand", () => {
   it("splits a single quoted-string command on whitespace (the leading-dash workaround)", () => {
     assert.deepEqual(normalizeTestCommand(["npx tsx --test {file}"]), [

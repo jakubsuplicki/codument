@@ -392,6 +392,14 @@ describe("codument ack <path> — the file-grain surface", () => {
     assert.match(r.err, /was added, not changed/);
   });
 
+  it("refuses a DELETED file — no acknowledgment clears a deletion (a removal owes doc attention)", async () => {
+    await rm(join(tmp, "src", "a.ts"));
+    const r = capture(() => ackCommand("src/a.ts", { reason: "x", root: tmp }));
+    assert.equal(r.code, 1);
+    assert.match(r.err, /was deleted, not changed/);
+    assert.equal(readAcks(tmp).length, 0);
+  });
+
   it("still requires a reason for the bare-path form", () => {
     const r = capture(() => ackCommand("src/a.ts", { root: tmp }));
     assert.equal(r.code, 1);

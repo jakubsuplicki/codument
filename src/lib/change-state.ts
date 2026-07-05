@@ -54,6 +54,18 @@ export interface ChangeStateInput {
    *  symbol — that anchor still wakes its feature, so a real contract change is never
    *  laundered. Empty unless the caller resolved acks. */
   fileGrainAcked?: string[];
+  /** Paths deleted in this change (repo-relative, POSIX) — the complement the
+   *  change listers drop from `changedFiles`. A deleted OWNED source is a
+   *  first-class change: it wakes every primary owner (feature and concept) at
+   *  file grain, and no acknowledgment clears it (per ADR-012's conservative
+   *  stance a removal owes doc attention — a doc update or the doc's own
+   *  removal). A deleted doc counts as doc attention for the staleness check. */
+  deletedFiles?: string[];
+  /** Registry as of the base ref. Deleted files resolve ownership against this
+   *  when provided (falling back to `registry`), so removing a file's registry
+   *  entry in the same change cannot dodge the deletion wake — the entry that
+   *  owned the file when it existed still flags its doc. */
+  baseRegistry?: Registry;
 }
 
 export interface FeatureGroup {
@@ -125,6 +137,9 @@ export interface ChangeState {
   /** Changed TS files that could not be parsed — gated file-grain (never fresh) and
    *  surfaced so the parse error is fixed. Empty unless the caller classified. */
   unevaluable: string[];
+  /** Deleted source files — surfaced so a deletion is visibly part of the change,
+   *  not silently absent from it (owned ones also wake their owners' docs). */
+  deletedSources: string[];
 }
 
 function sortStrings(values: Iterable<string>): string[] {
@@ -162,6 +177,13 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     [...changed].filter((f) => !isDoc(f) && isSourceFile(f, exclusion)),
   );
   const changedDocs = sortStrings([...changed].filter(isDoc));
+  // Deletions, first-class: sources wake owners below; a deleted doc counts as
+  // doc ATTENTION (removing a feature wholesale — source + doc — is resolved,
+  // not stale), so it joins the changed-doc set the staleness check reads while
+  // staying out of `changedDocs` (those are extant paths).
+  const deleted = sortStrings(input.deletedFiles ?? []);
+  const deletedSources = deleted.filter((f) => !isDoc(f) && isSourceFile(f, exclusion));
+  const docChangedSet = new Set([...changedDocs, ...deleted.filter(isDoc)]);
   // The third bucket beside sources and docs: real, non-excluded changes that are
   // neither a doc nor a recognized source — config like app.json, an image asset,
   // a data file. Excluded build/generated paths (dist/, node_modules/, *.seed.json,
@@ -280,6 +302,34 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     }
   }
 
+  // ── Deletions wake owners file-grain, with no ack fast-path ─────────────
+  // A removed owned file is a real contract change: its owners' docs owe
+  // attention (an update, or their own removal). Ownership resolves against the
+  // BASE registry when provided, so deleting the registry entry in the same
+  // change cannot dodge the wake — and an entry that no longer exists in the
+  // current registry still flags its (base) doc below.
+  const deletionRegistry = input.baseRegistry ?? registry;
+  const deletionEntries = Object.entries(deletionRegistry.features);
+  // base-only features woken by a deletion: key -> {docs, files} synthesized
+  // into staleDocs after the main per-entry loop (which walks the CURRENT registry).
+  const removedEntryWakes = new Map<string, { doc: string; docs: string[]; files: Set<string> }>();
+  for (const file of deletedSources) {
+    for (const [key, entry] of deletionEntries) {
+      if (!entry.primary_sources.includes(file)) continue;
+      if (key in registry.features) {
+        wake(key, file);
+      } else {
+        const w = removedEntryWakes.get(key) ?? {
+          doc: entry.doc,
+          docs: [entry.doc, ...entry.docs],
+          files: new Set<string>(),
+        };
+        w.files.add(file);
+        removedEntryWakes.set(key, w);
+      }
+    }
+  }
+
   ownershipLints.sort((a, b) =>
     a.file !== b.file
       ? a.file < b.file
@@ -298,7 +348,8 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   const docsChangedWithoutSource: string[] = [];
   for (const [key, entry] of entries) {
     const featureDocs = [entry.doc, ...entry.docs];
-    const aDocChanged = featureDocs.some((d) => changed.has(d));
+    // A deleted doc counts as attention too (docChangedSet includes deletions).
+    const aDocChanged = featureDocs.some((d) => docChangedSet.has(d));
     const woken = wokenFiles.get(key);
     const sourceChanged = woken !== undefined && woken.size > 0;
 
@@ -315,6 +366,14 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
       }
     }
   }
+  // Features whose registry entry was removed in the same change that deleted
+  // their source: the entry that owned the file at base still flags its doc,
+  // unless that doc itself got attention (updated or removed with it).
+  for (const [key, w] of removedEntryWakes) {
+    if (w.docs.some((d) => docChangedSet.has(d))) continue;
+    staleDocs.push({ feature: key, doc: w.doc, changedSources: sortStrings(w.files) });
+  }
+  staleDocs.sort((a, b) => (a.feature < b.feature ? -1 : a.feature > b.feature ? 1 : 0));
 
   // high-fanout among changed files
   const highFanout: HighFanoutChange[] = [];
@@ -381,6 +440,7 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     planScoped,
     ownershipLints,
     unevaluable: sortStrings(input.unevaluable ?? []),
+    deletedSources,
   };
 }
 

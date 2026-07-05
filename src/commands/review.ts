@@ -1,7 +1,7 @@
 import { join, resolve as resolvePath } from "node:path";
 import { readFileSync } from "node:fs";
 import pc from "picocolors";
-import { readRegistrySync } from "../lib/registry.js";
+import { parseRegistryOrThrow, readRegistrySync, type Registry } from "../lib/registry.js";
 import {
   computeChangeState,
   detectApprovedPlanScope,
@@ -20,6 +20,9 @@ import {
   worktreeChangesSince,
   worktreeDeletionsSince,
   resolveBase,
+  readBlobAtRef,
+  refReachable,
+  blobExistsAtRef,
   GateError,
   EMPTY_TREE_SHA,
 } from "../lib/two-ref.js";
@@ -99,6 +102,9 @@ export interface ReviewReport {
   gate: "ok";
   isGitRepo: boolean;
   changedFileCount: number;
+  /** Pure deletions in the change (any path kind) — counted in changedFileCount
+   *  and consumed by the review fingerprint's real-change set. */
+  deletions: string[];
   plan: ApprovedPlan | null;
   state: ChangeState;
   /** Per-symbol drift detail behind the verdict: which owned symbols moved, their
@@ -132,6 +138,25 @@ export function driftResolution(
   return "doc-updated";
 }
 
+// The registry blob as of `ref`, for resolving what a DELETED file's ownership
+// was while it still existed. Honestly-absent (no commits yet, or no registry at
+// the ref) → undefined, and the caller falls back to the current registry; any
+// OTHER failure is loud — a broken git read here must never quietly fall back,
+// because the fallback is exactly what the registry-entry-removal dodge needs.
+// Present-but-unparseable stays a loud RegistryError, same rule as the worktree.
+function readRegistryAtRef(root: string, ref: string): Registry | undefined {
+  // A repo with no commits yet has no base to read — an honest "no base
+  // registry" (a genuinely bad --base already failed loud in resolveBase).
+  if (!refReachable(root, ref)) return undefined;
+  if (!blobExistsAtRef(root, ref, "docs/.registry.json")) return undefined;
+  const raw = readBlobAtRef(root, ref, "docs/.registry.json");
+  if (raw === null) {
+    // Exists per ls-tree but unreadable per show: a broken git, not absence.
+    throw new GateError(`could not read docs/.registry.json at ${ref}`, "git-failed");
+  }
+  return parseRegistryOrThrow(raw, `docs/.registry.json@${ref}`);
+}
+
 /**
  * Deterministic review report for the uncommitted working-tree diff. Pure given
  * the repo state (git changes + registry + approved plan). The same diff always
@@ -141,12 +166,16 @@ export function buildReview(
   root: string,
   changedFiles?: string[],
   baseRef = "HEAD",
+  deletedFiles?: string[],
 ): ReviewReport {
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
   // Callers that already computed the working-tree changes (e.g. `watch`, which
   // also needs them for its activity tape) can pass them in to avoid a second
   // `git status` tree scan per refresh; default to computing them here.
   const changes = changedFiles ?? getWorkingTreeChanges(root);
+  // Pure deletions are first-class: a deleted owned source must wake its doc
+  // exactly like an edit would (the `--base` caller passes its own two-ref list).
+  const deletions = deletedFiles ?? getWorkingTreeDeletions(root);
   const plan = detectApprovedPlanScope(root);
   // Per-symbol anchor diffs for the precise (TS) changed files, base ref vs the
   // working tree — this is what dissolves the shared-file cascade in the verdict.
@@ -175,12 +204,19 @@ export function buildReview(
     anchorChanges: filtered,
     unevaluable,
     fileGrainAcked,
+    deletedFiles: deletions,
+    // Deleted files resolve ownership against the registry AT THE BASE — the
+    // entry that owned the file while it existed — so removing the entry in the
+    // same change cannot dodge the wake.
+    baseRegistry: deletions.length > 0 ? readRegistryAtRef(root, baseRef) : undefined,
   });
   return {
     version: 2,
     gate: "ok",
     isGitRepo: isGitRepo(root),
-    changedFileCount: changes.length,
+    // Deletions are part of the change: a deletion-only tree is not "clean".
+    changedFileCount: changes.length + deletions.length,
+    deletions,
     plan,
     state,
     drift,
@@ -226,9 +262,6 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // here so the --require-review gate fingerprints the same change set the report
   // describes; the artifact writer (the review skill) uses the same convention.
   let effectiveBase = "HEAD";
-  // Pure deletions, which the change-state path drops — the gate counts them as
-  // real changes (proportionality + fingerprint), per the full-change-set scope.
-  let deletions: string[] = [];
   try {
     // A subdirectory root produces WRONG answers (everything unmapped, every doc
     // fresh), not absent ones — assert loudly before any verdict is computed.
@@ -239,9 +272,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       // the changed-file set answer the same question.
       const baseRef = resolveBase(root, options.base, "HEAD").sha;
       const changes = worktreeChangesSince(root, options.base);
-      report = buildReview(root, changes, baseRef);
+      report = buildReview(root, changes, baseRef, worktreeDeletionsSince(root, options.base));
       effectiveBase = baseRef;
-      deletions = worktreeDeletionsSince(root, options.base);
     } else {
       // Default: working tree vs HEAD (what `git status` shows). Resolve HEAD to a
       // real object name (the empty tree before the first commit) so the fingerprint
@@ -249,7 +281,6 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       // exactly this value, and a fresh-repo/first-commit boundary cannot flip it.
       report = buildReview(root);
       effectiveBase = getHeadSha(root) ?? EMPTY_TREE_SHA;
-      deletions = getWorkingTreeDeletions(root);
     }
   } catch (err) {
     // Fail closed: the gate could not run (e.g. an unreachable base on a shallow
@@ -322,7 +353,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       process.exitCode = 1;
       return;
     }
-    const { set: realChangeSet } = computeRealChange(report, deletions);
+    const { set: realChangeSet } = computeRealChange(report, report.deletions);
     const resolveTest = (ref: string) => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS);
     const fp = gatherReviewFingerprint(root, effectiveBase, realChangeSet, provisional.findings, resolveTest);
     const path = writeReview(root, { ...provisional, diffFingerprint: fp });
@@ -395,7 +426,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // review still passes (soak/audit territory), so it does not certify thoroughness.
   let reviewGate: ReviewGateResult | null = null;
   if (options.requireReview) {
-    const { set: realChangeSet, realDeletions } = computeRealChange(report, deletions);
+    const { set: realChangeSet, realDeletions } = computeRealChange(report, report.deletions);
     // A covering review binds both the reviewed sources AND the tests its findings
     // name; resolveTest locates a finding's test exactly as the runner does, so a
     // tampered or deleted test moves the fingerprint and reopens the gate.
@@ -538,6 +569,7 @@ function printHuman(report: ReviewReport): void {
   console.log(
     `  ${report.changedFileCount} changed file(s): ${state.changedSources.length} source, ${state.changedDocs.length} docs` +
       (state.otherChanged.length > 0 ? `, ${state.otherChanged.length} other` : "") +
+      (report.deletions.length > 0 ? `, ${report.deletions.length} deleted` : "") +
       (plan ? pc.dim(`  (plan: ${plan.plan})`) : ""),
   );
   console.log();
@@ -547,6 +579,11 @@ function printHuman(report: ReviewReport): void {
     state.byFeature.map(
       (g) => `${pc.cyan(g.feature)} — ${g.files.join(", ")}`,
     ),
+  );
+
+  section(
+    pc.yellow("Deleted sources (a removal owes its doc attention — update it or remove it too)"),
+    state.deletedSources.map((f) => `${pc.yellow("⚠")} ${f}`),
   );
 
   section(

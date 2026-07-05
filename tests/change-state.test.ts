@@ -216,6 +216,104 @@ describe("computeChangeState — file-grain ack honoring", () => {
   });
 });
 
+// ── Deletions are first-class (ADR-012's conservative stance) ────────────────
+//
+// A deleted owned source wakes every primary owner at file grain; no ack clears
+// it; a doc update — or the doc's own removal — is the only resolution; and
+// removing the registry entry in the same change cannot dodge the wake.
+
+function delState(input: {
+  registry?: Registry;
+  changedFiles?: string[];
+  deletedFiles?: string[];
+  baseRegistry?: Registry;
+  fileGrainAcked?: string[];
+}) {
+  return computeChangeState({
+    registry: input.registry ?? FG_REGISTRY,
+    changedFiles: input.changedFiles ?? [],
+    deletedFiles: input.deletedFiles,
+    baseRegistry: input.baseRegistry,
+    fileGrainAcked: input.fileGrainAcked,
+  });
+}
+
+describe("computeChangeState — deletions first-class", () => {
+  it("a deleted owned source wakes feature AND concept at file grain", () => {
+    const s = delState({ deletedFiles: ["src/a.ts"] });
+    assert.deepStrictEqual(
+      s.staleDocs.map((d) => d.feature),
+      ["alpha", "lib"],
+    );
+    assert.deepStrictEqual(s.deletedSources, ["src/a.ts"]);
+    // the stale entry names the deleted file as what woke it
+    assert.deepStrictEqual(s.staleDocs[0].changedSources, ["src/a.ts"]);
+  });
+
+  it("NO acknowledgment clears a deletion — a removal owes doc attention", () => {
+    const s = delState({ deletedFiles: ["src/a.ts"], fileGrainAcked: ["src/a.ts"] });
+    assert.deepStrictEqual(
+      s.staleDocs.map((d) => d.feature),
+      ["alpha", "lib"],
+    );
+  });
+
+  it("a doc update in the same change resolves that owner's wake", () => {
+    const s = delState({
+      deletedFiles: ["src/a.ts"],
+      changedFiles: ["docs/features/alpha.md"],
+    });
+    assert.deepStrictEqual(
+      s.staleDocs.map((d) => d.feature),
+      ["lib"],
+      "alpha resolved by its doc update; the concept still owes attention",
+    );
+  });
+
+  it("deleting the doc WITH the source counts as attention (wholesale removal is resolved)", () => {
+    const s = delState({ deletedFiles: ["src/a.ts", "docs/features/alpha.md"] });
+    assert.deepStrictEqual(
+      s.staleDocs.map((d) => d.feature),
+      ["lib"],
+    );
+  });
+
+  it("removing the registry entry in the same change cannot dodge the wake (base registry rules)", () => {
+    // Current registry no longer knows src/a.ts; the base registry did.
+    const s = delState({
+      registry: { features: {} },
+      deletedFiles: ["src/a.ts"],
+      baseRegistry: FG_REGISTRY,
+    });
+    assert.deepStrictEqual(
+      s.staleDocs.map((d) => d.feature),
+      ["alpha", "lib"],
+      "the entries that owned the file at base still flag their docs",
+    );
+  });
+
+  it("entry-removed AND doc-removed together read as a resolved wholesale removal", () => {
+    const s = delState({
+      registry: { features: { lib: FG_REGISTRY.features.lib } },
+      deletedFiles: ["src/a.ts", "docs/features/alpha.md", "docs/concepts/lib.md"],
+      baseRegistry: FG_REGISTRY,
+    });
+    assert.deepStrictEqual(s.staleDocs, []);
+  });
+
+  it("a deleted unregistered source is surfaced but wakes nothing", () => {
+    const s = delState({ deletedFiles: ["src/orphan.ts"] });
+    assert.deepStrictEqual(s.staleDocs, []);
+    assert.deepStrictEqual(s.deletedSources, ["src/orphan.ts"]);
+  });
+
+  it("excluded and non-source deletions stay out of deletedSources", () => {
+    const s = delState({ deletedFiles: ["dist/bundle.js", "notes.txt"] });
+    assert.deepStrictEqual(s.deletedSources, []);
+    assert.deepStrictEqual(s.staleDocs, []);
+  });
+});
+
 describe("detectApprovedPlanScope (fixture plan)", () => {
   it("reads scope only from list items, not explanatory prose", () => {
     const plan = detectApprovedPlanScope(FIXTURE);

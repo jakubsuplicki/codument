@@ -88,6 +88,23 @@ export function refReachable(root: string, ref: string): boolean {
   }
 }
 
+// True when `path` exists at `ref`, with honest failure semantics: an absent
+// path is git's clean "no" (exit 0, empty ls-tree output), while a broken git
+// invocation or unresolvable ref THROWS — a caller can never read "could not
+// look" as "absent". readBlobAtRef below cannot make this distinction (its
+// `git show` catch conflates absence with failure), so a caller whose FALLBACK
+// on absence is more permissive than its failure path must check here first.
+export function blobExistsAtRef(root: string, ref: string, path: string): boolean {
+  try {
+    return git(root, ["ls-tree", ref, "--", path]).trim().length > 0;
+  } catch (err) {
+    throw new GateError(
+      `git ls-tree ${ref} -- ${path} failed: ${(err as Error).message}`,
+      "git-failed",
+    );
+  }
+}
+
 // The byte-normalized content of `path` at `ref`, or null when the path does not
 // exist at that ref — a first-class signal (added at head / absent at base).
 // Throws GateError("bad-ref") when the ref itself is unresolvable, so a genuine
@@ -268,10 +285,11 @@ export function worktreeDeletionsSince(root: string, base: string): string[] {
 // Paths changed between the merge-base of (base, HEAD) and the current working
 // tree — the LOCAL two-ref advisory view: everything on this branch since it
 // diverged from `base`, committed or not, which is the same question CI answers
-// head↔merge-base. Deletions are excluded here to preserve the file-grain
-// change-state contract (computeChangeState expects extant source paths); the
-// anchored gate verdict handles deletions first-class separately. Returns sorted,
-// deduped, repo-relative paths. Throws GateError when `base` is unreachable.
+// head↔merge-base. Deletions are excluded here because `changedFiles` carries
+// extant paths only; they travel as the SEPARATE first-class input
+// (worktreeDeletionsSince → ChangeStateInput.deletedFiles), where a deleted
+// owned source wakes its owners' docs. Returns sorted, deduped, repo-relative
+// paths. Throws GateError when `base` is unreachable.
 export function worktreeChangesSince(root: string, base: string): string[] {
   const { sha } = resolveBase(root, base, "HEAD");
   const files = new Set<string>();

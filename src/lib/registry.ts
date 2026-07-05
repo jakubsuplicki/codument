@@ -71,7 +71,9 @@ export function isMatureEntry(entry: RegistryEntry): boolean {
 
 // Missing file → an empty registry (the project has none yet, a valid state).
 // Present-but-unparseable → RegistryError (never an empty default; see above).
-function parseRegistryOrThrow(content: string, registryPath: string): Registry {
+// Exported for callers that read registry CONTENT from somewhere other than the
+// worktree file (e.g. the registry blob at a base ref) — same fail-loud rule.
+export function parseRegistryOrThrow(content: string, registryPath: string): Registry {
   try {
     return normalizeRegistry(JSON.parse(content));
   } catch (err) {
