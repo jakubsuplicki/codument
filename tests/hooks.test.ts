@@ -196,3 +196,51 @@ describe("check-docs hook", () => {
     }
   });
 });
+
+describe("the installed hook COMMAND is guarded (a nudge must never break the editor loop)", () => {
+  it("exits 0 with no output when codument is not in local node_modules", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "codument-hookcmd-"));
+    try {
+      const { CLAUDE_DOCS_HOOK_COMMAND } = await import("../src/lib/claude-settings.js");
+      // Run exactly what Claude Code would run: the command through a shell,
+      // from a project with no node_modules — the npx-cache-only/global case
+      // that used to stack MODULE_NOT_FOUND + exit 1 on every Write/Edit.
+      const out = execFileSync("sh", ["-c", CLAUDE_DOCS_HOOK_COMMAND], {
+        cwd: tmp,
+        encoding: "utf-8",
+        input: JSON.stringify({ tool_input: { file_path: join(tmp, "src", "x.ts") } }),
+        timeout: 10000,
+      });
+      assert.equal(out, "", "dormant means silent");
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("runs the target with stdin intact when the local install exists", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "codument-hookcmd-"));
+    try {
+      const { CLAUDE_DOCS_HOOK_COMMAND, CLAUDE_DOCS_HOOK_TARGET } = await import(
+        "../src/lib/claude-settings.js"
+      );
+      const target = join(tmp, CLAUDE_DOCS_HOOK_TARGET);
+      await mkdir(dirname(target), { recursive: true });
+      // A stub target proving both halves: the guard imports it, and stdin
+      // reaches it (the payload contract the real hook reads).
+      await writeFile(
+        target,
+        'process.stdout.write("HOOK-RAN:" + require("fs").readFileSync(0, "utf-8"));\n',
+      );
+      const out = execFileSync("sh", ["-c", CLAUDE_DOCS_HOOK_COMMAND], {
+        cwd: tmp,
+        encoding: "utf-8",
+        input: '{"tool_input":{"file_path":"src/x.ts"}}',
+        timeout: 10000,
+      });
+      assert.match(out, /^HOOK-RAN:/);
+      assert.match(out, /src\/x\.ts/, "stdin payload reached the hook");
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});

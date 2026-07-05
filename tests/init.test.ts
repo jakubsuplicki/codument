@@ -371,6 +371,23 @@ describe("init command", () => {
     assert.equal(hooks[0].matcher, "Write|Edit|MultiEdit");
   });
 
+  it("writes the GUARDED hook command and warns that it stays dormant without a local install", async () => {
+    const out = runInit("--agents", "claude");
+    // no node_modules/codument in this tmp project -> init says the hook is
+    // dormant (and why), instead of silently installing a command that errors.
+    assert.match(out, /dormant/);
+    assert.match(out, /npm install -D codument/);
+
+    const settings = JSON.parse(
+      await readFile(join(tmp, ".claude", "settings.json"), "utf-8"),
+    );
+    const [entry] = codumentHookEntries(settings);
+    const command = (entry.hooks as Array<{ command: string }>)[0].command;
+    // the guard: existence check first, never a bare `node <target>`
+    assert.match(command, /existsSync/);
+    assert.ok(!command.startsWith("node node_modules"), "bare unguarded form is gone");
+  });
+
   it("detects javascript project", async () => {
     // Remove tsconfig
     unlinkSync(join(tmp, "tsconfig.json"));

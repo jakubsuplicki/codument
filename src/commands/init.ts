@@ -199,6 +199,16 @@ async function installProfile(
   if (profile.settingsFile) {
     await writeSettings(join(root, profile.settingsFile));
     console.log(`  ${pc.green("✓")} Updated ${profile.settingsFile}`);
+    // The hook target is resolved at edit time from the project root. Without a
+    // local install the guarded command stays a silent no-op (never an error in
+    // the editor loop) — say so once, here, where it can be fixed.
+    if (!existsSync(join(root, "node_modules", "codument"))) {
+      console.log(
+        pc.yellow(
+          "  ⚠ codument is not in this project's node_modules — the docs-nudge hook stays dormant (silent, never an error) until you `npm install -D codument`.",
+        ),
+      );
+    }
   }
 }
 

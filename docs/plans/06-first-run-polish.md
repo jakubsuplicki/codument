@@ -83,8 +83,11 @@ not landed.
 - [x] Step 2: Kind-aware drift guidance in `review.ts` + cross-referencing rejection message in
       `ack.ts`. Tests: added-symbol finding renders the file-grain suggestion; the suggested command
       actually succeeds; removed-symbol likewise.
-- [ ] Step 3: Hook resolution + fail-silent hook + init warning when local install is missing.
+- [x] Step 3: Hook resolution + fail-silent hook + init warning when local install is missing.
       Tests: hook exits 0 (no stack) when module absent; init warns on missing node_modules.
+      (Shipped shape: the WRITTEN COMMAND guards its own target — existence check + same-process
+      import so stdin survives — and the settings normalizer recognizes older command forms by the
+      stable target path, so upgrades replace rather than accumulate.)
 - [ ] Step 4: Version-skew nudge in doctor/review (dim, one line, never a finding). Test with a
       stubbed meta version.
 

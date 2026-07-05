@@ -1,6 +1,22 @@
+/** The hook target, relative to the project root (the cwd hooks run from). */
+export const CLAUDE_DOCS_HOOK_TARGET = "node_modules/codument/dist/hooks/check-docs.js";
+// Guarded invocation: a nudge hook must NEVER break the editor loop. The bare
+// `node <target>` form stacked MODULE_NOT_FOUND + exit 1 on every Write/Edit
+// when codument was not in local node_modules (npx-cache-only or global
+// installs). The guard exits 0 silently when the target is absent; a
+// same-process dynamic import keeps stdin available to the hook script, and the
+// file URL form resolves on Windows paths too.
 export const CLAUDE_DOCS_HOOK_COMMAND =
-  "node node_modules/codument/dist/hooks/check-docs.js";
+  `node -e "const p='${CLAUDE_DOCS_HOOK_TARGET}';if(!require('fs').existsSync(p))process.exit(0);import(require('url').pathToFileURL(p).href).catch(()=>process.exit(0))"`;
 export const CLAUDE_DOCS_HOOK_MATCHER = "Write|Edit|MultiEdit";
+
+// Recognize OUR hook by its stable target path rather than exact command
+// equality, so an older install's command form (e.g. the unguarded `node
+// <target>`) is still recognized and replaced by the canonical one instead of
+// accumulating beside it.
+function isCodumentHookCommand(command: unknown): boolean {
+  return typeof command === "string" && command.includes(CLAUDE_DOCS_HOOK_TARGET);
+}
 
 type JsonObject = Record<string, unknown>;
 
@@ -75,7 +91,7 @@ function removeCodumentHook(entry: unknown): {
     return { cleanedEntry: entry, containedCodumentHook: false };
   }
 
-  if (entry.command === CLAUDE_DOCS_HOOK_COMMAND) {
+  if (isCodumentHookCommand(entry.command)) {
     return { cleanedEntry: null, containedCodumentHook: true };
   }
 
@@ -84,7 +100,7 @@ function removeCodumentHook(entry: unknown): {
   }
 
   const cleanedHooks = entry.hooks.filter(
-    (hook) => !isObject(hook) || hook.command !== CLAUDE_DOCS_HOOK_COMMAND,
+    (hook) => !isObject(hook) || !isCodumentHookCommand(hook.command),
   );
   if (cleanedHooks.length === entry.hooks.length) {
     return { cleanedEntry: entry, containedCodumentHook: false };
