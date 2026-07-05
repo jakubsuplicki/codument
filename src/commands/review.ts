@@ -679,9 +679,19 @@ function printHuman(report: ReviewReport): void {
         `    ${pc.dim("•")} ${pc.bold(d.symbol)} ${pc.dim(`(${d.kind}) in ${d.feature}`)}`,
       );
       console.log(`        ${pc.dim("contract changed →")} update ${d.doc} ${pc.dim("at intent altitude")}`);
-      console.log(
-        `        ${pc.dim("internal only   →")} ${pc.cyan(`codument ack ${d.anchorId} --reason "..."`)}`,
-      );
+      if (d.kind === "changed") {
+        console.log(
+          `        ${pc.dim("internal only   →")} ${pc.cyan(`codument ack ${d.anchorId} --reason "..."`)}`,
+        );
+      } else {
+        // An added/removed symbol has no per-symbol ack (ack rejects it: new or
+        // removed content needs doc attention). The honest alternative is the
+        // FILE-grain form — suggest the command that actually works when pasted.
+        const file = d.anchorId.split("::")[0];
+        console.log(
+          `        ${pc.dim("additive only   →")} ${pc.cyan(`codument ack ${file} --reason "..."`)} ${pc.dim("(file-grain; a per-symbol ack does not apply to added/removed)")}`,
+        );
+      }
     }
     console.log();
   }

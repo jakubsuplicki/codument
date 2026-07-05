@@ -80,7 +80,7 @@ not landed.
 - [x] Step 1: Scaffold exemption + confirmed-empty mechanism in `registry.ts`/`analyze.ts`; update
       README's fix-table row. Tests: fresh scan → doctor reports no findings and a sane headline;
       a mature isolated entry still fires; `depends_on_confirmed` clears it honestly.
-- [ ] Step 2: Kind-aware drift guidance in `review.ts` + cross-referencing rejection message in
+- [x] Step 2: Kind-aware drift guidance in `review.ts` + cross-referencing rejection message in
       `ack.ts`. Tests: added-symbol finding renders the file-grain suggestion; the suggested command
       actually succeeds; removed-symbol likewise.
 - [ ] Step 3: Hook resolution + fail-silent hook + init warning when local install is missing.

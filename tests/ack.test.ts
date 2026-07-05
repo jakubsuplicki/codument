@@ -146,11 +146,36 @@ describe("codument ack — the reachable agent-judge surface", () => {
     assert.equal(readAcks(tmp).length, 0);
   });
 
+  it("review's guidance for ADDED/REMOVED symbols names the file-grain command — and pasting it works", async () => {
+    // foo removed + bar added: two additive-kind findings, zero moved symbols.
+    await scaffold({ "src/a.ts": "export function bar() {\n  return 2;\n}\n" });
+
+    const out = stripAnsi(
+      execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" }),
+    );
+    assert.match(out, /additive only/, "kind-aware guidance branch");
+    assert.match(out, /codument ack src\/a\.ts --reason/, "suggests the FILE-grain form");
+    assert.doesNotMatch(
+      out,
+      /codument ack src\/a\.ts::/,
+      "never suggests a per-symbol ack that ack would reject",
+    );
+
+    // Paste the suggested command: it must actually succeed and clear the verdict.
+    const r = capture(() =>
+      ackCommand("src/a.ts", { reason: "helper swap; narration unchanged", root: tmp }),
+    );
+    assert.equal(r.code, undefined, r.err);
+    assert.deepStrictEqual(buildReview(tmp).state.staleDocs, []);
+  });
+
   it("rejects acking an ADDED symbol (it needs doc attention, not an ack)", async () => {
     await scaffold({ "src/a.ts": A_SRC + "export function bar() {\n  return 2;\n}\n" });
     const r = capture(() => ackCommand("src/a.ts::bar", { reason: "x", root: tmp }));
     assert.equal(r.code, 1);
     assert.match(r.err, /was added, not changed/);
+    // the rejection is a signpost: it names the file-grain alternative
+    assert.match(r.err, /codument ack src\/a\.ts --reason/);
   });
 
   it("requires a reason", async () => {

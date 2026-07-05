@@ -109,8 +109,14 @@ export function ackCommand(anchor: string | undefined, options: AckCliOptions): 
   }
   const ch = match.change;
   if (ch.kind !== "changed" || ch.from === undefined || ch.to === undefined) {
+    // Name the resolution that actually applies: an added/removed symbol has no
+    // per-symbol transition to ack; the documented alternative is a doc update
+    // or the FILE-grain ack over the additive residue.
+    const file = ch.id.split("::")[0];
     fail(
-      `${ch.id} was ${ch.kind}, not changed — an added or removed symbol needs doc attention, not an ack`,
+      `${ch.id} was ${ch.kind}, not changed — an added or removed symbol needs doc attention: ` +
+        `update the owning doc, or acknowledge the file's additive residue with ` +
+        `\`codument ack ${file} --reason "..."\``,
     );
     return;
   }
@@ -172,8 +178,13 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
     return;
   }
   if (from === null || to === null) {
+    // Name the resolution that applies to each case, so the error is a signpost:
+    // a new file needs an owner (materialize) and narration; a removed file owes
+    // its doc an update — or the doc's own removal — never an ack (ADR-012).
     fail(
-      `${file} was ${from === null ? "added" : "deleted"}, not changed — a new or removed file needs doc attention, not a file ack`,
+      from === null
+        ? `${file} was added, not changed — a new file needs an owner and doc attention: \`codument map materialize ${file}\`, then narrate it (no ack applies)`
+        : `${file} was deleted, not changed — a removal owes its owning doc an update (or remove the doc with its feature); no acknowledgment clears a deletion`,
     );
     return;
   }
