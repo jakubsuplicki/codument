@@ -361,7 +361,7 @@ Alongside the deterministic checks, Codument can run two **adversarial** gates. 
 | **missing-doc** | a registered feature has no doc | `/update-docs` — write it from the template |
 | **unmapped-source** | a real source file has no owning feature | add it to a feature's `primary_sources` in `docs/.registry.json` (or `codument scan` to propose mappings) |
 | **generated-leakage** | a file matching an exclusion rule (build/generated/test/data, e.g. `dist/**`, `*.seed.json`) is listed as a source | de-list it — it is not tracked source. If the heuristic misfired on genuinely authored content, adjust the exclusion instead of forcing docs onto it |
-| **empty-depends-on** | a mature feature declares no dependencies | add its real `depends_on` edges, or confirm there are none |
+| **empty-depends-on** | a mature, isolated feature declares no dependencies | add its real `depends_on` edges, or set `depends_on_confirmed: true` on the entry after reviewing that a true leaf really has none (fresh `needs-review` scaffolds are exempt until reviewed) |
 
 **`high-fanout` is a note, not a finding — don't "clear" it.** A file mapped across many features is usually *correct*: shared infra (security rules, shared types, a root layout, a barrel file) is supposed to be mapped widely, and that breadth is exactly what lets `review` flag every dependent when it changes. Collapsing it to one owner to zero the count **severs that signal** — and the single owner is often the wrong one. Act only when the breadth is genuinely wrong (a test helper or unrelated utility mapped into features that don't own it); otherwise leave shared infra mapped widely, or raise `--high-fanout` if the threshold is noisy for your repo. "Clean" never requires touching it.
 

@@ -1,8 +1,10 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, rm, writeFile, mkdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { writeRegistry, readRegistry } from "../src/lib/registry.js";
 
@@ -287,5 +289,40 @@ describe("scan command", () => {
     // but the existing doc is still mapped into the registry.
     const reg = await readRegistry(join(tmp, "docs", ".registry.json"));
     assert.ok(reg.features.auth, "existing doc gets a registry entry");
+  });
+});
+
+describe("fresh scan → doctor: the first run ends green (no self-inflicted findings)", () => {
+  it("doctor --strict exits 0 on a seconds-old scan, with no 0% ratio", async () => {
+    await setupProject({
+      "src/auth/login.ts": "export function login() {}",
+      "src/lib/db.ts": "export const db = {};",
+    });
+    await scan({ root: tmp });
+    assert.notEqual(process.exitCode, 1, "scan itself succeeded");
+
+    const here = dirname(fileURLToPath(import.meta.url));
+    const CLI = join(here, "..", "dist", "cli.js");
+    let status = 0;
+    let stdout = "";
+    try {
+      stdout = execFileSync("node", [CLI, "doctor", "--strict", "--json"], {
+        cwd: tmp,
+        encoding: "utf-8",
+      });
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      status = e.status ?? 1;
+      stdout = e.stdout ?? "";
+    }
+    const report = JSON.parse(stdout);
+    assert.equal(status, 0, `fresh scaffold must not fail CI: ${JSON.stringify(report.lint?.findings)}`);
+    assert.equal(report.lint.count, 0, "zero actionable findings on the tool's own scaffolds");
+    for (const ratio of report.coverage.ratios) {
+      assert.ok(
+        ratio.denominator === 0 || ratio.numerator > 0,
+        `no 0% ratio on a fresh scan: ${ratio.id}`,
+      );
+    }
   });
 });

@@ -397,14 +397,19 @@ function computeCoverage(
   // declare at least one dependency. A foundation entry — one other entries
   // depend on that itself declares nothing — has no deps to declare, so it is a
   // vacuous case excluded from the ratio entirely (like a zero denominator),
-  // never counted as a miss that drags the score down.
+  // never counted as a miss that drags the score down. A `needs-review` scaffold
+  // is in-flight, not a miss (a fresh scan must not open at a 0% ratio), and a
+  // `depends_on_confirmed` reviewed leaf has answered the question — both step
+  // out of the ratio the same vacuous way.
   const matureEntries = entries.filter(
     ([, entry]) =>
       isMatureEntry(entry) &&
+      entry.status !== "needs-review" &&
       allSources(entry).some((s) => isSourceFile(s, exclusion)),
   );
   const dependencyEntries = matureEntries.filter(
-    ([key, e]) => !(e.depends_on.length === 0 && dependedUpon.has(key)),
+    ([key, e]) =>
+      !(e.depends_on.length === 0 && (dependedUpon.has(key) || e.depends_on_confirmed === true)),
   );
   const withDeps = dependencyEntries.filter(([, e]) => e.depends_on.length > 0);
   const dependency = buildRatio(
@@ -527,11 +532,21 @@ function computeLint(
     // on. An entry others build on is a foundation layer, and a foundation
     // legitimately depends on nothing; the genuinely suspicious case is an
     // isolated mature entry (nothing depends on it and it depends on nothing) —
-    // a probable wiring omission.
+    // a probable wiring omission. Two honest exits: a `needs-review` scaffold is
+    // in-flight, not a miss (same rationale as the thin-doc exemption — a fresh
+    // scan must not warn about its own seconds-old scaffolds), and
+    // `depends_on_confirmed` is the explicit reviewed-leaf clearance the
+    // foundation exemption (which needs inward edges) can never give.
     const mature =
       isMatureEntry(entry) &&
+      entry.status !== "needs-review" &&
       allSources(entry).some((s) => isSourceFile(s, exclusion));
-    if (mature && entry.depends_on.length === 0 && !dependedUpon.has(key)) {
+    if (
+      mature &&
+      entry.depends_on.length === 0 &&
+      !dependedUpon.has(key) &&
+      entry.depends_on_confirmed !== true
+    ) {
       findings.push({
         id: "empty-depends-on",
         severity: "warn",

@@ -18,6 +18,12 @@ export interface RegistryEntry {
   /** When true, mutes the `under-decomposed` shape nudge — a deliberately large
    *  but cohesive feature the author has acknowledged. Absent ⇒ not acknowledged. */
   cohesive?: boolean;
+  /** When true, a human/agent reviewed this entry and confirmed it genuinely
+   *  depends on nothing — the honest way for a true leaf to clear the
+   *  `empty-depends-on` finding and step out of the dependency ratio (the
+   *  foundation exemption needs inward edges; a leaf has none to show).
+   *  Absent ⇒ unconfirmed. */
+  depends_on_confirmed?: boolean;
   /** For a file SHARED across several features' `primary_sources`, the anchor
    *  descriptors (the `::`-tail of an anchor id, e.g. `reviewCommand().`) this
    *  feature owns within that file. Single-owner files need none — ownership is
@@ -169,6 +175,7 @@ function parseEntry(key: string, value: unknown): RegistryEntry | null {
     risk: uniqSort(risk),
     status,
     ...(value.cohesive === true ? { cohesive: true } : {}),
+    ...(value.depends_on_confirmed === true ? { depends_on_confirmed: true } : {}),
     ...(owned_symbols ? { owned_symbols } : {}),
   };
 }

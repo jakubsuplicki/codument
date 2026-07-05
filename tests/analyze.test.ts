@@ -500,3 +500,54 @@ describe("empty-depends-on (foundation exemption)", () => {
     assert.deepStrictEqual(flagged, ["island"]);
   });
 });
+
+describe("empty-depends-on — scaffold exemption + confirmed leaf (first-run honesty)", () => {
+  async function analyzed(entryPatch: Record<string, unknown>) {
+    const tmp = await mkdtemp(join(tmpdir(), "codument-scaffold-"));
+    try {
+      await mkdir(join(tmp, "docs"), { recursive: true });
+      await mkdir(join(tmp, "src"), { recursive: true });
+      await writeFile(
+        join(tmp, "docs", ".registry.json"),
+        JSON.stringify({
+          features: {
+            leaf: {
+              doc: "docs/features/leaf.md",
+              type: "feature",
+              primary_sources: ["src/leaf.ts"],
+              depends_on: [],
+              status: "current",
+              ...entryPatch,
+            },
+          },
+        }),
+      );
+      await writeFile(join(tmp, "src", "leaf.ts"), "export const leaf = 1;\n");
+      const registry = await readRegistry(join(tmp, "docs", ".registry.json"));
+      return analyze({ root: tmp, registry, srcDir: "src" });
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it("a fresh needs-review scaffold fires nothing and never opens at a 0% dependency ratio", async () => {
+    // The state a fresh `scan` writes: seconds-old scaffolds must not trip the
+    // tool's own warnings (the same in-flight rationale as the thin-doc lint).
+    const r = await analyzed({ status: "needs-review" });
+    assert.ok(!r.lint.some((f) => f.id === "empty-depends-on"), "no finding on a scaffold");
+    const dep = r.coverage.ratios.find((x) => x.id === "dependency");
+    assert.equal(dep?.denominator, 0, "scaffolds step out of the ratio, not drag it to 0%");
+  });
+
+  it("a mature isolated entry still fires (the exemption is for scaffolds, not everyone)", async () => {
+    const r = await analyzed({});
+    assert.ok(r.lint.some((f) => f.id === "empty-depends-on" && f.feature === "leaf"));
+  });
+
+  it("depends_on_confirmed clears a reviewed true leaf honestly (finding AND ratio)", async () => {
+    const r = await analyzed({ depends_on_confirmed: true });
+    assert.ok(!r.lint.some((f) => f.id === "empty-depends-on"), "confirmed leaf is clear");
+    const dep = r.coverage.ratios.find((x) => x.id === "dependency");
+    assert.equal(dep?.denominator, 0, "a confirmed-empty is vacuous, like a foundation");
+  });
+});
