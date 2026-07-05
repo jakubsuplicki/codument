@@ -177,6 +177,43 @@ describe("codument doctor --strict (CLI gating)", () => {
     assert.equal(run(["doctor", "--strict"], missing).status, 1);
   });
 
+  it("nudges once, dim and human-only, when the project was scaffolded by an older codument", async () => {
+    // read the running version straight from package.json (version.ts resolves
+    // the BUNDLE layout and cannot be imported from unbundled tests)
+    const version = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf-8")).version;
+    await writeFile(
+      join(clean, ".codument-meta.json"),
+      JSON.stringify({ version: "0.1.0", initialized: "2026-01-01", project: {} }),
+    );
+    const human = run(["doctor"], clean);
+    assert.equal(human.status, 0, "a nudge is never an exit-code input");
+    assert.match(human.stdout, /scaffolded at 0\.1\.0/);
+    assert.match(human.stdout, /codument update/);
+    assert.ok(human.stdout.includes(`codument ${version} installed`));
+
+    // --json contract stays byte-identical: no nudge text in machine output
+    const json = run(["doctor", "--json"], clean);
+    assert.doesNotMatch(json.stdout, /scaffolded at/);
+    JSON.parse(json.stdout);
+  });
+
+  it("stays silent when versions are in sync or nothing was scaffolded", async () => {
+    const version = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf-8")).version;
+    assert.doesNotMatch(run(["doctor"], clean).stdout, /scaffolded at/, "no meta, no nudge");
+    await writeFile(
+      join(clean, ".codument-meta.json"),
+      JSON.stringify({ version, initialized: "2026-01-01", project: {} }),
+    );
+    assert.doesNotMatch(run(["doctor"], clean).stdout, /scaffolded at/, "in sync, no nudge");
+  });
+
+  it("a corrupt meta file cannot crash the advisory surface — the nudge names the repair", async () => {
+    await writeFile(join(clean, ".codument-meta.json"), "{ not json");
+    const r = run(["doctor"], clean);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /\.codument-meta\.json is unreadable/);
+  });
+
   it("errors loudly from a subdirectory of a git repo (never a wrong-root score)", async () => {
     const repo = await mkdtemp(join(tmpdir(), "codument-doctor-subdir-"));
     try {

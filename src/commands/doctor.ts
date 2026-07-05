@@ -4,6 +4,7 @@ import pc from "picocolors";
 import { atomicWriteFileSync } from "../lib/events.js";
 import { assertRootIsRepoToplevel } from "../lib/git.js";
 import { GateError } from "../lib/two-ref.js";
+import { versionSkewNotice } from "../lib/version.js";
 import { readRegistrySync } from "../lib/registry.js";
 import { renderCoverageBadge } from "../lib/badge.js";
 import {
@@ -197,6 +198,10 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
   }
 
   printHuman(report, strictFail);
+  // Advisory skew nudge — human output only, so the --json contract stays
+  // byte-identical; never a finding, never an exit-code input.
+  const skew = versionSkewNotice(root);
+  if (skew) console.log(pc.dim(`  ${skew}`));
   if (strictFail) process.exitCode = 1;
 }
 

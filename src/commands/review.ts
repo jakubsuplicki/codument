@@ -51,6 +51,7 @@ import {
 } from "../lib/review-confirm.js";
 import { isExcluded, DEFAULT_EXCLUSION_SPEC } from "../lib/analyze.js";
 import { MODULE_ANCHOR_NAME } from "../lib/ts-adapter.js";
+import { versionSkewNotice } from "../lib/version.js";
 
 interface ReviewOptions {
   root?: string;
@@ -501,6 +502,13 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   }
 
   printHuman(report);
+
+  // Advisory skew nudge — human output only (the --json contract is untouched);
+  // never a finding, never an exit-code input.
+  {
+    const skew = versionSkewNotice(root);
+    if (skew) console.log(pc.dim(`  ${skew}`));
+  }
 
   if (strictFail) {
     const reasons: string[] = [];

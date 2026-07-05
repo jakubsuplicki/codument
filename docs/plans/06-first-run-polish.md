@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 06: First-run experience & resolution guidance
@@ -88,8 +88,11 @@ not landed.
       (Shipped shape: the WRITTEN COMMAND guards its own target — existence check + same-process
       import so stdin survives — and the settings normalizer recognizes older command forms by the
       stable target path, so upgrades replace rather than accumulate.)
-- [ ] Step 4: Version-skew nudge in doctor/review (dim, one line, never a finding). Test with a
-      stubbed meta version.
+- [x] Step 4: Version-skew nudge in doctor/review (dim, one line, never a finding). Test with a
+      stubbed meta version. (Shipped notes: human output only so both --json contracts stay
+      byte-identical; a corrupt meta downgrades the nudge to a repair pointer rather than crashing
+      an advisory surface; version resolution became layout-agnostic — by package name, never a
+      consumer's manifest — so unbundled test contexts can import it.)
 
 ## Outcome
 
