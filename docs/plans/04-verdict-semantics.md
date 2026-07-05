@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 04: Verdict semantics — deletions, umbrella acks, approval, plan scope
@@ -97,16 +97,21 @@ Verified findings this plan fixes:
       `review` output. Tests for both. (Shipped shape: `review` warns naming all contenders + the
       winner; `steps` already refused multi-plan ambiguity by name, which is stronger than a warning,
       so it kept its refusal.)
-- [ ] Step 5: Update `docs/features/change-control-gate.md` invariants (the deletion invariant
+- [x] Step 5: Update `docs/features/change-control-gate.md` invariants (the deletion invariant
       itself landed with Step 1; sweep what Steps 2-4 add) and `docs/plans/README.md` (drop the
-      root-level-scope caveat).
+      root-level-scope caveat). (Each step's invariant landed with its step per the loop; this pass
+      removed the README caveat, updated its multi-plan note, and made the Outcome's rename story
+      honest about git-collapsed renames.)
 
 ## Outcome
 
 The verdict now answers the whole question: deleting code wakes its doc exactly like changing it; an
 ack clears only what its signer actually adjudicated; an explicitly rejected plan can never drive
-the workflow; and plans can honestly scope root-level files. What it does NOT do: detect renames as
-renames (a rename is a deletion-wake plus an unmapped-add, both loud), or arbitrate between multiple
+the workflow; and plans can honestly scope root-level files. What it does NOT do: treat renames as
+renames. An unstaged rename is a true delete+add (deletion-wake plus unmapped-add, both loud); a
+rename git itself collapses (staged `git mv`, or similarity-detected on the `--base` diff) surfaces
+only the new path — loud as an unmapped add — while the old path's disappearance is caught by
+doctor's missing-source lint rather than a deletion wake. Nor does it arbitrate between multiple
 approved plans beyond naming the winner.
 
 ## Acceptance criteria

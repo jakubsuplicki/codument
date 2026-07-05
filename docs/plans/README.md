@@ -10,7 +10,8 @@ pre-settled in its Decisions section (adjust at approval, not mid-run).
 
 1. Flip exactly **one** plan's frontmatter from `status: draft` to `status: approved`.
    Keep the others draft — the out-of-plan gate keys off the first approved plan by filename
-   (`src/lib/change-state.ts` reads this directory), and multiple approved plans tie-break silently.
+   (`src/lib/change-state.ts` reads this directory); if several are approved at once, `review`
+   warns naming every contender and `steps` refuses, but the discipline is still one at a time.
 2. Point the executing agent at the file: it follows the repo workflow (AGENTS.md): work one
    unchecked Delivery Plan step at a time, `codument review --strict` green before each commit,
    commit as the user with no AI co-author trailer.
@@ -44,7 +45,3 @@ pre-settled in its Decisions section (adjust at approval, not mid-run).
 
 Leverage order if picking selectively: 09 and 08 first (they change who wants the product), then
 10+11 together (they change what the gate can promise), then 12–14, then 15.
-
-Known limitation until Plan 04 lands: the scope parser drops root-level paths (no `/`), so edits to
-`package.json` or `README.md` will be flagged out-of-plan even when a plan legitimately covers them.
-Treat those specific flags as expected noise in Plans 01–03 and say so in the review notes.
