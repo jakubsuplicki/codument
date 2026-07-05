@@ -93,8 +93,10 @@ Verified findings this plan fixes:
 - [x] Step 3: Unify the approval predicate (exact-match after stripping), share it between
       `plan-steps.ts` and `change-state.ts`. Tests: "not approved" / "never approved" are not
       approved; `Status: **approved**` is approved for BOTH steps and scope detection.
-- [ ] Step 4: Scope parser accepts root-level files; warn on multiple approved plans in `steps` and
-      `review` output. Tests for both.
+- [x] Step 4: Scope parser accepts root-level files; warn on multiple approved plans in `steps` and
+      `review` output. Tests for both. (Shipped shape: `review` warns naming all contenders + the
+      winner; `steps` already refused multi-plan ambiguity by name, which is stronger than a warning,
+      so it kept its refusal.)
 - [ ] Step 5: Update `docs/features/change-control-gate.md` invariants (the deletion invariant
       itself landed with Step 1; sweep what Steps 2-4 add) and `docs/plans/README.md` (drop the
       root-level-scope caveat).

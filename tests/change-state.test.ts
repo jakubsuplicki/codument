@@ -422,3 +422,60 @@ describe("detectApprovedPlanScope — one approval predicate with steps", () => 
     assert.ok(detectApprovedPlanScope(tmp));
   });
 });
+
+describe("detectApprovedPlanScope — root-level scope + multiple approved plans", () => {
+  let tmp: string;
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-plan-scope-"));
+    await mkdir(join(tmp, "docs", "plans"), { recursive: true });
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  async function writePlan(name: string, scopeLines: string[]) {
+    await writeFile(
+      join(tmp, "docs", "plans", name),
+      `---\nstatus: approved\n---\n\n# P\n\n## Scope\n\n${scopeLines.join("\n")}\n`,
+    );
+  }
+
+  it("accepts root-level filenames (`cli.ts`, `package.json`) — but not version-like prose", async () => {
+    await writePlan("a.md", [
+      "- `cli.ts`",
+      "- `package.json`",
+      "- `src/lib/db.ts`",
+      "- release as `v0.7.0` once done",
+    ]);
+    const p = detectApprovedPlanScope(tmp);
+    assert.deepStrictEqual(p?.scope, ["cli.ts", "package.json", "src/lib/db.ts"]);
+  });
+
+  it("root-level scope entries make root-level edits in-plan end-to-end", async () => {
+    await writePlan("a.md", ["- `cli.ts`"]);
+    const p = detectApprovedPlanScope(tmp);
+    const s = computeChangeState({
+      registry: { features: {} },
+      changedFiles: ["cli.ts"],
+      planScope: p?.scope,
+    });
+    assert.deepStrictEqual(s.outOfPlan, [], "a legitimately scoped root file is never out-of-plan");
+  });
+
+  it("multiple approved plans: first by filename wins, ALL are named as contenders", async () => {
+    await writePlan("b-second.md", ["- `src/lib/b.ts`"]);
+    await writePlan("a-first.md", ["- `src/lib/a.ts`"]);
+    const p = detectApprovedPlanScope(tmp);
+    assert.equal(p?.plan, "docs/plans/a-first.md");
+    assert.deepStrictEqual(p?.scope, ["src/lib/a.ts"]);
+    assert.deepStrictEqual(p?.contenders, [
+      "docs/plans/a-first.md",
+      "docs/plans/b-second.md",
+    ]);
+  });
+
+  it("a single approved plan has itself as the only contender (no warning owed)", async () => {
+    await writePlan("a.md", ["- `src/lib/a.ts`"]);
+    assert.deepStrictEqual(detectApprovedPlanScope(tmp)?.contenders, ["docs/plans/a.md"]);
+  });
+});

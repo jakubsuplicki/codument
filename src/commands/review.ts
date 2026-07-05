@@ -577,6 +577,15 @@ function printHuman(report: ReviewReport): void {
       (report.deletions.length > 0 ? `, ${report.deletions.length} deleted` : "") +
       (plan ? pc.dim(`  (plan: ${plan.plan})`) : ""),
   );
+  if (plan && plan.contenders.length > 1) {
+    // Multiple approved plans is a workflow smell (flip exactly one at a time);
+    // never let first-by-filename win silently.
+    console.log(
+      pc.yellow(
+        `  ⚠ ${plan.contenders.length} approved plans (${plan.contenders.join(", ")}) — scope taken from ${plan.plan}; keep exactly one approved`,
+      ),
+    );
+  }
   console.log();
 
   section(

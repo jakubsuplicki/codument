@@ -180,6 +180,23 @@ describe("buildReview (temp git repo)", () => {
     assert.ok(!report.state.outOfPlan.includes("src/lib/db.ts"));
   });
 
+  it("warns, naming every approved plan and the winner, when more than one is approved", async () => {
+    await scaffold({
+      "docs/plans/add-thing.md":
+        "---\nstatus: approved\n---\n\n## Scope\n\n- `src/lib/db.ts`\n",
+      "docs/plans/other-thing.md":
+        "---\nstatus: approved\n---\n\n## Scope\n\n- `src/auth/login.ts`\n",
+      "src/lib/db.ts": "export const db = { ok: true };\n",
+    });
+
+    const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
+    assert.match(out, /2 approved plans/);
+    assert.match(out, /add-thing\.md/);
+    assert.match(out, /other-thing\.md/);
+    assert.match(out, /scope taken from docs\/plans\/add-thing\.md/);
+    assert.match(out, /keep exactly one approved/);
+  });
+
   it("a changed non-ASCII / CJK registered source is owned and flags its doc stale, never unmapped (-z path decoding)", async () => {
     // Registry keyed by non-ASCII filenames. Under git's default core.quotePath a
     // changed `src/föo.ts` arrives octal-escaped (`src/f\303\266o.ts`) and never

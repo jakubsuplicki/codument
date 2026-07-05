@@ -501,6 +501,10 @@ export function resolveFileGrainAcked(
 export interface ApprovedPlan {
   plan: string;
   scope: string[];
+  /** Every approved-with-scope plan found, winner first (sorted by filename).
+   *  More than one element = ambiguity the surfaces must SAY (one line naming
+   *  all and which won) rather than let the first-by-filename win silently. */
+  contenders: string[];
 }
 
 export function detectApprovedPlanScope(root: string): ApprovedPlan | null {
@@ -516,6 +520,8 @@ export function detectApprovedPlanScope(root: string): ApprovedPlan | null {
     return null;
   }
 
+  let winner: ApprovedPlan | null = null;
+  const contenders: string[] = [];
   for (const file of files) {
     let content: string;
     try {
@@ -525,11 +531,11 @@ export function detectApprovedPlanScope(root: string): ApprovedPlan | null {
     }
     if (!isApprovedPlan(content)) continue;
     const scope = parseScopeSection(content);
-    if (scope.length > 0) {
-      return { plan: `docs/plans/${file}`, scope };
-    }
+    if (scope.length === 0) continue;
+    contenders.push(`docs/plans/${file}`);
+    if (!winner) winner = { plan: `docs/plans/${file}`, scope, contenders };
   }
-  return null;
+  return winner;
 }
 
 // One shared approval predicate with `codument steps` (plan-steps.ts): the
@@ -557,7 +563,12 @@ function parseScopeSection(content: string): string[] {
     // NOT leak its example paths into the scope, or those changes look in-plan.
     if (!/^\s*[-*]\s/.test(line)) continue;
     for (const m of line.matchAll(/`([^`]+\.[a-z0-9]+)`/gi)) {
-      if (m[1].includes("/")) scope.push(m[1]);
+      // A path (has a slash), or a root-level FILENAME: a plan may legitimately
+      // scope `cli.ts` or `package.json`. Root-level demands a real extension
+      // (alphabetic-first), so a backticked version like `v0.7.0` stays prose.
+      if (m[1].includes("/") || /^[\w.-]+\.[a-z][a-z0-9]*$/i.test(m[1])) {
+        scope.push(m[1]);
+      }
     }
   }
   return [...new Set(scope)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
