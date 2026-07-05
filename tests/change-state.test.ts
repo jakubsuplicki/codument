@@ -1,5 +1,7 @@
-import { describe, it } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
@@ -377,5 +379,46 @@ describe("detectApprovedPlanScope (fixture plan)", () => {
     assert.ok(s.outOfPlan.includes("src/lib/db.ts"), "db.ts is out-of-plan");
     assert.ok(s.outOfPlan.includes("src/lib/cache.ts"));
     assert.ok(s.outOfPlan.includes("src/tasks/tasks.ts"));
+  });
+});
+
+describe("detectApprovedPlanScope — one approval predicate with steps", () => {
+  let tmp: string;
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-plan-approval-"));
+    await mkdir(join(tmp, "docs", "plans"), { recursive: true });
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  const SCOPE = "\n## Scope\n\n- `src/lib/thing.ts`\n";
+
+  async function plan(status: string, frontmatter: boolean) {
+    const content = frontmatter
+      ? `---\nstatus: ${status}\n---\n\n# P\n${SCOPE}`
+      : `# P\n\nStatus: ${status}\n${SCOPE}`;
+    await writeFile(join(tmp, "docs", "plans", "p.md"), content);
+  }
+
+  it("an explicitly rejected plan never drives the scope gate", async () => {
+    await plan("not approved", true);
+    assert.equal(detectApprovedPlanScope(tmp), null);
+    await plan("not approved", false);
+    assert.equal(detectApprovedPlanScope(tmp), null);
+  });
+
+  it("`Status: **approved**` (body, emphasized) is approved for the scope gate — same as steps", async () => {
+    // The old local regex required literal frontmatter `status: approved`, so a
+    // body-status plan drove `steps` but never enabled out-of-plan detection.
+    await plan("**approved**", false);
+    const p = detectApprovedPlanScope(tmp);
+    assert.ok(p, "detected");
+    assert.deepStrictEqual(p?.scope, ["src/lib/thing.ts"]);
+  });
+
+  it("frontmatter `status: approved` still detects", async () => {
+    await plan("approved", true);
+    assert.ok(detectApprovedPlanScope(tmp));
   });
 });

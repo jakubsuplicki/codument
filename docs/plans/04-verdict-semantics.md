@@ -90,7 +90,7 @@ Verified findings this plan fixes:
 - [x] Step 2: Fix the concept-umbrella wake (`change-state.ts:272` keys off the pre-filter set +
       file-grain-ack check). Golden tests per ADR-012: symbol ack clears the feature but NOT the
       concept; file-grain ack clears the concept residue.
-- [ ] Step 3: Unify the approval predicate (exact-match after stripping), share it between
+- [x] Step 3: Unify the approval predicate (exact-match after stripping), share it between
       `plan-steps.ts` and `change-state.ts`. Tests: "not approved" / "never approved" are not
       approved; `Status: **approved**` is approved for BOTH steps and scope detection.
 - [ ] Step 4: Scope parser accepts root-level files; warn on multiple approved plans in `steps` and

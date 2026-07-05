@@ -91,10 +91,15 @@ export function extractStatus(markdown: string): string | null {
   return cleaned || null;
 }
 
-/** Approved means the word "approved" — "awaiting approval" is deliberately not
- *  approved (no `\bapproved\b`). */
+/** Approved means EXACTLY "approved" (after extractStatus's strip+lowercase).
+ *  A word-boundary match here once made `Status: not approved` read as approved
+ *  — the precise signal the workflow's approval gate and the autopilot
+ *  precondition key off — so nothing looser than equality qualifies:
+ *  "awaiting approval", "not approved", "never approved" are all not approved.
+ *  This is THE approval predicate; the scope gate shares it (change-state.ts),
+ *  so `steps` and `review` can never disagree about the same plan. */
 export function isApproved(status: string | null): boolean {
-  return !!status && /\bapproved\b/.test(status);
+  return status === "approved";
 }
 
 /** Native to-do status for a step within its plan: done→completed,

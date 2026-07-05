@@ -117,6 +117,17 @@ describe("extractStatus / isApproved", () => {
     assert.equal(isApproved("awaiting approval"), false);
     assert.equal(isApproved(null), false);
   });
+  it("an explicitly REJECTED plan is never approved (exact match, not word match)", () => {
+    // `\bapproved\b` once matched these — the exact signal the approval gate and
+    // the autopilot precondition key off.
+    assert.equal(isApproved("not approved"), false);
+    assert.equal(isApproved("never approved"), false);
+    assert.equal(isApproved("approved (pending sign-off)"), false);
+  });
+  it("markdown emphasis is stripped before the exact match", () => {
+    assert.equal(isApproved(extractStatus("Status: **approved**\n")), true);
+    assert.equal(isApproved(extractStatus("Status: **not approved**\n")), false);
+  });
 });
 
 describe("findActivePlans / loadPlan (fs discovery)", () => {

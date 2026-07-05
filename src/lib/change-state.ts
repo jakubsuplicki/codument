@@ -14,6 +14,7 @@ import {
 import { resolveOwner, splitAnchorId } from "./ownership.js";
 import { fileContentTransition, type AnchorChange } from "./fingerprint.js";
 import { ackCovers, isFileGrainAck, type Acknowledgment } from "./acknowledgment.js";
+import { extractStatus, isApproved } from "./plan-steps.js";
 
 // Deterministic diff snapshot over the v2 registry. Pure function of (registry,
 // changed files, optional plan scope, optional per-file anchor changes): no git,
@@ -531,10 +532,14 @@ export function detectApprovedPlanScope(root: string): ApprovedPlan | null {
   return null;
 }
 
+// One shared approval predicate with `codument steps` (plan-steps.ts): the
+// markdown-stripped status must equal "approved" exactly. A local literal
+// regex here once diverged from steps' word-boundary match, so the two
+// surfaces could disagree about the same plan (`Status: **approved**` drove
+// steps but never enabled out-of-plan detection) — sharing the predicate makes
+// that disagreement impossible.
 function isApprovedPlan(content: string): boolean {
-  const fm = /^---\n([\s\S]*?)\n---/.exec(content);
-  const frontmatter = fm ? fm[1] : content;
-  return /^status:\s*approved\s*$/m.test(frontmatter);
+  return isApproved(extractStatus(content));
 }
 
 function parseScopeSection(content: string): string[] {
