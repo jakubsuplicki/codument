@@ -67,20 +67,42 @@ export function getGitAuthor(root: string): string | null {
   return name ?? email ?? null;
 }
 
-// Parse one `git status --porcelain` path field, taking the post-rename path and
-// unquoting git's C-style quoting for paths with special characters.
-function parsePath(field: string): string {
-  let path = field;
-  const arrow = path.indexOf(" -> ");
-  if (arrow !== -1) path = path.slice(arrow + 4);
-  path = path.trim();
-  if (path.startsWith('"') && path.endsWith('"')) {
-    path = path
-      .slice(1, -1)
-      .replace(/\\"/g, '"')
-      .replace(/\\\\/g, "\\");
+interface StatusEntry {
+  x: string;
+  y: string;
+  path: string;
+}
+
+// Parse `git status --porcelain -z` into entries. NUL-terminated output disables
+// git's C-style path quoting entirely, so a non-ASCII or space-bearing path (e.g.
+// `src/föo.ts`) arrives verbatim instead of octal-escaped and silently dropped
+// from the verdict. It also removes the rename " -> " ambiguity: a rename/copy
+// entry is followed by its origin path as a separate NUL field, which we consume
+// but never treat as a change of its own. The current (post-rename) path is the
+// field on the status entry itself.
+function parseStatusZ(out: string): StatusEntry[] {
+  const tokens = out.split("\0");
+  const entries: StatusEntry[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    const tok = tokens[i];
+    if (!tok) {
+      i++;
+      continue;
+    }
+    const x = tok[0];
+    const y = tok[1];
+    const path = tok.slice(3); // "XY " prefix (two status chars + a space)
+    // A rename/copy carries its origin path in the next NUL field — skip it.
+    if (x === "R" || x === "C" || y === "R" || y === "C") i += 2;
+    else i += 1;
+    entries.push({ x, y, path });
   }
-  return path;
+  return entries;
+}
+
+function sortPaths(paths: Iterable<string>): string[] {
+  return [...new Set(paths)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 /**
@@ -102,17 +124,18 @@ export function listIgnoredPaths(root: string): string[] {
       "--ignored",
       "--exclude-standard",
       "--directory",
+      "-z",
     ]);
   } catch {
     return [];
   }
   const paths = new Set<string>();
-  for (const line of out.split("\n")) {
-    if (!line.trim()) continue;
+  for (const entry of out.split("\0")) {
+    if (!entry) continue;
     // `--directory` appends a trailing slash to collapsed dirs; normalise it off.
-    paths.add(parsePath(line).replace(/\/$/, ""));
+    paths.add(entry.replace(/\/$/, ""));
   }
-  return [...paths].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return sortPaths(paths);
 }
 
 /**
@@ -125,7 +148,7 @@ export function getWorkingTreeChanges(root: string): string[] {
   if (!isGitRepo(root)) return [];
   let out: string;
   try {
-    out = git(root, ["status", "--porcelain", "-uall"]);
+    out = git(root, ["status", "--porcelain", "-z", "-uall"]);
   } catch (err) {
     // Fail closed: `git status` does not legitimately fail inside a work tree, so
     // a throw is a broken/oversized invocation. Never read it as "Working tree
@@ -133,18 +156,14 @@ export function getWorkingTreeChanges(root: string): string[] {
     throw new GateError(`git status failed: ${(err as Error).message}`, "git-failed");
   }
   const files = new Set<string>();
-  for (const line of out.split("\n")) {
-    if (!line.trim()) continue;
-    const x = line[0];
-    const y = line[1];
-    // Skip pure deletions (D in either column with no rename).
-    const status = `${x}${y}`;
-    const field = line.slice(3);
-    if ((x === "D" || y === "D") && !field.includes(" -> ")) continue;
-    void status;
-    files.add(parsePath(field));
+  for (const e of parseStatusZ(out)) {
+    // Skip pure deletions — a removed file is not a change to review for
+    // ownership/doc-drift. A rename (status R) reports its post-rename path and
+    // counts as a change; parseStatusZ has already consumed its origin field.
+    if (e.x === "D" || e.y === "D") continue;
+    files.add(e.path);
   }
-  return [...files].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return sortPaths(files);
 }
 
 /**
@@ -158,20 +177,16 @@ export function getWorkingTreeDeletions(root: string): string[] {
   if (!isGitRepo(root)) return [];
   let out: string;
   try {
-    out = git(root, ["status", "--porcelain", "-uall"]);
+    out = git(root, ["status", "--porcelain", "-z", "-uall"]);
   } catch (err) {
     // Fail closed for the same reason as getWorkingTreeChanges.
     throw new GateError(`git status failed: ${(err as Error).message}`, "git-failed");
   }
   const files = new Set<string>();
-  for (const line of out.split("\n")) {
-    if (!line.trim()) continue;
-    const x = line[0];
-    const y = line[1];
-    const field = line.slice(3);
-    if ((x === "D" || y === "D") && !field.includes(" -> ")) {
-      files.add(parsePath(field));
-    }
+  for (const e of parseStatusZ(out)) {
+    // A pure deletion is D in either column; a rename (R) is not a deletion of
+    // its new path, so it is excluded here and counted as a change instead.
+    if (e.x === "D" || e.y === "D") files.add(e.path);
   }
-  return [...files].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return sortPaths(files);
 }

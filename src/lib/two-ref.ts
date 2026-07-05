@@ -172,6 +172,40 @@ export interface ChangedPath {
   oldPath?: string;
 }
 
+interface DiffEntry {
+  code: string;
+  // The path at head — the new path for a rename/copy, the path otherwise.
+  path: string;
+  // The path at base, for a rename/copy.
+  oldPath?: string;
+}
+
+// Parse `git diff --name-status -z` into entries. NUL framing disables git's
+// C-style path quoting, so a non-ASCII path (e.g. `src/föo.ts`) arrives verbatim
+// instead of octal-escaped and silently dropped from the verdict. Unlike
+// `status -z`, diff keeps from→to order: a rename/copy is
+// `<code>\0<oldPath>\0<newPath>\0`; every other status is `<code>\0<path>\0`.
+function parseDiffNameStatusZ(out: string): DiffEntry[] {
+  const tokens = out.split("\0");
+  const entries: DiffEntry[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    const code = tokens[i];
+    if (!code) {
+      i++; // trailing NUL leaves an empty final token
+      continue;
+    }
+    if (code.startsWith("R") || code.startsWith("C")) {
+      entries.push({ code, path: tokens[i + 2], oldPath: tokens[i + 1] });
+      i += 3;
+    } else {
+      entries.push({ code, path: tokens[i + 1] });
+      i += 2;
+    }
+  }
+  return entries;
+}
+
 // Changed paths between two refs, with deletions and renames first-class (unlike
 // the working-tree view, which drops deletions for ownership). The gate path must
 // see a removed owned symbol as a change demanding co-movement. Sorted by path.
@@ -182,7 +216,7 @@ export function changedPathsBetween(
 ): ChangedPath[] {
   let out: string;
   try {
-    out = git(root, ["diff", "--name-status", "-M", base, head]);
+    out = git(root, ["diff", "--name-status", "-M", "-z", base, head]);
   } catch (err) {
     // Fail closed: with valid refs this diff does not legitimately fail, so a
     // throw here is a broken/oversized git invocation, never "no changes."
@@ -192,19 +226,18 @@ export function changedPathsBetween(
     );
   }
   const changes: ChangedPath[] = [];
-  for (const line of out.split("\n")) {
-    if (!line.trim()) continue;
-    const parts = line.split("\t");
-    const code = parts[0];
-    if (code.startsWith("R")) {
-      changes.push({ path: parts[2], status: "renamed", oldPath: parts[1] });
-    } else if (code.startsWith("A")) {
-      changes.push({ path: parts[1], status: "added" });
-    } else if (code.startsWith("D")) {
-      changes.push({ path: parts[1], status: "deleted" });
+  for (const e of parseDiffNameStatusZ(out)) {
+    if (e.code.startsWith("R")) {
+      changes.push({ path: e.path, status: "renamed", oldPath: e.oldPath });
+    } else if (e.code.startsWith("A")) {
+      changes.push({ path: e.path, status: "added" });
+    } else if (e.code.startsWith("D")) {
+      changes.push({ path: e.path, status: "deleted" });
     } else {
-      // M (modified), C (copy), T (type change) all read as a content change.
-      changes.push({ path: parts[1], status: "modified" });
+      // M (modified), C (copy), T (type change) all read as a content change;
+      // for a copy the new path is what appeared, which parseDiffNameStatusZ
+      // reports as `path`.
+      changes.push({ path: e.path, status: "modified" });
     }
   }
   return changes.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
@@ -217,11 +250,9 @@ export function worktreeDeletionsSince(root: string, base: string): string[] {
   const { sha } = resolveBase(root, base, "HEAD");
   const files = new Set<string>();
   try {
-    const out = git(root, ["diff", "--name-status", "-M", sha]);
-    for (const line of out.split("\n")) {
-      if (!line.trim()) continue;
-      const parts = line.split("\t");
-      if (parts[0].startsWith("D")) files.add(parts[1]);
+    const out = git(root, ["diff", "--name-status", "-M", "-z", sha]);
+    for (const e of parseDiffNameStatusZ(out)) {
+      if (e.code.startsWith("D")) files.add(e.path);
     }
   } catch {
     // no diff available
@@ -241,22 +272,20 @@ export function worktreeChangesSince(root: string, base: string): string[] {
   const files = new Set<string>();
   // tracked changes from the merge-base to the working tree (committed + uncommitted)
   try {
-    const out = git(root, ["diff", "--name-status", "-M", sha]);
-    for (const line of out.split("\n")) {
-      if (!line.trim()) continue;
-      const parts = line.split("\t");
-      const code = parts[0];
-      if (code.startsWith("D")) continue;
-      files.add(code.startsWith("R") ? parts[2] : parts[1]);
+    const out = git(root, ["diff", "--name-status", "-M", "-z", sha]);
+    for (const e of parseDiffNameStatusZ(out)) {
+      if (e.code.startsWith("D")) continue;
+      // parseDiffNameStatusZ already reports the new path for a rename/copy.
+      files.add(e.path);
     }
   } catch {
     // no diff available — fall through to untracked only
   }
   // untracked files (new, not yet added) are also "changed since base"
   try {
-    const out = git(root, ["ls-files", "--others", "--exclude-standard"]);
-    for (const line of out.split("\n")) {
-      if (line.trim()) files.add(line.trim());
+    const out = git(root, ["ls-files", "--others", "--exclude-standard", "-z"]);
+    for (const p of out.split("\0")) {
+      if (p) files.add(p);
     }
   } catch {
     // ignore

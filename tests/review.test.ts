@@ -29,6 +29,17 @@ function gitInit(root: string): void {
   run(["commit", "-m", "baseline"]);
 }
 
+function gitCommitAll(root: string, message: string): void {
+  const run = (args: string[]) =>
+    execFileSync("git", args, {
+      cwd: root,
+      stdio: "ignore",
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+    });
+  run(["add", "-A"]);
+  run(["commit", "-m", message]);
+}
+
 async function scaffold(files: Record<string, string>): Promise<void> {
   for (const [rel, content] of Object.entries(files)) {
     const full = join(tmp, rel);
@@ -166,6 +177,62 @@ describe("buildReview (temp git repo)", () => {
     // login.ts is outside the db-only plan scope
     assert.ok(report.state.outOfPlan.includes("src/auth/login.ts"));
     assert.ok(!report.state.outOfPlan.includes("src/lib/db.ts"));
+  });
+
+  it("a changed non-ASCII / CJK registered source is owned and flags its doc stale, never unmapped (-z path decoding)", async () => {
+    // Registry keyed by non-ASCII filenames. Under git's default core.quotePath a
+    // changed `src/föo.ts` arrives octal-escaped (`src/f\303\266o.ts`) and never
+    // matches this registry key — the file falls into `unmapped` and its doc reads
+    // fresh. NUL-framed listing (`-z`) delivers the byte-exact path so it matches.
+    const intlRegistry = {
+      features: {
+        intl: {
+          doc: "docs/features/intl.md",
+          type: "feature",
+          primary_sources: ["src/föo.ts", "src/日本語.ts"],
+          related_sources: [],
+          docs: [],
+          depends_on: [],
+          risk: [],
+          last_updated: "2026-06-16",
+          status: "current",
+        },
+      },
+    };
+    await scaffold({
+      "docs/.registry.json": JSON.stringify(intlRegistry, null, 2),
+      "docs/features/intl.md": "# intl\n",
+      "src/föo.ts": "export const alpha = () => {};\n",
+      "src/日本語.ts": "export const beta = () => {};\n",
+    });
+    // Commit the non-ASCII sources so the edit below is a modification of a tracked,
+    // registered file rather than an untracked add.
+    gitCommitAll(tmp, "add non-ascii sources");
+
+    // Real per-symbol change to both, docs untouched.
+    await scaffold({
+      "src/föo.ts": "export const alpha = () => { return 1; };\n",
+      "src/日本語.ts": "export const beta = () => { return 2; };\n",
+    });
+
+    const report = buildReview(tmp);
+    assert.deepEqual(
+      report.state.unmapped,
+      [],
+      "no non-ASCII path misclassified as unmapped",
+    );
+    assert.ok(
+      report.state.changedSources.includes("src/föo.ts"),
+      "föo.ts recognized as a changed source",
+    );
+    assert.ok(
+      report.state.changedSources.includes("src/日本語.ts"),
+      "CJK source recognized as a changed source",
+    );
+    assert.ok(
+      report.state.staleDocs.map((d) => d.feature).includes("intl"),
+      "the owning doc is flagged stale with per-symbol drift",
+    );
   });
 });
 

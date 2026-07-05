@@ -76,7 +76,7 @@ Verified findings this plan fixes (all confirmed; reproduced live):
       change-listing helpers into thrown `GateError`s that review renders red. Tests: a spawn error
       surfaces as exit 1 "gate could not run" (inject via an unreadable ref or a stubbed failing
       git), never "Working tree clean".
-- [ ] Step 3: `-z` parsing in both stacks; delete the C-style unquoting remnant in `git.ts:66-78`.
+- [x] Step 3: `-z` parsing in both stacks; delete the C-style unquoting remnant in `git.ts:66-78`.
       Test: e2e with a registered `src/föo.ts` (and a CJK filename) — edit flags the owning doc
       stale with per-symbol drift; nothing lands in `unmapped`.
 - [ ] Step 4: Toplevel assertion. Resolve `git rev-parse --show-toplevel` once at review/watch/doctor

@@ -160,3 +160,60 @@ describe("two-ref git plumbing", () => {
     );
   });
 });
+
+describe("changedPathsBetween: -z path decoding and rename ordering", () => {
+  let tmp: string;
+  let a: string;
+  let b: string;
+
+  before(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-tworef-z-"));
+    git(tmp, ["init", "-b", "main"]);
+    git(tmp, ["config", "core.autocrlf", "false"]);
+    // Turn quotePath ON deliberately: octal-escaped non-ASCII paths are exactly
+    // the failure mode `-z` framing must defeat regardless of this setting.
+    git(tmp, ["config", "core.quotePath", "true"]);
+    await writeFile(join(tmp, "föo.ts"), "export const a = 1;\n");
+    await writeFile(join(tmp, "日本語.ts"), "export const b = 1;\n");
+    await writeFile(join(tmp, "old-name.ts"), "export const c = 1;\n");
+    git(tmp, ["add", "-A"]);
+    git(tmp, ["commit", "-m", "A"]);
+    a = git(tmp, ["rev-parse", "HEAD"]);
+
+    // Modify a non-ASCII file; rename a file with content preserved so `-M`
+    // detects it as a rename rather than an add+delete.
+    await writeFile(join(tmp, "föo.ts"), "export const a = 2;\n");
+    git(tmp, ["mv", "old-name.ts", "new-näme.ts"]);
+    git(tmp, ["add", "-A"]);
+    git(tmp, ["commit", "-m", "B"]);
+    b = git(tmp, ["rev-parse", "HEAD"]);
+  });
+
+  after(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("decodes non-ASCII paths verbatim even with core.quotePath on", () => {
+    const changes = changedPathsBetween(tmp, a, b);
+    assert.ok(
+      changes.some((c) => c.path === "föo.ts" && c.status === "modified"),
+      "non-ASCII modified path decoded verbatim",
+    );
+    for (const c of changes) {
+      assert.doesNotMatch(
+        c.path,
+        /\\\d{3}|^"/,
+        `path ${c.path} is octal-escaped or quoted`,
+      );
+    }
+  });
+
+  it("classifies a rename with base→head field order (diff -z, unlike status -z)", () => {
+    const renamed = changedPathsBetween(tmp, a, b).find(
+      (c) => c.status === "renamed",
+    );
+    assert.ok(renamed, "rename detected");
+    assert.equal(renamed?.path, "new-näme.ts", "new path at head");
+    assert.equal(renamed?.oldPath, "old-name.ts", "old path at base");
+  });
+});
