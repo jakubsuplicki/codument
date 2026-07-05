@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 05: Review-adversary confirm gate — runner hardening + soak-data hygiene

@@ -44,6 +44,7 @@ import {
 } from "../lib/review-gate.js";
 import {
   confirmFindings,
+  defaultCommandAvailable,
   makeTestRunner,
   resolveTestPath,
   DEFAULT_TEST_SEARCH_DIRS,
@@ -430,7 +431,16 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // trusting the artifact's claim; its honest limit is that an empty/omitted-findings
   // review still passes (soak/audit territory), so it does not certify thoroughness.
   let reviewGate: ReviewGateResult | null = null;
+  // Named condition: the DEFAULT test command resolves local-only (no network on
+  // the verdict path), so a project without local tsx cannot run the confirm
+  // step. Still non-blocking (the documented fail-open stance for unverifiable
+  // claims) but rendered where the human decides — never a silent advisory.
+  let confirmUnavailable: string | null = null;
   if (options.requireReview) {
+    if (!normalizeTestCommand(options.testCommand) && !defaultCommandAvailable(root)) {
+      confirmUnavailable =
+        'confirm step could not run: no local tsx (the default runner resolves local-only, never the network) — pass --test-command "<your runner> {file}"';
+    }
     const { set: realChangeSet, realDeletions } = computeRealChange(report, report.deletions);
     // A covering review binds both the reviewed sources AND the tests its findings
     // name; resolveTest locates a finding's test exactly as the runner does, so a
@@ -463,7 +473,20 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   const reviewGateFail = !!reviewGate && !reviewGate.passed;
 
   if (options.json) {
-    console.log(JSON.stringify(reviewGate ? { ...report, reviewGate } : report, null, 2));
+    console.log(
+      JSON.stringify(
+        reviewGate
+          ? {
+              ...report,
+              reviewGate: confirmUnavailable
+                ? { ...reviewGate, confirmUnavailable }
+                : reviewGate,
+            }
+          : report,
+        null,
+        2,
+      ),
+    );
     if (strictFail || reviewGateFail) process.exitCode = 1;
     return;
   }
@@ -490,7 +513,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   }
 
   if (reviewGate) {
-    printReviewGate(reviewGate);
+    printReviewGate(reviewGate, confirmUnavailable);
     if (reviewGateFail) process.exitCode = 1;
   }
 }
@@ -515,11 +538,17 @@ function computeRealChange(
 
 // Render the adversarial-review gate result. Advisory findings are surfaced even
 // when the gate passes — a judgment-call finding must never be silently swallowed.
-function printReviewGate(gate: ReviewGateResult): void {
+function printReviewGate(gate: ReviewGateResult, confirmUnavailable: string | null = null): void {
   console.log();
   if (!gate.required) {
     console.log(pc.dim("  Adversarial review: trivial diff — none required."));
     return;
+  }
+  if (confirmUnavailable) {
+    // Impossible to miss, right where the gate verdict lands: findings with
+    // named tests will read advisory not because they were adjudicated but
+    // because nothing could run them.
+    console.log(pc.yellow(`  ⚠ ${confirmUnavailable}`));
   }
   if (gate.passed) {
     console.log(

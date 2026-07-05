@@ -518,6 +518,71 @@ describe("review from a subdirectory of a repo (fail closed)", () => {
   });
 });
 
+describe("--require-review names the could-not-run condition (no resolvable tsx)", () => {
+  // The availability probe asks the real npx, which may resolve a global tsx on
+  // a dev machine — shadow npx with an exit-1 shim so "cannot resolve without a
+  // fetch" is deterministic here.
+  let fakeBin: string;
+  beforeEach(async () => {
+    fakeBin = await mkdtemp(join(tmpdir(), "codument-fake-npx-"));
+    await writeFile(join(fakeBin, "npx"), "#!/bin/sh\nexit 1\n");
+    const { chmod } = await import("node:fs/promises");
+    await chmod(join(fakeBin, "npx"), 0o755);
+  });
+  afterEach(async () => {
+    await rm(fakeBin, { recursive: true, force: true });
+  });
+
+  function run(args: string[], cwd: string): { status: number; stdout: string } {
+    try {
+      const stdout = execFileSync("node", [CLI, ...args], {
+        cwd,
+        encoding: "utf-8",
+        env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+      });
+      return { status: 0, stdout };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { status: e.status ?? 1, stdout: e.stdout ?? "" };
+    }
+  }
+
+  it("a project without resolvable tsx sees the named condition, not a silent advisory", async () => {
+    // non-trivial diff (two changed sources) in a project with no node_modules
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => { return 7; };\n",
+      "src/lib/db.ts": "export const db = { v: 7 };\n",
+    });
+    const { status, stdout } = run(["review", "--require-review"], tmp);
+    assert.equal(status, 1, "uncovered non-trivial diff still fails the gate");
+    assert.match(stdout, /confirm step could not run/);
+    assert.match(stdout, /no local tsx/);
+    assert.match(stdout, /--test-command/);
+  });
+
+  it("a custom --test-command suppresses the condition (the project owns its runner)", async () => {
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => { return 8; };\n",
+      "src/lib/db.ts": "export const db = { v: 8 };\n",
+    });
+    const { stdout } = run(
+      ["review", "--require-review", "--test-command", "node --test {file}"],
+      tmp,
+    );
+    assert.doesNotMatch(stdout, /confirm step could not run/);
+  });
+
+  it("--json carries the condition on the reviewGate shape", async () => {
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => { return 9; };\n",
+      "src/lib/db.ts": "export const db = { v: 9 };\n",
+    });
+    const { stdout } = run(["review", "--require-review", "--json"], tmp);
+    const report = JSON.parse(stdout);
+    assert.match(report.reviewGate.confirmUnavailable, /no local tsx/);
+  });
+});
+
 describe("deletions are first-class in the verdict", () => {
   function run(args: string[], cwd: string): { status: number; stdout: string } {
     try {

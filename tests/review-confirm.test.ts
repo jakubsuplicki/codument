@@ -6,8 +6,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   confirmFindings,
+  defaultCommandAvailable,
   resolveTestPath,
   makeTestRunner,
+  DEFAULT_TEST_COMMAND,
   type TestRunner,
   type TestRunResult,
 } from "../src/lib/review-confirm.js";
@@ -203,5 +205,49 @@ describe("makeTestRunner — exit code maps to outcome", () => {
   it("a spawn error (command not found) → unrunnable", () => {
     const run = makeTestRunner({ root: tmp, command: ["this-command-does-not-exist-zzz", "{file}"] });
     assert.equal(run("x.test.ts").outcome, "unrunnable");
+  });
+});
+
+describe("default command is local-only (no network on the verdict path)", () => {
+  it("the default command pins --no-install, so npx can never fetch unpinned code", () => {
+    assert.ok(
+      DEFAULT_TEST_COMMAND.includes("--no-install"),
+      "default resolution must be local-only",
+    );
+  });
+
+  it("defaultCommandAvailable: local tsx → available without any spawn", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "codument-cmd-avail-"));
+    try {
+      const bin = join(tmp, "node_modules", ".bin");
+      await (await import("node:fs/promises")).mkdir(bin, { recursive: true });
+      writeFileSync(join(bin, "tsx"), "#!/bin/sh\n");
+      assert.equal(defaultCommandAvailable(tmp), true, "local tsx: available");
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("defaultCommandAvailable: no local tsx falls back to asking npx itself (hoisted/global counts)", async () => {
+    // Deterministic on any machine: shadow npx with a shim so the probe's answer
+    // is controlled — exit 1 → unavailable, exit 0 → available (a machine whose
+    // real npx can resolve tsx without a fetch genuinely CAN run the confirm step).
+    const tmp = await mkdtemp(join(tmpdir(), "codument-cmd-avail-"));
+    const fakeBin = await mkdtemp(join(tmpdir(), "codument-fake-npx-"));
+    const origPath = process.env.PATH;
+    try {
+      const { chmod } = await import("node:fs/promises");
+      writeFileSync(join(fakeBin, "npx"), "#!/bin/sh\nexit 1\n");
+      await chmod(join(fakeBin, "npx"), 0o755);
+      process.env.PATH = `${fakeBin}:${origPath ?? ""}`;
+      assert.equal(defaultCommandAvailable(tmp), false, "npx cannot resolve it: unavailable");
+
+      writeFileSync(join(fakeBin, "npx"), "#!/bin/sh\nexit 0\n");
+      assert.equal(defaultCommandAvailable(tmp), true, "npx resolves it (global/hoisted): available");
+    } finally {
+      process.env.PATH = origPath;
+      await rm(tmp, { recursive: true, force: true });
+      await rm(fakeBin, { recursive: true, force: true });
+    }
   });
 });

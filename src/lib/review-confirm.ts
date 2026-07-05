@@ -103,7 +103,41 @@ export interface TestRunnerOptions {
   searchDirs?: readonly string[];
 }
 
-export const DEFAULT_TEST_COMMAND: readonly string[] = ["npx", "tsx", "--test", "{file}"];
+// `--no-install` makes the default resolution LOCAL-ONLY: the verdict path must
+// never fetch and execute unpinned third-party code from the network (nor hang on
+// npx's install prompt in CI). When the project has no local tsx the confirm step
+// cannot run — a NAMED condition the review summary renders (see
+// `defaultCommandAvailable`), never a silent always-green.
+export const DEFAULT_TEST_COMMAND: readonly string[] = [
+  "npx",
+  "--no-install",
+  "tsx",
+  "--test",
+  "{file}",
+];
+
+/** True when the DEFAULT command's runner is resolvable WITHOUT a network fetch —
+ *  the same question `npx --no-install tsx` answers. Fast path: the project's own
+ *  `node_modules/.bin`. Slow path (only on a local miss, one bounded spawn): ask
+ *  npx itself, which also sees hoisted and globally-installed runners, so the
+ *  named condition never cries wolf on a project where the confirm step actually
+ *  works. False means the confirm step cannot run here with the default command —
+ *  the caller surfaces that as a named condition ("pass --test-command"), never a
+ *  silent advisory. Only meaningful for the default; a custom command is the
+ *  project's own contract. */
+export function defaultCommandAvailable(root: string): boolean {
+  const local = ["tsx", "tsx.cmd", "tsx.ps1"].some((name) =>
+    existsSync(join(root, "node_modules", ".bin", name)),
+  );
+  if (local) return true;
+  const probe = spawnSync("npx", ["--no-install", "tsx", "--version"], {
+    cwd: root,
+    timeout: 15_000,
+    encoding: "utf8",
+    stdio: ["ignore", "ignore", "ignore"],
+  });
+  return !probe.error && probe.status === 0;
+}
 
 // Where a bare test name is resolved (repo root, then `tests/`). Shared so the
 // gate's fingerprint resolver and the runner look in the same places.
