@@ -87,7 +87,7 @@ Verified findings this plan fixes:
       (Shipped additions: deletion ownership resolves against the BASE registry read with honest
       absence semantics — a broken git read fails loud, never a silent fallback that would re-open
       the dodge; the gate doc's deletion invariant also landed here rather than waiting for Step 5.)
-- [ ] Step 2: Fix the concept-umbrella wake (`change-state.ts:272` keys off the pre-filter set +
+- [x] Step 2: Fix the concept-umbrella wake (`change-state.ts:272` keys off the pre-filter set +
       file-grain-ack check). Golden tests per ADR-012: symbol ack clears the feature but NOT the
       concept; file-grain ack clears the concept residue.
 - [ ] Step 3: Unify the approval predicate (exact-match after stripping), share it between

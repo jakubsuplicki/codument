@@ -202,6 +202,11 @@ export function buildReview(
     changedFiles: changes,
     planScope: plan?.scope,
     anchorChanges: filtered,
+    // The ORIGINAL (pre-ack-filter) movement set: concept umbrellas wake off
+    // this, so a per-symbol ack can never clear an umbrella's file-grain flag.
+    contentMovedFiles: Object.entries(anchorChanges)
+      .filter(([, v]) => v.length > 0)
+      .map(([k]) => k),
     unevaluable,
     fileGrainAcked,
     deletedFiles: deletions,

@@ -54,6 +54,13 @@ export interface ChangeStateInput {
    *  symbol — that anchor still wakes its feature, so a real contract change is never
    *  laundered. Empty unless the caller resolved acks. */
   fileGrainAcked?: string[];
+  /** Precise files whose ORIGINAL anchor diff — before acknowledgment filtering —
+   *  was non-empty: the file's content genuinely moved. Concept umbrellas wake off
+   *  THIS set, not the filtered `anchorChanges`, because a per-symbol ack
+   *  adjudicates one feature contract and never the umbrella's file-grain
+   *  narration — only a file-grain ack (or a doc update) clears the concept's
+   *  flag. Absent → falls back to the filtered set (legacy callers). */
+  contentMovedFiles?: string[];
   /** Paths deleted in this change (repo-relative, POSIX) — the complement the
    *  change listers drop from `changedFiles`. A deleted OWNED source is a
    *  first-class change: it wakes every primary owner (feature and concept) at
@@ -254,6 +261,10 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   // <path>`): their additive/concept/coarse staleness is cleared, but a `changed`
   // (moved) owned symbol still wakes — a file ack never masks a real contract move.
   const fileGrainAcked = new Set(input.fileGrainAcked ?? []);
+  // Pre-ack-filter content movement, for the concept-umbrella wake (see the
+  // input's contract). Undefined → legacy fallback to the filtered set.
+  const contentMoved =
+    input.contentMovedFiles !== undefined ? new Set(input.contentMovedFiles) : undefined;
 
   for (const file of changedSources) {
     const acked = fileGrainAcked.has(file);
@@ -288,10 +299,13 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
         }
         // "unowned": no feature owns it per-symbol; a concept umbrella (below) may.
       }
-      // Concept umbrellas wake at file grain whenever the file's content moved — a
-      // file-grain ack clears that file-grain contribution (concepts have no per-
-      // symbol anchor to protect; the moved symbol, if any, still wakes its feature).
-      if (precise.length > 0 && !acked) wakeConcepts(file);
+      // Concept umbrellas wake at file grain whenever the file's content moved —
+      // judged on the ORIGINAL (pre-ack-filter) anchor set: a per-symbol ack
+      // adjudicated ONE feature contract, never the umbrella's file-grain
+      // narration, so it must not clear the concept (ADR-012). Only a file-grain
+      // ack (the file-grain judgment) or a doc update clears that contribution.
+      const moved = contentMoved !== undefined ? contentMoved.has(file) : precise.length > 0;
+      if (moved && !acked) wakeConcepts(file);
     } else if (!acked) {
       // FILE-GRAIN FALLBACK (coarse/non-TS, or anchors uncomputable): every
       // PRIMARY owner — feature or concept — wakes; related_sources never does. A

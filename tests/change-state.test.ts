@@ -216,6 +216,50 @@ describe("computeChangeState — file-grain ack honoring", () => {
   });
 });
 
+// ── Concept umbrella wakes off the PRE-ack-filter set (ADR-012) ──────────────
+//
+// A per-symbol ack adjudicates ONE feature contract; it must never clear the
+// concept umbrella's file-grain flag. Only a file-grain ack (or a doc update)
+// clears the concept residue.
+
+describe("computeChangeState — concept umbrella vs per-symbol ack (ADR-012)", () => {
+  const symbolAckedInput = {
+    registry: FG_REGISTRY,
+    changedFiles: ["src/a.ts"],
+    // post-filter: the moved symbol was acknowledged (adjudicated) and dropped
+    anchorChanges: { "src/a.ts": [] as AnchorChange[] },
+    // pre-filter: the file's content genuinely moved
+    contentMovedFiles: ["src/a.ts"],
+  };
+
+  it("a symbol ack clears the feature but NEVER the concept umbrella", () => {
+    const s = computeChangeState(symbolAckedInput);
+    assert.deepStrictEqual(
+      s.staleDocs.map((d) => d.feature),
+      ["lib"],
+      "the umbrella still owes its file-grain narration",
+    );
+  });
+
+  it("a file-grain ack is what clears the concept residue", () => {
+    const s = computeChangeState({ ...symbolAckedInput, fileGrainAcked: ["src/a.ts"] });
+    assert.deepStrictEqual(s.staleDocs, []);
+  });
+
+  it("a doc update clears it too", () => {
+    const s = computeChangeState({
+      ...symbolAckedInput,
+      changedFiles: ["src/a.ts", "docs/concepts/lib.md"],
+    });
+    assert.deepStrictEqual(s.staleDocs, []);
+  });
+
+  it("a cosmetic-only change (empty pre-filter set) still wakes nothing", () => {
+    const s = computeChangeState({ ...symbolAckedInput, contentMovedFiles: [] });
+    assert.deepStrictEqual(s.staleDocs, []);
+  });
+});
+
 // ── Deletions are first-class (ADR-012's conservative stance) ────────────────
 //
 // A deleted owned source wakes every primary owner at file grain; no ack clears

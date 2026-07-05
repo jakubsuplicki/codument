@@ -418,6 +418,67 @@ describe("codument ack <path> — the file-grain surface", () => {
   });
 });
 
+describe("a per-symbol ack never clears the concept umbrella (ADR-012, end-to-end)", () => {
+  // src/a.ts is owned by feature `alpha` AND narrated by concept umbrella `lib`.
+  const CONCEPT_REGISTRY = {
+    features: {
+      alpha: {
+        doc: "docs/features/alpha.md",
+        type: "feature",
+        primary_sources: ["src/a.ts"],
+        status: "current",
+      },
+      lib: {
+        doc: "docs/concepts/lib.md",
+        type: "concept",
+        primary_sources: ["src/a.ts"],
+        status: "current",
+      },
+    },
+  };
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-ack-concept-"));
+    await scaffold({
+      "docs/.registry.json": JSON.stringify(CONCEPT_REGISTRY, null, 2),
+      "docs/features/alpha.md": "# alpha\n\nThe foo() helper returns a number.\n",
+      "docs/concepts/lib.md": "# lib\n\nNarrates src/a.ts file-by-file.\n",
+      "src/a.ts": A_SRC,
+    });
+    gitInit(tmp);
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("symbol ack clears the feature; the umbrella stays until a file ack (or doc update) clears it", async () => {
+    await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
+    // one moved symbol wakes both owners
+    assert.deepStrictEqual(
+      buildReview(tmp).state.staleDocs.map((d) => d.feature),
+      ["alpha", "lib"],
+    );
+
+    // the per-symbol ack adjudicates alpha's contract ONLY
+    const r = capture(() =>
+      ackCommand("src/a.ts::foo", { reason: "internal: same return shape", root: tmp }),
+    );
+    assert.equal(r.code, undefined, r.err);
+    assert.deepStrictEqual(
+      buildReview(tmp).state.staleDocs.map((d) => d.feature),
+      ["lib"],
+      "the concept umbrella is NOT cleared by a per-symbol ack",
+    );
+
+    // the file-grain judgment is what clears the umbrella's residue
+    const rf = capture(() =>
+      ackCommand("src/a.ts", { reason: "file narration unchanged: helper-internal edit", root: tmp }),
+    );
+    assert.equal(rf.code, undefined, rf.err);
+    assert.deepStrictEqual(buildReview(tmp).state.staleDocs, []);
+  });
+});
+
 describe("getGitAuthor", () => {
   beforeEach(async () => {
     tmp = await mkdtemp(join(tmpdir(), "codument-author-"));
