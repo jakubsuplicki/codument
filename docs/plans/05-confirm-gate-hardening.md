@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 05: Review-adversary confirm gate — runner hardening + soak-data hygiene
@@ -83,8 +83,10 @@ false-fire if Plan 04 has not landed yet.
       twice yields identical tallies to logging it once; distinct transitions still accumulate.
       (Shipped shape: snapshots carry `driftTransitions` identities beside the count tally;
       last-observed class settles a transition; legacy count-only snapshots sum as recorded.)
-- [ ] Step 4: Doc sync — `adversarial-review-gate.md` honest-limits section and README's runner
-      paragraph reflect the new resolution + named condition.
+- [x] Step 4: Doc sync — `adversarial-review-gate.md` honest-limits section and README's runner
+      paragraph reflect the new resolution + named condition. (The gate-doc invariants landed with
+      Steps 1-2 per the loop; this pass updated README's runner default, no-fetch framing, and the
+      named-condition mention.)
 
 ## Outcome
 
