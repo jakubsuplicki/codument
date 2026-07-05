@@ -1,7 +1,43 @@
-import { spawnSync } from "node:child_process";
+import {
+  spawnSync,
+  type SpawnSyncOptionsWithStringEncoding,
+  type SpawnSyncReturns,
+} from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import type { ReviewFinding, ReviewFindingStatus } from "./review-artifact.js";
+
+// ── win32-safe spawning ──────────────────────────────────────────────────
+// Since Node's CVE-2024-27980 hardening (18.20/20.12), spawning a `.cmd` shim
+// (npx/npm/vitest on Windows) without a shell throws EINVAL. Every such spawn
+// error reads as unrunnable → advisory, which made the confirm gate
+// STRUCTURALLY always-green on Windows. On win32 the argv is joined into one
+// cmd.exe-quoted command line and run with `shell: true`; on POSIX the spawn is
+// byte-identical to before (no shell, argv passed as-is).
+
+/** The cmd.exe-quoted command line for `argv` — exported so the construction is
+ *  unit-testable on any platform. An arg containing whitespace or cmd
+ *  metacharacters is double-quoted with embedded quotes doubled (cmd.exe's
+ *  quote escape). Boundary: cmd.exe has no perfect escape for every sequence
+ *  (notably `%VAR%` expansion inside quotes); test-file paths and flags — the
+ *  args this runner passes — are covered. */
+export function winCommandLine(argv: readonly string[]): string {
+  const quote = (a: string): string =>
+    a.length === 0 || /[\s"&|<>^()]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a;
+  return argv.map(quote).join(" ");
+}
+
+/** spawnSync an argv, shell-safely on win32 and byte-identically on POSIX. */
+export function spawnArgvSync(
+  argv: readonly string[],
+  opts: SpawnSyncOptionsWithStringEncoding,
+): SpawnSyncReturns<string> {
+  if (process.platform === "win32") {
+    return spawnSync(winCommandLine(argv), { ...opts, shell: true });
+  }
+  const [cmd, ...args] = argv;
+  return spawnSync(cmd, args, opts);
+}
 
 // The confirm step is where "verify, don't trust" becomes mechanical: a finding
 // blocks the gate ONLY when the test it names actually goes red. The adversary's
@@ -130,7 +166,7 @@ export function defaultCommandAvailable(root: string): boolean {
     existsSync(join(root, "node_modules", ".bin", name)),
   );
   if (local) return true;
-  const probe = spawnSync("npx", ["--no-install", "tsx", "--version"], {
+  const probe = spawnArgvSync(["npx", "--no-install", "tsx", "--version"], {
     cwd: root,
     timeout: 15_000,
     encoding: "utf8",
@@ -195,8 +231,9 @@ export function makeTestRunner(opts: TestRunnerOptions): TestRunner {
     const resolved = resolveTestPath(opts.root, testRef, searchDirs);
     if (!resolved) return { outcome: "unrunnable", detail: `test not found: ${testRef}` };
     const argv = command.map((a) => (a === "{file}" ? resolved : a));
-    const [cmd, ...args] = argv;
-    const res = spawnSync(cmd, args, { cwd: opts.root, timeout, encoding: "utf8" });
+    // win32-safe: a .cmd shim (npx/npm/vitest) needs a shell since Node's
+    // CVE-2024-27980 hardening; POSIX spawns exactly as before.
+    const res = spawnArgvSync(argv, { cwd: opts.root, timeout, encoding: "utf8" });
     if (res.error) {
       return { outcome: "unrunnable", detail: String(res.error.message ?? res.error) };
     }

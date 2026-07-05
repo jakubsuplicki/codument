@@ -9,6 +9,8 @@ import {
   defaultCommandAvailable,
   resolveTestPath,
   makeTestRunner,
+  spawnArgvSync,
+  winCommandLine,
   DEFAULT_TEST_COMMAND,
   type TestRunner,
   type TestRunResult,
@@ -205,6 +207,29 @@ describe("makeTestRunner — exit code maps to outcome", () => {
   it("a spawn error (command not found) → unrunnable", () => {
     const run = makeTestRunner({ root: tmp, command: ["this-command-does-not-exist-zzz", "{file}"] });
     assert.equal(run("x.test.ts").outcome, "unrunnable");
+  });
+});
+
+describe("win32-safe spawning (the confirm gate must not be structurally green on Windows)", () => {
+  it("winCommandLine quotes args with whitespace and doubles embedded quotes (cmd.exe escape)", () => {
+    assert.equal(
+      winCommandLine(["npx", "--no-install", "tsx", "--test", "C:\\repo\\my tests\\x.test.ts"]),
+      'npx --no-install tsx --test "C:\\repo\\my tests\\x.test.ts"',
+    );
+    assert.equal(winCommandLine(["node", '-e', 'say "hi"']), 'node -e "say ""hi"""');
+    assert.equal(winCommandLine(["a&b"]), '"a&b"', "cmd metacharacters force quoting");
+    assert.equal(winCommandLine(["plain", "args.ts"]), "plain args.ts", "plain args untouched");
+    assert.equal(winCommandLine([""]), '""', "an empty arg survives as an empty pair");
+  });
+
+  it("spawnArgvSync on POSIX is a plain no-shell spawn (byte-identical behavior)", () => {
+    const res = spawnArgvSync(["node", "-e", "console.log(process.argv[1])", "a b"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+    assert.equal(res.status, 0);
+    // No shell: the space-bearing arg arrives as ONE argv element, un-mangled.
+    assert.equal(res.stdout.trim(), "a b");
   });
 });
 

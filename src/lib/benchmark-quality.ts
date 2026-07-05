@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { spawnArgvSync } from "./review-confirm.js";
 import { cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -421,7 +422,9 @@ async function checkLockedFiles(root: string): Promise<string> {
 }
 
 async function checkPackageTests(root: string): Promise<string> {
-  const result = spawnSync("npm", ["test"], {
+  // win32-safe: npm is a .cmd shim on Windows (see spawnArgvSync); POSIX
+  // behavior is unchanged.
+  const result = spawnArgvSync(["npm", "test"], {
     cwd: root,
     encoding: "utf-8",
     env: cleanNodeTestEnv(),

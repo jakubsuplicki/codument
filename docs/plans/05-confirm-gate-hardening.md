@@ -70,10 +70,12 @@ false-fire if Plan 04 has not landed yet.
 
 ## Delivery Plan
 
-- [ ] Step 1: Local-only default command + named could-not-run condition surfaced in `review`
+- [x] Step 1: Local-only default command + named could-not-run condition surfaced in `review`
       human/JSON output. Tests: no-local-tsx project → summary carries the named condition; no
-      network resolution attempted (`--no-install` present in the spawn args).
-- [ ] Step 2: win32-safe spawning for npm-family commands in `review-confirm.ts` and
+      network resolution attempted (`--no-install` present in the spawn args). (Shipped addition:
+      availability probes local `node_modules/.bin` first, then asks npx itself on a miss, so a
+      hoisted/global runner never triggers a false warning.)
+- [x] Step 2: win32-safe spawning for npm-family commands in `review-confirm.ts` and
       `benchmark-quality.ts` (guard by `process.platform`, keep POSIX behavior byte-identical).
       Unit-test the command-construction helper on both platforms' code paths.
 - [ ] Step 3: Dedup drift-tally contributions by transition identity in the ledger aggregation;
