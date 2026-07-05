@@ -7,6 +7,14 @@ import { summarizeImpact, buildImpactLedger } from "../src/lib/impact-ledger.js"
 import { emitCaught, emitReview } from "../src/lib/review-events.js";
 import type { CodumentEvent } from "../src/lib/events.js";
 
+interface TransitionInput {
+  anchorId: string;
+  from: string | null;
+  to: string | null;
+  resolution: "flagged" | "doc-updated" | "file-acked" | "acked";
+  comovement: string;
+}
+
 function caught(data: {
   staleDocs?: string[];
   riskTouches?: string[];
@@ -20,6 +28,7 @@ function caught(data: {
     acknowledged: number;
     fileAcked?: number;
   };
+  driftTransitions?: TransitionInput[];
 }): CodumentEvent {
   return {
     ts: "2026-06-22T10:00:00.000Z",
@@ -30,7 +39,18 @@ function caught(data: {
       riskTouches: data.riskTouches ?? [],
       offPlan: data.offPlan ?? [],
       ...(data.drift ? { drift: data.drift } : {}),
+      ...(data.driftTransitions ? { driftTransitions: data.driftTransitions } : {}),
     },
+  };
+}
+
+function transition(partial: Partial<TransitionInput> & { anchorId: string }): TransitionInput {
+  return {
+    from: "f0",
+    to: "f1",
+    resolution: "acked",
+    comovement: "not-referenced",
+    ...partial,
   };
 }
 
@@ -110,6 +130,62 @@ describe("summarizeImpact — drift soak line", () => {
     assert.equal(ledger.drift.flagged, 0);
     assert.equal(ledger.drift.frictionRate, 0);
     assert.equal(ledger.hasDrift, false);
+  });
+});
+
+describe("summarizeImpact — transition-identity dedup (idempotent soak data)", () => {
+  const resolvedDiff = [
+    transition({ anchorId: "src/a.ts::foo().", resolution: "acked", comovement: "co-moved" }),
+    transition({ anchorId: "src/a.ts::bar().", resolution: "doc-updated", comovement: "prose-unchanged" }),
+  ];
+
+  it("re-logging the same resolved diff yields IDENTICAL tallies to logging it once", () => {
+    const once = summarizeImpact([caught({ driftTransitions: resolvedDiff })]);
+    const twice = summarizeImpact([
+      caught({ driftTransitions: resolvedDiff }),
+      caught({ driftTransitions: resolvedDiff }),
+    ]);
+    assert.deepStrictEqual(twice.drift, once.drift, "frictionRate inputs are idempotent under re-review");
+    assert.equal(twice.drift.flagged, 2);
+    assert.equal(twice.drift.acknowledged, 1);
+    assert.equal(twice.drift.docUpdated, 1);
+    assert.equal(twice.drift.frictionRate, 0.5);
+  });
+
+  it("distinct transitions still accumulate (a re-moved anchor is a NEW transition)", () => {
+    const ledger = summarizeImpact([
+      caught({ driftTransitions: [transition({ anchorId: "src/a.ts::foo().", from: "f0", to: "f1" })] }),
+      // same anchor moved AGAIN — different to-hash, a genuinely new fire
+      caught({ driftTransitions: [transition({ anchorId: "src/a.ts::foo().", from: "f1", to: "f2" })] }),
+    ]);
+    assert.equal(ledger.drift.flagged, 2);
+  });
+
+  it("the LAST observation of a transition settles its class (flagged → doc-updated counts once, resolved)", () => {
+    const ledger = summarizeImpact([
+      caught({
+        driftTransitions: [
+          transition({ anchorId: "src/a.ts::foo().", resolution: "flagged", comovement: "not-referenced" }),
+        ],
+      }),
+      caught({
+        driftTransitions: [
+          transition({ anchorId: "src/a.ts::foo().", resolution: "doc-updated", comovement: "not-referenced" }),
+        ],
+      }),
+    ]);
+    assert.equal(ledger.drift.flagged, 1, "one transition, not two");
+    assert.equal(ledger.drift.docUpdated, 1, "settled in its final class");
+    assert.equal(ledger.drift.frictionRate, 0);
+  });
+
+  it("legacy count-only snapshots still sum, alongside deduped transitions", () => {
+    const ledger = summarizeImpact([
+      caught({ drift: { flagged: 2, docUpdated: 1, acknowledged: 1, coMoved: 0, proseUnchanged: 0, notReferenced: 2 } }),
+      caught({ driftTransitions: [transition({ anchorId: "src/b.ts::baz()." })] }),
+    ]);
+    assert.equal(ledger.drift.flagged, 3, "2 legacy + 1 deduped");
+    assert.equal(ledger.drift.acknowledged, 2);
   });
 });
 

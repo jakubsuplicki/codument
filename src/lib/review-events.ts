@@ -91,6 +91,23 @@ export interface DriftTally {
   notReferenced: number;
 }
 
+/** One drift transition with its settled classification — the identity-bearing
+ *  form of the tally. Identity is `anchorId` + `from`→`to` (the same binding an
+ *  acknowledgment uses), so the ledger counts each transition ONCE no matter how
+ *  many snapshots observed it: re-reviewing an unchanged diff with `--log`
+ *  re-logs the same transitions, and raw counts would double every resolved fire
+ *  the gate-flip decision is calibrated from. When later snapshots re-observe a
+ *  transition in a different state (flagged, then doc-updated), the LAST
+ *  observation is the settled one. */
+export interface DriftTransitionRecord {
+  anchorId: string;
+  from: string | null;
+  to: string | null;
+  resolution: "flagged" | "doc-updated" | "file-acked" | "acked";
+  /** Info-only co-movement class, for calibrating co-movement itself. */
+  comovement: string;
+}
+
 /** Deterministic snapshot of what the analyzer flagged at a commit boundary. Identities, not counts. */
 export interface CaughtSnapshot {
   /** HEAD sha the pending change sits on, or null (fresh repo / no git). Provenance, not a dedup key. */
@@ -101,8 +118,12 @@ export interface CaughtSnapshot {
   riskTouches: string[];
   /** File paths that fell outside the approved plan. */
   offPlan: string[];
-  /** Per-symbol drift tally (soak signal), when the caller computed drift. */
+  /** Per-symbol drift tally (soak signal), when the caller computed drift.
+   *  Counts only — kept for the event message and for snapshots written before
+   *  transitions existed; the ledger prefers `driftTransitions` when present. */
   drift?: DriftTally;
+  /** The identity-bearing form the ledger dedupes on (see DriftTransitionRecord). */
+  driftTransitions?: DriftTransitionRecord[];
 }
 
 /**
@@ -124,6 +145,7 @@ export function emitCaught(root: string, snapshot: CaughtSnapshot, meta: EmitMet
       riskTouches,
       offPlan,
       ...(snapshot.drift ? { drift: snapshot.drift } : {}),
+      ...(snapshot.driftTransitions ? { driftTransitions: snapshot.driftTransitions } : {}),
     },
     ...(meta.ts !== undefined ? { ts: meta.ts } : {}),
   });

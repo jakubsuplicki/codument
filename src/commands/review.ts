@@ -407,6 +407,15 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
         proseUnchanged: d.filter((f) => f.comovement === "prose-unchanged").length,
         notReferenced: d.filter((f) => f.comovement === "not-referenced").length,
       },
+      // The identity-bearing form: one record per transition (anchorId +
+      // from→to), so the ledger counts each once across re-logged snapshots.
+      driftTransitions: d.map((f) => ({
+        anchorId: f.anchorId,
+        from: f.from ?? null,
+        to: f.to ?? null,
+        resolution: driftResolution(f, staleFeatures, fileGrainAcked),
+        comovement: f.comovement,
+      })),
     });
   }
 

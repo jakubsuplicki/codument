@@ -78,9 +78,11 @@ false-fire if Plan 04 has not landed yet.
 - [x] Step 2: win32-safe spawning for npm-family commands in `review-confirm.ts` and
       `benchmark-quality.ts` (guard by `process.platform`, keep POSIX behavior byte-identical).
       Unit-test the command-construction helper on both platforms' code paths.
-- [ ] Step 3: Dedup drift-tally contributions by transition identity in the ledger aggregation;
+- [x] Step 3: Dedup drift-tally contributions by transition identity in the ledger aggregation;
       document the snapshot semantics in `impact-ledger.md`. Tests: logging the same resolved diff
       twice yields identical tallies to logging it once; distinct transitions still accumulate.
+      (Shipped shape: snapshots carry `driftTransitions` identities beside the count tally;
+      last-observed class settles a transition; legacy count-only snapshots sum as recorded.)
 - [ ] Step 4: Doc sync — `adversarial-review-gate.md` honest-limits section and README's runner
       paragraph reflect the new resolution + named condition.
 

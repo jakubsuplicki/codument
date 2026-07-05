@@ -35,12 +35,15 @@ export interface ReportedLedger {
   total: number;
 }
 
-/** The soak / calibration ledger: per-symbol drift summed across all snapshots.
- *  `frictionRate` is the fraction of RESOLVED fires that were internal-refactor
- *  acks (no doc change owed) rather than real doc updates — high means the gate is
- *  mostly firing on internal moves, the signal for whether it is quiet enough to
- *  become a required CI check. The co-movement fields are info-only telemetry for
- *  calibrating co-movement itself, never a resolution signal. Info-only. */
+/** The soak / calibration ledger: per-symbol drift across all snapshots, deduped
+ *  by transition identity (anchorId + from→to, last observation wins) so a
+ *  re-logged unchanged diff cannot inflate it; legacy count-only snapshots sum as
+ *  recorded. `frictionRate` is the fraction of RESOLVED fires that were
+ *  internal-refactor acks (no doc change owed) rather than real doc updates —
+ *  high means the gate is mostly firing on internal moves, the signal for
+ *  whether it is quiet enough to become a required CI check. The co-movement
+ *  fields are info-only telemetry for calibrating co-movement itself, never a
+ *  resolution signal. Info-only. */
 export interface DriftLedger {
   flagged: number;
   /** Resolved by a doc update (verdict-derived: the owning doc changed). */
@@ -91,6 +94,13 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
     frictionRate: 0,
   };
 
+  // Transition-identity dedup: one entry per anchorId+from→to, LAST observation
+  // wins (events are chronological, so a transition first seen flagged and later
+  // resolved settles in its final class). Mirrors the provable-line Set dedup —
+  // re-logging an unchanged diff cannot inflate the counts frictionRate (the
+  // gate-flip calibration signal) is derived from.
+  const transitions = new Map<string, { resolution: string; comovement: string }>();
+
   for (const e of events) {
     if (isCaughtEvent(e)) {
       snapshots++;
@@ -99,11 +109,21 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
         riskTouches: string[];
         offPlan: string[];
         drift?: DriftTally;
+        driftTransitions?: { anchorId: string; from: string | null; to: string | null; resolution: string; comovement: string }[];
       };
       for (const x of d.staleDocs) stale.add(x);
       for (const x of d.riskTouches) risk.add(x);
       for (const x of d.offPlan) off.add(x);
-      if (d.drift) {
+      if (Array.isArray(d.driftTransitions)) {
+        for (const t of d.driftTransitions) {
+          transitions.set(`${t.anchorId}@${t.from}->${t.to}`, {
+            resolution: t.resolution,
+            comovement: t.comovement,
+          });
+        }
+      } else if (d.drift) {
+        // Legacy snapshot (counts only, pre-identity): sum as before — such data
+        // cannot be deduped after the fact, an accepted bound on old logs.
         drift.flagged += d.drift.flagged;
         // `?? 0`: snapshots logged before docUpdated/fileAcked existed carry no such field.
         drift.docUpdated += d.drift.docUpdated ?? 0;
@@ -133,6 +153,19 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
     deferred,
     total,
   };
+
+  // Fold the deduped transition identities into the ledger counts (on top of any
+  // legacy count-only snapshots): each transition contributes exactly once, in
+  // its settled class.
+  for (const t of transitions.values()) {
+    drift.flagged++;
+    if (t.resolution === "doc-updated") drift.docUpdated++;
+    else if (t.resolution === "file-acked") drift.fileAcked++;
+    else if (t.resolution === "acked") drift.acknowledged++;
+    if (t.comovement === "co-moved") drift.coMoved++;
+    else if (t.comovement === "prose-unchanged") drift.proseUnchanged++;
+    else if (t.comovement === "not-referenced") drift.notReferenced++;
+  }
 
   // Both ack kinds (per-symbol + file-grain) owe no doc change → the friction side;
   // only a real doc update is not. A file-ack must not deflate friction as if it
