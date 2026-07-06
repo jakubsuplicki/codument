@@ -115,11 +115,13 @@ Also touches root-level `README.md` — after Plan 04, add it to this scope list
       adversarial gates / delivery workflow) off the one registry, all 17 commands grouped by
       role with `--help` named as the authoritative reference; gate now wakes the overview when
       `src/cli.ts` changes.
-- [ ] Step 4: README truth sweep: drop/futures-mark the freshness channel (:175), add
+- [x] Step 4: README truth sweep: drop/futures-mark the freshness channel (:175), add
       thin-doc/link-rot rows plus fix rows for the two new graph lints (dangling-depends-on,
       orphan-doc — so this plan doesn't recreate the drift class it fixes), correct the
       empty-depends-on row to the isolated-entry semantics (:364), sync the runner/limits
-      wording only where it drifted.
+      wording only where it drifted. Shipped shape: coverage bullet names the three real ratios
+      + an honest why-not-freshness; lint/notes bullets and the fix table carry all four
+      recent lints with severity-honest guidance; runner wording verified already in sync.
 - [ ] Step 5: Status reconciliations: compact `plan-adversary.md`'s shipped Delivery Plan and flip
       its registry status to current; reconcile `impact-ledger.md` to one status (current) and flip
       the registry; renumber `adversarial-review-gate.md`'s ADR pointers to "a future ADR" (step 6
