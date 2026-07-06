@@ -2,11 +2,6 @@
 title: {{title}}
 status: needs-review
 type: feature
-owner: ""
-primary_sources: []
-related_sources: []
-depends_on: []
-risk: []
 last_reviewed: {{date}}
 ---
 
@@ -42,5 +37,3 @@ last_reviewed: {{date}}
 
 <!-- One line of narrative ROLE per file (orchestrator / analyzer / seam).
      The registry holds the exact file list — do not restate it. -->
-
-<!-- machine block -->

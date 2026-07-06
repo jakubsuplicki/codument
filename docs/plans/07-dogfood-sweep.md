@@ -128,8 +128,12 @@ Also touches root-level `README.md` — after Plan 04, add it to this scope list
       there remains honestly unchecked). Shipped shape: both shipped docs compacted to durable
       layers (impact-ledger's deferred report footer preserved as a Non-goal, its resolved
       report-parity question dropped); every status now tells one story.
-- [ ] Step 6: Frontmatter strip across the drifted docs + scaffold generator update; test that scan's
-      generated frontmatter carries no machine fields.
+- [x] Step 6: Frontmatter strip across the drifted docs + scaffold generator update; test that scan's
+      generated frontmatter carries no machine fields. Shipped shape: all 16 carrier docs down to
+      title/status/type/last_reviewed; scan + map materialize generators, both templates, and the
+      update-docs skill template match; the doc standard (doc-audience-layers + the managed-section
+      sentence) now states the minimal-frontmatter rule; scan test pins the absence of every
+      machine field.
 - [ ] Step 7: Generate `run`'s command inventory from registered commands; fix the managed-section
       sentence in `scaffold.ts` + the pinned test; regenerate AGENTS.md/CLAUDE.md managed sections
       (`codument update` on this repo).

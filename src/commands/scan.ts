@@ -201,23 +201,19 @@ function groupIntoFeatures(
 // ── Doc scaffolding ────────────────────────────────────────────────────
 
 function scaffoldDoc(feature: FeatureGroup, date: string): string {
-  const sourcesYaml = feature.sources.map((s) => `  - ${s}`).join("\n");
   const keyFiles = feature.sources.map((s) => `- \`${s}\``).join("\n");
 
   // Generated docs carry the audience layers (see docs/concepts/doc-audience-layers.md)
   // from the start: a plain-language front door, an optional technical dive, and the
-  // durable "why". scan can only guess ownership by directory, so every file is placed
-  // in primary_sources with status needs-review and an explicit ambiguity marker.
+  // durable "why". Frontmatter carries prose-side identity only (title/status/type/
+  // last_reviewed): ownership, dependencies, and risk live solely in
+  // docs/.registry.json — an unvalidated frontmatter copy only drifts (ADR 001).
+  // scan can only guess ownership by directory, so every file lands in the registry
+  // entry's primary_sources with status needs-review and an explicit ambiguity marker.
   return `---
 title: ${feature.name}
 status: needs-review
 type: ${feature.type}
-owner: ""
-primary_sources:
-${sourcesYaml}
-related_sources: []
-depends_on: []
-risk: []
 last_reviewed: ${date}
 ---
 
@@ -243,6 +239,6 @@ last_reviewed: ${date}
 
 ${keyFiles}
 
-<!-- codument:ambiguity scan grouped these files by directory and assumed all are primary_sources (owned). Review which belong in related_sources, add depends_on/risk, then set status to current. -->
+<!-- codument:ambiguity scan grouped these files by directory and registered them all as primary_sources (owned) in docs/.registry.json. Review ownership there (move shared files to related_sources, add depends_on/risk), then set status to current. -->
 `;
 }

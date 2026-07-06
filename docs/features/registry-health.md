@@ -2,18 +2,6 @@
 title: Registry health
 status: current
 type: feature
-owner: ""
-primary_sources:
-  - src/commands/doctor.ts
-  - src/lib/analyze.ts
-  - src/lib/badge.ts
-related_sources: []
-docs: []
-depends_on:
-  - cli
-  - commands
-  - lib
-risk: []
 last_reviewed: 2026-06-28
 ---
 

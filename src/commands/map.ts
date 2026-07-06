@@ -74,17 +74,12 @@ export interface MaterializeResult {
 
 function scaffoldDoc(key: string, row: FeatureMapRow, file: string, date: string): string {
   const seed = row.responsibility || "<!-- what this does and why it exists -->";
+  // Frontmatter carries prose-side identity only; ownership lives solely in
+  // docs/.registry.json (ADR 001) — the materialize call writes the entry there.
   return `---
 title: ${key}
 status: needs-review
 type: ${row.type}
-owner: ""
-primary_sources:
-  - ${file}
-related_sources: []
-docs: []
-depends_on: []
-risk: []
 last_reviewed: ${date}
 ---
 

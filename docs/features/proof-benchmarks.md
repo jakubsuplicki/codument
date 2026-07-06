@@ -2,21 +2,6 @@
 title: Proof benchmarks
 status: current
 type: feature
-owner: ""
-primary_sources:
-  - src/commands/benchmark.ts
-  - src/lib/benchmark-context.ts
-  - src/lib/benchmark-quality.ts
-  - src/lib/benchmark-seeded.ts
-  - src/lib/detector-result.ts
-related_sources: []
-docs:
-  - docs/architecture/decisions/008-benchmark-proof-deterministic-not-judge.md
-depends_on:
-  - cli
-  - commands
-  - lib
-risk: []
 last_reviewed: 2026-06-29
 ---
 

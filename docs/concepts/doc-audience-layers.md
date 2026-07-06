@@ -2,10 +2,6 @@
 title: Documentation standard
 status: current
 type: concept
-owner: ""
-sources: []
-depends_on:
-  - change-control-gate
 last_reviewed: 2026-06-28
 ---
 
@@ -30,7 +26,7 @@ The rule comes from how the agent actually works and from the two ways docs rot.
 - **Invariants & boundaries** — what must hold or is forbidden, each linked to its enforcing test
 - **Decisions** — pointers to the ADRs that hold the durable why
 - **Key files** — the narrative role of each file (orchestrator / analyzer / seam)
-- **machine block** — registry linkage, dependencies, status
+- **frontmatter** — prose-side identity only: title, status, type, last-reviewed. Ownership, dependencies, and risk live solely in the registry (ADR 001); a frontmatter copy of them is a second, unvalidated source of truth that only drifts
 
 ## Invariants & boundaries
 

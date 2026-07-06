@@ -2,32 +2,6 @@
 title: Change-control gate
 status: current
 type: feature
-owner: ""
-primary_sources:
-  - src/commands/review.ts
-  - src/commands/watch.ts
-  - src/commands/ack.ts
-  - src/commands/demo.ts
-  - src/commands/report.ts
-  - src/lib/change-state.ts
-  - src/lib/fingerprint.ts
-  - src/lib/ts-adapter.ts
-  - src/lib/two-ref.ts
-  - src/lib/ownership.ts
-  - src/lib/import-graph.ts
-  - src/lib/drift.ts
-  - src/lib/co-movement.ts
-  - src/lib/acknowledgment.ts
-  - src/lib/events.ts
-  - src/lib/git.ts
-  - src/lib/report-html.ts
-related_sources: []
-docs: []
-depends_on:
-  - cli
-  - commands
-  - lib
-risk: []
 last_reviewed: 2026-07-01
 ---
 

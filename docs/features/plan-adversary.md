@@ -2,20 +2,6 @@
 title: Plan adversary
 status: current
 type: feature
-owner: ""
-primary_sources:
-  - src/lib/plan-grounding.ts
-related_sources:
-  - src/commands/map.ts
-  - src/lib/agent-profiles.ts
-docs:
-  - agents/adversarial-planner.md
-depends_on:
-  - adversarial-review-gate
-  - feature-decomposition
-  - agent-delivery-workflow
-  - lib
-risk: []
 last_reviewed: 2026-07-06
 ---
 

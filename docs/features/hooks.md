@@ -2,14 +2,6 @@
 title: Hooks
 status: current
 type: feature
-owner: ""
-primary_sources:
-  - src/hooks/check-docs.ts
-related_sources: []
-docs: []
-depends_on:
-  - lib
-risk: []
 last_reviewed: 2026-06-29
 ---
 

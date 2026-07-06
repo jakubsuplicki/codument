@@ -2,25 +2,6 @@
 title: Feature decomposition in the loop
 status: current
 type: feature
-owner: ""
-primary_sources:
-  - src/lib/feature-map.ts
-  - src/commands/map.ts
-related_sources:
-  - src/lib/analyze.ts
-  - src/cli.ts
-  - src/lib/registry.ts
-  - src/lib/verdict.ts
-  - src/commands/watch.ts
-docs:
-  - skills/plan-with-docs/SKILL.md
-  - skills/work-step/SKILL.md
-  - rules/documentation.md
-depends_on:
-  - change-control-gate
-  - plan-step-mirroring
-  - lib
-risk: []
 last_reviewed: 2026-06-28
 ---
 

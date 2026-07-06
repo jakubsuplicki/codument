@@ -2,25 +2,6 @@
 title: Adversarial review gate
 status: in-progress
 type: feature
-owner: ""
-primary_sources:
-  - src/lib/review-bundle.ts
-  - src/lib/review-artifact.ts
-  - src/lib/review-confirm.ts
-  - src/lib/review-gate.ts
-related_sources:
-  - src/commands/review.ts
-  - src/cli.ts
-  - src/lib/git.ts
-  - src/lib/two-ref.ts
-docs: []
-depends_on:
-  - change-control-gate
-  - agent-delivery-workflow
-  - cli
-  - commands
-  - lib
-risk: []
 last_reviewed: 2026-06-30
 ---
 

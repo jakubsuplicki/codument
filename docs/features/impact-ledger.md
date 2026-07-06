@@ -2,22 +2,6 @@
 title: Impact Ledger
 status: current
 type: feature
-owner: ""
-sources:
-  - src/lib/review-events.ts
-  - src/lib/impact-ledger.ts
-  - src/commands/emit.ts
-  - src/commands/review.ts
-  - src/lib/git.ts
-  - src/cli.ts
-  - src/commands/watch.ts
-  - src/commands/report.ts
-  - src/lib/report-html.ts
-depends_on:
-  - review-effectiveness-metric
-  - complete-cost-capture
-  - token-cost-tracking
-  - change-control-gate
 last_reviewed: 2026-07-01
 ---
 

@@ -2,11 +2,6 @@
 title: {{title}}
 status: needs-review
 type: concept
-owner: ""
-primary_sources: []
-related_sources: []
-depends_on: []
-risk: []
 last_reviewed: {{date}}
 ---
 
@@ -39,5 +34,3 @@ last_reviewed: {{date}}
 - `{{source}}` — {{file_description}}
 
 <!-- One line of narrative ROLE per file. The registry holds the exact list. -->
-
-<!-- machine block -->

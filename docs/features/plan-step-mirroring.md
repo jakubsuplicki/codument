@@ -2,19 +2,6 @@
 title: Plan step mirroring
 status: current
 type: feature
-owner: ""
-primary_sources:
-  - src/lib/plan-steps.ts
-  - src/commands/steps.ts
-related_sources:
-  - src/cli.ts
-  - src/commands/watch.ts
-docs: []
-depends_on:
-  - cli
-  - lib
-  - change-control-gate
-risk: []
 last_reviewed: 2026-06-29
 ---
 

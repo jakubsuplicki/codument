@@ -2,18 +2,6 @@
 title: Commands
 status: current
 type: feature
-owner: ""
-primary_sources:
-  - src/commands/adopt.ts
-  - src/commands/benchmark.ts
-  - src/commands/init.ts
-  - src/commands/scan.ts
-  - src/commands/update.ts
-related_sources: []
-docs: []
-depends_on:
-  - lib
-risk: []
 last_reviewed: 2026-06-29
 ---
 

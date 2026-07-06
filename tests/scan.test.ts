@@ -84,9 +84,25 @@ describe("scan command", () => {
 
     assert.ok(content.includes("title: auth"));
     assert.ok(content.includes("type: feature"));
+    assert.ok(content.includes("status: needs-review"));
+    assert.ok(content.includes("last_reviewed:"));
+    // Sources appear in Key files (prose), never in frontmatter: ownership,
+    // dependencies, and risk live solely in docs/.registry.json (ADR 001) —
+    // an unvalidated frontmatter copy only drifts.
     assert.ok(content.includes("src/auth/login.ts"));
-    // v2 frontmatter + audience layers (docs/concepts/doc-audience-layers.md)
-    assert.ok(content.includes("primary_sources:"));
+    for (const machineField of [
+      "owner:",
+      "primary_sources:",
+      "related_sources:",
+      "depends_on:",
+      "risk:",
+    ]) {
+      assert.ok(
+        !content.includes(machineField),
+        `generated frontmatter must not carry ${machineField}`,
+      );
+    }
+    // audience layers (docs/concepts/doc-audience-layers.md)
     assert.ok(content.includes("## In plain terms"));
     assert.ok(content.includes("## Design approach"));
     assert.ok(content.includes("## Invariants & boundaries"));

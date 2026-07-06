@@ -2,15 +2,6 @@
 title: Complete Cost Capture
 status: current
 type: feature
-owner: ""
-sources:
-  - src/lib/verdict.ts
-  - src/lib/claude-feed.ts
-  - src/commands/feed.ts
-  - src/commands/watch.ts
-depends_on:
-  - token-cost-tracking
-  - change-control-gate
 last_reviewed: 2026-06-19
 ---
 

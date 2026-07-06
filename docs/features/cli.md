@@ -2,15 +2,6 @@
 title: CLI
 status: current
 type: feature
-owner: ""
-primary_sources:
-  - src/cli.ts
-related_sources: []
-docs: []
-depends_on:
-  - commands
-  - lib
-risk: []
 last_reviewed: 2026-07-01
 ---
 

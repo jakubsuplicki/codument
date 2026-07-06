@@ -2,24 +2,6 @@
 title: Token cost tracking
 status: current
 type: feature
-owner: ""
-primary_sources:
-  - src/commands/cost.ts
-  - src/commands/emit.ts
-  - src/commands/feed.ts
-  - src/lib/claude-feed.ts
-  - src/lib/emit-producer.ts
-  - src/lib/token-cost.ts
-  - src/lib/token-report.ts
-related_sources:
-  - src/commands/watch.ts
-docs:
-  - docs/architecture/decisions/009-token-counts-are-truth-cost-derived-at-render.md
-depends_on:
-  - cli
-  - lib
-  - change-control-gate
-risk: []
 last_reviewed: 2026-06-29
 ---
 

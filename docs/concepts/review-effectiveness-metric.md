@@ -2,11 +2,6 @@
 title: Review Effectiveness Metric
 status: current
 type: concept
-owner: ""
-sources: []
-depends_on:
-  - change-control-gate
-  - proof-benchmarks
 last_reviewed: 2026-06-29
 ---
 

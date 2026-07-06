@@ -2,36 +2,6 @@
 title: Core library
 status: current
 type: concept
-owner: ""
-primary_sources:
-  - src/index.ts
-  - src/lib/agent-profiles.ts
-  - src/lib/analyze.ts
-  - src/lib/badge.ts
-  - src/lib/benchmark-context.ts
-  - src/lib/benchmark-quality.ts
-  - src/lib/benchmark-seeded.ts
-  - src/lib/change-state.ts
-  - src/lib/claude-feed.ts
-  - src/lib/detector-result.ts
-  - src/lib/claude-settings.ts
-  - src/lib/codemod.ts
-  - src/lib/detect.ts
-  - src/lib/events.ts
-  - src/lib/git.ts
-  - src/lib/markers.ts
-  - src/lib/emit-producer.ts
-  - src/lib/registry.ts
-  - src/lib/report-html.ts
-  - src/lib/scaffold.ts
-  - src/lib/token-cost.ts
-  - src/lib/token-report.ts
-  - src/lib/verdict.ts
-  - src/lib/version.ts
-related_sources: []
-docs: []
-depends_on: []
-risk: []
 last_reviewed: 2026-07-01
 ---
 
