@@ -140,7 +140,7 @@ flowchart LR
 4. Any source edit gets reviewed before commit — `review-work` inside a plan, the same bar for an ad-hoc fix.
 5. Clean or explicitly resolved reviews offer `commit-work` as the next gated action.
 
-The installed skills:
+The installed workflow skills:
 
 | Skill | Purpose |
 | --- | --- |
@@ -153,7 +153,9 @@ The installed skills:
 | `commit-work` | Verify, stage, and commit focused work with a conventional commit |
 | `update-docs` | Fill scaffold docs, or update/compact mapped docs after source changes |
 
-Keep working state compact. Feature docs should capture durable decisions, the current plan, acceptance criteria, verification strategy, gotchas, and key files — not a transcript of every agent turn. (To run an approved plan end-to-end without per-step prompts, see **Autopilot** in Reference.)
+They travel with a set of domain-expertise skills — `senior-backend`, `senior-architect`, `senior-frontend`, `frontend-design`, `motion-craft`, `code-reviewer`, `review-codebase`. Those are advisory craft depth your agent consults when a step fits their domain; they never replace the workflow gates above.
+
+Keep working state compact. A feature doc carries the standard's durable layers — plain-terms orientation, design approach, invariants with their test pointers, decisions, key files. A plan's delivery scaffolding (checklist, acceptance criteria, verification) lives in the doc only while the work is in flight and compacts out when it ships — never a transcript of every agent turn. (To run an approved plan end-to-end without per-step prompts, see **Autopilot** in Reference.)
 
 ## 3 · Check — terminal (deterministic core + independent adversarial gates)
 
@@ -471,16 +473,17 @@ Codument's docs follow two ideas that make them durable rather than decorative:
 
 - **Registry-owned docs.** Every source file has an owning doc, recorded in `docs/.registry.json`. Ownership is what makes drift *detectable*: when a source file changes but its owner doesn't, that's a stale doc the deterministic checks can flag — not a judgment call.
 
-- **One source, layered by audience.** A doc is never split into a "human version" and an "agent version" — two copies drift, which is the exact failure Codument exists to prevent. Instead each doc carries ordered layers in a single file, from plain to technical to machine-readable:
+- **One source, layered by audience.** A doc is never split into a "human version" and an "agent version" — two copies drift, which is the exact failure Codument exists to prevent. Instead each doc carries ordered layers in a single file, from plain to precise:
 
   ```text
-  ## In plain terms   — what it does and why, no jargon
-  ## How it works     — architecture, data flow, trade-offs
-  ## Decisions        — the durable "why"
-  <!-- machine block  — acceptance criteria, registry mapping -->
+  ## In plain terms            — what it does and why, no jargon
+  ## Design approach           — why it is shaped this way, at guide level
+  ## Invariants & boundaries   — what must always hold, each linked to the test that enforces it
+  ## Decisions                 — the durable "why", pointing into ADRs
+  ## Key files                 — where to start reading, by role
   ```
 
-  A human reads the top and expands downward to learn; the agent reads all of it. Audience is a *presentation* concern, never a storage one — so there's only ever one thing to keep true.
+  A human reads the top and expands downward to learn; the agent reads all of it. Audience is a *presentation* concern, never a storage one — so there's only ever one thing to keep true. The machine-readable side — ownership, dependencies, risk — lives solely in `docs/.registry.json`, never duplicated into doc frontmatter where it would drift. And the line for what belongs in prose at all: keep only what survives a refactor that renames every symbol; mechanism is read live from the code.
 
 Docs come in types — **features** (a capability), **concepts** (a cross-cutting idea), and **ADRs** (a recorded architecture decision) — and the layering applies within each.
 </details>
