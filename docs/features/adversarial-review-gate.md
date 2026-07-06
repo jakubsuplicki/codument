@@ -67,8 +67,8 @@ These are the contracts the build commits to. Tests land with the step that buil
 
 ## Decisions
 
-- Adversarial review is independent by context and degrades without subagents (option A: same-agent pass on Codex) — honors the [agent-delivery-workflow.md](agent-delivery-workflow.md) non-goal that no profile may *require* subagents. To be recorded as ADR 011 in step 6.
-- A finding blocks only when confirmed by a runnable failing test; judgment findings stay advisory — the deterministic-not-judge line of [008](../architecture/decisions/008-benchmark-proof-deterministic-not-judge.md) and the detect-test-verify line of [010](../architecture/decisions/010-freshness-resolution-detect-test-verify-agent-driven.md), applied to implementation review. To be recorded as ADR 011/012 in step 6.
+- Adversarial review is independent by context and degrades without subagents (option A: same-agent pass on Codex) — honors the [agent-delivery-workflow.md](agent-delivery-workflow.md) non-goal that no profile may *require* subagents. To be recorded in a future ADR when step 6 lands (011 and 012 were since taken by the plan adversary and file-grain acks).
+- A finding blocks only when confirmed by a runnable failing test; judgment findings stay advisory — the deterministic-not-judge line of [008](../architecture/decisions/008-benchmark-proof-deterministic-not-judge.md) and the detect-test-verify line of [010](../architecture/decisions/010-freshness-resolution-detect-test-verify-agent-driven.md), applied to implementation review. To be recorded in the same future ADR.
 
 ## Key files
 

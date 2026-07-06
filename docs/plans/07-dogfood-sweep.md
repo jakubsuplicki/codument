@@ -122,10 +122,12 @@ Also touches root-level `README.md` — after Plan 04, add it to this scope list
       wording only where it drifted. Shipped shape: coverage bullet names the three real ratios
       + an honest why-not-freshness; lint/notes bullets and the fix table carry all four
       recent lints with severity-honest guidance; runner wording verified already in sync.
-- [ ] Step 5: Status reconciliations: compact `plan-adversary.md`'s shipped Delivery Plan and flip
+- [x] Step 5: Status reconciliations: compact `plan-adversary.md`'s shipped Delivery Plan and flip
       its registry status to current; reconcile `impact-ledger.md` to one status (current) and flip
       the registry; renumber `adversarial-review-gate.md`'s ADR pointers to "a future ADR" (step 6
-      there remains honestly unchecked).
+      there remains honestly unchecked). Shipped shape: both shipped docs compacted to durable
+      layers (impact-ledger's deferred report footer preserved as a Non-goal, its resolved
+      report-parity question dropped); every status now tells one story.
 - [ ] Step 6: Frontmatter strip across the drifted docs + scaffold generator update; test that scan's
       generated frontmatter carries no machine fields.
 - [ ] Step 7: Generate `run`'s command inventory from registered commands; fix the managed-section

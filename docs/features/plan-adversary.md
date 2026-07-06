@@ -1,6 +1,6 @@
 ---
 title: Plan adversary
-status: in-progress
+status: current
 type: feature
 owner: ""
 primary_sources:
@@ -16,7 +16,7 @@ depends_on:
   - agent-delivery-workflow
   - lib
 risk: []
-last_reviewed: 2026-06-30
+last_reviewed: 2026-07-06
 ---
 
 # Plan adversary
@@ -65,57 +65,3 @@ All four are recorded in [ADR 011 — Plan adversary: human-adjudicated, grounde
 - `agents/adversarial-planner.md` (new) — the adversary mandate: attack the written plan against the grounding only, the material-objection definition, one tight line each ordered most-serious-first, "no objections is the expected output," the "checked against" audit line, never rewrite, never block. Installed only into a subagent-capable profile via `AGENT_DEFINITIONS`.
 - `skills/plan-with-docs/SKILL.md` — wires the adversary into the Approval Summary: the proportionality skip, the fresh-subagent spawn or the honest handoff, and the fold of objections into the open-questions block.
 - `src/lib/agent-profiles.ts` — registers the new agent def in `AGENT_DEFINITIONS`.
-
-## Delivery plan
-
-Status: approved (2026-07-01). Implementing one step at a time; commits held at the user's request until they say otherwise. Transient scaffolding; compacts out on ship, surviving decisions move to the Decisions layer and an ADR.
-
-The source cut, routed to owning features (the one new file plus the existing files this plan edits):
-
-```feature-map
-src/lib/plan-grounding.ts | plan-adversary        | feature | plan-time grounding projection: the adversary's oracle (invariants/tests/deps/risk)
-src/commands/map.ts       | feature-decomposition | feature | map check --plan --json emits the grounding
-src/lib/agent-profiles.ts | lib                   | concept | registers the adversarial-planner agent def
-src/cli.ts                | cli                   | feature | the --json flag on map check
-```
-
-Only `plan-grounding.ts` is new (owned by **plan-adversary**); the other three are additive edits to their existing owners. The managed files this plan also adds — `agents/adversarial-planner.md` (the adversary mandate) and the wiring in `skills/plan-with-docs/SKILL.md` — are docs, not source, so they ride the registry `docs` list rather than a Map row.
-
-Cross-feature note: the edits to `map.ts`, `agent-profiles.ts`, and `cli.ts` are additive (a new emission, a new install entry, a new flag) and change no existing contract — acked contract-neutral where the freshness gate flags a move.
-
-### Steps
-
-- [x] **Step 1 — Plan-grounding projection.** New `src/lib/plan-grounding.ts`: pure function from Feature-Map rows + registry + feature docs to per-feature `{invariants, test pointers, depends_on, risk}`, reusing the existing routing and the invariants/test-pointer extraction helpers. Register the plan-adversary feature in `docs/.registry.json` with this as its first primary source. *(`src/lib/plan-grounding.ts` + `tests/plan-grounding.test.ts`: pure `buildPlanGrounding` — routed + one-hop deps, unknown-feature flag, order-independent — and the disk-reading `gatherPlanGrounding`.)*
-- [x] **Step 2 — Emit grounding from the plan shape-check.** Have the existing `map check --plan` call the projection and emit the grounding block; the shape check is untouched. *(`--json` branch in `mapCheck` + `--json` flag in `cli.ts`; `tests/plan-grounding.test.ts` covers the CLI emit + the no-map `hasMap:false` case.)*
-- [x] **Step 3 — The adversarial-planner agent def.** Write `agents/adversarial-planner.md`, porting the implementation adversary's honesty and audit contract: the material-objection definition, one line each ordered most-serious-first, "no objections is expected," the "checked against" line, never rewrite or block, scope to the grill's delta. Register in `AGENT_DEFINITIONS`; installs only on subagent-capable profiles. *(`agents/adversarial-planner.md` + `agent-profiles.ts`; `tests/init.test.ts`: both adversary defs install on Claude, none on Codex.)*
-- [x] **Step 4 — Wire into the planning workflow.** At the Approval Summary: the proportionality skip (no Feature Map means no adversary, noted in one line); the fresh-subagent spawn on a subagent host fed only the plan + grounding; the honest handoff otherwise (grounding + paste-ready prompt + "no independent pass ran on this host"); fold every grounded objection (one line each, ordered most-serious-first) into the existing open-questions block. *(`skills/plan-with-docs/SKILL.md`.)*
-- [x] **Step 5 — ADR + dogfood + finalize.** ADR capturing the four decisions (no-artifact, human-adjudicated, host-honest-handoff, grounding-via-shape-check). Run the adversarial-planner on a real plan as a dogfood. Fill the Invariants test pointers, finalize the registry entry, `review --strict` green. *([ADR 011](../architecture/decisions/011-plan-adversary-human-adjudicated-grounded-no-artifact.md); Invariants pointers filled; registry finalized; `review --strict` exits 0. **Dogfooded**: the adversary ran its shipped mandate on this very plan against real grounding (8 features, incl. change-control-gate's data-loss risk) and returned "no material objections" without manufacturing noise — after the dogfood setup caught this plan's own Feature Map written as a table instead of a fenced `feature-map` block, since fixed. Two independent implementation reviewers found 0 bugs across 23 probed invariants.)*
-
-### Acceptance criteria
-
-- The grounding is reproducible from the registry + committed feature docs, with no model call and no new source of truth.
-- On a Feature-Map-bearing plan that contradicts a documented invariant or dependency edge, the adversary surfaces a grounded objection citing that fact; on a plan consistent with its constraints it returns "No material objections."
-- Objections fold into the single approval summary, one line each, ordered most-serious-first; volume is bounded by materiality (grounded objections are never truncated to a fixed number), never a second list.
-- A plan with no Feature Map runs no adversary.
-- On a subagent-capable host a fresh subagent runs with no author transcript; on a host without subagents no auto self-critique runs and the output says so.
-- The adversary never blocks, never rewrites the plan, never reopens the grill.
-
-### Verification strategy
-
-- Unit tests for the grounding projection (deterministic output from a fixed registry + docs).
-- Tests for the plan shape-check emitting the grounding.
-- Install tests proving the agent def lands only on subagent-capable profiles.
-- Dogfood: run the adversary on a real plan; confirm grounded objections and a clean "no objections" path.
-- `npm run typecheck`, `npm run build`, `npm test` on every source-touching step.
-
-### Non-goals
-
-- No artifact, no `--require-plan-review` flag, no writer command, no test-confirm — there is no review-to-commit gap to bridge.
-- No blocking, no auto-fix, no auto-reopening the grill — the human adjudicates.
-- No self-critique presented as independent review on a host without subagents.
-- No plan score or numeric rubric; the only classification is material / not-material, and objections are simply ordered most-serious-first — nothing heavier.
-- No re-litigating assumptions the grill already resolved.
-
-### Open questions
-
-- The grounding projection is a small owned module (`plan-grounding.ts`) rather than inlined into `map.ts` — a deliberate refinement of the stress-tested design for testability and clean feature ownership. Recommended default: keep it a module. Flag if you'd rather inline it.
