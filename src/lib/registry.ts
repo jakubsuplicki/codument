@@ -156,7 +156,12 @@ function parseEntry(key: string, value: unknown): RegistryEntry | null {
 
   const primary_sources = stringArray(value.primary_sources);
   const related_sources = stringArray(value.related_sources);
-  const docs = stringArray(value.docs);
+  // Auxiliary docs are consumed as string keys (ownership sets, dedup maps) as
+  // well as filesystem paths, so a `./`/backslash spelling that the filesystem
+  // would forgive must be canonicalized here or the two kinds of consumer
+  // disagree about the same registry line. Shape only — unlike the main `doc`,
+  // an auxiliary doc may legitimately live outside docs/ (agents/, skills/).
+  const docs = stringArray(value.docs).map(normalizeRelPath);
   const depends_on = stringArray(value.depends_on);
   const risk = stringArray(value.risk);
   const owned_symbols = recordOfStringArrays(value.owned_symbols);
@@ -223,8 +228,17 @@ function uniqSort(values: string[]): string[] {
   return [...new Set(values)].sort();
 }
 
+// Canonical repo-relative shape: forward slashes, no leading "./" or "/".
+function normalizeRelPath(path: string): string {
+  return path
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^(\.\/)+/, "")
+    .replace(/^\/+/, "");
+}
+
 function normalizeDocPath(doc: string): string {
-  const trimmed = doc.trim().replace(/^\/+/, "");
+  const trimmed = normalizeRelPath(doc);
   return trimmed.startsWith("docs/") ? trimmed : `docs/${trimmed}`;
 }
 

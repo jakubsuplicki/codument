@@ -551,3 +551,77 @@ describe("empty-depends-on — scaffold exemption + confirmed leaf (first-run ho
     assert.equal(dep?.denominator, 0, "a confirmed-empty is vacuous, like a foundation");
   });
 });
+
+describe("registry graph integrity (dangling-depends-on + orphan-doc)", () => {
+  // app -> util resolves; app -> ghost-layer dangles. co-owned.md is owned via
+  // app's docs array; orphan.md exists under docs/features with no owner; the
+  // plans page and the docs-root page sit outside the features|concepts trees.
+  const REGISTRY = JSON.stringify({
+    features: {
+      app: {
+        doc: "docs/features/app.md",
+        type: "feature",
+        primary_sources: ["src/app.ts"],
+        // deliberately "./"-spelled: the filesystem forgives it (missing-doc
+        // stays silent), so the parse must canonicalize it or the string-keyed
+        // orphan check would false-fire on an owned page.
+        docs: ["./docs/concepts/co-owned.md"],
+        depends_on: ["util", "ghost-layer"],
+        status: "current",
+      },
+      util: {
+        doc: "docs/concepts/util.md",
+        type: "concept",
+        primary_sources: ["src/util.ts"],
+        depends_on: [],
+        status: "current",
+      },
+    },
+  });
+
+  async function graphLint(): Promise<LintFinding[]> {
+    const tmp = await mkdtemp(join(tmpdir(), "codument-graph-"));
+    try {
+      const files: Record<string, string> = {
+        "docs/.registry.json": REGISTRY,
+        "src/app.ts": "export const app = 1;\n",
+        "src/util.ts": "export const util = 1;\n",
+        "docs/features/app.md": "# App\n\n## Summary\n\nx.\n",
+        "docs/concepts/util.md": "# Util\n\n## Summary\n\nx.\n",
+        "docs/concepts/co-owned.md": "# Co-owned\n\nowned via app.docs.\n",
+        "docs/features/orphan.md": "# Orphan\n\nno entry points here.\n",
+        "docs/plans/roadmap.md": "# Roadmap\n\ntransient planning page.\n",
+        "docs/overview.md": "# Overview\n\ndocs-root page.\n",
+      };
+      for (const [rel, content] of Object.entries(files)) {
+        await mkdir(join(tmp, dirname(rel)), { recursive: true });
+        await writeFile(join(tmp, rel), content);
+      }
+      const registry = await readRegistry(join(tmp, "docs", ".registry.json"));
+      return analyze({ root: tmp, registry, srcDir: "src" }).lint;
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it("dangling-depends-on fires per unresolvable edge (warn), never on one that resolves", async () => {
+    const dangling = (await graphLint()).filter((f) => f.id === "dangling-depends-on");
+    assert.equal(dangling.length, 1, dangling.map((f) => f.message).join(" | "));
+    assert.equal(dangling[0].severity, "warn");
+    assert.equal(dangling[0].feature, "app");
+    assert.match(dangling[0].message, /"ghost-layer"/);
+    assert.doesNotMatch(dangling[0].message, /"util"/);
+  });
+
+  it("orphan-doc notes an unowned feature/concept page (info) — owned pages and pages outside those trees stay silent", async () => {
+    const orphans = (await graphLint()).filter((f) => f.id === "orphan-doc");
+    assert.deepStrictEqual(
+      orphans.map((f) => f.file),
+      ["docs/features/orphan.md"],
+      orphans.map((f) => f.message).join(" | "),
+    );
+    // Info, never warn: an unowned page is a question ("own it or know why
+    // not"), not a CI failure — the plans page and docs-root page never fire.
+    assert.equal(orphans[0].severity, "info");
+  });
+});

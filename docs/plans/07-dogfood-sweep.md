@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 07: Dogfood sweep — registry-graph lints + every confirmed doc drift
@@ -99,16 +99,21 @@ Also touches root-level `README.md` — after Plan 04, add it to this scope list
 
 ## Delivery Plan
 
-- [ ] Step 1: Add `dangling-depends-on` + `orphan-doc` lints to `analyze.ts` with tests and
+- [x] Step 1: Add `dangling-depends-on` + `orphan-doc` lints to `analyze.ts` with tests and
       `registry-health.md` rows. (Expect them to fire on this repo until Step 2 lands — that is the
-      lints working.)
+      lints working.) Shipped shape: per-edge warn + info note, both firing live (3 edges, 1
+      orphan); review hardening folded in — `docs[]` paths shape-canonicalized at parse so the
+      string-keyed orphan check can't false-fire on a `./` spelling, and the LintFindingId
+      exhaustiveness map extended.
 - [ ] Step 2: Fix the graph: register `agent-delivery-workflow`, fix its stale default-profile line
       and compact its build log; re-run doctor → the new lints read clean.
 - [ ] Step 3: Rewrite `docs/overview.md` to the current identity + command surface; register it under
       the `cli` feature's docs.
 - [ ] Step 4: README truth sweep: drop/futures-mark the freshness channel (:175), add
-      thin-doc/link-rot rows, correct the empty-depends-on row to the isolated-entry semantics
-      (:364), sync the runner/limits wording only where it drifted.
+      thin-doc/link-rot rows plus fix rows for the two new graph lints (dangling-depends-on,
+      orphan-doc — so this plan doesn't recreate the drift class it fixes), correct the
+      empty-depends-on row to the isolated-entry semantics (:364), sync the runner/limits
+      wording only where it drifted.
 - [ ] Step 5: Status reconciliations: compact `plan-adversary.md`'s shipped Delivery Plan and flip
       its registry status to current; reconcile `impact-ledger.md` to one status (current) and flip
       the registry; renumber `adversarial-review-gate.md`'s ADR pointers to "a future ADR" (step 6

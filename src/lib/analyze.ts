@@ -203,12 +203,14 @@ export type LintFindingId =
   | "generated-leakage"
   | "high-fanout"
   | "empty-depends-on"
+  | "dangling-depends-on"
   | "bloated-doc"
   | "unmapped-source"
   | "under-decomposed"
   | "over-decomposed"
   | "thin-doc"
-  | "link-rot";
+  | "link-rot"
+  | "orphan-doc";
 
 // Bloat is measured by three independent signals, never one line count.
 // Conservative defaults, calibrated against fixtures/benchmarks/doc-bloat;
@@ -450,6 +452,7 @@ function computeLint(
   dependedUpon: Set<string>,
 ): LintFinding[] {
   const findings: LintFinding[] = [];
+  const entryKeys = new Set(entries.map(([key]) => key));
 
   for (const [key, entry] of entries) {
     // missing mapped source files
@@ -554,6 +557,23 @@ function computeLint(
         message: `${key}: mature entry has empty depends_on`,
       });
     }
+
+    // dangling depends_on: an edge into a slug no registry entry answers to.
+    // The graph is load-bearing — review fans impact out along it and the
+    // dependency ratio reads it — and its consumers drop an unresolvable edge
+    // without a trace, so a dangling one silently weakens both. Always a warn:
+    // the target is either unregistered (register it) or a typo (fix the slug).
+    for (const dep of entry.depends_on) {
+      if (!entryKeys.has(dep)) {
+        findings.push({
+          id: "dangling-depends-on",
+          severity: "warn",
+          feature: key,
+          message: `${key}: depends_on names no registry entry: "${dep}"`,
+          evidence: [dep],
+        });
+      }
+    }
   }
 
   // high-fanout: a source mapped across many entries. Informational, never a
@@ -635,6 +655,28 @@ function computeLint(
 
   // dangling intra-repo links across the whole docs/ knowledge base
   findings.push(...computeLinkRot(root));
+
+  // orphan docs: a feature/concept page no registry entry points at. Staleness
+  // is keyed on the registry, so the gate structurally cannot cover an unowned
+  // page — it rots silently no matter how load-bearing it reads. Info, not
+  // warn: a deliberately registry-free page is legitimate, so the note asks
+  // "own it or know why not" and never blocks a clean run.
+  const ownedDocs = new Set<string>();
+  for (const [, entry] of entries) {
+    ownedDocs.add(entry.doc);
+    for (const doc of entry.docs) ownedDocs.add(doc);
+  }
+  for (const docRel of listMarkdownDocs(root)) {
+    if (!/^docs\/(features|concepts)\//.test(docRel)) continue;
+    if (!ownedDocs.has(docRel)) {
+      findings.push({
+        id: "orphan-doc",
+        severity: "info",
+        file: docRel,
+        message: `${docRel}: no registry entry points at this doc — the staleness gate cannot cover it`,
+      });
+    }
+  }
 
   return sortFindings(findings);
 }
@@ -844,12 +886,14 @@ export const FINDING_ORDER: LintFindingId[] = [
   "generated-leakage",
   "high-fanout",
   "empty-depends-on",
+  "dangling-depends-on",
   "bloated-doc",
   "unmapped-source",
   "under-decomposed",
   "over-decomposed",
   "thin-doc",
   "link-rot",
+  "orphan-doc",
 ];
 
 function sortFindings(findings: LintFinding[]): LintFinding[] {

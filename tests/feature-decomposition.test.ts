@@ -157,6 +157,8 @@ describe("FINDING_ORDER", () => {
       "over-decomposed": true,
       "thin-doc": true,
       "link-rot": true,
+      "dangling-depends-on": true,
+      "orphan-doc": true,
     };
     for (const id of Object.keys(ALL) as LintFindingId[]) {
       assert.ok(FINDING_ORDER.includes(id), `FINDING_ORDER missing "${id}"`);
