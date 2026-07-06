@@ -110,8 +110,11 @@ Also touches root-level `README.md` — after Plan 04, add it to this scope list
       entry, no primary sources (related: scaffold + agent-profiles), doc rewritten to the standard
       layers with the shipped sub-plans compacted and the genuinely-unshipped next-step-handoff
       draft kept; `doctor --strict` green WITH the new lints active.
-- [ ] Step 3: Rewrite `docs/overview.md` to the current identity + command surface; register it under
-      the `cli` feature's docs.
+- [x] Step 3: Rewrite `docs/overview.md` to the current identity + command surface; register it under
+      the `cli` feature's docs. Shipped shape: three-part identity (deterministic checks /
+      adversarial gates / delivery workflow) off the one registry, all 17 commands grouped by
+      role with `--help` named as the authoritative reference; gate now wakes the overview when
+      `src/cli.ts` changes.
 - [ ] Step 4: README truth sweep: drop/futures-mark the freshness channel (:175), add
       thin-doc/link-rot rows plus fix rows for the two new graph lints (dangling-depends-on,
       orphan-doc — so this plan doesn't recreate the drift class it fixes), correct the

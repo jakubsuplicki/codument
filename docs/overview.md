@@ -1,24 +1,28 @@
 ---
-title: Project Overview
+title: Project overview
 ---
+
+# Project overview
 
 ## What this project is
 
-Codument is an npm package that installs a docs-backed delivery workflow for AI coding agents. It gives projects a durable control plane made from `AGENTS.md`, workflow skills, feature docs, concept docs, ADRs, and a source-to-doc registry.
+Codument is a git-native change-control layer for AI-assisted engineering, shipped as an npm package. One source of truth — the source-to-doc registry (`docs/.registry.json`) — feeds three parts:
 
-The core loop is: grill the request, plan in docs, wait for approval, implement one step, verify, update docs, review, commit, and repeat.
+1. **Deterministic checks.** Pure functions of repo state, no network and no model: documentation coverage and registry lint (`doctor`), a per-symbol staleness gate over the git diff (`review`), and live views of both (`watch`, `report`). The same repo state always yields the same verdict.
+2. **Adversarial gates.** The human decision points the workflow refuses to skip: plans are approved before source edits, every step is reviewed before commit, and a change that owes no doc update is cleared only by a fingerprint-bound, auto-invalidating acknowledgment (`ack`) — never by silence.
+3. **Delivery workflow.** The grill → plan → approve → work-step → review → commit loop, installed into the agent's own instruction files (`AGENTS.md`, `CLAUDE.md`, skills) by agent profiles. The CLI installs and audits the workflow; the agent executes it — codument never drives the coding agent (`run` is a signpost, not a runner).
 
-## Architecture
+## Command surface
 
-The CLI has five commands:
+Setup and installation: `init` (scaffold docs + install agent profiles), `scan` (map existing code into `needs-review` scaffolds), `adopt` (migrate a legacy codument project), `update` (refresh managed files after a package upgrade).
 
-- `init` creates the docs structure and installs selected agent profiles.
-- `scan` maps existing source files into feature/concept docs and marks new docs as `needs-review`.
-- `adopt` migrates existing Codument projects, including legacy source-to-doc `mappings`, into the current registry/profile model.
-- `update` refreshes managed files for the profiles recorded in `.codument-meta.json`.
-- `benchmark` runs package-native proof benchmarks for context routing and deterministic quality scoring.
+Checks and gates: `doctor` (coverage + lint, `--strict` for CI), `review` (diff vs. registry: stale docs, risk touches, unmapped and out-of-plan changes, dependents), `ack` (acknowledge a contract-neutral change), `watch` (live working-tree view), `report` (self-contained HTML review report), `steps` (mirror the active plan's checklist), `map` (feature-map routing + materialization).
 
-Agent profiles map the same neutral workflow into concrete agent files. The Codex/generic profile writes `AGENTS.md` and `.agents/skills`; the Claude profile also writes `.claude` rules, skills, subagents, settings hooks, and `CLAUDE.md`.
+Observability: `feed` (normalize agent-session token usage into the event log), `cost` (estimated token-cost ledger), `emit` (append a codument event).
+
+Showcase and proof: `demo` (click-through walkthrough on a throwaway repo), `benchmark` (package-native proof benchmarks), `run` (signpost explaining that the plan runs in your agent).
+
+`codument <command> --help` is the authoritative per-command reference; this list is the map, not the manual.
 
 ## Key technologies
 

@@ -121,7 +121,9 @@
         "src/cli.ts"
       ],
       "related_sources": [],
-      "docs": [],
+      "docs": [
+        "docs/overview.md"
+      ],
       "depends_on": [
         "commands",
         "lib"
