@@ -216,6 +216,12 @@ program
     "Explain how to run the approved plan (Codument does not run your agent)",
   )
   .action(() => {
+    // Derived from the registered commands at print time — a hand-maintained
+    // list drifts the moment a command is added (cost/map/ack/emit all went
+    // missing that way).
+    const others = program.commands
+      .map((c) => c.name())
+      .filter((name) => name !== "run");
     console.log(
       [
         "Codument does not run your coding agent — your agent does.",
@@ -223,7 +229,7 @@ program
         `To run an approved plan, tell your agent:  ${pc.bold('"codument, run the plan"')}`,
         "",
         "The CLI only does setup and deterministic checks:",
-        `  ${pc.dim("codument init | scan | doctor | review | report | watch | feed | steps | demo | adopt | update | benchmark")}`,
+        `  ${pc.dim(`codument ${others.join(" | ")}`)}`,
       ].join("\n"),
     );
   });

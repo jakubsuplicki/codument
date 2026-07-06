@@ -130,12 +130,6 @@ For large refactors touching multiple features, delegate to doc-writer agents pe
 title: Feature Name
 status: current
 type: feature
-owner: ""
-primary_sources:
-  - src/path/to/file.ts
-related_sources: []
-depends_on: []
-risk: []
 last_reviewed: YYYY-MM-DD
 ---
 

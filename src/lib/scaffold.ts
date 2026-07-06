@@ -169,7 +169,7 @@ Autopilot is off by default and applies to one run only; never assume it from a 
 - Show progress at every step boundary: before starting each step, post a short checklist inline in the chat — the step just completed, the step now starting, and what remains. Autopilot suppresses the approval and option prompts and the waiting between steps, not the progress reporting; never advance from one step to the next silently.
 - On any pause or on plan completion, report a compact summary of steps done, commits made, and why it stopped.
 
-The Codument CLI does not run your coding agent. There is no \`codument run\` command; autopilot lives entirely in these instructions, which your agent follows.
+The Codument CLI does not run your coding agent. \`codument run\` is only a signpost that says so; autopilot lives entirely in these instructions, which your agent follows.
 
 ### Definition of Done
 A task is NOT complete until:

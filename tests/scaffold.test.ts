@@ -137,8 +137,12 @@ describe("buildManagedSection", () => {
     assert.ok(section.includes("codument, run the plan"));
     assert.ok(section.includes("Status: approved"));
     assert.ok(section.includes("stop autopilot"));
-    // the binary does not run the agent; autopilot is instruction-only
-    assert.ok(section.includes("There is no `codument run` command"));
+    // the binary does not run the agent; autopilot is instruction-only. A
+    // signpost `codument run` command IS registered, so the guidance must not
+    // claim the command doesn't exist — the literal falsehood this pin
+    // previously enforced.
+    assert.ok(section.includes("`codument run` is only a signpost"));
+    assert.ok(!section.includes("There is no `codument run` command"));
   });
 
   it("commit guidance forbids an AI co-author trailer", () => {

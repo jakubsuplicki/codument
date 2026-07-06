@@ -7,6 +7,19 @@ description: Review the current diff against the approved Codument plan, tests, 
 
 Use this after a planned step has been implemented and before committing.
 
+## Adversarial pass (the independent reviewer)
+
+AI must never be trusted to grade its own work. For a **non-trivial** diff, run an INDEPENDENT adversarial review before committing — a reviewer that assumes the change is wrong until a reproduction proves otherwise. `codument review --require-review` is the arbiter of "non-trivial": it requires the pass for more than one real change, any deletion, a config/data change, a risk touch, an ownership ambiguity, a module-level change, or anything beyond a single resolved symbol. A genuinely trivial diff skips this pass (the gate says so) and gets only the deterministic self-review below.
+
+1. **Assemble the oracle.** `codument review --bundle > .codument/review-bundle.json` — the touched features' documented invariants, the tests that pin them, the diff, and the ownership/blast facts. It adds no new source of truth; it hands the adversary a contract to attack instead of an open-ended hunt.
+2. **Run the adversary against the bundle — independence by context, degraded gracefully.**
+   - **Subagent host (Claude):** spawn a FRESH `adversarial-reviewer` subagent fed ONLY the bundle — never your transcript or your reasoning, so it cannot re-anchor to the author's mental model. It reads `git diff <base>`, attacks the invariants, writes a failing test for each real bug, and emits a findings JSON.
+   - **No-subagent host (Codex):** run the same adversarial pass yourself against the bundle, with deliberately fresh eyes — apply the `adversarial-reviewer` mandate as if you had not written the code. Independence is weaker, but the deterministic confirm and the fingerprint-bound artifact are identical, so it is not theater.
+3. **Record the verdict.** `codument review --record <findings.json>` writes the fingerprint-bound artifact. Any later edit to a reviewed source — or to a finding's named test — auto-invalidates it, so you cannot review once and keep editing.
+4. **Enforce.** `codument review --require-review`. It RE-RUNS each finding's named test and blocks only on one that is genuinely red — never on a claimed status. Fix every confirmed (red-test) finding (which reopens the gate, so re-review and re-record) before committing; advisory findings are surfaced for your decision, never auto-blocking.
+
+The adversarial pass complements the deterministic review below; it does not replace it.
+
 ## Review Order
 
 1. Read the approved plan step.

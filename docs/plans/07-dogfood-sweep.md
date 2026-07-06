@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 07: Dogfood sweep — registry-graph lints + every confirmed doc drift
@@ -134,9 +134,12 @@ Also touches root-level `README.md` — after Plan 04, add it to this scope list
       update-docs skill template match; the doc standard (doc-audience-layers + the managed-section
       sentence) now states the minimal-frontmatter rule; scan test pins the absence of every
       machine field.
-- [ ] Step 7: Generate `run`'s command inventory from registered commands; fix the managed-section
+- [x] Step 7: Generate `run`'s command inventory from registered commands; fix the managed-section
       sentence in `scaffold.ts` + the pinned test; regenerate AGENTS.md/CLAUDE.md managed sections
-      (`codument update` on this repo).
+      (`codument update` on this repo). Shipped shape: inventory derived from `program.commands` at
+      print time with a dynamic test (every `--help` command must appear — the drift class is
+      closed, not just the instance); managed sections regenerated, which also re-synced the lagged
+      `.agents` Codex skill copies to the 0.7.0 adversary wiring.
 
 ## Outcome
 
