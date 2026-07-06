@@ -105,8 +105,11 @@ Also touches root-level `README.md` — after Plan 04, add it to this scope list
       orphan); review hardening folded in — `docs[]` paths shape-canonicalized at parse so the
       string-keyed orphan check can't false-fire on a `./` spelling, and the LintFindingId
       exhaustiveness map extended.
-- [ ] Step 2: Fix the graph: register `agent-delivery-workflow`, fix its stale default-profile line
-      and compact its build log; re-run doctor → the new lints read clean.
+- [x] Step 2: Fix the graph: register `agent-delivery-workflow`, fix its stale default-profile line
+      and compact its build log; re-run doctor → the new lints read clean. Shipped shape: concept
+      entry, no primary sources (related: scaffold + agent-profiles), doc rewritten to the standard
+      layers with the shipped sub-plans compacted and the genuinely-unshipped next-step-handoff
+      draft kept; `doctor --strict` green WITH the new lints active.
 - [ ] Step 3: Rewrite `docs/overview.md` to the current identity + command surface; register it under
       the `cli` feature's docs.
 - [ ] Step 4: README truth sweep: drop/futures-mark the freshness channel (:175), add

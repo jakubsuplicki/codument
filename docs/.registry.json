@@ -1,5 +1,21 @@
 {
   "features": {
+    "agent-delivery-workflow": {
+      "doc": "docs/features/agent-delivery-workflow.md",
+      "type": "concept",
+      "primary_sources": [],
+      "related_sources": [
+        "src/lib/agent-profiles.ts",
+        "src/lib/scaffold.ts"
+      ],
+      "docs": [],
+      "depends_on": [
+        "commands",
+        "lib"
+      ],
+      "risk": [],
+      "status": "current"
+    },
     "adversarial-review-gate": {
       "doc": "docs/features/adversarial-review-gate.md",
       "type": "feature",
