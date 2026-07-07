@@ -1,14 +1,45 @@
+<div align="center">
+
 # codument
 
-A deterministic, git-native change-control safety layer for AI-made changes — plus independent adversarial gates and the docs-backed delivery workflow that produces them.
+**Change control for AI-made changes.**
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+A deterministic, git-native safety layer for what your coding agent touches.
+Two independent adversarial gates, and the docs-backed workflow that produces them.
 
-<p align="center">
-  <img src="docs/assets/codument-watch-hero.png" alt="codument watch: a live, deterministic panel attributing agent spend to each feature; verdict CLEAN, cost $4,007.22 across 31 sessions, with a per-feature 'where it went' breakdown" width="820">
-</p>
+<!-- status -->
+[![npm](https://img.shields.io/npm/v/codument?style=flat&logo=npm&label=npm&color=CB3837)](https://www.npmjs.com/package/codument)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A518-339933?style=flat&logo=nodedotjs&logoColor=white)](package.json)
+[![Tests](https://img.shields.io/badge/tests-880%2B_passing-brightgreen?style=flat)](tests)
 
-<p align="center"><sub><code>codument watch</code> · estimated from captured token usage · facts, not a bill</sub></p>
+<!-- what it is -->
+[![deterministic core](https://img.shields.io/badge/core-deterministic-0d9488?style=flat)](#3--check--terminal-deterministic-core--independent-adversarial-gates)
+[![no network](https://img.shields.io/badge/-no_network-0d9488?style=flat)](#3--check--terminal-deterministic-core--independent-adversarial-gates)
+[![no AI on the verdict path](https://img.shields.io/badge/-no_AI_on_the_verdict_path-0d9488?style=flat)](#3--check--terminal-deterministic-core--independent-adversarial-gates)
+[![git-native](https://img.shields.io/badge/git-native-181717?style=flat&logo=git&logoColor=white)](#what-it-is)
+
+<!-- works with -->
+[![Claude Code · native](https://img.shields.io/badge/Claude_Code-native-D97757?style=flat&logo=anthropic&logoColor=white)](#1--set-up--terminal-once)
+[![Codex · portable](https://img.shields.io/badge/Codex-portable-412991?style=flat&logo=openai&logoColor=white)](#1--set-up--terminal-once)
+[![any AGENTS.md agent](https://img.shields.io/badge/AGENTS.md-any_agent-64748b?style=flat)](#1--set-up--terminal-once)
+
+<!-- in the box -->
+[![19 CLI commands](https://img.shields.io/badge/CLI-19_commands-334155?style=flat)](#3--check--terminal-deterministic-core--independent-adversarial-gates)
+[![15 skills](https://img.shields.io/badge/skills-15-7C3AED?style=flat)](#2--build--your-agent-ongoing)
+[![2 adversarial gates](https://img.shields.io/badge/adversarial_gates-2-B45309?style=flat)](#the-two-adversarial-gates-independent-proportional)
+
+<br>
+
+<img src="docs/assets/codument-watch-hero.png" alt="codument watch: a live, deterministic panel attributing agent spend to each feature; verdict CLEAN, cost $4,007.22 across 31 sessions, with a per-feature 'where it went' breakdown" width="820">
+
+<sub><code>codument watch</code> · estimated from captured token usage · facts, not a bill</sub>
+
+<br>
+
+**[Quick start](#try-it-on-your-own-repo--two-commands-zero-commitment)** · **[30-second demo](#try-it-in-30-seconds)** · **[How it works](#what-it-is)** · **[Docs](docs/)** · **[Report an issue](https://github.com/jakubsuplicki/codument/issues)**
+
+</div>
 
 ## What it is
 
