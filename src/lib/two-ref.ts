@@ -14,7 +14,12 @@ export const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 // Bumping ALGO_VERSION (a fingerprint / identity / closure change) invalidates
 // every cached anchor — a clean re-baseline, never cross-version reuse.
-export const ALGO_VERSION = 1;
+// v2: precise TS anchors split into a signature hash + a body hash and the
+// composite is recomposed over the pair, so a recorded per-symbol ack (which
+// binds a composite transition) auto-invalidates on upgrade — the intended
+// one-time reset. (Coarse and module-residual formats are unchanged, so acks
+// bound to those legitimately survive.)
+export const ALGO_VERSION = 2;
 
 // The determinism unit: a verdict is reproducible only for a fixed parser, the
 // exact bundled TS version, and the algo version. A TS bump changes this stamp,

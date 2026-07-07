@@ -73,6 +73,13 @@ export function emitReview(root: string, fix: ReviewFix, meta: EmitMeta = {}): v
 export interface DriftTally {
   /** Moved owned anchors evaluated this snapshot. */
   flagged: number;
+  /** Of the moved anchors, those whose SIGNATURE changed — a contract move, never
+   *  ackable. Splitting the fire volume into contract vs implementation churn is the
+   *  signal the gate-flip decision needs: high `sigMoved` is unavoidable high-signal
+   *  work; high `bodyMoved` is the noise the ack path absorbs. */
+  sigMoved: number;
+  /** Of the moved anchors, `changed` body-only moves — the ackable cheap-relief path. */
+  bodyMoved: number;
   /** Resolved by a doc update: the owning doc changed in the diff (verdict-derived,
    *  the same signal `review` shows as "resolved by doc update"). */
   docUpdated: number;
@@ -106,6 +113,10 @@ export interface DriftTransitionRecord {
   resolution: "flagged" | "doc-updated" | "file-acked" | "acked";
   /** Info-only co-movement class, for calibrating co-movement itself. */
   comovement: string;
+  /** True when this transition is a SIGNATURE move (a contract change). Carried on
+   *  the identity record so the deduped ledger can split contract vs body churn
+   *  without re-deriving it. Absent on legacy snapshots (treated as false). */
+  signatureChanged?: boolean;
 }
 
 /** Deterministic snapshot of what the analyzer flagged at a commit boundary. Identities, not counts. */

@@ -401,6 +401,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       // itself, never a resolution signal.
       drift: {
         flagged: d.length,
+        sigMoved: d.filter((f) => f.signatureChanged).length,
+        bodyMoved: d.filter((f) => f.kind === "changed" && !f.signatureChanged).length,
         docUpdated,
         fileAcked,
         acknowledged: d.filter((f) => f.acknowledged).length,
@@ -416,6 +418,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
         to: f.to ?? null,
         resolution: driftResolution(f, staleFeatures, fileGrainAcked),
         comovement: f.comovement,
+        signatureChanged: f.signatureChanged,
       })),
     });
   }
@@ -683,11 +686,19 @@ function printHuman(report: ReviewReport): void {
       `  ${pc.bold("Symbol drift")} ${pc.dim("— resolve each: update the doc, or ack a contract-neutral move")}`,
     );
     for (const d of unresolved) {
+      const sigTag = d.signatureChanged ? ` ${pc.yellow("[signature changed]")}` : "";
       console.log(
-        `    ${pc.dim("•")} ${pc.bold(d.symbol)} ${pc.dim(`(${d.kind}) in ${d.feature}`)}`,
+        `    ${pc.dim("•")} ${pc.bold(d.symbol)} ${pc.dim(`(${d.kind}) in ${d.feature}`)}${sigTag}`,
       );
       console.log(`        ${pc.dim("contract changed →")} update ${d.doc} ${pc.dim("at intent altitude")}`);
-      if (d.kind === "changed") {
+      if (d.signatureChanged) {
+        // A public signature moved: the contract changed, so NO ack applies (per
+        // ADR 006). The only resolution is a doc update — name it, and do not
+        // print an ack command that the gate would refuse.
+        console.log(
+          `        ${pc.dim("signature move  →")} ${pc.dim("the symbol's signature changed — the doc's contract needs an update, not an ack")}`,
+        );
+      } else if (d.kind === "changed") {
         console.log(
           `        ${pc.dim("internal only   →")} ${pc.cyan(`codument ack ${d.anchorId} --reason "..."`)}`,
         );

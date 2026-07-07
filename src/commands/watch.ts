@@ -439,8 +439,13 @@ export function renderFrame(
       const d = impact.drift;
       const pct = Math.round(d.frictionRate * 100);
       const fileAcked = d.fileAcked > 0 ? ` · ${d.fileAcked} file-acked` : "";
+      // Split the fire volume into contract (signature) vs body-only churn — the
+      // calibration signal the gate-flip decision reads (contract moves are
+      // unavoidable high-signal work; body churn is what the ack path absorbs).
+      const split =
+        d.sigMoved + d.bodyMoved > 0 ? ` (${d.sigMoved} contract · ${d.bodyMoved} body)` : "";
       lines.push(
-        `    ${pc.cyan("soak")}      ${d.flagged} symbol move(s) · ${d.docUpdated} resolved by doc update · ${d.acknowledged} acked${fileAcked}   ${pc.dim(`(friction ${pct}% · info-only)`)}`,
+        `    ${pc.cyan("soak")}      ${d.flagged} symbol move(s)${split} · ${d.docUpdated} resolved by doc update · ${d.acknowledged} acked${fileAcked}   ${pc.dim(`(friction ${pct}% · info-only)`)}`,
       );
     }
     lines.push("");

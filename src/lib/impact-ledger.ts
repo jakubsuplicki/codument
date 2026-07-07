@@ -46,6 +46,12 @@ export interface ReportedLedger {
  *  resolution signal. Info-only. */
 export interface DriftLedger {
   flagged: number;
+  /** Of the flagged moves, those whose signature changed — a contract move (never
+   *  ackable). `sigMoved` vs `bodyMoved` splits unavoidable contract work from the
+   *  implementation churn the ack path absorbs, the split the gate-flip decision reads. */
+  sigMoved: number;
+  /** Of the flagged moves, `changed` body-only moves — the ackable path. */
+  bodyMoved: number;
   /** Resolved by a doc update (verdict-derived: the owning doc changed). */
   docUpdated: number;
   /** Resolved by a file-grain ack (additive/coarse residue) — a "no doc owed" decision. */
@@ -85,6 +91,8 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
 
   const drift: DriftLedger = {
     flagged: 0,
+    sigMoved: 0,
+    bodyMoved: 0,
     docUpdated: 0,
     fileAcked: 0,
     acknowledged: 0,
@@ -99,7 +107,10 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
   // resolved settles in its final class). Mirrors the provable-line Set dedup —
   // re-logging an unchanged diff cannot inflate the counts frictionRate (the
   // gate-flip calibration signal) is derived from.
-  const transitions = new Map<string, { resolution: string; comovement: string }>();
+  const transitions = new Map<
+    string,
+    { resolution: string; comovement: string; signatureChanged: boolean; changed: boolean }
+  >();
 
   for (const e of events) {
     if (isCaughtEvent(e)) {
@@ -109,7 +120,7 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
         riskTouches: string[];
         offPlan: string[];
         drift?: DriftTally;
-        driftTransitions?: { anchorId: string; from: string | null; to: string | null; resolution: string; comovement: string }[];
+        driftTransitions?: { anchorId: string; from: string | null; to: string | null; resolution: string; comovement: string; signatureChanged?: boolean }[];
       };
       for (const x of d.staleDocs) stale.add(x);
       for (const x of d.riskTouches) risk.add(x);
@@ -119,13 +130,18 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
           transitions.set(`${t.anchorId}@${t.from}->${t.to}`, {
             resolution: t.resolution,
             comovement: t.comovement,
+            signatureChanged: t.signatureChanged === true,
+            // A `changed` transition has both endpoints; added/removed has a null one.
+            changed: t.from !== null && t.to !== null,
           });
         }
       } else if (d.drift) {
         // Legacy snapshot (counts only, pre-identity): sum as before — such data
         // cannot be deduped after the fact, an accepted bound on old logs.
         drift.flagged += d.drift.flagged;
-        // `?? 0`: snapshots logged before docUpdated/fileAcked existed carry no such field.
+        // `?? 0`: snapshots logged before these fields existed carry none.
+        drift.sigMoved += d.drift.sigMoved ?? 0;
+        drift.bodyMoved += d.drift.bodyMoved ?? 0;
         drift.docUpdated += d.drift.docUpdated ?? 0;
         drift.fileAcked += d.drift.fileAcked ?? 0;
         drift.acknowledged += d.drift.acknowledged;
@@ -159,6 +175,8 @@ export function summarizeImpact(events: CodumentEvent[]): ImpactLedger {
   // its settled class.
   for (const t of transitions.values()) {
     drift.flagged++;
+    if (t.signatureChanged) drift.sigMoved++;
+    else if (t.changed) drift.bodyMoved++;
     if (t.resolution === "doc-updated") drift.docUpdated++;
     else if (t.resolution === "file-acked") drift.fileAcked++;
     else if (t.resolution === "acked") drift.acknowledged++;

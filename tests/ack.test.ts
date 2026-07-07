@@ -527,3 +527,84 @@ describe("getGitAuthor", () => {
     }
   });
 });
+
+describe("signature/body split — the ack acceptance table", () => {
+  // base: a zero-arg exported function; its doc narrates the contract.
+  const SIG_REG = {
+    features: {
+      alpha: {
+        doc: "docs/features/alpha.md",
+        type: "feature",
+        primary_sources: ["src/a.ts"],
+        status: "current",
+      },
+    },
+  };
+  const BASE = "export function foo() {\n  return 1;\n}\n";
+  const SIG_MOVED = "export function foo(x: number) {\n  return x;\n}\n"; // param added → signature
+  const BODY_MOVED = "export function foo() {\n  return 2;\n}\n"; // body only
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-sig-"));
+    await scaffold({
+      "docs/.registry.json": JSON.stringify(SIG_REG, null, 2),
+      "docs/features/alpha.md": "# alpha\n\nThe foo() helper returns a number.\n",
+      "src/a.ts": BASE,
+    });
+    gitInit(tmp);
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("a body-only move is ackable and clears the verdict (the cheap path is preserved)", async () => {
+    await scaffold({ "src/a.ts": BODY_MOVED });
+    const finding = buildReview(tmp).drift.find((d) => d.symbol === "foo");
+    assert.equal(finding?.signatureChanged, false, "body-only move");
+    const r = capture(() => ackCommand("src/a.ts::foo", { reason: "same return shape", root: tmp }));
+    assert.equal(r.code, undefined, r.err);
+    assert.deepStrictEqual(buildReview(tmp).state.staleDocs, []);
+  });
+
+  it("a signature move is classified, stays stale, and a per-symbol ack is refused", async () => {
+    await scaffold({ "src/a.ts": SIG_MOVED });
+    const finding = buildReview(tmp).drift.find((d) => d.symbol === "foo");
+    assert.ok(finding?.signatureChanged, "classified as a signature move");
+    assert.deepStrictEqual(buildReview(tmp).state.staleDocs.map((d) => d.feature), ["alpha"]);
+
+    const r = capture(() => ackCommand("src/a.ts::foo", { reason: "trust me", root: tmp }));
+    assert.equal(r.code, 1);
+    assert.match(r.err, /signature changed/);
+    assert.equal(readAcks(tmp).length, 0, "no ack was written");
+    assert.deepStrictEqual(buildReview(tmp).state.staleDocs.map((d) => d.feature), ["alpha"]);
+  });
+
+  it("a file-grain ack does NOT clear a signature move — the verdict persists", async () => {
+    await scaffold({ "src/a.ts": SIG_MOVED });
+    const r = capture(() => ackCommand("src/a.ts", { reason: "file-level: trust me", root: tmp }));
+    assert.equal(r.code, undefined, r.err); // the file ack is recorded...
+    // ...but the sig-moved symbol still wakes: a changed symbol is never file-ack-cleared.
+    assert.match(r.out, /NOT cleared by a file ack/);
+    assert.match(r.out, /\(signature changed\)/, "the moved symbol is tagged as a signature move");
+    // and the file-ack guidance routes a signature move to the doc, never to an ack.
+    assert.match(r.out, /Signature moves: update the owning doc/);
+    assert.doesNotMatch(r.out, /codument ack src\/a\.ts::foo/, "no per-symbol ack is suggested");
+    assert.deepStrictEqual(buildReview(tmp).state.staleDocs.map((d) => d.feature), ["alpha"]);
+  });
+
+  it("updating the owning doc clears a signature move", async () => {
+    await scaffold({
+      "src/a.ts": SIG_MOVED,
+      "docs/features/alpha.md": "# alpha\n\nThe foo(x) helper returns its argument.\n",
+    });
+    assert.deepStrictEqual(buildReview(tmp).state.staleDocs, []);
+  });
+
+  it("review's guidance for a signature move names the doc update, never an ack", async () => {
+    await scaffold({ "src/a.ts": SIG_MOVED });
+    const out = stripAnsi(execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" }));
+    assert.match(out, /\[signature changed\]/);
+    assert.match(out, /signature move/);
+    assert.doesNotMatch(out, /codument ack src\/a\.ts::foo/, "never a per-symbol ack for a sig move");
+  });
+});

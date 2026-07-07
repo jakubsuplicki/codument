@@ -12,6 +12,18 @@ import type { Anchor, LanguageAdapter } from "./fingerprint.js";
 // moves its callers), and the file carries a coarse residual backstop anchor for
 // module-top-level content no precise anchor covers (imports, side effects,
 // unreferenced module state) — so a changed owned file is never read as fresh.
+//
+// Each precise anchor splits into a SIGNATURE hash and a BODY hash (composed into
+// one `fingerprint`, plus the `signature` exposed for classification). The
+// signature is the declaration's contract — modifiers, name, type params, params,
+// return/type annotation, every overload signature, and any private helper
+// reached FROM the signature; the body is the implementation an ack may still
+// clear. Only an unambiguous function body splits (a function/method block or a
+// directly-arrow/function-expression initializer); a class, interface, type,
+// enum, plain const, and wrapped initializer are all-signature (conservative:
+// over-wake, never launder a contract change). Two boundaries are by construction
+// (no type checker): an inferred return type reads as body, and a class member's
+// signature is inside the all-signature class body.
 
 function sha256(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
@@ -102,9 +114,13 @@ function spanText(content: string, sf: ts.SourceFile, node: ts.Node): string {
 // the ubiquitous `.method()`/`NS.Type` forms that would otherwise match a
 // same-named top-level declaration on nearly every line. Everything else
 // (including computed property names, which DO carry references) is traversed.
-function collectFreeIdentifiers(root: ts.Node): Set<string> {
+// `skip` prunes one subtree from the walk — passing a declaration's body yields
+// its SIGNATURE-only references (types, defaults, type params), which is how a
+// signature-referenced private helper is told apart from a body-referenced one.
+function collectFreeIdentifiers(root: ts.Node, skip?: ts.Node): Set<string> {
   const names = new Set<string>();
   const visit = (node: ts.Node) => {
+    if (node === skip) return;
     if (ts.isPropertyAccessExpression(node)) {
       visit(node.expression);
       return;
@@ -123,47 +139,128 @@ function collectFreeIdentifiers(root: ts.Node): Set<string> {
   return names;
 }
 
-// Transitive closure of an export over same-file non-exported declarations it
-// references (directly or via other private declarations). Returns the included
-// private names sorted, paired with their span text — sorted so the composite
-// fingerprint is independent of where the helpers sit in the file.
-function closureOf(
-  start: ts.Node,
+// Transitive closure of a set of referenced names over same-file non-exported
+// declarations (directly or via other private declarations). Returns the
+// included private names sorted, paired with their span text — sorted so the
+// composite fingerprint is independent of where the helpers sit in the file.
+// A private helper maps to ALL its member nodes (a private overloaded function is
+// every signature plus its implementation), so a caller's closure hashes the
+// helper's whole surface — an overload-signature-only change still moves the
+// referencing anchor rather than reading fresh.
+function closureFromNames(
+  seedNames: Iterable<string>,
   content: string,
   sf: ts.SourceFile,
-  privateByName: Map<string, ts.Node>,
+  privateByName: Map<string, ts.Node[]>,
 ): { name: string; span: string }[] {
-  const included = new Map<string, ts.Node>();
-  const stack: ts.Node[] = [start];
+  const included = new Map<string, ts.Node[]>();
+  const stack: string[] = [...seedNames];
   while (stack.length > 0) {
-    const node = stack.pop();
-    if (!node) continue;
-    for (const ref of collectFreeIdentifiers(node)) {
-      const decl = privateByName.get(ref);
-      if (decl && !included.has(ref)) {
-        included.set(ref, decl);
-        stack.push(decl);
-      }
+    const ref = stack.pop();
+    if (ref === undefined) continue;
+    const decls = privateByName.get(ref);
+    if (decls && !included.has(ref)) {
+      included.set(ref, decls);
+      for (const decl of decls) for (const next of collectFreeIdentifiers(decl)) stack.push(next);
     }
   }
   return [...included.keys()]
     .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
     .map((name) => ({
       name,
-      span: spanText(content, sf, included.get(name) as ts.Node),
+      // Concatenate the member spans in source order — degenerates to the single
+      // span for the common (non-overloaded) helper, so ordinary fingerprints are
+      // unchanged; only a private overloaded helper folds more than one span.
+      span: (included.get(name) as ts.Node[]).map((n) => spanText(content, sf, n)).join("\n"),
     }));
 }
 
-// The composite fingerprint of an export: its own token stream, plus — when it
-// references same-file private helpers — each helper's token stream keyed by
-// name. With no closure members this is exactly the bare span hash (the common
-// case stays identical to the signature-only Slice 2a behavior).
-function compositeFingerprint(ownSpan: string, members: { name: string; span: string }[]): string {
+// The composite hash of a token span plus — when it references same-file private
+// helpers — each helper's token stream keyed by name. With no members this is
+// exactly the bare span hash. Used for BOTH the signature side and the body side
+// of a declaration, so the two halves are computed by one deterministic rule.
+function compositeHash(ownSpan: string, members: { name: string; span: string }[]): string {
   const own = tokenStreamHash(ownSpan);
   if (members.length === 0) return own;
   const parts = [own];
   for (const m of members) parts.push(`${m.name} ${tokenStreamHash(m.span)}`);
   return sha256(parts.join("\n"));
+}
+
+// The splittable body of a declaration — the region an ack MAY still clear as an
+// implementation-only move — or null when the whole declaration is signature
+// (its contract). Only an UNAMBIGUOUS function body splits: a function/method
+// declaration's block, or a variable whose initializer is DIRECTLY an arrow or
+// function expression. A class, interface, type alias, enum, plain (non-function)
+// const, and `export default <expr>` are all-signature: any change to them is a
+// contract change (never launderable). This is conservative by construction —
+// it over-wakes (a class-member impl refactor is not cheaply ackable) but never
+// under-wakes a real signature change. A wrapped initializer like
+// `memoize(() => {})` is a CallExpression, so it is all-signature too. */
+function bodyOf(node: ts.Node): ts.Node | undefined {
+  if (ts.isFunctionDeclaration(node)) return node.body;
+  if (ts.isVariableDeclaration(node) && node.initializer) {
+    const init = node.initializer;
+    if ((ts.isArrowFunction(init) || ts.isFunctionExpression(init)) && init.body) {
+      return init.body;
+    }
+  }
+  return undefined;
+}
+
+// The signature span text of a declaration: everything from its start up to the
+// body opener when it has a splittable body, else the whole declaration.
+function signatureSpan(content: string, sf: ts.SourceFile, node: ts.Node, body: ts.Node | undefined): string {
+  const start = node.getStart(sf);
+  const end = body ? body.getStart(sf) : node.getEnd();
+  return content.slice(start, end);
+}
+
+// Compute the {signature, fingerprint} pair for one anchor from its member
+// declaration nodes (one node normally; several for an overload run — every
+// overload signature plus the implementation). The signature hash folds every
+// member's signature span in SOURCE ORDER (overload resolution priority is part
+// of the contract, so reordering must move it) plus the private helpers those
+// signatures reference; the body hash folds every body-bearing member (normally
+// the single implementation) plus the helpers referenced ONLY from the body (sig
+// wins ties, so a helper referenced from the signature can never be laundered into
+// a body-only move). The composite binds both, so it moves on any real change.
+function fingerprintPair(
+  nodes: ts.Node[],
+  content: string,
+  sf: ts.SourceFile,
+  privateByName: Map<string, ts.Node[]>,
+): { signature: string; fingerprint: string; closureNames: Set<string> } {
+  const sigRefs = new Set<string>();
+  const bodyRefs = new Set<string>();
+  const sigSpans: string[] = [];
+  // Fold EVERY body-bearing member (normally one; a malformed run with two
+  // implementations has several) so no body's tokens are dropped — degenerates to
+  // the single implementation body for a valid function or overload set.
+  const bodySpans: string[] = [];
+  for (const node of nodes) {
+    const body = bodyOf(node);
+    sigSpans.push(signatureSpan(content, sf, node, body));
+    for (const r of collectFreeIdentifiers(node, body)) sigRefs.add(r);
+    if (body) {
+      bodySpans.push(spanText(content, sf, body));
+      for (const r of collectFreeIdentifiers(body)) bodyRefs.add(r);
+    }
+  }
+  const sigMembers = closureFromNames(sigRefs, content, sf, privateByName);
+  const sigNames = new Set(sigMembers.map((m) => m.name));
+  // Body closure minus the signature closure: a helper reachable from the
+  // signature is contract, so it never dilutes into the ackable body side.
+  const bodyMembers = closureFromNames(bodyRefs, content, sf, privateByName).filter(
+    (m) => !sigNames.has(m.name),
+  );
+  const signature = compositeHash(sigSpans.join("\n"), sigMembers);
+  const body = compositeHash(bodySpans.join("\n"), bodyMembers);
+  return {
+    signature,
+    fingerprint: sha256(`${signature}\n${body}`),
+    closureNames: new Set([...sigNames, ...bodyMembers.map((m) => m.name)]),
+  };
 }
 
 // The top-level names a declaration statement binds (for residual accounting).
@@ -193,24 +290,63 @@ function tsAnchors(path: string, content: string): Anchor[] {
   const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, /* setParentNodes */ true);
   const anchors: Anchor[] = [];
 
+  // Group consecutive same-name function declarations into overload runs: TS
+  // requires an overload set's signatures to immediately precede their single
+  // implementation, so a maximal run of adjacent same-name `function f` statements
+  // IS one function's full surface. A normal function is a run of one. Anonymous
+  // (default) functions cannot overload and are handled individually below.
+  const stmtToRun = new Map<ts.FunctionDeclaration, ts.FunctionDeclaration[]>();
+  {
+    const stmts = sf.statements;
+    let i = 0;
+    while (i < stmts.length) {
+      const stmt = stmts[i];
+      if (ts.isFunctionDeclaration(stmt) && stmt.name) {
+        const name = stmt.name.text;
+        const run: ts.FunctionDeclaration[] = [stmt];
+        let j = i + 1;
+        while (j < stmts.length) {
+          const next = stmts[j];
+          if (!ts.isFunctionDeclaration(next) || next.name?.text !== name) break;
+          run.push(next);
+          j++;
+        }
+        for (const m of run) stmtToRun.set(m, run);
+        i = j;
+      } else {
+        i++;
+      }
+    }
+  }
+  const runExported = (run: ts.FunctionDeclaration[]): boolean =>
+    run.some((m) => hasModifier(m, ts.SyntaxKind.ExportKeyword));
+
   // Index every non-exported top-level declaration by name, so closures can pull
   // in the exact span of a referenced private helper (per-declarator for
-  // multi-declarator variable statements).
-  const privateByName = new Map<string, ts.Node>();
+  // multi-declarator variable statements). A function that is part of an EXPORTED
+  // overload run is not private — its unexported overload signatures belong to the
+  // exported anchor, never to `privateByName`.
+  const privateByName = new Map<string, ts.Node[]>();
   for (const stmt of sf.statements) {
     if (hasModifier(stmt, ts.SyntaxKind.ExportKeyword)) continue;
-    if (ts.isVariableStatement(stmt)) {
+    if (ts.isFunctionDeclaration(stmt) && stmt.name) {
+      const run = stmtToRun.get(stmt);
+      if (run && runExported(run)) continue; // part of an exported anchor
+      // Store the whole private run (every overload signature + the impl), not just
+      // the implementation, so a closure over this helper hashes its full surface.
+      privateByName.set(stmt.name.text, run ?? [stmt]);
+    } else if (ts.isVariableStatement(stmt)) {
       for (const decl of stmt.declarationList.declarations) {
-        if (ts.isIdentifier(decl.name)) privateByName.set(decl.name.text, decl);
+        if (ts.isIdentifier(decl.name)) privateByName.set(decl.name.text, [decl]);
       }
-    } else if ((ts.isFunctionDeclaration(stmt) || ts.isClassDeclaration(stmt)) && stmt.name) {
-      privateByName.set(stmt.name.text, stmt);
+    } else if (ts.isClassDeclaration(stmt) && stmt.name) {
+      privateByName.set(stmt.name.text, [stmt]);
     } else if (
       ts.isInterfaceDeclaration(stmt) ||
       ts.isTypeAliasDeclaration(stmt) ||
       ts.isEnumDeclaration(stmt)
     ) {
-      privateByName.set(stmt.name.text, stmt);
+      privateByName.set(stmt.name.text, [stmt]);
     }
   }
 
@@ -220,43 +356,65 @@ function tsAnchors(path: string, content: string): Anchor[] {
   // Statements that produced at least one precise anchor (excluded from residual).
   const anchoredStmts = new Set<ts.Statement>();
 
-  const push = (name: string, kind: TsAnchorKind, node: ts.Node, stmt: ts.Statement) => {
-    const members = closureOf(node, content, sf, privateByName);
-    for (const m of members) closureCovered.add(m.name);
-    anchors.push({
-      id: anchorId(path, name, kind),
-      fingerprint: compositeFingerprint(spanText(content, sf, node), members),
-      name,
-      kind,
-    });
-    anchoredStmts.add(stmt);
+  // Emit one anchor from a declaration's member nodes (one normally; every
+  // overload signature plus the implementation for a run). The signature/body
+  // split lives in `fingerprintPair`; here we record the composite + signature,
+  // mark every contributing statement anchored, and fold covered privates.
+  const push = (
+    name: string,
+    kind: TsAnchorKind,
+    nodes: ts.Node[],
+    stmts: ts.Statement[],
+  ) => {
+    const { signature, fingerprint, closureNames } = fingerprintPair(
+      nodes,
+      content,
+      sf,
+      privateByName,
+    );
+    for (const n of closureNames) closureCovered.add(n);
+    anchors.push({ id: anchorId(path, name, kind), fingerprint, signature, name, kind });
+    for (const s of stmts) anchoredStmts.add(s);
   };
 
+  const processedRuns = new Set<ts.FunctionDeclaration[]>();
   for (const stmt of sf.statements) {
+    // Named function declarations resolve through their overload run so an
+    // overload-signature-only change (even an unexported one) is never shadowed.
+    if (ts.isFunctionDeclaration(stmt) && stmt.name) {
+      const run = stmtToRun.get(stmt);
+      if (!run || processedRuns.has(run)) continue;
+      processedRuns.add(run);
+      if (!runExported(run)) continue; // private run → closure/residual
+      const isDefault = run.some((m) => hasModifier(m, ts.SyntaxKind.DefaultKeyword));
+      push(isDefault ? "default" : stmt.name.text, isDefault ? "default" : "function", run, run);
+      continue;
+    }
+
     const isExported = hasModifier(stmt, ts.SyntaxKind.ExportKeyword);
     if (!isExported) continue;
     const isDefault = hasModifier(stmt, ts.SyntaxKind.DefaultKeyword);
 
-    if (ts.isFunctionDeclaration(stmt) && stmt.name) {
-      push(isDefault ? "default" : stmt.name.text, isDefault ? "default" : "function", stmt, stmt);
-    } else if (ts.isClassDeclaration(stmt) && stmt.name) {
-      push(isDefault ? "default" : stmt.name.text, isDefault ? "default" : "class", stmt, stmt);
+    if (ts.isClassDeclaration(stmt) && stmt.name) {
+      push(isDefault ? "default" : stmt.name.text, isDefault ? "default" : "class", [stmt], [stmt]);
     } else if (ts.isInterfaceDeclaration(stmt)) {
-      push(stmt.name.text, "interface", stmt, stmt);
+      push(stmt.name.text, "interface", [stmt], [stmt]);
     } else if (ts.isTypeAliasDeclaration(stmt)) {
-      push(stmt.name.text, "type", stmt, stmt);
+      push(stmt.name.text, "type", [stmt], [stmt]);
     } else if (ts.isEnumDeclaration(stmt)) {
-      push(stmt.name.text, "enum", stmt, stmt);
+      push(stmt.name.text, "enum", [stmt], [stmt]);
     } else if (ts.isVariableStatement(stmt)) {
       // `export const a = 1, b = 2;` yields one anchor per declared name. Each
       // anchor's span is the individual declaration so editing `a` leaves `b`'s
       // fingerprint untouched.
       for (const decl of stmt.declarationList.declarations) {
-        if (ts.isIdentifier(decl.name)) push(decl.name.text, "variable", decl, stmt);
+        if (ts.isIdentifier(decl.name)) push(decl.name.text, "variable", [decl], [stmt]);
       }
     } else if (isDefault) {
-      // `export default <expression>;` — an anonymous default export.
-      push("default", "default", stmt, stmt);
+      // Anonymous `export default function(){}`/`export default class{}` (no name,
+      // so not caught above) or `export default <expression>`. `fingerprintPair`
+      // body-splits a default function via `bodyOf`; a plain expression is all-sig.
+      push("default", "default", [stmt], [stmt]);
     }
     // Re-exports (`export { ... }`, `export * from`), `export =`, and namespace
     // members produce no precise anchor here; the residual backstop below still

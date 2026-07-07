@@ -1,5 +1,5 @@
 ---
-status: draft
+status: shipped
 ---
 
 # Plan 10: Signature/body anchor split — a public-signature change is not ackable
@@ -62,16 +62,16 @@ No new source files — no feature map. Coordinate with Plan 11: both change the
 
 ## Delivery Plan
 
-- [ ] Step 1: `ts-adapter.ts` emits per-declaration signature/body token spans; `{sigHash, bodyHash}`
+- [x] Step 1: `ts-adapter.ts` emits per-declaration signature/body token spans; `{sigHash, bodyHash}`
       in the anchor fingerprint; algoStamp bump. Fixture tests: rename-param vs rename-local,
       return-type change, modifier change, arrow consts, interfaces/type aliases, overloads.
-- [ ] Step 2: Thread the pair through `fingerprint.ts`/`drift.ts`/`change-state.ts`; classification
+- [x] Step 2: Thread the pair through `fingerprint.ts`/`drift.ts`/`change-state.ts`; classification
       of a change as sig-moved vs body-only lands on the drift finding (rendered in `review`'s
       symbol-drift section).
-- [ ] Step 3: Ack refusal (per-symbol AND file-grain) for sig-moved anchors with the decided message;
+- [x] Step 3: Ack refusal (per-symbol AND file-grain) for sig-moved anchors with the decided message;
       golden gate-wiring tests: sig move → stale until doc update; body move → ack clears as today.
-- [ ] Step 4: Telemetry split in `review-events.ts`/`impact-ledger.ts` + soak line; tests.
-- [ ] Step 5: Update `change-control-gate.md` invariants (enforced now, pinned to the new tests) and
+- [x] Step 4: Telemetry split in `review-events.ts`/`impact-ledger.ts` + soak line; tests.
+- [x] Step 5: Update `change-control-gate.md` invariants (enforced now, pinned to the new tests) and
       the ADR 006 cross-reference; CHANGELOG entry under Unreleased.
 
 ## Outcome

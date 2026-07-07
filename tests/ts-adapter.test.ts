@@ -172,6 +172,194 @@ const internal = 4;
   });
 });
 
+describe("tsAdapter signature/body split", () => {
+  // name -> { fp (composite), sig (signature hash, undefined for module/coarse) }
+  const amap = (content: string, path = "src/x.ts") =>
+    new Map(tsAdapter.anchors(path, content).map((a) => [a.name, { fp: a.fingerprint, sig: a.signature }]));
+  const get = (m: ReturnType<typeof amap>, name: string) => {
+    const v = m.get(name);
+    assert.ok(v, `anchor ${name} present`);
+    return v;
+  };
+  // A "sig move" is a signature change; a "body move" keeps the signature but
+  // moves the composite. These two predicates are exactly Step 2's classifier.
+  const sigMoved = (a: string, b: string, name: string) => {
+    assert.notEqual(get(amap(a), name).sig, get(amap(b), name).sig, `${name}: signature moved`);
+    assert.notEqual(get(amap(a), name).fp, get(amap(b), name).fp, `${name}: composite moved`);
+  };
+  const bodyOnly = (a: string, b: string, name: string) => {
+    assert.equal(get(amap(a), name).sig, get(amap(b), name).sig, `${name}: signature held`);
+    assert.notEqual(get(amap(a), name).fp, get(amap(b), name).fp, `${name}: composite still moved`);
+  };
+
+  it("a parameter rename is a sig-move; a local rename is body-only", () => {
+    sigMoved(
+      "export function f(a: number): number { const x = a; return x; }\n",
+      "export function f(b: number): number { const x = b; return x; }\n",
+      "f",
+    );
+    bodyOnly(
+      "export function f(a: number): number { const x = a; return x; }\n",
+      "export function f(a: number): number { const y = a; return y; }\n",
+      "f",
+    );
+  });
+
+  it("a return-type change and a modifier change are sig-moves", () => {
+    sigMoved(
+      "export function f(a: number): number { return a; }\n",
+      "export function f(a: number): string { return String(a); }\n",
+      "f",
+    );
+    sigMoved(
+      "export function f(): void {}\n",
+      "export async function f(): Promise<void> {}\n",
+      "f",
+    );
+  });
+
+  it("arrow const: a param rename is a sig-move, a body edit is body-only", () => {
+    sigMoved(
+      "export const f = (a: number): number => a + 1;\n",
+      "export const f = (b: number): number => b + 1;\n",
+      "f",
+    );
+    bodyOnly(
+      "export const f = (a: number): number => a + 1;\n",
+      "export const f = (a: number): number => a + 2;\n",
+      "f",
+    );
+  });
+
+  it("a wrapped (non-direct-function) initializer is all-signature — the documented boundary", () => {
+    // `memoize(() => ...)` is a CallExpression initializer, so there is no
+    // separable body: any change is a sig-move (conservative, never launders).
+    sigMoved(
+      "export const f = memoize((a: number) => a + 1);\n",
+      "export const f = memoize((a: number) => a + 2);\n",
+      "f",
+    );
+  });
+
+  it("interface / type alias / enum are all-signature (any member change is a sig-move)", () => {
+    sigMoved("export interface I { a: number; }\n", "export interface I { a: string; }\n", "I");
+    sigMoved("export type T = number;\n", "export type T = string;\n", "T");
+    sigMoved("export enum E { A, B }\n", "export enum E { A, B, C }\n", "E");
+  });
+
+  it("class members are all-signature (a method signature OR body change is a sig-move)", () => {
+    sigMoved(
+      "export class C { m(a: number): number { return a; } }\n",
+      "export class C { m(a: string): string { return a; } }\n",
+      "C",
+    );
+    sigMoved(
+      "export class C { m(a: number): number { return a; } }\n",
+      "export class C { m(a: number): number { return a + 1; } }\n",
+      "C",
+    );
+  });
+
+  it("overloads: an overload-signature-only change is a sig-move and moves the composite (never last-wins shadowed)", () => {
+    sigMoved(
+      "export function f(a: string): string;\nexport function f(a: number): number;\nexport function f(a: any): any { return a; }\n",
+      "export function f(a: string): string;\nexport function f(a: boolean): boolean;\nexport function f(a: any): any { return a; }\n",
+      "f",
+    );
+  });
+
+  it("overloads: unexported signatures with an exported impl are still folded into the sig (no residual leak)", () => {
+    const base = amap(
+      "function f(a: string): string;\nfunction f(a: number): number;\nexport function f(a: any): any { return a; }\n",
+    );
+    assert.ok(base.has("f"));
+    assert.ok(!base.has("<module>"), "unexported overload signatures do not leak into the residual backstop");
+    sigMoved(
+      "function f(a: string): string;\nfunction f(a: number): number;\nexport function f(a: any): any { return a; }\n",
+      "function f(a: string): string;\nfunction f(a: boolean): boolean;\nexport function f(a: any): any { return a; }\n",
+      "f",
+    );
+  });
+
+  it("overloads: an implementation-body-only change is body-only", () => {
+    bodyOnly(
+      "export function f(a: string): string;\nexport function f(a: number): number;\nexport function f(a: any): any { return a; }\n",
+      "export function f(a: string): string;\nexport function f(a: number): number;\nexport function f(a: any): any { return String(a); }\n",
+      "f",
+    );
+  });
+
+  it("a private helper referenced from the signature is a sig-move; from the body only, body-only; from both, sig-move", () => {
+    // signature position (a parameter default value)
+    sigMoved(
+      "function d(): number { return 1; }\nexport function f(a: number = d()): number { return a; }\n",
+      "function d(): number { return 2; }\nexport function f(a: number = d()): number { return a; }\n",
+      "f",
+    );
+    // body only
+    bodyOnly(
+      "function h(): number { return 1; }\nexport function g(): number { return h(); }\n",
+      "function h(): number { return 2; }\nexport function g(): number { return h(); }\n",
+      "g",
+    );
+    // referenced in both → sig wins the tie
+    sigMoved(
+      "function d(): number { return 1; }\nexport function f(a: number = d()): number { return a + d(); }\n",
+      "function d(): number { return 2; }\nexport function f(a: number = d()): number { return a + d(); }\n",
+      "f",
+    );
+  });
+
+  it("inferred-return-type widening is body-only — the documented type-checker boundary", () => {
+    // No explicit return annotation: widening the returned shape is a real
+    // contract change but reads as a body edit without a type checker. Pinned so
+    // the boundary is deliberate, not an accidental regression.
+    bodyOnly(
+      "export function f() { return { a: 1 }; }\n",
+      "export function f() { return { a: 1, b: 2 }; }\n",
+      "f",
+    );
+  });
+
+  it("is deterministic and order-independent; reordering overload signatures moves the fingerprint", () => {
+    const src =
+      "export function f(a: string): string;\nexport function f(a: number): number;\nexport function f(a: any): any { return a; }\nexport const c = 1;\n";
+    assert.deepEqual([...amap(src)], [...amap(src)]);
+    const reordered =
+      "export const c = 1;\nexport function f(a: string): string;\nexport function f(a: number): number;\nexport function f(a: any): any { return a; }\n";
+    assert.equal(get(amap(src), "f").fp, get(amap(reordered), "f").fp, "reordering unrelated decls is a no-op");
+    assert.equal(get(amap(src), "c").fp, get(amap(reordered), "c").fp);
+    const swapped =
+      "export function f(a: number): number;\nexport function f(a: string): string;\nexport function f(a: any): any { return a; }\n";
+    assert.notEqual(get(amap(src), "f").sig, get(amap(swapped), "f").sig, "overload resolution order is contract");
+  });
+
+  it("a PRIVATE overloaded helper's whole surface is hashed — an overload-signature-only change wakes its caller", () => {
+    // g is a private overloaded helper referenced from f's body. Changing g's
+    // overload SIGNATURE (not its impl) must still move f — the helper's full
+    // surface (every signature + the impl) is folded into f's closure, so the
+    // change is never hashed nowhere and read as fresh.
+    const base = "function g(x: number): number;\nfunction g(x: any): any { return x; }\nexport function f(): number { return g(1); }\n";
+    const sigChanged = "function g(x: string): string;\nfunction g(x: any): any { return x; }\nexport function f(): number { return g(1); }\n";
+    bodyOnly(base, sigChanged, "f"); // reached from f's body → f's composite moves, f's own signature holds
+    // ...but an unrelated export must NOT move when g's signature changes (no over-firing).
+    const twoExports = base + "export function h(): number { return 7; }\n";
+    const twoExportsSig = sigChanged + "export function h(): number { return 7; }\n";
+    assert.equal(get(amap(twoExports), "h").fp, get(amap(twoExportsSig), "h").fp, "an unrelated export stays put");
+  });
+
+  it("a malformed run with two implementations folds every body — the first body is not dropped", () => {
+    // Two same-name exported functions each with a body is invalid TS (duplicate
+    // implementation) but has no SYNTACTIC diagnostic, so the file stays precise.
+    // Every body must be hashed, so editing the FIRST body is never invisible.
+    bodyOnly(
+      "export function f() { return 1; }\nexport function f() { return 2; }\n",
+      "export function f() { return 99; }\nexport function f() { return 2; }\n",
+      "f",
+    );
+  });
+});
+
 describe("changedAnchors per-symbol (temp git repo)", () => {
   let tmp: string;
   let shaA: string;

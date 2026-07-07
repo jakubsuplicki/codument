@@ -19,8 +19,20 @@ import { classifyTsFile, tsAdapter } from "./ts-adapter.js";
 export interface Anchor {
   /** Identity: the file path (coarse) or a SCIP-shaped symbol FQN (precise). */
   id: string;
-  /** Deterministic content hash of the anchored declaration. */
+  /** Deterministic content hash of the anchored declaration — the COMPOSITE over
+   *  its signature AND body (and referenced private helpers). Moves on ANY real
+   *  change, so it remains the "did it move" key the gate and acks bind to. */
   fingerprint: string;
+  /** The hash of the declaration's SIGNATURE alone (a precise TS declaration:
+   *  modifiers, name, type params, params, return/type annotation, and any
+   *  private helper referenced from the signature). Present ONLY for precise
+   *  per-symbol anchors that have a separable signature; `undefined` for the
+   *  coarse whole-file anchor and the TS module-residual backstop, which have no
+   *  contract/implementation split. A `changed` anchor whose `signature` moved is
+   *  a CONTRACT change (ack-ineligible); one whose `signature` held is a body-only
+   *  implementation move (still ackable). Absent on both sides ⇒ the legacy
+   *  ackable path (coarse/residual), per the coarse non-goal. */
+  signature?: string;
   /** Display name: the symbol name, or the file basename for the coarse anchor. */
   name: string;
   /** "file" for the coarse anchor; a symbol kind for precise anchors. */
@@ -75,6 +87,27 @@ export interface AnchorChange {
   /** The head fingerprint (absent for a `removed` anchor). An acknowledgment binds
    *  to this exact `from`->`to` transition, so it auto-invalidates on the next move. */
   to?: string;
+  /** The base SIGNATURE hash (a precise anchor with a separable signature; absent
+   *  for coarse/module anchors and for an `added` anchor). */
+  fromSig?: string;
+  /** The head SIGNATURE hash. When a `changed` anchor's `fromSig` and `toSig` are
+   *  both present and differ, the CONTRACT moved — a signature change, which is
+   *  ineligible for an ack; equal signatures mean a body-only (implementation)
+   *  move that an ack may still clear. Both absent ⇒ the legacy coarse/residual
+   *  path (no signature to compare). */
+  toSig?: string;
+}
+
+// True when a `changed` anchor's SIGNATURE moved — a contract change (ack-
+// ineligible). A coarse/module anchor (no signature on either side) is never a
+// signature move, so it stays on the legacy ackable path per the coarse non-goal.
+export function isSignatureMove(ch: AnchorChange): boolean {
+  return (
+    ch.kind === "changed" &&
+    ch.fromSig !== undefined &&
+    ch.toSig !== undefined &&
+    ch.fromSig !== ch.toSig
+  );
 }
 
 function anchorsAtRef(root: string, ref: string, path: string): Anchor[] | null {
@@ -94,13 +127,21 @@ function diffAnchorSets(
   const changes: AnchorChange[] = [];
   for (const [id, h] of headById) {
     const b = baseById.get(id);
-    if (!b) changes.push({ id, name: h.name, kind: "added", to: h.fingerprint });
+    if (!b) changes.push({ id, name: h.name, kind: "added", to: h.fingerprint, toSig: h.signature });
     else if (b.fingerprint !== h.fingerprint)
-      changes.push({ id, name: h.name, kind: "changed", from: b.fingerprint, to: h.fingerprint });
+      changes.push({
+        id,
+        name: h.name,
+        kind: "changed",
+        from: b.fingerprint,
+        to: h.fingerprint,
+        fromSig: b.signature,
+        toSig: h.signature,
+      });
   }
   for (const [id, b] of baseById) {
     if (!headById.has(id))
-      changes.push({ id, name: b.name, kind: "removed", from: b.fingerprint });
+      changes.push({ id, name: b.name, kind: "removed", from: b.fingerprint, fromSig: b.signature });
   }
   return changes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }

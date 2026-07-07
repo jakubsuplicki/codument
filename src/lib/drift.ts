@@ -6,7 +6,7 @@ import { classifyComovement, type ComovementStatus } from "./co-movement.js";
 import { ackCovers, type Acknowledgment } from "./acknowledgment.js";
 import { MODULE_ANCHOR_NAME } from "./ts-adapter.js";
 import type { Registry } from "./registry.js";
-import type { AnchorChange, AnchorChangeKind } from "./fingerprint.js";
+import { isSignatureMove, type AnchorChange, type AnchorChangeKind } from "./fingerprint.js";
 
 // Per-symbol drift: the agent-judge-centric layer (decided 2026-06-27). For each
 // moved OWNED anchor it produces a precise finding — the symbol, its fingerprint
@@ -30,6 +30,11 @@ export interface DriftFinding {
   doc: string;
   from?: string;
   to?: string;
+  /** True when a `changed` anchor's SIGNATURE moved — a contract change. Such a
+   *  move is ineligible for any ack (per-symbol or file-grain): the owning doc's
+   *  contract needs an update, not an exemption. A body-only move (`false`) keeps
+   *  the ackable path. */
+  signatureChanged: boolean;
   /** Info-only telemetry: did the doc's lines mentioning this symbol move? */
   comovement: ComovementStatus;
   /** A valid acknowledgment names this exact `from`->`to` transition. */
@@ -95,10 +100,13 @@ export function computeDrift(
         continue;
       }
       const doc = registry.features[owner.feature].doc;
+      const signatureChanged = isSignatureMove(ch);
       // Acks bind to an exact `changed` transition; an added/removed symbol cannot
-      // be refactor-acked (it genuinely needs doc attention).
+      // be refactor-acked (it genuinely needs doc attention). A SIGNATURE move is
+      // ineligible too — the gate never honors an ack for a contract change, so a
+      // laundering ack cannot clear it (it stays flagged until the doc updates).
       const coveringAck =
-        ch.kind === "changed" && ch.from !== undefined && ch.to !== undefined
+        ch.kind === "changed" && !signatureChanged && ch.from !== undefined && ch.to !== undefined
           ? acks.find((a) => ackCovers(a, ch.id, ch.from as string, ch.to as string))
           : undefined;
       const acknowledged = coveringAck !== undefined;
@@ -114,6 +122,7 @@ export function computeDrift(
         doc,
         from: ch.from,
         to: ch.to,
+        signatureChanged,
         comovement,
         acknowledged,
         ...(coveringAck ? { ackReason: coveringAck.reason } : {}),

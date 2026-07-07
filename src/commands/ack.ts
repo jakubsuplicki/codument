@@ -4,6 +4,7 @@ import pc from "picocolors";
 import {
   fileContentTransition,
   gatherAnchorChanges,
+  isSignatureMove,
   type AnchorChange,
 } from "../lib/fingerprint.js";
 import {
@@ -117,6 +118,17 @@ export function ackCommand(anchor: string | undefined, options: AckCliOptions): 
       `${ch.id} was ${ch.kind}, not changed — an added or removed symbol needs doc attention: ` +
         `update the owning doc, or acknowledge the file's additive residue with ` +
         `\`codument ack ${file} --reason "..."\``,
+    );
+    return;
+  }
+  if (isSignatureMove(ch)) {
+    // The highest-signal refusal (ADR 006): a public signature moved, so the
+    // symbol's CONTRACT changed. No ack — per-symbol or file-grain — clears it;
+    // the owning doc's contract needs an update. A body-only move stays ackable.
+    fail(
+      `${ch.id}'s signature changed — the symbol's contract moved, so no ack applies: ` +
+        `update the owning doc's contract at intent altitude. ` +
+        `(An implementation-only body change would still be ackable.)`,
     );
     return;
   }
@@ -237,14 +249,32 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
           !acks.some((a) => ackCovers(a, ch.id, ch.from as string, ch.to as string)),
       );
   if (stillMoved.length > 0) {
+    const sigMoved = stillMoved.filter((ch) => isSignatureMove(ch));
+    const bodyMoved = stillMoved.filter((ch) => !isSignatureMove(ch));
     console.log();
     console.log(
       pc.yellow(`  ⚠ ${stillMoved.length} moved symbol(s) here are NOT cleared by a file ack:`),
     );
-    for (const ch of stillMoved) console.log(`      ${pc.dim("•")} ${ch.id}`);
-    console.log(
-      pc.dim("    Update the owning doc at intent altitude, or codument ack <path>::<symbol> each."),
-    );
+    for (const ch of stillMoved) {
+      const tag = isSignatureMove(ch) ? pc.dim(" (signature changed)") : "";
+      console.log(`      ${pc.dim("•")} ${ch.id}${tag}`);
+    }
+    // Route each class to the resolution that actually applies. A body-only move
+    // can be a per-symbol ack if it changed no contract; a signature move owes a
+    // doc-contract update — no ack (per-symbol or file-grain) clears it, so never
+    // suggest one for it.
+    if (bodyMoved.length > 0) {
+      console.log(
+        pc.dim("    Body-only moves: update the owning doc, or codument ack <path>::<symbol> each."),
+      );
+    }
+    if (sigMoved.length > 0) {
+      console.log(
+        pc.dim(
+          "    Signature moves: update the owning doc's contract at intent altitude (no ack applies).",
+        ),
+      );
+    }
   }
   // Make the API growth visible: an added/removed OWNED export IS cleared by this
   // file ack (additive residue), but it changed the surface — surface it (info-only,

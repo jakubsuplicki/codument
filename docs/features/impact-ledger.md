@@ -2,7 +2,7 @@
 title: Impact Ledger
 status: current
 type: feature
-last_reviewed: 2026-07-01
+last_reviewed: 2026-07-07
 ---
 
 ## Summary
@@ -45,12 +45,12 @@ Both lines are cumulative across all sessions, read from `events.jsonl` (consist
 Caught (all sessions)
   Provable    23 stale docs flagged · 4 high-risk touches · 2 off-plan changes
   Reported    11 review issues fixed before commit   (agent self-reported · correctness)
-  soak        9 symbol move(s) · 4 resolved by doc update · 4 acked · 1 file-acked   (friction 56% · info-only)
+  soak        9 symbol move(s) (3 contract · 6 body) · 4 resolved by doc update · 4 acked · 1 file-acked   (friction 56% · info-only)
 ```
 
 It renders under the existing cost block, after the per-feature spend. On a project with no logged catches yet, the whole section is omitted (empty = absent, matching the verdict's empty-findings behavior). The `Reported` line is omitted independently when no `review` events exist, so a repo that never emits self-reported fixes shows only the provable line.
 
-**Soak line (drift calibration, info-only).** A `caught` event also carries a `DriftTally` — the per-symbol drift outcome for that snapshot: how many owned anchors moved, how many were **resolved by a doc update** (the owning doc changed in the diff — the same verdict-derived resolution the gate uses), how many were cleared by an **acknowledgment** — split into per-symbol refactor acks and file-grain additive acks (`ack <path>`), both of which owe no doc change — and a separate co-movement breakdown kept only as info-only telemetry for calibrating co-movement itself. Summed across snapshots by `summarizeImpact` into a `DriftLedger`, this is the **soak signal** for the freshness gate: friction is the share of *resolved* fires that owed no doc change (either ack kind) rather than a real doc update. Counting a file-grain ack on the ack side, never as a doc update, is what keeps friction honest (see [[change-control-gate]] / ADR 012). It calibrates whether the deterministic stale-doc verdict is quiet enough to become a required CI check (the info-only → blocking flip). Co-movement is never a resolution input (see [[change-control-gate]] / ADR 010); the soak never blends into the provable/reported headline; and it is always labeled info-only.
+**Soak line (drift calibration, info-only).** A `caught` event also carries a `DriftTally` — the per-symbol drift outcome for that snapshot: how many owned anchors moved, how those moves split into **contract (signature) vs body-only churn** (a signature move is never ackable and always owes a doc update; a body-only move keeps the cheap ack path — see [[change-control-gate]]), how many were **resolved by a doc update** (the owning doc changed in the diff — the same verdict-derived resolution the gate uses), how many were cleared by an **acknowledgment** — split into per-symbol refactor acks and file-grain additive acks (`ack <path>`), both of which owe no doc change — and a separate co-movement breakdown kept only as info-only telemetry for calibrating co-movement itself. Summed across snapshots by `summarizeImpact` into a `DriftLedger`, this is the **soak signal** for the freshness gate: friction is the share of *resolved* fires that owed no doc change (either ack kind) rather than a real doc update. Counting a file-grain ack on the ack side, never as a doc update, is what keeps friction honest (see [[change-control-gate]] / ADR 012). The contract/body split lets the info-only → blocking flip read unavoidable contract work apart from the churn the ack path absorbs, rather than one blended fire count. It calibrates whether the deterministic stale-doc verdict is quiet enough to become a required CI check (the info-only → blocking flip). Co-movement is never a resolution input (see [[change-control-gate]] / ADR 010); the soak never blends into the provable/reported headline; and it is always labeled info-only.
 
 **Ack audit events (change-control, not part of the ledger).** `review-events.ts` also defines `emitAck`/`emitAckRemove`, which append identity-bearing `ack` / `ack-remove` records to the same `events.jsonl` when the change-control gate records or retracts an acknowledgment — carrying the anchor, its `from`→`to` fingerprint, the reason, the signer, and self-vs-independent. They are the durable audit trail that makes an agent's self-resolved drift auditable from the log alone (see [[change-control-gate]]); they share the log and this module, never the Caught tally.
 

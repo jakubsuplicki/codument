@@ -7,6 +7,26 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+### Changed
+- The change-control gate now splits each precise symbol anchor into a
+  **signature** hash (the contract: modifiers, name, type parameters, parameter
+  list, return type, overload signatures) and a **body** hash (the
+  implementation). A signature move is a contract change and is ineligible for any
+  acknowledgment — per-symbol or file-grain — so a changed public contract can no
+  longer be laundered past the gate by an ack; the owning doc must be updated. An
+  implementation-only body move keeps the cheap `codument ack` path. `review` marks
+  a signature move `[signature changed]` and never prints an ack command for it,
+  and the `watch` soak line splits its fire volume into `N contract · M body` so
+  the calibration signal separates unavoidable contract work from the churn the ack
+  path absorbs.
+
+### Migration
+- The fingerprint algorithm version was bumped (v1 → v2) for the signature/body
+  split. Existing **per-symbol** acknowledgments recorded against a v1 fingerprint
+  auto-invalidate and must be re-recorded; file-grain (`ack <path>`) and
+  module-residual acknowledgments are unaffected. No action is needed beyond
+  re-acking any genuinely contract-neutral moves the next `review` re-flags.
+
 ## [0.7.0] - 2026-07-01
 
 ### Added

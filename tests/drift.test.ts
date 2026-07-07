@@ -72,7 +72,18 @@ describe("drift wiring — per-symbol findings, acknowledgments, auto-invalidati
     assert.equal(f?.feature, "alpha");
     assert.equal(f?.comovement, "prose-unchanged"); // the foo() line did not move
     assert.equal(f?.acknowledged, false);
+    assert.equal(f?.signatureChanged, false, "a return-value edit is a body-only move");
     assert.ok(f?.from && f?.to && f.from !== f.to, "carries the from->to fingerprints");
+  });
+
+  it("classifies a signature move (a contract change) on the finding, and it stays stale", async () => {
+    // adding a parameter changes foo()'s contract, not just its body.
+    await scaffold({ "src/a.ts": "export function foo(x: number) {\n  return x;\n}\n" });
+    const report = buildReview(tmp);
+    assert.deepStrictEqual(report.state.staleDocs.map((d) => d.feature), ["alpha"]);
+    const f = report.drift.find((d) => d.symbol === "foo");
+    assert.equal(f?.kind, "changed");
+    assert.equal(f?.signatureChanged, true, "a new parameter is a signature move");
   });
 
   it("co-movement reads as co-moved when the symbol's doc line is reconciled", async () => {

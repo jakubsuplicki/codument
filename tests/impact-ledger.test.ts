@@ -13,6 +13,7 @@ interface TransitionInput {
   to: string | null;
   resolution: "flagged" | "doc-updated" | "file-acked" | "acked";
   comovement: string;
+  signatureChanged?: boolean;
 }
 
 function caught(data: {
@@ -27,6 +28,8 @@ function caught(data: {
     notReferenced: number;
     acknowledged: number;
     fileAcked?: number;
+    sigMoved?: number;
+    bodyMoved?: number;
   };
   driftTransitions?: TransitionInput[];
 }): CodumentEvent {
@@ -130,6 +133,64 @@ describe("summarizeImpact — drift soak line", () => {
     assert.equal(ledger.drift.flagged, 0);
     assert.equal(ledger.drift.frictionRate, 0);
     assert.equal(ledger.hasDrift, false);
+  });
+});
+
+describe("summarizeImpact — signature/body split (contract vs implementation churn)", () => {
+  it("splits deduped transitions into contract (signature) vs body moves", () => {
+    const ledger = summarizeImpact([
+      caught({
+        driftTransitions: [
+          transition({ anchorId: "src/a.ts::foo().", signatureChanged: true, resolution: "flagged" }),
+          transition({ anchorId: "src/a.ts::bar().", signatureChanged: false, resolution: "acked" }),
+          transition({ anchorId: "src/a.ts::baz().", signatureChanged: false, resolution: "doc-updated" }),
+        ],
+      }),
+    ]);
+    assert.equal(ledger.drift.flagged, 3);
+    assert.equal(ledger.drift.sigMoved, 1, "one contract move");
+    assert.equal(ledger.drift.bodyMoved, 2, "two body-only moves");
+  });
+
+  it("does not count an added/removed transition as a body move (only `changed` transitions)", () => {
+    const ledger = summarizeImpact([
+      caught({
+        driftTransitions: [
+          transition({ anchorId: "src/a.ts::added().", from: null, to: "f1", resolution: "doc-updated" }),
+          transition({ anchorId: "src/a.ts::removed().", from: "f0", to: null, resolution: "doc-updated" }),
+          transition({ anchorId: "src/a.ts::changed().", from: "f0", to: "f1", resolution: "acked" }),
+        ],
+      }),
+    ]);
+    assert.equal(ledger.drift.flagged, 3);
+    assert.equal(ledger.drift.sigMoved, 0);
+    assert.equal(ledger.drift.bodyMoved, 1, "only the changed transition is a body move");
+  });
+
+  it("dedupes the split across re-logged snapshots (last observation wins)", () => {
+    const t = transition({ anchorId: "src/a.ts::foo().", signatureChanged: true, resolution: "flagged" });
+    const ledger = summarizeImpact([
+      caught({ driftTransitions: [t] }),
+      // the same transition re-logged, now doc-updated — still ONE contract move
+      caught({ driftTransitions: [{ ...t, resolution: "doc-updated" }] }),
+    ]);
+    assert.equal(ledger.drift.flagged, 1);
+    assert.equal(ledger.drift.sigMoved, 1);
+    assert.equal(ledger.drift.docUpdated, 1);
+  });
+
+  it("sums a legacy count-only snapshot's split, and treats a pre-split snapshot as 0", () => {
+    const ledger = summarizeImpact([
+      caught({
+        drift: { flagged: 4, sigMoved: 1, bodyMoved: 3, docUpdated: 2, acknowledged: 2, coMoved: 0, proseUnchanged: 0, notReferenced: 0 },
+      }),
+      // a snapshot logged before the split existed carries neither field → 0
+      caught({
+        drift: { flagged: 2, docUpdated: 1, acknowledged: 1, coMoved: 0, proseUnchanged: 0, notReferenced: 0 },
+      }),
+    ]);
+    assert.equal(ledger.drift.sigMoved, 1);
+    assert.equal(ledger.drift.bodyMoved, 3);
   });
 });
 

@@ -458,6 +458,32 @@ describe("renderFrame caught section (impact ledger)", () => {
     const frame = renderFrame(gitReview(), coverage, [caught({}), caught({})], NOW);
     assert.doesNotMatch(frame, /caught \(all sessions\)/);
   });
+
+  it("the soak line splits the fire volume into contract vs body churn", () => {
+    const frame = renderFrame(
+      gitReview(),
+      coverage,
+      [
+        caught({
+          drift: {
+            flagged: 3,
+            sigMoved: 1,
+            bodyMoved: 2,
+            docUpdated: 1,
+            fileAcked: 0,
+            acknowledged: 1,
+            coMoved: 0,
+            proseUnchanged: 0,
+            notReferenced: 0,
+          },
+        }),
+      ],
+      NOW,
+    );
+    assert.match(frame, /soak/);
+    assert.match(frame, /3 symbol move\(s\)/);
+    assert.match(frame, /1 contract · 2 body/);
+  });
 });
 
 describe("codument watch --once (CLI, temp git repo)", () => {
