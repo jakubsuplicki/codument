@@ -1,6 +1,31 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseInvariants } from "../src/lib/invariant-check.js";
+import {
+  checkInvariants,
+  type DocInvariants,
+  type InvariantProbes,
+  parseInvariants,
+} from "../src/lib/invariant-check.js";
+import type { TestOutcome } from "../src/lib/review-confirm.js";
+
+// A fake probe set: `outcomes` maps a test file to its run result; a file absent
+// from `outcomes` does not "exist". Counts runs so dedup is observable.
+function fakeProbes(outcomes: Record<string, TestOutcome>): InvariantProbes & { runs: string[] } {
+  const runs: string[] = [];
+  return {
+    runs,
+    exists: (ref) => ref in outcomes,
+    run: (ref) => {
+      runs.push(ref);
+      return { outcome: outcomes[ref] ?? "unrunnable" };
+    },
+  };
+}
+
+// Build a one-doc invariant set from raw markdown for the run tests.
+function doc(md: string, path = "docs/features/x.md"): DocInvariants[] {
+  return [{ doc: path, invariants: parseInvariants(md) }];
+}
 
 describe("parseInvariants — pointer parsing over a doc's invariants section", () => {
   const DOC = [
@@ -93,12 +118,85 @@ describe("parseInvariants — edge cases", () => {
   });
 
   it("takes the LAST parenthetical as the annotation (an earlier aside is not it)", () => {
-    const doc =
+    const src =
       "## Invariants & boundaries\n- **claim** with an *(aside)* mid-sentence *(test: real.test.ts)*\n";
-    const invs = parseInvariants(doc);
+    const invs = parseInvariants(src);
     assert.deepStrictEqual(invs[0].annotation, {
       kind: "pinned",
       pointers: [{ file: "real.test.ts" }],
     });
+  });
+});
+
+describe("checkInvariants — running the pointers and classifying", () => {
+  const MD = [
+    "## Invariants & boundaries",
+    "- **green.** *(test: g.test.ts)*",
+    "- **broken.** *(test: r.test.ts)*",
+    "- **unpinned.** *(test: gone.test.ts)*",
+    "- **malformed.** *(test: no file here)*",
+    "- **untested.** *(untested)*",
+    "- **boundary.** *(honest ceiling — undecidable)*",
+    "- **toolchain.** *(test: t.test.ts)*",
+  ].join("\n");
+
+  const probes = fakeProbes({
+    "g.test.ts": "passed",
+    "r.test.ts": "failed",
+    "t.test.ts": "unrunnable",
+    // gone.test.ts intentionally absent → does not exist → unpinned
+  });
+  const report = checkInvariants(doc(MD), probes);
+  const verdict = (summary: string) =>
+    report.results.find((r) => r.summary.startsWith(summary))?.verdict;
+
+  it("maps every annotation kind to its verdict", () => {
+    assert.equal(verdict("green"), "green");
+    assert.equal(verdict("broken"), "invariant-broken");
+    assert.equal(verdict("unpinned"), "invariant-unpinned");
+    assert.equal(verdict("malformed"), "invariant-unpinned");
+    assert.equal(verdict("untested"), "untested");
+    assert.equal(verdict("boundary"), "honest");
+    assert.equal(verdict("toolchain"), "unrunnable");
+  });
+
+  it("warns only on broken + unpinned (what --strict fails on)", () => {
+    assert.deepStrictEqual(
+      report.warnings.map((w) => w.verdict).sort(),
+      ["invariant-broken", "invariant-unpinned", "invariant-unpinned"],
+    );
+  });
+
+  it("scores the honesty ratio (green / green+broken+unpinned+untested; excludes unrunnable + honest)", () => {
+    assert.equal(report.enforced, 1, "one green");
+    // scored = green + broken + unpinned + malformed-as-unpinned + untested = 5
+    assert.equal(report.scored, 5);
+  });
+
+  it("a red test surfaces the failing file in the detail", () => {
+    const b = report.results.find((r) => r.verdict === "invariant-broken");
+    assert.match(b?.detail ?? "", /r\.test\.ts/);
+  });
+});
+
+describe("checkInvariants — dedup and precedence", () => {
+  it("runs a shared test file only once across invariants", () => {
+    const md = [
+      "## Invariants & boundaries",
+      "- **one.** *(test: shared.test.ts)*",
+      "- **two.** *(test: shared.test.ts)*",
+      "- **three.** *(tests: shared.test.ts other prose)*",
+    ].join("\n");
+    const probes = fakeProbes({ "shared.test.ts": "passed" });
+    const report = checkInvariants(doc(md), probes);
+    assert.deepStrictEqual(probes.runs, ["shared.test.ts"], "ran exactly once");
+    assert.equal(report.enforced, 3, "all three read the cached green");
+  });
+
+  it("a broken cited test outranks a missing one on the same invariant", () => {
+    const md = "## Invariants & boundaries\n- **multi.** *(tests: red.test.ts and missing.test.ts)*\n";
+    const probes = fakeProbes({ "red.test.ts": "failed" }); // missing.test.ts absent
+    const report = checkInvariants(doc(md), probes);
+    assert.equal(report.results[0].verdict, "invariant-broken");
   });
 });

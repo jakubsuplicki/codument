@@ -1,3 +1,11 @@
+import {
+  DEFAULT_TEST_SEARCH_DIRS,
+  makeTestRunner,
+  resolveTestPath,
+  type TestRunner,
+  type TestRunResult,
+} from "./review-confirm.js";
+
 // ── Invariant pointer parsing ────────────────────────────────────────────────
 //
 // The documentation standard requires every entry in a doc's `## Invariants &
@@ -134,4 +142,142 @@ export function parseInvariants(docText: string): ParsedInvariant[] {
   }
   flush();
   return invariants;
+}
+
+// ── Running the pointers: verify, don't trust ────────────────────────────────
+//
+// Second half of `doctor --verify-invariants`: run each pinned pointer through the
+// project's hardened runner and classify the outcome. This extends verify-don't-
+// trust from diffs (the review gate) to the docs themselves — a cited test that is
+// missing, red, or unrunnable is a named result instead of silent decoration.
+
+export type InvariantVerdict =
+  /** Every cited test resolved and passed — the invariant is enforced. */
+  | "green"
+  /** A cited test resolved and ran RED — a warn finding. */
+  | "invariant-broken"
+  /** A cited test file does not resolve, or the marker was unparseable — a warn
+   *  finding (subsumes the existence-only link-rot check when this mode runs). */
+  | "invariant-unpinned"
+  /** A cited test resolved but the runner could not execute it (toolchain) — info. */
+  | "unrunnable"
+  /** `*(untested)*`, or no marker at all — honestly (or silently) unenforced; info,
+   *  and counts against the honesty ratio. */
+  | "untested"
+  /** `*(honest …)*` — a deliberate non-testable boundary; info, excluded from the ratio. */
+  | "honest";
+
+export interface InvariantResult {
+  doc: string;
+  summary: string;
+  line: number;
+  verdict: InvariantVerdict;
+  detail?: string;
+}
+
+export interface DocInvariants {
+  /** The registered doc's repo-relative path. */
+  doc: string;
+  invariants: ParsedInvariant[];
+}
+
+export interface InvariantProbes {
+  /** Runs a resolved test file, red/green/unrunnable. */
+  run: TestRunner;
+  /** Whether a test reference resolves to an existing, in-tree file (unpinned check). */
+  exists: (testRef: string) => boolean;
+}
+
+export interface InvariantCheckReport {
+  results: InvariantResult[];
+  /** Green invariants — the numerator of the honesty ratio. */
+  enforced: number;
+  /** Invariants that count toward the ratio: green + broken + unpinned + untested.
+   *  `unrunnable` and `honest` are excluded (a toolchain gap and a deliberate
+   *  non-testable boundary are neither enforced nor a pinning failure). */
+  scored: number;
+  /** Warn-level results (broken + unpinned) — what `--strict` fails on. */
+  warnings: InvariantResult[];
+}
+
+const SCORED: ReadonlySet<InvariantVerdict> = new Set([
+  "green",
+  "invariant-broken",
+  "invariant-unpinned",
+  "untested",
+]);
+
+// Classify one invariant. A pinned invariant runs every cited test (deduped by the
+// caller's memoized runner); the aggregate verdict surfaces the most actionable
+// state — a red test outranks a missing pin, which outranks a toolchain failure,
+// and only an all-green set is `green`.
+function verdictFor(
+  inv: ParsedInvariant,
+  probes: InvariantProbes,
+  runOnce: (ref: string) => TestRunResult,
+): { verdict: InvariantVerdict; detail?: string } {
+  const a = inv.annotation;
+  if (a.kind === "untested") return { verdict: "untested" };
+  if (a.kind === "none") return { verdict: "untested", detail: "no test marker" };
+  if (a.kind === "honest") return { verdict: "honest", detail: a.note };
+  if (a.kind === "malformed") {
+    return { verdict: "invariant-unpinned", detail: `unparseable test marker: ${a.raw}` };
+  }
+  let broken: string | undefined;
+  let unpinned: string | undefined;
+  let unrunnable: string | undefined;
+  for (const p of a.pointers) {
+    if (!probes.exists(p.file)) {
+      unpinned = p.file;
+      continue;
+    }
+    const res = runOnce(p.file);
+    if (res.outcome === "failed") broken = p.file;
+    else if (res.outcome === "unrunnable") unrunnable = res.detail ?? p.file;
+  }
+  if (broken) return { verdict: "invariant-broken", detail: `${broken} ran red` };
+  if (unpinned) return { verdict: "invariant-unpinned", detail: `test not found: ${unpinned}` };
+  if (unrunnable) return { verdict: "unrunnable", detail: unrunnable };
+  return { verdict: "green" };
+}
+
+// Run and classify every invariant across the registered docs. Identical cited
+// test files run once (the runner is memoized), so a test shared by many
+// invariants is not re-executed. Pure aside from the injected probes.
+export function checkInvariants(
+  docs: readonly DocInvariants[],
+  probes: InvariantProbes,
+): InvariantCheckReport {
+  const cache = new Map<string, TestRunResult>();
+  const runOnce = (ref: string): TestRunResult => {
+    const hit = cache.get(ref);
+    if (hit) return hit;
+    const res = probes.run(ref);
+    cache.set(ref, res);
+    return res;
+  };
+  const results: InvariantResult[] = [];
+  for (const { doc, invariants } of docs) {
+    for (const inv of invariants) {
+      results.push({ doc, summary: inv.summary, line: inv.line, ...verdictFor(inv, probes, runOnce) });
+    }
+  }
+  const enforced = results.filter((r) => r.verdict === "green").length;
+  const scored = results.filter((r) => SCORED.has(r.verdict)).length;
+  const warnings = results.filter(
+    (r) => r.verdict === "invariant-broken" || r.verdict === "invariant-unpinned",
+  );
+  return { results, enforced, scored, warnings };
+}
+
+// Build the real probes from a repo root: the hardened test runner plus an
+// existence check that resolves a reference through the same search dirs and
+// containment rules the runner uses, so "unpinned" means exactly "the runner
+// would not find this file". `command` overrides the default test command
+// (`review`'s `--test-command` contract).
+export function invariantProbes(root: string, command?: readonly string[]): InvariantProbes {
+  return {
+    run: makeTestRunner({ root, command, searchDirs: DEFAULT_TEST_SEARCH_DIRS }),
+    exists: (ref) => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS) !== null,
+  };
 }
