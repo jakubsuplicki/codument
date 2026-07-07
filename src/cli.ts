@@ -60,6 +60,14 @@ program
     "--strict",
     "Exit 1 if there are findings, for CI gating (opt-in; bare doctor stays warning-only and notes never fail)",
   )
+  .option(
+    "--verify-invariants",
+    "Opt-in: RUN the test each doc invariant cites (not just check the pointer exists) and score the enforced share. Environment-touching and slower than bare doctor; a broken or unpinned invariant is a warning that --strict fails on",
+  )
+  .option(
+    "--test-command <argv...>",
+    'How to run a cited invariant test under --verify-invariants; the literal {file} token is the resolved path. Pass as ONE quoted string, e.g. --test-command "vitest run {file}" (default: npx --no-install tsx --test {file} — local-only, never a network fetch)',
+  )
   .action(doctor);
 
 program

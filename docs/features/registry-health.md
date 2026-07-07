@@ -53,7 +53,7 @@ The badge is a coverage figure, not a quality or correctness score, and absolute
 
 ## Key files
 
-- `src/commands/doctor.ts` — the command orchestrator: assembles the two-axis report, applies the opt-in `--strict` exit policy, and renders human and `--json` output plus the on-disk coverage artifact.
+- `src/commands/doctor.ts` — the command orchestrator: assembles the two-axis report, applies the opt-in `--strict` exit policy, renders human and `--json` output plus the on-disk coverage artifact, and — under the opt-in, environment-touching `--verify-invariants` — runs the invariant check and folds its broken/unpinned warnings into the strict exit (bare doctor stays byte-identical, so its `--json` gains the invariants block only when the mode is on).
 - `src/lib/analyze.ts` — the deterministic analyzer: owns the canonical exclusion spec, computes the coverage ratios and their rollup, and emits the lint findings. This is the shared engine the rest of the health surface reads.
 - `src/lib/badge.ts` — the rendering seam: turns a coverage percent (or N/A) into a static, network-free SVG badge.
 - `src/lib/invariant-check.ts` — the engine behind the opt-in `--verify-invariants` mode: it parses a doc's `## Invariants & boundaries` markers into machine-checkable test pointers, then runs each cited test through the project's own hardened runner (deduping a shared test to one run) and classifies the invariant — green, broken (a cited test went red), unpinned (a cited test is missing or the marker is unparseable), unrunnable (toolchain), untested, or an honest non-testable boundary — with an honesty ratio over the enforced share. This is what turns "this doc's invariants are enforced" from decoration into a checkable claim.

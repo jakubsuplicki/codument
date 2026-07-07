@@ -208,6 +208,26 @@ describe("makeTestRunner — exit code maps to outcome", () => {
     const run = makeTestRunner({ root: tmp, command: ["this-command-does-not-exist-zzz", "{file}"] });
     assert.equal(run("x.test.ts").outcome, "unrunnable");
   });
+
+  it("strips NODE_TEST_CONTEXT so a spawned node:test child reports its TRUE exit (never a false green)", () => {
+    // A failing node:test file exits 1 standalone but exits 0 if it inherits a
+    // parent test-runner's NODE_TEST_CONTEXT. When codument's runner is invoked
+    // from inside another `node --test` run, it must strip that so a red test is
+    // never read as green.
+    writeFileSync(
+      join(tmp, "red.test.js"),
+      'import{test}from"node:test";import a from"node:assert";test("x",()=>a.equal(1,2));\n',
+    );
+    const prev = process.env.NODE_TEST_CONTEXT;
+    process.env.NODE_TEST_CONTEXT = "child-v8"; // simulate running under `node --test`
+    try {
+      const run = makeTestRunner({ root: tmp, command: ["node", "--test", "{file}"] });
+      assert.equal(run("red.test.js").outcome, "failed");
+    } finally {
+      if (prev === undefined) delete process.env.NODE_TEST_CONTEXT;
+      else process.env.NODE_TEST_CONTEXT = prev;
+    }
+  });
 });
 
 describe("win32-safe spawning (the confirm gate must not be structurally green on Windows)", () => {

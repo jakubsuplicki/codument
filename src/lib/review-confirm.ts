@@ -227,13 +227,21 @@ export function makeTestRunner(opts: TestRunnerOptions): TestRunner {
   const command = opts.command ?? DEFAULT_TEST_COMMAND;
   const searchDirs = opts.searchDirs ?? DEFAULT_TEST_SEARCH_DIRS;
   const timeout = opts.timeoutMs ?? 120_000;
+  // Run the child in a CLEAN test context: strip NODE_TEST_CONTEXT so a spawned
+  // `node --test` file runs standalone and reports its OWN exit code. Without this,
+  // when the runner is itself invoked from inside a `node --test` process (a project
+  // running `codument review`/`doctor --verify-invariants` as a test step), the
+  // child inherits the parent's test-runner IPC context and exits 0 even on a
+  // FAILING test — a red test read as green, the exact false-pass the gate forbids.
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
   return (testRef: string): TestRunResult => {
     const resolved = resolveTestPath(opts.root, testRef, searchDirs);
     if (!resolved) return { outcome: "unrunnable", detail: `test not found: ${testRef}` };
     const argv = command.map((a) => (a === "{file}" ? resolved : a));
     // win32-safe: a .cmd shim (npx/npm/vitest) needs a shell since Node's
     // CVE-2024-27980 hardening; POSIX spawns exactly as before.
-    const res = spawnArgvSync(argv, { cwd: opts.root, timeout, encoding: "utf8" });
+    const res = spawnArgvSync(argv, { cwd: opts.root, timeout, encoding: "utf8", env });
     if (res.error) {
       return { outcome: "unrunnable", detail: String(res.error.message ?? res.error) };
     }

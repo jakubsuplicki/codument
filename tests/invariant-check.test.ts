@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, before, describe, it } from "node:test";
 import {
   checkInvariants,
   type DocInvariants,
+  gatherDocInvariants,
   type InvariantProbes,
   parseInvariants,
+  runInvariantCheck,
 } from "../src/lib/invariant-check.js";
+import { normalizeRegistry } from "../src/lib/registry.js";
 import type { TestOutcome } from "../src/lib/review-confirm.js";
 
 // A fake probe set: `outcomes` maps a test file to its run result; a file absent
@@ -198,5 +204,61 @@ describe("checkInvariants — dedup and precedence", () => {
     const probes = fakeProbes({ "red.test.ts": "failed" }); // missing.test.ts absent
     const report = checkInvariants(doc(md), probes);
     assert.equal(report.results[0].verdict, "invariant-broken");
+  });
+});
+
+describe("runInvariantCheck — end-to-end over a fixture repo (real runner)", () => {
+  let tmp: string;
+
+  before(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-inv-e2e-"));
+    await mkdir(join(tmp, "docs/features"), { recursive: true });
+    await writeFile(
+      join(tmp, "docs/.registry.json"),
+      JSON.stringify({
+        features: { f: { doc: "docs/features/f.md", type: "feature", primary_sources: [], status: "current" } },
+      }),
+    );
+    await writeFile(
+      join(tmp, "docs/features/f.md"),
+      [
+        "# F",
+        "## Invariants & boundaries",
+        "- **the enforced one.** *(test: pass.test.js)*",
+        "- **the violated one.** *(test: fail.test.js)*",
+        "- **the missing one.** *(test: gone.test.js)*",
+        "- **the honest one.** *(untested)*",
+        "",
+      ].join("\n"),
+    );
+    // Plain node:test files so the runner needs only `node --test` (no tsx in /tmp).
+    await writeFile(join(tmp, "pass.test.js"), 'import{test}from"node:test";test("ok",()=>{});\n');
+    await writeFile(
+      join(tmp, "fail.test.js"),
+      'import{test}from"node:test";import a from"node:assert";test("bad",()=>a.equal(1,2));\n',
+    );
+  });
+  after(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("gathers invariants from the registered doc", () => {
+    const reg = normalizeRegistry(JSON.parse('{"features":{"f":{"doc":"docs/features/f.md"}}}'));
+    const gathered = gatherDocInvariants(tmp, reg);
+    assert.equal(gathered.length, 1);
+    assert.equal(gathered[0].invariants.length, 4);
+  });
+
+  it("classifies a passing, a failing, and a missing cited test end-to-end", () => {
+    const reg = normalizeRegistry(JSON.parse('{"features":{"f":{"doc":"docs/features/f.md"}}}'));
+    const report = runInvariantCheck(tmp, reg, ["node", "--test", "{file}"]);
+    const v = (needle: string) =>
+      report.results.find((r) => r.summary.includes(needle))?.verdict;
+    assert.equal(v("enforced"), "green", "pass.test.js ran green");
+    assert.equal(v("violated"), "invariant-broken", "fail.test.js ran red");
+    assert.equal(v("missing"), "invariant-unpinned", "gone.test.js does not resolve");
+    assert.equal(v("honest"), "untested");
+    assert.equal(report.enforced, 1);
+    assert.equal(report.warnings.length, 2, "broken + unpinned");
   });
 });

@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { Registry } from "./registry.js";
 import {
   DEFAULT_TEST_SEARCH_DIRS,
   makeTestRunner,
@@ -53,9 +56,10 @@ export interface ParsedInvariant {
 }
 
 // Matches a test-file token, back-ticked or bare, with an optional `#name` suffix.
-// The extensions mirror the TS adapter's (`.test.ts/tsx/mts/cts`). Back-ticks sit
-// outside the capture, so the returned file is clean.
-const TEST_FILE_RE = /`?([A-Za-z0-9_./-]+\.test\.[cm]?tsx?)`?(?:#([A-Za-z0-9_-]+))?/g;
+// Accepts the common test extensions — `.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}` —
+// since a consumer project's suite may be JS. Back-ticks sit outside the capture,
+// so the returned file is clean.
+const TEST_FILE_RE = /`?([A-Za-z0-9_./-]+\.test\.[cm]?[jt]sx?)`?(?:#([A-Za-z0-9_-]+))?/g;
 
 // The trailing italic-paren annotation on a bullet: the LAST `*( … )*` span. Real
 // annotations sit at the end of the invariant; an earlier `*( … )*` aside is not it.
@@ -280,4 +284,42 @@ export function invariantProbes(root: string, command?: readonly string[]): Inva
     run: makeTestRunner({ root, command, searchDirs: DEFAULT_TEST_SEARCH_DIRS }),
     exists: (ref) => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS) !== null,
   };
+}
+
+// Read every registered doc (primary + additional) and parse its invariants,
+// deduped by path and sorted for a deterministic order. A doc missing from disk
+// is skipped here (that is analyze's link-rot concern, not this mode's), and a doc
+// with no invariants section contributes nothing.
+export function gatherDocInvariants(root: string, registry: Registry): DocInvariants[] {
+  const seen = new Set<string>();
+  const out: DocInvariants[] = [];
+  const consider = (docPath: string | undefined): void => {
+    if (!docPath || seen.has(docPath)) return;
+    seen.add(docPath);
+    const full = join(root, docPath);
+    if (!existsSync(full)) return;
+    const invariants = parseInvariants(readFileSync(full, "utf8"));
+    if (invariants.length > 0) out.push({ doc: docPath, invariants });
+  };
+  for (const entry of Object.values(registry.features)) {
+    consider(entry.doc);
+    for (const d of entry.docs ?? []) consider(d);
+  }
+  return out.sort((a, b) => (a.doc < b.doc ? -1 : a.doc > b.doc ? 1 : 0));
+}
+
+// The honesty ratio: the enforced (green) share of invariants that count toward
+// scoring, or null when none are scorable (the same zero-denominator rule doctor
+// uses for coverage). Kept here so the ratio definition lives with the classes.
+export function honestyRatio(report: InvariantCheckReport): number | null {
+  return report.scored === 0 ? null : report.enforced / report.scored;
+}
+
+// Top-level convenience for `doctor --verify-invariants`: gather, run, classify.
+export function runInvariantCheck(
+  root: string,
+  registry: Registry,
+  command?: readonly string[],
+): InvariantCheckReport {
+  return checkInvariants(gatherDocInvariants(root, registry), invariantProbes(root, command));
 }

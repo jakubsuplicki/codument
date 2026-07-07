@@ -15,16 +15,47 @@ import {
   type CoverageReport,
   type LintFinding,
 } from "../lib/analyze.js";
+import {
+  honestyRatio,
+  type InvariantCheckReport,
+  type InvariantResult,
+  type InvariantVerdict,
+  runInvariantCheck,
+} from "../lib/invariant-check.js";
+import { normalizeTestCommand } from "./review.js";
 
 interface DoctorOptions {
   root?: string;
   json?: boolean;
   write?: boolean;
   strict?: boolean;
+  verifyInvariants?: boolean;
+  testCommand?: string[];
   maxDocLines?: string | number;
   maxSectionLines?: string | number;
   maxCompletedLog?: string | number;
   highFanout?: string | number;
+}
+
+// The versioned `--json` block for `--verify-invariants` — present ONLY when the
+// mode is on, so bare `doctor --json` stays byte-identical to before this plan.
+export interface InvariantJson {
+  version: 1;
+  enforced: number;
+  scored: number;
+  /** enforced / scored, or null when nothing is scorable (zero-denominator rule). */
+  ratio: number | null;
+  results: InvariantResult[];
+}
+
+export function invariantJson(report: InvariantCheckReport): InvariantJson {
+  return {
+    version: 1,
+    enforced: report.enforced,
+    scored: report.scored,
+    ratio: honestyRatio(report),
+    results: report.results,
+  };
 }
 
 // Deterministic score artifact (no timestamp): the single file a badge, CI, or
@@ -175,11 +206,23 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
     highFanoutThreshold: num(options.highFanout),
   });
 
-  // --strict is opt-in CI gating: it only sets a nonzero exit code when there
-  // are actionable findings. Notes (info) are excluded by lint.count and bare
-  // `doctor` is unaffected. It never writes to stdout, so `--json` output stays
-  // byte-identical and only the process exit code differs.
-  const strictFail = !!options.strict && report.lint.count > 0;
+  // Opt-in, environment-touching mode: RUN each doc invariant's cited test. Off by
+  // default so bare doctor stays instant, deterministic, and byte-identical. When
+  // on, a broken or unpinned invariant is a warn-level result that --strict fails on.
+  const invReport = options.verifyInvariants
+    ? runInvariantCheck(
+        root,
+        readRegistrySync(join(root, "docs", ".registry.json")),
+        normalizeTestCommand(options.testCommand),
+      )
+    : null;
+
+  // --strict is opt-in CI gating: it only sets a nonzero exit code when there are
+  // actionable findings. Notes (info) are excluded by lint.count. Invariant warns
+  // (broken/unpinned) count only when --verify-invariants ran them. Bare doctor is
+  // unaffected; --strict never writes to stdout, so --json stays byte-identical.
+  const strictFail =
+    !!options.strict && (report.lint.count > 0 || (invReport?.warnings.length ?? 0) > 0);
 
   if (options.write) {
     const { jsonPath, svgPath } = writeCoverageArtifacts(root, report);
@@ -192,12 +235,16 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
   }
 
   if (options.json) {
-    console.log(JSON.stringify(report, null, 2));
+    // Spread the invariants block in ONLY when the mode ran, so bare doctor --json
+    // is byte-identical to before this plan (the non-goal that keeps CI stable).
+    const out = invReport ? { ...report, invariants: invariantJson(invReport) } : report;
+    console.log(JSON.stringify(out, null, 2));
     if (strictFail) process.exitCode = 1;
     return;
   }
 
   printHuman(report, strictFail);
+  if (invReport) printInvariants(invReport, !!options.strict);
   // Advisory skew nudge — human output only, so the --json contract stays
   // byte-identical; never a finding, never an exit-code input.
   const skew = versionSkewNotice(root);
@@ -274,16 +321,85 @@ function printHuman(report: DoctorReport, strictFail = false): void {
       "  Coverage is a gap-finder (registry membership + dependencies), not a quality score.",
     ),
   );
-  if (strictFail) {
+  // The lint-driven strict line. Invariant-driven strict (with no lint findings)
+  // is reported by printInvariants instead, so this never says "0 findings failing".
+  if (strictFail && report.lint.count > 0) {
     console.log(
       pc.red(
         `  Strict: ${report.lint.count} finding${report.lint.count === 1 ? "" : "s"} present, failing (exit 1). Notes are awareness-only and never count.`,
       ),
     );
-  } else {
+  } else if (!strictFail) {
     console.log(
       pc.dim(
         "  Findings are warnings, not failures. Notes are awareness-only. Neither changes the exit code.",
+      ),
+    );
+  }
+}
+
+// ── Invariant-check output (opt-in --verify-invariants) ──────────────────
+
+const INVARIANT_STYLE: Record<InvariantVerdict, { sym: string; color: (s: string) => string }> = {
+  green: { sym: pc.green("✓"), color: pc.green },
+  "invariant-broken": { sym: pc.red("✗"), color: pc.red },
+  "invariant-unpinned": { sym: pc.yellow("⚠"), color: pc.yellow },
+  unrunnable: { sym: pc.cyan("ℹ"), color: pc.cyan },
+  untested: { sym: pc.cyan("ℹ"), color: pc.dim },
+  honest: { sym: pc.dim("·"), color: pc.dim },
+};
+
+const INVARIANT_ORDER: InvariantVerdict[] = [
+  "invariant-broken",
+  "invariant-unpinned",
+  "unrunnable",
+  "untested",
+  "honest",
+];
+
+function printInvariants(report: InvariantCheckReport, strict: boolean): void {
+  console.log();
+  console.log(
+    `  ${pc.bold("Invariant checks")} ${pc.dim("(environment-dependent — runs each cited test)")}`,
+  );
+  if (report.results.length === 0) {
+    console.log(`    ${pc.dim("no invariants found in registered docs")}`);
+    return;
+  }
+  const ratio = honestyRatio(report);
+  const ratioStr = ratio === null ? pc.dim("N/A") : pc.bold(`${Math.round(ratio * 100)}%`);
+  console.log(`    ${report.enforced}/${report.scored} enforced  ${ratioStr}`);
+
+  const rank = (v: InvariantVerdict): number => INVARIANT_ORDER.indexOf(v);
+  const nonGreen = report.results
+    .filter((r) => r.verdict !== "green")
+    .sort(
+      (a, b) =>
+        rank(a.verdict) - rank(b.verdict) ||
+        (a.doc < b.doc ? -1 : a.doc > b.doc ? 1 : a.line - b.line),
+    );
+  if (nonGreen.length === 0) {
+    console.log(`    ${pc.green("✓")} every cited invariant passes`);
+  }
+  for (const r of nonGreen) {
+    const style = INVARIANT_STYLE[r.verdict];
+    const detail = r.detail ? pc.dim(` — ${r.detail}`) : "";
+    console.log(
+      `    ${style.sym} ${style.color(r.verdict.padEnd(18))} ${pc.dim(`${r.doc}:${r.line}`)}  ${r.summary}${detail}`,
+    );
+  }
+
+  const warnCount = report.warnings.length;
+  if (strict && warnCount > 0) {
+    console.log(
+      pc.red(
+        `    Strict: ${warnCount} invariant warning${warnCount === 1 ? "" : "s"} (broken/unpinned), failing (exit 1).`,
+      ),
+    );
+  } else {
+    console.log(
+      pc.dim(
+        "    Results depend on the local toolchain; unrunnable and honest boundaries never count against.",
       ),
     );
   }
