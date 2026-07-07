@@ -66,12 +66,13 @@ describe("parseInvariants — pointer parsing over a doc's invariants section", 
     assert.deepStrictEqual(a.annotation, { kind: "pinned", pointers: [{ file: "a.test.ts" }] });
   });
 
-  it("parses multiple files and a #name in one marker (back-ticks stripped)", () => {
+  it("parses multiple files in one marker (back-ticks stripped, #name consumed not enforced)", () => {
     const b = invs[1].annotation;
     assert.equal(b.kind, "pinned");
+    // b2.test.ts#namedCase → the file only; we run the whole file, never a subtest.
     assert.deepStrictEqual(b.kind === "pinned" && b.pointers, [
       { file: "b1.test.ts" },
-      { file: "b2.test.ts", name: "namedCase" },
+      { file: "b2.test.ts" },
     ]);
   });
 
@@ -123,7 +124,7 @@ describe("parseInvariants — edge cases", () => {
     });
   });
 
-  it("takes the LAST parenthetical as the annotation (an earlier aside is not it)", () => {
+  it("scans ALL spans: a non-marker aside contributes nothing, the citation still pins", () => {
     const src =
       "## Invariants & boundaries\n- **claim** with an *(aside)* mid-sentence *(test: real.test.ts)*\n";
     const invs = parseInvariants(src);
@@ -131,6 +132,50 @@ describe("parseInvariants — edge cases", () => {
       kind: "pinned",
       pointers: [{ file: "real.test.ts" }],
     });
+  });
+
+  // ── Regressions for the adversarial review (all four were false-clean) ──
+
+  it("recognizes a test cited through non-`test:` prose (`pinned by … x.test.ts`)", () => {
+    // codument's own docs write markers like *(pinned by … `scaffold.test.ts` …)*.
+    // These name a real test and MUST be run, not silently downgraded to untested.
+    const src =
+      "## Invariants & boundaries\n- **X.** *(pinned by the managed-section assertions in `scaffold.test.ts` — the happy path)*\n";
+    assert.deepStrictEqual(parseInvariants(src)[0].annotation, {
+      kind: "pinned",
+      pointers: [{ file: "scaffold.test.ts" }],
+    });
+  });
+
+  it("a real marker is NOT shadowed by a trailing aside or an honest caveat", () => {
+    const aside = parseInvariants(
+      "## Invariants & boundaries\n- **X.** *(test: x.test.ts)* *(see ADR-004)*\n",
+    )[0].annotation;
+    assert.deepStrictEqual(aside, { kind: "pinned", pointers: [{ file: "x.test.ts" }] });
+    // even a trailing *(honest …)* span must not hide the cited test (it still runs).
+    const honest = parseInvariants(
+      "## Invariants & boundaries\n- **X.** *(test: x.test.ts)* *(honest: also needs review)*\n",
+    )[0].annotation;
+    assert.deepStrictEqual(honest, { kind: "pinned", pointers: [{ file: "x.test.ts" }] });
+  });
+
+  it("a file merely MENTIONED inside an honest-leading span is not a citation", () => {
+    // `honest`/`untested`-leading spans are declarations, not citations — so an
+    // honest boundary that references a test in prose stays honest (over-running a
+    // mentioned-but-unrelated test would over-claim enforcement).
+    const a = parseInvariants(
+      "## Invariants & boundaries\n- **X.** *(honest ceiling — unlike foo.test.ts, undecidable here)*\n",
+    )[0].annotation;
+    assert.equal(a.kind, "honest");
+  });
+
+  it("a citation across spans still pins even when a later span says untested", () => {
+    const a = parseInvariants(
+      "## Invariants & boundaries\n- **X.** cites *(test: gone.test.ts)*\n  and later *(untested)*\n",
+    )[0].annotation;
+    // gone.test.ts is a real citation → pinned (so a MISSING file surfaces as
+    // unpinned at run time, never silently untested).
+    assert.deepStrictEqual(a, { kind: "pinned", pointers: [{ file: "gone.test.ts" }] });
   });
 });
 

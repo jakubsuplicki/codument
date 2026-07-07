@@ -6,7 +6,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildReport, writeCoverageArtifacts } from "../src/commands/doctor.js";
+import { buildReport, doctor, writeCoverageArtifacts } from "../src/commands/doctor.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, "..", "dist", "cli.js");
@@ -280,5 +280,35 @@ describe("codument doctor --strict (CLI gating)", () => {
     } finally {
       await rm(corrupt, { recursive: true, force: true });
     }
+  });
+});
+
+describe("doctor --verify-invariants (opt-in; bare mode untouched)", () => {
+  let tmp: string;
+  before(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-doctor-inv-"));
+    await mkdir(join(tmp, "docs"), { recursive: true });
+    await writeFile(join(tmp, "docs", ".registry.json"), JSON.stringify({ features: {} }));
+  });
+  after(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  // The load-bearing non-goal: without the flag, --json is byte-identical to
+  // before this plan — no invariants block, so a CI consumer never breaks and the
+  // report stays deterministic.
+  it("bare doctor --json carries NO invariants block", async () => {
+    const lines: string[] = [];
+    const orig = console.log;
+    console.log = (...a: unknown[]) => {
+      lines.push(a.map(String).join(" "));
+    };
+    try {
+      await doctor({ root: tmp, json: true });
+    } finally {
+      console.log = orig;
+    }
+    const out = JSON.parse(lines.join("\n"));
+    assert.ok(!("invariants" in out), "no invariants key without --verify-invariants");
   });
 });

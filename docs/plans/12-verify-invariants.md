@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 12: `doctor --verify-invariants` — executable invariants
@@ -60,16 +60,22 @@ seams being hardened there).
 
 ## Delivery Plan
 
-- [ ] Step 1: Pointer parser over registered docs (fixtures: multiple invariants, named tests,
+- [x] Step 1: Pointer parser over registered docs (fixtures: multiple invariants, named tests,
       untested markers, malformed pointers surfaced not skipped).
-- [ ] Step 2: Runner wiring via the exported `makeTestRunner`; classification + findings; dedupe
+- [x] Step 2: Runner wiring via the exported `makeTestRunner`; classification + findings; dedupe
       identical pointers so a shared test runs once.
-- [ ] Step 3: Doctor flag, human rendering (per-entry table + honesty ratio), `--json` extension
+- [x] Step 3: Doctor flag, human rendering (per-entry table + honesty ratio), `--json` extension
       (versioned), `--strict` interaction (broken/unpinned are warn findings → strict fails). Tests
-      end-to-end on a fixture project with one red invariant.
-- [ ] Step 4: Docs: registry-health.md gains the mode + fix rows; doc-audience-layers.md's "planned
-      check" note updated; dogfood run on this repo (expect `cli.md`'s honest `(untested)` marker to
-      appear in the tally) and fix anything red.
+      end-to-end on a fixture project with one red invariant. Also root-fixed `makeTestRunner` to
+      strip `NODE_TEST_CONTEXT` (a spawned `node --test` child inheriting the parent context read a
+      red test as green — a false-clean the confirm gate shared).
+- [x] Step 4: Docs: registry-health.md gains the mode invariant; doc-audience-layers.md's test-pointer
+      note updated; CHANGELOG. Dogfood over this repo, then an adversarial review (4 confirmed
+      false-clean holes, all fixed): the marker parser now recognizes a test cited through ANY prose
+      (not just a `test:` prefix — codument writes `pinned by … x.test.ts`), scans ALL `*( … )*` spans
+      so a trailing aside cannot shadow a real citation, drops the unenforceable `#name` (whole file
+      runs), and documents the non-TAP-runner fail-open as an honest limit. Final dogfood: 138 green /
+      17 untested / 4 honest, 0 broken, 0 unpinned.
 
 ## Outcome
 

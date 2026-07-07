@@ -8,6 +8,16 @@ remains pre-1.0.
 ## [Unreleased]
 
 ### Added
+- `doctor --verify-invariants`: an opt-in mode that RUNS the test each registered
+  doc's `## Invariants & boundaries` marker cites (not just checks the pointer
+  exists), through the project's own hardened runner, and classifies each invariant
+  as green, broken (a cited test went red), unpinned (a cited test is missing or the
+  marker names no test file), unrunnable, untested, or an honest non-testable
+  boundary. Broken and unpinned are warnings that `--strict` fails on, with an
+  honesty ratio over the enforced share. It is off by default and environment-
+  touching, so bare `doctor` (and its `--json`) stays byte-identical and
+  deterministic — the invariants block appears only when the mode runs. Pair with
+  `--test-command` for a non-`node:test` runner.
 - `codument audit <range>`: score documentation drift retroactively across any
   commit range, before adopting the workflow. It drives the same deterministic
   change-state analyzer the live gate uses, so audit and gate cannot disagree on

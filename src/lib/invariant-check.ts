@@ -27,12 +27,12 @@ import {
 // multiple files per marker, back-ticked or bare paths), not an idealized grammar,
 // so a real invariant is never silently skipped.
 
-/** One test the invariant claims to be enforced by. `name` is the optional
- *  `#<test-name>` suffix from the standard's grammar (rare in practice — the docs
- *  usually name the test in prose); the runner executes the whole file regardless. */
+/** One test file the invariant is enforced by. The runner executes the WHOLE
+ *  file — there is no per-subtest selection, so a `#<name>` suffix in a marker is
+ *  consumed but not enforced (claiming to check one subtest we cannot isolate
+ *  would be a false promise). */
 export interface InvariantPointer {
   file: string;
-  name?: string;
 }
 
 export type InvariantAnnotation =
@@ -55,14 +55,16 @@ export interface ParsedInvariant {
   line: number;
 }
 
-// Matches a test-file token, back-ticked or bare, with an optional `#name` suffix.
-// Accepts the common test extensions — `.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}` —
-// since a consumer project's suite may be JS. Back-ticks sit outside the capture,
-// so the returned file is clean.
-const TEST_FILE_RE = /`?([A-Za-z0-9_./-]+\.test\.[cm]?[jt]sx?)`?(?:#([A-Za-z0-9_-]+))?/g;
+// Matches a test-file token, back-ticked or bare. Accepts the common test
+// extensions — `.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}` — since a consumer suite may
+// be JS. Back-ticks sit outside the capture, so the returned file is clean; a
+// trailing `#name` is consumed (so it is not re-scanned) but not captured, because
+// the runner executes whole files and cannot isolate a named subtest.
+const TEST_FILE_RE = /`?([A-Za-z0-9_./-]+\.test\.[cm]?[jt]sx?)`?(?:#[A-Za-z0-9_-]+)?/g;
 
-// The trailing italic-paren annotation on a bullet: the LAST `*( … )*` span. Real
-// annotations sit at the end of the invariant; an earlier `*( … )*` aside is not it.
+// Every italic-paren `*( … )*` span in a bullet. A bullet can carry several (a real
+// marker plus a trailing aside/caveat), so ALL are scanned — taking only the last
+// would let an aside shadow the real test citation.
 const ANNOTATION_RE = /\*\(([\s\S]*?)\)\*/g;
 
 // Extract the `## Invariants & boundaries` section body (up to the next level-2
@@ -97,19 +99,46 @@ function summarize(bulletText: string): string {
   return firstLine.length > 100 ? `${firstLine.slice(0, 97)}...` : firstLine;
 }
 
-// Classify a bullet's trailing annotation span content.
-function classify(rawAnnotation: string): InvariantAnnotation {
-  const content = rawAnnotation.trim();
-  const lower = content.toLowerCase();
-  if (lower.startsWith("test:") || lower.startsWith("tests:")) {
-    const pointers: InvariantPointer[] = [];
-    for (const m of content.matchAll(TEST_FILE_RE)) {
-      pointers.push(m[2] ? { file: m[1], name: m[2] } : { file: m[1] });
+// Classify a bullet's annotation from ALL its `*( … )*` spans. The overriding
+// rule is SOUNDNESS: if any span NAMES a test file — through any prose, not just a
+// `test:` prefix (the docs also write `*(pinned by … x.test.ts …)*`,
+// `*(covered by …)*`) — the invariant is pinned and every named file is run. We
+// would rather run a cited test than silently skip it and let a red one read clean.
+// A span LEADING with `untested`/`honest` is a declaration, not a citation, so a
+// file merely mentioned inside it is not run. Only when no span names a file do the
+// untested / honest / malformed (a `test:` span naming nothing) fallbacks apply.
+function classifyAnnotations(spans: string[]): InvariantAnnotation {
+  const pointers: InvariantPointer[] = [];
+  const seen = new Set<string>();
+  let untested = false;
+  let honest: string | undefined;
+  let malformed: string | undefined;
+  for (const raw of spans) {
+    const content = raw.trim();
+    const lower = content.toLowerCase();
+    if (lower === "untested") {
+      untested = true;
+      continue;
     }
-    return pointers.length > 0 ? { kind: "pinned", pointers } : { kind: "malformed", raw: content };
+    if (lower.startsWith("honest")) {
+      honest ??= content;
+      continue;
+    }
+    let named = false;
+    for (const m of content.matchAll(TEST_FILE_RE)) {
+      named = true;
+      if (!seen.has(m[1])) {
+        seen.add(m[1]);
+        pointers.push({ file: m[1] });
+      }
+    }
+    if (named) continue;
+    if (lower.startsWith("test:") || lower.startsWith("tests:")) malformed ??= content;
   }
-  if (lower === "untested") return { kind: "untested" };
-  if (lower.startsWith("honest")) return { kind: "honest", note: content };
+  if (pointers.length > 0) return { kind: "pinned", pointers };
+  if (untested) return { kind: "untested" };
+  if (honest !== undefined) return { kind: "honest", note: honest };
+  if (malformed !== undefined) return { kind: "malformed", raw: malformed };
   return { kind: "none" };
 }
 
@@ -126,11 +155,10 @@ export function parseInvariants(docText: string): ParsedInvariant[] {
   const flush = () => {
     if (!current) return;
     const bulletText = current.text.join("\n");
-    const matches = [...bulletText.matchAll(ANNOTATION_RE)];
-    const raw = matches.length > 0 ? matches[matches.length - 1][1] : null;
+    const spans = [...bulletText.matchAll(ANNOTATION_RE)].map((m) => m[1]);
     invariants.push({
       summary: summarize(bulletText),
-      annotation: raw === null ? { kind: "none" } : classify(raw),
+      annotation: classifyAnnotations(spans),
       line: current.line,
     });
     current = null;

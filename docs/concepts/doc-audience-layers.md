@@ -31,7 +31,7 @@ The rule comes from how the agent actually works and from the two ways docs rot.
 ## Invariants & boundaries
 
 - A doc never carries mechanism: no identifier, literal count or duration, ordered call sequence, or line-number anchor. Role-level flow narrative ("the request reaches the analyzer, the orchestrator fans out, results merge") is allowed because it survives a rename. *(enforced today by review and agent discipline; a prose lint is a planned check — untested)*
-- The registry is the single source for which files a feature owns; prose never restates the file list. Key files carries role, not paths. *(test: ownership resolves from the registry — ownership / change-state suites)*
+- The registry is the single source for which files a feature owns; prose never restates the file list. Key files carries role, not paths. *(tests: ownership.test.ts and change-state.test.ts — ownership resolves from the registry, not from prose)*
 - The gate proves a documented symbol **moved**, never that surviving prose is **true**. Structural freshness is automatic; semantic truth is the agent's job at each flagged move, and a test-backed invariant is the only self-verifying claim. *(honest boundary, not a guarantee)*
 - The plan is never the durable doc, and a superseded decision is preserved as an ADR, never deleted. *(the immutable decision chain is what makes the why trustworthy)*
 
@@ -39,7 +39,7 @@ The rule comes from how the agent actually works and from the two ways docs rot.
 
 - One source, layered by section — never separate per-audience files. Two maintained sets become two sources of truth that drift, the exact failure codument exists to prevent.
 - The technical layer is named **Design approach**, not "How it works", so the heading stops inviting a code walkthrough.
-- **Invariants & boundaries** is a required section that carries test pointers. It is the highest-value content for agent certainty, and a test pointer is how a semantic claim becomes self-verifying.
+- **Invariants & boundaries** is a required section that carries test pointers. It is the highest-value content for agent certainty, and a test pointer is how a semantic claim becomes self-verifying. `doctor --verify-invariants` makes that concrete: it runs the cited test (not just checks the pointer exists), so a rotted, red, or unpinned invariant is a named finding rather than silent decoration.
 - Decisions route to ADRs by default; the doc references them and never restates them.
 - Mechanism is excluded from prose and read live from the code; codument ships no generated reference layer. Rejected: a stored, generated symbol catalogue — it is a snapshot that goes stale, and an agent can already read the source instantly, so the registry (which files) plus live reads (what they contain) cover it without a drifting artifact.
 
