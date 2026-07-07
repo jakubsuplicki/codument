@@ -40,12 +40,19 @@ async function setupProject(
 }
 
 describe("scan command", () => {
-  it("exits with error when registry does not exist", async () => {
-    await mkdir(join(tmp, "src"), { recursive: true });
+  it("creates a provisional registry when none exists — the zero-commitment scan → audit entry point", async () => {
+    // No docs/, no registry, no init: scan must still propose a mapping, so an
+    // unadopted repo can run `scan` then `audit <range>` without installing anything.
+    await setupProject(
+      { "src/commands/init.ts": "export function init() {}" },
+      /* registry */ false,
+    );
 
     await scan({ root: tmp });
-    assert.equal(process.exitCode, 1);
-    process.exitCode = undefined;
+
+    assert.notEqual(process.exitCode, 1);
+    const reg = await readRegistry(join(tmp, "docs", ".registry.json"));
+    assert.ok(reg.features.commands, "scan registered the scanned feature");
   });
 
   it("scans source files and creates scaffold docs", async () => {

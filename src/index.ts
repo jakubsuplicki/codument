@@ -87,6 +87,8 @@ export { tsAdapter, MODULE_ANCHOR_NAME, classifyTsFile } from "./lib/ts-adapter.
 export type { TsAnchorKind, TsFileMode, TsClassification } from "./lib/ts-adapter.js";
 export { resolveOwner, splitAnchorId } from "./lib/ownership.js";
 export type { OwnershipResolution } from "./lib/ownership.js";
+export { auditRange } from "./lib/history-audit.js";
+export type { HistoryAudit, AuditEntry, AuditSymbolMove } from "./lib/history-audit.js";
 export {
   ackCovers,
   ackFileName,

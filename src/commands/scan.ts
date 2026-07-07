@@ -25,11 +25,13 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
 
   const registryPath = join(root, "docs", ".registry.json");
   if (!existsSync(registryPath)) {
-    console.log(
-      pc.red("  Error: docs/.registry.json not found. Run `codument init` first."),
-    );
-    process.exitCode = 1;
-    return;
+    // Zero-commitment entry point: on an unadopted repo scan CREATES the
+    // provisional registry (the `scan → audit` trial recipe depends on this).
+    // It proposes a mapping and writes scaffolds — it installs no workflow;
+    // `init` remains the installer.
+    console.log(pc.yellow("  No docs/.registry.json yet — creating a provisional one."));
+    console.log();
+    ensureDir(dirname(registryPath));
   }
 
   const srcDir = existsSync(join(root, "src")) ? "src" : ".";

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: shipped
 ---
 
 # Plan 08: `codument audit <base>..<head>` — retroactive drift audit
@@ -29,6 +29,10 @@ before adopting the workflow, the skills, or hand-authored registry entries.
 - `tests/history-audit.test.ts` (new)
 - `docs/features/history-audit.md` (new)
 - `docs/.registry.json`
+- `src/commands/scan.ts` + `tests/scan.test.ts` + `docs/features/commands.md` (amended mid-run:
+  the recipe this plan ships was blocked — `scan` refused to run without `init`, contradicting
+  both this plan's "cheapest credible trial motion" premise and the README's standing claim that
+  scan works standalone; minimal fix, a missing registry is created provisionally)
 
 ```feature-map
 src/commands/audit.ts    | history-audit | feature | CLI: range parsing, human + --json rendering
@@ -62,16 +66,38 @@ recipe) — in-scope once Plan 04 has landed.
 
 ## Delivery Plan
 
-- [ ] Step 1: `history-audit.ts` engine — resolve the range via the existing two-ref helpers, gather
+- [x] Step 1: `history-audit.ts` engine — resolve the range via the existing two-ref helpers, gather
       per-symbol anchor changes between the committed refs, join against the registry, and compute
       doc-changed-in-range per entry. Unit tests over a scripted git fixture (moved symbol + touched
-      doc, moved symbol + untouched doc, deleted file, unevaluable file).
-- [ ] Step 2: `audit` command — human rendering + exit-0 contract; register in `cli.ts`; export the
-      engine from `index.ts`. E2E test on a temp repo with two tagged states.
-- [ ] Step 3: `--json` versioned contract (mirror `doctor --json`'s version-tag discipline);
-      byte-identical-across-runs test.
-- [ ] Step 4: Write `docs/features/history-audit.md` (standard layers, invariants pinned to the new
-      tests), register the feature, add the README adoption recipe.
+      doc, moved symbol + untouched doc, deleted file, unevaluable file). Shipped shape: drives the
+      SAME pure analyzer as the live gate (one drift definition, two lenses); a rename's old path
+      counts as a deletion; acks deliberately do not apply retroactively; plus cosmetic-edit,
+      rename, entry-removal-dodge, scan-provisional-registry, and determinism fixtures.
+      Adversarial review (fable lens finders + fable 2-vote verify) confirmed 8 findings, all fixed
+      at the root before Step 4 closed: (a) MAJOR fail-loud violation — a transient `git show`
+      inside the re-read `changedAnchors` collapsed an added file to an empty, fresh-reading anchor
+      set; fixed with a new fail-loud `changedAnchorsFromHeadContent` (reuses the already-read head
+      content, `blobExistsAtRef`-guarded base, throws on a broken head read); (b) `registryAtRef`
+      dropped its git-swallowing `refReachable` guard; (c) `lastTouched` moved to `rev-list`
+      plumbing so `log.showSignature` can't corrupt the sha; (d) the `documented` denominator is now
+      current ∪ base-only-drifted so N ≤ M; plus 4 test-coverage fixes (a ref-not-worktree pin,
+      shared-file unassigned-attribution, counter assertions, and a real `scan`→`audit` e2e). The
+      module comment no longer overclaims "can never disagree" — the rename-strictness departure is
+      named.
+- [x] Step 2: `audit` command — human rendering + exit-0 contract; register in `cli.ts`; export the
+      engine from `index.ts`. E2E test on a temp repo with two tagged states. Shipped shape:
+      findings never change the exit code; every could-not-run exits 1; empty head defaults to
+      HEAD; `...` accepted (identical merge-base semantics); cli.ts/index.ts wiring file-acked as
+      additive (dispatch-manifest / barrel contracts unchanged).
+- [x] Step 3: `--json` versioned contract (mirror `doctor --json`'s version-tag discipline);
+      byte-identical-across-runs test. Shipped shape: `{version: 1, audit: "ok"|"unavailable"}`
+      discriminant, `driftedCount` first-class, every failure mode machine-readable under --json.
+- [x] Step 4: Write `docs/features/history-audit.md` (standard layers, invariants pinned to the new
+      tests), register the feature, add the README adoption recipe. Shipped shape: doc at the
+      standard layers; registry entry current with depends_on; README gains the zero-commitment
+      recipe section + an audit command section; overview.md lists audit. Discovered blocker fixed
+      mid-run (see Scope): scan now creates a provisional registry standalone, with the
+      commands.md invariant + scan test flipped to the new contract.
 
 ## Outcome
 

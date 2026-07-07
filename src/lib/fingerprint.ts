@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, join } from "node:path";
-import { byteNormalize, readBlobAtRef, refReachable } from "./two-ref.js";
+import {
+  blobExistsAtRef,
+  byteNormalize,
+  GateError,
+  readBlobAtRef,
+  refReachable,
+} from "./two-ref.js";
 import { classifyTsFile, tsAdapter } from "./ts-adapter.js";
 
 // An anchor binds an identity to a content fingerprint. The coarse adapter emits
@@ -141,6 +147,39 @@ export function changedAnchorsAgainstWorktree(
   const headAnchors =
     headContent === null ? null : adapterFor(path).anchors(path, headContent);
   return diffAnchorSets(baseAnchors, headAnchors);
+}
+
+// Per-symbol anchor changes between a base REF and HEAD content the caller has
+// ALREADY read and byte-normalized — the two-committed-ref analog of
+// changedAnchorsAgainstWorktree for a caller (the history audit) that reads and
+// classifies the head blob once and must not pay, or risk, a second `git show`
+// for it. Fail-loud where the other two-ref helpers can degrade: the base is
+// distinguished absence-from-failure via `blobExistsAtRef` (which RAISES a
+// GateError on a broken git read rather than returning the null a diff would
+// read as "fresh"), so a transient base-read failure can never collapse to an
+// empty, fresh-reading anchor set. A base genuinely absent (an added or
+// renamed-in file) yields every head anchor "added". The head is never re-read
+// here, so a transient head-side failure is impossible by construction — the
+// caller already holds the content and rejects a broken head read itself.
+// Sorted by id.
+export function changedAnchorsFromHeadContent(
+  root: string,
+  base: string,
+  path: string,
+  headContent: string,
+): AnchorChange[] {
+  let baseAnchors: Anchor[] | null = null;
+  if (blobExistsAtRef(root, base, path)) {
+    const baseContent = readBlobAtRef(root, base, path);
+    if (baseContent === null) {
+      // ls-tree proved the blob exists but `git show` could not read it: a
+      // broken git, not absence — fail loud rather than mis-diff every symbol
+      // as "added" (or, if head is also empty, read the file as fresh).
+      throw new GateError(`${path} exists at ${base} but could not be read`, "git-failed");
+    }
+    baseAnchors = adapterFor(path).anchors(path, baseContent);
+  }
+  return diffAnchorSets(baseAnchors, adapterFor(path).anchors(path, headContent));
 }
 
 export interface GatheredAnchors {

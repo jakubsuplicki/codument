@@ -75,6 +75,21 @@ npx codument demo --live
 
 (From a checkout of this repo: `npm run demo` or `npm run demo:live`.)
 
+## Try it on your own repo — two commands, zero commitment
+
+Before adopting anything, quantify the doc drift your committed history already carries:
+
+```bash
+npx codument scan                    # propose a registry + doc scaffolds (nothing committed)
+npx codument audit v1.0.0..HEAD      # replay your history against that map
+```
+
+`scan` proposes which docs would own which sources; `audit` then reports every feature whose
+source moved in the range while its doc got no attention — per symbol, with an honest "doc never
+committed" where no doc existed yet. That is the drift the live gate would have caught. Read the
+damage report, then decide. Nothing is gated and nothing needs committing — delete the scaffolds
+and you've adopted nothing.
+
 ## 1 · Set up — terminal, once
 
 ```bash
@@ -236,6 +251,27 @@ npx codument ack src/foo.ts::bar --base main --signer alice   # match review --b
 - **Flags:** `--reason <text>` names the contract that stayed constant; `--base <ref>` resolves the move against the merge-base with `<ref>` (match the ref `review --base` used); `--signer <id>` sets attribution (defaults to the git author; an independent signer is what strict-mode independence checks); `--list` / `--remove <handle>` manage recorded acks; `--root <dir>` sets the project root.
 
 *Honest limit:* the additive-owes-no-doc judgment (like the per-symbol ack's semantic claim) is **prose-enforced, not test-backed** — the gate checks the ack's form and fingerprint, never whether the human was right that no doc was owed.
+
+### `codument audit` — score doc drift over committed history
+
+The live gate pointed backwards: for each documented feature, symbol moves in a commit range whose
+owning doc got no attention in the same range. Runnable on a repo that has adopted nothing (pair it
+with `scan`, above) and on any release range of an adopted one.
+
+```bash
+npx codument audit v1.0.0..HEAD
+npx codument audit v0.6.0..v0.7.0 --json   # version-tagged; byte-identical for the same repo state
+```
+
+- Same analyzer, same semantics as `review` — per-symbol staleness, deletions first-class (a
+  rename's old path included), the registry-entry-removal dodge closed, parse-broken files
+  surfaced instead of trusted. The range is diffed from the merge-base, so merged-in commits are
+  not misattributed.
+- Acknowledgments don't apply retroactively — an ack adjudicates the live working tree, not an
+  arbitrary historical range — so the audit reports raw drift.
+- **Informational by contract:** findings never change the exit code; `--json` carries
+  `driftedCount` so you can threshold it yourself. Only an audit that *could not run* (bad range,
+  unreachable ref, broken git) exits non-zero — "could not look" never reads as "no drift".
 
 ### `codument report` — the same review as a shareable HTML page
 

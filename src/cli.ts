@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import pc from "picocolors";
 import { adopt } from "./commands/adopt.js";
+import { auditCommand } from "./commands/audit.js";
 import { createBenchmarkCommand } from "./commands/benchmark.js";
 import { demo } from "./commands/demo.js";
 import { doctor } from "./commands/doctor.js";
@@ -74,6 +75,17 @@ program
   .option("--record <file>", "Record a fingerprint-bound adversarial review from a findings JSON file ({invariantsChecked, findings, signer}); the gate then enforces it")
   .option("--base <ref>", "Review the branch's drift since it diverged from <ref> (merge-base..working-tree), not just uncommitted changes")
   .action(review);
+
+program
+  .command("audit")
+  .description(
+    "Audit doc drift over committed history: for each documented feature, symbol moves in <base>..<head> whose owning doc got no attention in the same range. Informational — findings never change the exit code",
+  )
+  .argument("<range>", "the commit range <baseRef>..<headRef>, e.g. v1.0.0..HEAD (diffed from the merge-base)")
+  .option("--json", "Emit the machine-readable audit contract (version-tagged; byte-identical for the same repo state)")
+  .option("--root <dir>", "project root (defaults to current directory)")
+  .option("--dir <dir>", "project root (alias of --root)")
+  .action((range, options) => auditCommand(range, options));
 
 program
   .command("ack")

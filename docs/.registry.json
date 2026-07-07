@@ -261,11 +261,11 @@
         "src/lib/registry.ts",
         "src/lib/report-html.ts",
         "src/lib/scaffold.ts",
+        "src/lib/state-io.ts",
         "src/lib/token-cost.ts",
         "src/lib/token-report.ts",
         "src/lib/verdict.ts",
-        "src/lib/version.ts",
-        "src/lib/state-io.ts"
+        "src/lib/version.ts"
       ],
       "related_sources": [],
       "docs": [],
@@ -438,6 +438,22 @@
       "risk": [
         "data-loss"
       ],
+      "status": "current"
+    },
+    "history-audit": {
+      "doc": "docs/features/history-audit.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/commands/audit.ts",
+        "src/lib/history-audit.ts"
+      ],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [
+        "change-control-gate",
+        "lib"
+      ],
+      "risk": [],
       "status": "current"
     }
   }

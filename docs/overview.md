@@ -16,7 +16,7 @@ Codument is a git-native change-control layer for AI-assisted engineering, shipp
 
 Setup and installation: `init` (scaffold docs + install agent profiles), `scan` (map existing code into `needs-review` scaffolds), `adopt` (migrate a legacy codument project), `update` (refresh managed files after a package upgrade).
 
-Checks and gates: `doctor` (coverage + lint, `--strict` for CI), `review` (diff vs. registry: stale docs, risk touches, unmapped and out-of-plan changes, dependents), `ack` (acknowledge a contract-neutral change), `watch` (live working-tree view), `report` (self-contained HTML review report), `steps` (mirror the active plan's checklist), `map` (feature-map routing + materialization).
+Checks and gates: `doctor` (coverage + lint, `--strict` for CI), `review` (diff vs. registry: stale docs, risk touches, unmapped and out-of-plan changes, dependents), `audit` (the same drift verdict over a committed range — history, not the working tree), `ack` (acknowledge a contract-neutral change), `watch` (live working-tree view), `report` (self-contained HTML review report), `steps` (mirror the active plan's checklist), `map` (feature-map routing + materialization).
 
 Observability: `feed` (normalize agent-session token usage into the event log), `cost` (estimated token-cost ledger), `emit` (append a codument event).
 
