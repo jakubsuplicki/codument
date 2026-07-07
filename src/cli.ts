@@ -2,6 +2,7 @@ import { Command } from "commander";
 import pc from "picocolors";
 import { adopt } from "./commands/adopt.js";
 import { auditCommand } from "./commands/audit.js";
+import { contextCommand } from "./commands/context.js";
 import { createBenchmarkCommand } from "./commands/benchmark.js";
 import { demo } from "./commands/demo.js";
 import { doctor } from "./commands/doctor.js";
@@ -86,6 +87,20 @@ program
   .option("--root <dir>", "project root (defaults to current directory)")
   .option("--dir <dir>", "project root (alias of --root)")
   .action((range, options) => auditCommand(range, options));
+
+program
+  .command("context")
+  .description(
+    "Project the minimal grounded working set for a feature, file, or plan (owning doc + invariants with test pointers, primary sources, one-hop deps) — a deterministic pull-based context pack over the registry",
+  )
+  .option("--feature <slug>", "pack the named feature")
+  .option("--file <path>", "pack the feature(s) that own a source file")
+  .option("--plan <path>", "pack every feature a plan's Feature Map routes to")
+  .option("--budget <tokens>", "trim the pack tail-first toward an estimated token budget (reports what it dropped)")
+  .option("--json", "Emit the machine-readable context contract (version-tagged; byte-identical for the same repo state)")
+  .option("--root <dir>", "project root (defaults to current directory)")
+  .option("--dir <dir>", "project root (alias of --root)")
+  .action((options) => contextCommand(options));
 
 program
   .command("ack")

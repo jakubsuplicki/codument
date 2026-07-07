@@ -455,6 +455,21 @@
       ],
       "risk": [],
       "status": "current"
+    },
+    "context-pack": {
+      "doc": "docs/features/context-pack.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/lib/context-pack.ts",
+        "src/commands/context.ts"
+      ],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [
+        "lib"
+      ],
+      "risk": [],
+      "status": "current"
     }
   }
 }

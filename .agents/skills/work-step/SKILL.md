@@ -13,7 +13,7 @@ Use this when the user says to continue, work the next step, or implement the ap
 2. Confirm the plan status is approved.
 3. Pick the first unchecked delivery-plan step.
 4. Surface the checklist in the live view (see Plan Checklist Mirror below): mirror the plan's steps into your host's native to-do panel with the step you are about to implement marked in progress, and run `codument steps --emit` so `codument watch` shows the active step. In an autopilot run, also post this checklist inline in the chat — the step just completed, the step now starting, and what remains — because the native to-do panel and the watch tape are not the chat transcript, and autopilot otherwise advances between steps with no in-chat marker.
-5. Read `docs/.registry.json` before touching source files.
+5. Read `docs/.registry.json` before touching source files — `codument context --plan <active-plan>` pulls the grounded working set for every feature the plan routes to (owning docs, invariants with their test pointers, primary sources, one-hop deps) in one deterministic command, and `--feature <slug>` / `--file <path>` narrows it to the slice this step touches. Fall back to reading the registry directly if the CLI is unavailable.
 6. Implement only that step.
 7. Use `tdd` or the strongest practical verification loop.
 8. Register each NEW source file by running `codument map materialize <file>` (see Feature Map Materialization), then update the mapped docs + registry as part of the same step.

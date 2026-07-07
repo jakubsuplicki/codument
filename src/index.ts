@@ -90,6 +90,22 @@ export type { OwnershipResolution } from "./lib/ownership.js";
 export { auditRange } from "./lib/history-audit.js";
 export type { HistoryAudit, AuditEntry, AuditSymbolMove } from "./lib/history-audit.js";
 export {
+  buildContextPack,
+  gatherContextPack,
+  applyBudget,
+  ownersOfFile,
+  selectedFromPlanRows,
+  estimateTokens,
+} from "./lib/context-pack.js";
+export type {
+  ContextPack,
+  ContextEntry,
+  ContextSelector,
+  ContextResolution,
+  ContextPackInput,
+  BudgetResult,
+} from "./lib/context-pack.js";
+export {
   ackCovers,
   ackFileName,
   isIndependent,

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: shipped
 ---
 
 # Plan 09: `codument context` — deterministic context packs
@@ -67,15 +67,31 @@ Run `codument map materialize` for each new file.
 
 ## Delivery Plan
 
-- [ ] Step 1: `context-pack.ts` projection with unit tests (feature selector, file selector through
+- [x] Step 1: `context-pack.ts` projection with unit tests (feature selector, file selector through
       ownership incl. concept umbrellas, plan selector via plan-grounding reuse; deterministic
-      ordering).
-- [ ] Step 2: `context` command: human rendering + `--json` (versioned contract), `--budget`
+      ordering). Shipped shape: pure `buildContextPack` (selected entries head-first, one-hop deps as
+      lightweight pointers) + impure `gatherContextPack`, reusing `extractDocSection`/
+      `extractTestPointers` and mirroring `plan-grounding.ts`; selectors resolve via `ownersOfFile`
+      (primary-only, concept umbrellas included) and `selectedFromPlanRows` (Feature-Map routing).
+- [x] Step 2: `context` command: human rendering + `--json` (versioned contract), `--budget`
       tail-trimming with an explicit "trimmed: …" line (no silent caps). E2E + byte-identical tests.
-- [ ] Step 3: Register the feature (doc in standard layers, invariants pinned to tests); export from
-      `index.ts`.
-- [ ] Step 4: Wire the two skills (installed copies and their shipped sources) to call it; regenerate
-      managed sections if the skill text is scaffold-generated.
+      Shipped shape: one-selector validation (mutually exclusive), pure `applyBudget` (tail-first
+      risk → related → deps → primary; head inviolable; reports dropped tiers + `overBudget`); the
+      selector echoes the caller's raw input, not what it resolved to. Adversarial review (opus
+      finders + 2-vote verify) confirmed 3 minor command-layer findings, all fixed at the root: a
+      `--plan` silently discarded malformed Feature-Map rows (now surfaced via a new `planErrors`
+      channel in both the human and `--json` paths, like `unknownFeatures`); a sub-1 `--budget`
+      passed the `> 0` guard then floored to 0 (now rejected `< 1`, consistent with `0`/`-5`); and a
+      `--plan` pointing at a directory threw an uncaught EISDIR (now a graceful `fail`).
+- [x] Step 3: Register the feature (doc in standard layers, invariants pinned to tests); export from
+      `index.ts`. Shipped shape: `context-pack.md` at the standard layers, registry entry current
+      (depends_on lib), `index.ts` exports the projection (additive — file-acked).
+- [x] Step 4: Wire the two skills (installed copies and their shipped sources) to call it; regenerate
+      managed sections if the skill text is scaffold-generated. Shipped shape: `plan-with-docs` step 1
+      and `work-step` step 5 now reach for `codument context --feature/--file/--plan` with a
+      fall-back-if-unavailable clause; edited the `skills/` source-of-truth and re-synced both
+      installed profiles (`.claude`, `.agents`) via `codument update` (skills are copied verbatim,
+      not managed-section-generated).
 
 ## Outcome
 

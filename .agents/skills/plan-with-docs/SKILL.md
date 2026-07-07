@@ -24,7 +24,7 @@ When those questions remain, switch to `grill-with-docs` first. Ask one sharp de
 
 ## Workflow
 
-1. Read `docs/.registry.json`, `docs/overview.md`, relevant feature/concept docs, and relevant ADRs.
+1. Read `docs/.registry.json`, `docs/overview.md`, relevant feature/concept docs, and relevant ADRs. For a feature or file you already know is in scope, `codument context --feature <slug>` / `--file <path>` projects the grounded slice in one deterministic read — the owning doc's orientation, its invariants with their test pointers, the primary sources, and one-hop dependencies — instead of hand-assembling those registry lookups; add `--budget <tokens>` to cap it (it trims tail-first and says what it dropped). Fall back to reading the registry and docs directly if the CLI is unavailable.
 2. Choose the narrowest doc home:
    - Feature behavior: `docs/features/{feature}.md`
    - Cross-cutting model or pattern: `docs/concepts/{concept}.md`
