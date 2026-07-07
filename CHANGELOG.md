@@ -7,6 +7,23 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+### Added
+- `codument audit <range>`: score documentation drift retroactively across any
+  commit range, before adopting the workflow. It drives the same deterministic
+  change-state analyzer the live gate uses, so audit and gate cannot disagree on
+  what counts as drift. Informational by contract — findings never change the exit
+  code; only a could-not-run (bad range, unreachable ref, broken git) exits
+  nonzero, so "could not look" never reads as "no drift". `--json` is
+  version-tagged and byte-identical for the same repo state. Runs on a repo that
+  adopted nothing (`codument scan && codument audit <range>`).
+- `codument context`: a pull-based context pack — given a `--feature`, `--file`,
+  or `--plan`, project the minimal grounded working set from the registry and
+  committed docs (the owning doc's orientation and invariant lines with their test
+  pointers, the primary sources to read, and one-hop dependency pointers). It adds
+  no source of truth and no ranking — every field is read verbatim. `--budget`
+  trims tail-first (risk → related → deps → primary), never the selected head, and
+  reports every dropped tier; `--json` is version-tagged.
+
 ### Changed
 - The change-control gate now splits each precise symbol anchor into a
   **signature** hash (the contract: modifiers, name, type parameters, parameter
