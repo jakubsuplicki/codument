@@ -19,7 +19,12 @@ export const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 // binds a composite transition) auto-invalidates on upgrade — the intended
 // one-time reset. (Coarse and module-residual formats are unchanged, so acks
 // bound to those legitimately survive.)
-export const ALGO_VERSION = 2;
+// v3: each precise anchor span is rendered through the local-identifier
+// canonicalizer before hashing (a name bound within the declaration becomes a
+// positional index), so a meaning-preserving local rename no longer moves the
+// composite. v2 and v3 are both post-0.7.0 (unreleased), so users cross one
+// fingerprint-universe shift, not two.
+export const ALGO_VERSION = 3;
 
 // The determinism unit: a verdict is reproducible only for a fixed parser, the
 // exact bundled TS version, and the algo version. A TS bump changes this stamp,

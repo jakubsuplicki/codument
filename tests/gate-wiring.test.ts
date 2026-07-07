@@ -344,3 +344,96 @@ describe("gate wiring — end-to-end (temp git repo, real anchor diff)", () => {
     );
   });
 });
+
+// ── Plan 11: local-rename canonicalization kills the #1 false-fire end-to-end ──
+
+const RENAME_REGISTRY = {
+  features: {
+    alpha: {
+      doc: "docs/features/alpha.md",
+      type: "feature",
+      primary_sources: ["src/m.ts"],
+      status: "current",
+    },
+  },
+};
+
+// A private helper `scale` closed over by the exported `run`, both carrying locals.
+const RENAME_SRC = [
+  "function scale(seed: number): number {",
+  "  const doubled = seed * 2;",
+  "  return doubled;",
+  "}",
+  "",
+  "export function run(threshold: number): number {",
+  "  const base = scale(threshold);",
+  "  return base + 1;",
+  "}",
+  "",
+].join("\n");
+
+describe("gate wiring — local-rename canonicalization (e2e)", () => {
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-rename-"));
+    await scaffold({
+      "docs/.registry.json": JSON.stringify(RENAME_REGISTRY, null, 2),
+      "docs/features/alpha.md": "# alpha\n",
+      "src/m.ts": RENAME_SRC,
+    });
+    gitInit(tmp);
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("renaming a parameter AND a local (with their uses) wakes NOTHING", async () => {
+    await scaffold({
+      "src/m.ts": RENAME_SRC.replace("threshold", "limit")
+        .replace("threshold", "limit") // both occurrences of the param + its use
+        .replace("const base = scale(limit)", "const total = scale(limit)")
+        .replace("return base + 1", "return total + 1"),
+    });
+    const report = buildReview(tmp);
+    assert.ok(report.changedFileCount >= 1, "git sees src/m.ts as modified");
+    assert.deepStrictEqual(
+      report.state.staleDocs,
+      [],
+      "a pure local/param rename moves no fingerprint — the false-fire is gone",
+    );
+  });
+
+  it("renaming a local INSIDE the private helper wakes nothing (helper canonicalizes its own)", async () => {
+    await scaffold({
+      "src/m.ts": RENAME_SRC.replace("const doubled = seed * 2", "const product = seed * 2").replace(
+        "return doubled;",
+        "return product;",
+      ),
+    });
+    const report = buildReview(tmp);
+    assert.deepStrictEqual(
+      report.state.staleDocs,
+      [],
+      "renaming the helper's local does not move its caller either",
+    );
+  });
+
+  it("a REAL change to the exported body still fires", async () => {
+    await scaffold({ "src/m.ts": RENAME_SRC.replace("return base + 1;", "return base + 2;") });
+    const report = buildReview(tmp);
+    assert.deepStrictEqual(
+      report.state.staleDocs.map((d) => d.feature),
+      ["alpha"],
+      "a genuine implementation change is not a rename — it still wakes the doc",
+    );
+  });
+
+  it("a helper BODY change still fires its exported caller (closure intact)", async () => {
+    await scaffold({ "src/m.ts": RENAME_SRC.replace("const doubled = seed * 2", "const doubled = seed * 3") });
+    const report = buildReview(tmp);
+    assert.deepStrictEqual(
+      report.state.staleDocs.map((d) => d.feature),
+      ["alpha"],
+      "changing the private helper's behavior moves run's closed-over fingerprint",
+    );
+  });
+});

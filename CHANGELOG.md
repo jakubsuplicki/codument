@@ -36,10 +36,20 @@ remains pre-1.0.
   and the `watch` soak line splits its fire volume into `N contract · M body` so
   the calibration signal separates unavoidable contract work from the churn the ack
   path absorbs.
+- Precise symbol anchors are now **canonicalized** before hashing: a name bound
+  within a declaration (a parameter, a block `let`/`const`, a destructured or catch
+  binding, a generic type parameter) is rewritten to a positional index, so a
+  meaning-preserving local rename no longer moves the fingerprint and no longer
+  needs an ack. The pass is sound — a free/imported/global reference, a type change,
+  or a contract-relevant name (a property key, an object shorthand, a constructor
+  parameter property) still fires — and block scoping is respected so an inner
+  binding never leaks to an outer use.
 
 ### Migration
-- The fingerprint algorithm version was bumped (v1 → v2) for the signature/body
-  split. Existing **per-symbol** acknowledgments recorded against a v1 fingerprint
+- The fingerprint algorithm version was bumped (v1 → v3) across this unreleased
+  window (v2 = the signature/body split, v3 = local-identifier canonicalization),
+  so upgrading crosses one fingerprint-universe shift, not two. Existing
+  **per-symbol** acknowledgments recorded against a pre-v3 fingerprint
   auto-invalidate and must be re-recorded; file-grain (`ack <path>`) and
   module-residual acknowledgments are unaffected. No action is needed beyond
   re-acking any genuinely contract-neutral moves the next `review` re-flags.

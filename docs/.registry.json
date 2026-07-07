@@ -420,7 +420,8 @@
         "src/lib/ownership.ts",
         "src/lib/report-html.ts",
         "src/lib/ts-adapter.ts",
-        "src/lib/two-ref.ts"
+        "src/lib/two-ref.ts",
+        "src/lib/ts-canonicalize.ts"
       ],
       "related_sources": [],
       "docs": [
@@ -460,8 +461,8 @@
       "doc": "docs/features/context-pack.md",
       "type": "feature",
       "primary_sources": [
-        "src/lib/context-pack.ts",
-        "src/commands/context.ts"
+        "src/commands/context.ts",
+        "src/lib/context-pack.ts"
       ],
       "related_sources": [],
       "docs": [],

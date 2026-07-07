@@ -1,5 +1,5 @@
 ---
-status: draft
+status: shipped
 ---
 
 # Plan 11: Local-rename canonicalization — kill the #1 measured false-fire
@@ -21,11 +21,14 @@ product's own roadmap. Fix it structurally instead of waiting for soak data to j
 ## Scope
 
 - `src/lib/ts-adapter.ts`
+- `src/lib/ts-canonicalize.ts`
 - `tests/ts-adapter.test.ts`
+- `tests/ts-canonicalize.test.ts`
 - `tests/gate-wiring.test.ts`
 - `docs/features/change-control-gate.md`
 
-No new source files unless the canonicalizer merits its own module — if so:
+The canonicalizer merited its own module (`src/lib/ts-canonicalize.ts`), materialized to
+`change-control-gate` per the feature-map row below:
 
 ```feature-map
 src/lib/ts-canonicalize.ts | change-control-gate | feature | per-declaration local-identifier canonicalization before fingerprint hashing
@@ -61,15 +64,15 @@ both bump `algoStamp`; back-to-back execution means one fingerprint-universe shi
 
 ## Delivery Plan
 
-- [ ] Step 1: Canonicalizer with an adversarial fixture suite: shadowing (local shadows import;
+- [x] Step 1: Canonicalizer with an adversarial fixture suite: shadowing (local shadows import;
       inner shadows outer), destructuring + defaults, closures over sibling locals, `this`/property
       access, generics, labeled statements, catch bindings, computed keys. Assert: rename-local →
       identical canonical stream; rename-param-and-its-uses → identical; renaming a *captured outer*
       name → different (correctly fires).
-- [ ] Step 2: Wire into the anchor token stream pre-hash; algoStamp bump (coordinate with Plan 10 if
+- [x] Step 2: Wire into the anchor token stream pre-hash; algoStamp bump (coordinate with Plan 10 if
       unshipped). Gate-wiring test: the soak demo's local-rename scenario now fires nothing;
       a helper-closure body change still fires its exported callers.
-- [ ] Step 3: Docs: `change-control-gate.md` limits section (local renames no longer false-fire; what
+- [x] Step 3: Docs: `change-control-gate.md` limits section (local renames no longer false-fire; what
       still fires and why), README:214 known-limits update, CHANGELOG entry.
 
 ## Outcome

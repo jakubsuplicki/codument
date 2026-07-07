@@ -191,16 +191,36 @@ describe("tsAdapter signature/body split", () => {
     assert.equal(get(amap(a), name).sig, get(amap(b), name).sig, `${name}: signature held`);
     assert.notEqual(get(amap(a), name).fp, get(amap(b), name).fp, `${name}: composite still moved`);
   };
+  // Canonicalized: a pure local/parameter rename moves NEITHER hash (no fire).
+  const unchanged = (a: string, b: string, name: string) => {
+    assert.equal(get(amap(a), name).sig, get(amap(b), name).sig, `${name}: signature identical`);
+    assert.equal(get(amap(a), name).fp, get(amap(b), name).fp, `${name}: composite identical (no fire)`);
+  };
 
-  it("a parameter rename is a sig-move; a local rename is body-only", () => {
-    sigMoved(
+  it("a parameter rename AND a local rename are invariant; a real body change still fires", () => {
+    // Both the parameter and the block local are bound within the declaration, so
+    // renaming either (and its uses) canonicalizes to the same fingerprint — the
+    // #1 measured false-fire, now structurally gone.
+    unchanged(
       "export function f(a: number): number { const x = a; return x; }\n",
       "export function f(b: number): number { const x = b; return x; }\n",
       "f",
     );
-    bodyOnly(
+    unchanged(
       "export function f(a: number): number { const x = a; return x; }\n",
       "export function f(a: number): number { const y = a; return y; }\n",
+      "f",
+    );
+    // A genuine implementation change (not a rename) still moves the body hash.
+    bodyOnly(
+      "export function f(a: number): number { const x = a; return x; }\n",
+      "export function f(a: number): number { const x = a; return x + 1; }\n",
+      "f",
+    );
+    // A parameter TYPE change is still a signature move — only the NAME canonicalizes.
+    sigMoved(
+      "export function f(a: number): number { return a; }\n",
+      "export function f(a: string): number { return a; }\n",
       "f",
     );
   });
@@ -218,8 +238,8 @@ describe("tsAdapter signature/body split", () => {
     );
   });
 
-  it("arrow const: a param rename is a sig-move, a body edit is body-only", () => {
-    sigMoved(
+  it("arrow const: a param rename is invariant, a body edit is body-only", () => {
+    unchanged(
       "export const f = (a: number): number => a + 1;\n",
       "export const f = (b: number): number => b + 1;\n",
       "f",

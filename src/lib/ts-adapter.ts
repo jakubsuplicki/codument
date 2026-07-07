@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import ts from "typescript";
 import type { Anchor, LanguageAdapter } from "./fingerprint.js";
+import { type CanonMap, canonicalizeDecls, renderWithCanon } from "./ts-canonicalize.js";
 
 // The precise TypeScript adapter: it fingerprints each EXPORTED (globally
 // reachable) declaration individually, so editing one symbol in a shared file
@@ -24,6 +25,14 @@ import type { Anchor, LanguageAdapter } from "./fingerprint.js";
 // over-wake, never launder a contract change). Two boundaries are by construction
 // (no type checker): an inferred return type reads as body, and a class member's
 // signature is inside the all-signature class body.
+//
+// Every span a precise anchor hashes is first rendered through the local-identifier
+// canonicalizer (`ts-canonicalize.ts`): a name bound WITHIN the declaration
+// (parameter, block local, destructured/catch binding, generic type parameter) is
+// rewritten to a positional index before hashing, so a meaning-preserving local
+// rename no longer moves the fingerprint. Free/imported/module/global references
+// stay literal and still fire. The residual `<module>` backstop is NOT
+// canonicalized (module-scope names are not "within a declaration").
 
 function sha256(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
@@ -166,13 +175,22 @@ function closureFromNames(
   }
   return [...included.keys()]
     .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
-    .map((name) => ({
-      name,
-      // Concatenate the member spans in source order — degenerates to the single
-      // span for the common (non-overloaded) helper, so ordinary fingerprints are
-      // unchanged; only a private overloaded helper folds more than one span.
-      span: (included.get(name) as ts.Node[]).map((n) => spanText(content, sf, n)).join("\n"),
-    }));
+    .map((name) => {
+      // A helper canonicalizes its OWN locals, independently of the caller (a
+      // separate declaration → its own binding scope), so renaming a private
+      // helper's parameter does not move a caller that closes over it either.
+      const decls = included.get(name) as ts.Node[];
+      const canon = canonicalizeDecls(sf, decls);
+      return {
+        name,
+        // Concatenate the member spans in source order — degenerates to the single
+        // span for the common (non-overloaded) helper, so ordinary fingerprints are
+        // unchanged; only a private overloaded helper folds more than one span.
+        span: decls
+          .map((n) => renderWithCanon(content, n.getStart(sf), n.getEnd(), canon))
+          .join("\n"),
+      };
+    });
 }
 
 // The composite hash of a token span plus — when it references same-file private
@@ -209,11 +227,18 @@ function bodyOf(node: ts.Node): ts.Node | undefined {
 }
 
 // The signature span text of a declaration: everything from its start up to the
-// body opener when it has a splittable body, else the whole declaration.
-function signatureSpan(content: string, sf: ts.SourceFile, node: ts.Node, body: ts.Node | undefined): string {
+// body opener when it has a splittable body, else the whole declaration — rendered
+// through the canonicalizer so parameter and type-parameter names are positional.
+function signatureSpan(
+  content: string,
+  sf: ts.SourceFile,
+  node: ts.Node,
+  body: ts.Node | undefined,
+  canon: CanonMap,
+): string {
   const start = node.getStart(sf);
   const end = body ? body.getStart(sf) : node.getEnd();
-  return content.slice(start, end);
+  return renderWithCanon(content, start, end, canon);
 }
 
 // Compute the {signature, fingerprint} pair for one anchor from its member
@@ -238,12 +263,16 @@ function fingerprintPair(
   // implementations has several) so no body's tokens are dropped — degenerates to
   // the single implementation body for a valid function or overload set.
   const bodySpans: string[] = [];
+  // One canonical rewrite map over all member nodes: a parameter in the signature
+  // and its use in the body share an index, so both sides stay consistent under a
+  // rename. Computed once here and applied to whichever sub-span each render covers.
+  const canon = canonicalizeDecls(sf, nodes);
   for (const node of nodes) {
     const body = bodyOf(node);
-    sigSpans.push(signatureSpan(content, sf, node, body));
+    sigSpans.push(signatureSpan(content, sf, node, body, canon));
     for (const r of collectFreeIdentifiers(node, body)) sigRefs.add(r);
     if (body) {
-      bodySpans.push(spanText(content, sf, body));
+      bodySpans.push(renderWithCanon(content, body.getStart(sf), body.getEnd(), canon));
       for (const r of collectFreeIdentifiers(body)) bodyRefs.add(r);
     }
   }
