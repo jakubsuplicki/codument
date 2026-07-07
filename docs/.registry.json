@@ -383,7 +383,8 @@
       "primary_sources": [
         "src/commands/doctor.ts",
         "src/lib/analyze.ts",
-        "src/lib/badge.ts"
+        "src/lib/badge.ts",
+        "src/lib/invariant-check.ts"
       ],
       "related_sources": [],
       "docs": [
@@ -420,8 +421,8 @@
         "src/lib/ownership.ts",
         "src/lib/report-html.ts",
         "src/lib/ts-adapter.ts",
-        "src/lib/two-ref.ts",
-        "src/lib/ts-canonicalize.ts"
+        "src/lib/ts-canonicalize.ts",
+        "src/lib/two-ref.ts"
       ],
       "related_sources": [],
       "docs": [

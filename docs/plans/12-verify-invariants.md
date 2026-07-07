@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 12: `doctor --verify-invariants` — executable invariants

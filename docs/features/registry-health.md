@@ -56,3 +56,4 @@ The badge is a coverage figure, not a quality or correctness score, and absolute
 - `src/commands/doctor.ts` — the command orchestrator: assembles the two-axis report, applies the opt-in `--strict` exit policy, and renders human and `--json` output plus the on-disk coverage artifact.
 - `src/lib/analyze.ts` — the deterministic analyzer: owns the canonical exclusion spec, computes the coverage ratios and their rollup, and emits the lint findings. This is the shared engine the rest of the health surface reads.
 - `src/lib/badge.ts` — the rendering seam: turns a coverage percent (or N/A) into a static, network-free SVG badge.
+- `src/lib/invariant-check.ts` — the invariant-pointer parser behind the opt-in `--verify-invariants` mode: reads a doc's `## Invariants & boundaries` markers into machine-checkable test pointers (or `untested` / `honest` / `malformed` classifications), so the pins the standard requires can be run rather than just existence-checked.
