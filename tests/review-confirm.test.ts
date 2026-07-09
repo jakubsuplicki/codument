@@ -214,6 +214,12 @@ describe("makeTestRunner — exit code maps to outcome", () => {
     // parent test-runner's NODE_TEST_CONTEXT. When codument's runner is invoked
     // from inside another `node --test` run, it must strip that so a red test is
     // never read as green.
+    // Declare the fixture dir ESM so `red.test.js` parses as a module on every Node
+    // version (auto ESM detection is only default on 22.7+). Otherwise on Node 18/20
+    // the `import` is a CommonJS SyntaxError: the file exits red for the WRONG reason
+    // and never actually runs, so the NODE_TEST_CONTEXT stripping this test exists to
+    // prove is never exercised.
+    writeFileSync(join(tmp, "package.json"), '{"type":"module"}\n');
     writeFileSync(
       join(tmp, "red.test.js"),
       'import{test}from"node:test";import a from"node:assert";test("x",()=>a.equal(1,2));\n',

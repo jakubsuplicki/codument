@@ -276,7 +276,13 @@ describe("runInvariantCheck — end-to-end over a fixture repo (real runner)", (
         "",
       ].join("\n"),
     );
-    // Plain node:test files so the runner needs only `node --test` (no tsx in /tmp).
+    // Plain node:test fixtures so the runner needs only `node --test` (no tsx in /tmp).
+    // Declare the fixture dir ESM so the `.js` files parse as modules on EVERY Node
+    // version: automatic ESM detection for an ambiguous `.js` is only the default on
+    // Node 22.7+, so without this the `import` is a CommonJS SyntaxError on Node 18/20,
+    // which `node --test` reports as a failing test (TAP + exit 1) — making the passing
+    // fixture read `invariant-broken` instead of green (the CI matrix runs 18/20/22).
+    await writeFile(join(tmp, "package.json"), '{"type":"module"}\n');
     await writeFile(join(tmp, "pass.test.js"), 'import{test}from"node:test";test("ok",()=>{});\n');
     await writeFile(
       join(tmp, "fail.test.js"),
