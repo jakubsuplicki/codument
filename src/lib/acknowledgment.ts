@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { atomicWriteFileSync } from "./events.js";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { atomicWriteFileSync } from "./events.js";
 
 // A recorded, attributed, fingerprint-bound decision that a moved anchor needs no
 // doc change (a refactor / behavior-preserving move). The gate NEVER verifies the
@@ -113,10 +113,25 @@ export function writeAck(root: string, ack: Acknowledgment): string {
   return path;
 }
 
+// The canonical form of a signer/author identity for comparison: trimmed and
+// case-folded, so "Alice <A@x.com>" and "alice <a@x.com>" are one person. Shared by
+// every independence check (single-author and change-author-set) so they agree.
+export function normalizeIdentity(id: string): string {
+  return id.trim().toLowerCase();
+}
+
+// A signer is independent of the change author when the two identities differ — a
+// second-party sign-off, like CODEOWNERS. The single-author form; the review card
+// and `--require-independent-ack` gate compare a signer against the SET of a change's
+// commit authors instead (see `getChangeAuthors`), using the same normalization.
+export function signerIsIndependent(signer: string, changeAuthor: string): boolean {
+  return normalizeIdentity(signer) !== normalizeIdentity(changeAuthor);
+}
+
 // Opt-in strict independence: an ack is independent only when its signer differs
-// from the change author (a second-party sign-off, like CODEOWNERS). Off by
-// default (agent-self-resolve); when enabled, a self-signed ack does not clear the
-// finding — it is kept honest instead by being recorded and auto-invalidating.
+// from the change author. Off by default (agent-self-resolve); when enabled, a
+// self-signed ack does not clear the finding — it is kept honest instead by being
+// recorded and auto-invalidating.
 export function isIndependent(ack: Acknowledgment, changeAuthor: string): boolean {
-  return ack.signer.trim().toLowerCase() !== changeAuthor.trim().toLowerCase();
+  return signerIsIndependent(ack.signer, changeAuthor);
 }

@@ -1,14 +1,14 @@
-import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { renderReviewReportHtml } from "../src/lib/report-html.js";
+import { dirname, join } from "node:path";
+import { afterEach, beforeEach, describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { buildReportData, writeReport } from "../src/commands/report.js";
 import type { ChangeState } from "../src/lib/change-state.js";
+import { renderReviewReportHtml } from "../src/lib/report-html.js";
 
 function emptyState(): ChangeState {
   return {
@@ -98,6 +98,67 @@ describe("renderReviewReportHtml", () => {
     assert.match(html, /the doc that owns it in the registry/i);
   });
 
+  it("renders the acknowledgments card with self vs independent badges", () => {
+    const html = renderReviewReportHtml({
+      review: {
+        version: 2,
+        gate: "ok",
+        isGitRepo: true,
+        changedFileCount: 2,
+        deletions: [],
+        plan: null,
+        state: emptyState(),
+        drift: [],
+        fileGrainAcked: ["src/b.ts"],
+        coveringAcks: [
+          {
+            anchorId: "src/a.ts::foo",
+            grain: "symbol",
+            symbol: "foo",
+            signer: "alice",
+            reason: "internal refactor, same shape",
+            independent: false,
+          },
+          {
+            anchorId: "src/b.ts",
+            grain: "file",
+            symbol: null,
+            signer: "bob",
+            reason: "additive helper only",
+            independent: true,
+          },
+        ],
+      },
+      coveragePercent: 90,
+      generatedAt: "t",
+    });
+    assert.match(html, /Acknowledgments in this change/);
+    assert.match(html, /2 covering/);
+    assert.match(html, /1 self-adjudicated/);
+    assert.match(html, /1 independent/);
+    assert.match(html, /class="akb self"/, "the self ack is badged self");
+    assert.match(html, /class="akb ind"/, "the independent ack is badged independent");
+    assert.match(html, /internal refactor, same shape/);
+    assert.match(html, /additive helper only/);
+    assert.match(html, /src\/b\.ts/); // the file-grain ack names its path
+  });
+
+  it("omits the acknowledgments card when the change carries no covering ack", () => {
+    const html = renderReviewReportHtml({
+      review: {
+        version: 2,
+        isGitRepo: true,
+        changedFileCount: 1,
+        plan: null,
+        state: emptyState(),
+        coveringAcks: [],
+      },
+      coveragePercent: 90,
+      generatedAt: "t",
+    });
+    assert.doesNotMatch(html, /Acknowledgments in this change/);
+  });
+
   it("omits the demo callout unless demo notes are provided", () => {
     const clean = renderReviewReportHtml({
       review: { version: 1, isGitRepo: true, changedFileCount: 0, plan: null, state: emptyState() },
@@ -141,7 +202,12 @@ describe("renderReviewReportHtml", () => {
       generatedAt: "t",
       impact: {
         provable: { staleDocs: 0, riskTouches: 0, offPlan: 0, snapshots: 0 },
-        reported: { headline: 0, fixed: { correctness: 0, minor: 0 }, deferred: { correctness: 0, minor: 0 }, total: 0 },
+        reported: {
+          headline: 0,
+          fixed: { correctness: 0, minor: 0 },
+          deferred: { correctness: 0, minor: 0 },
+          total: 0,
+        },
         hasProvable: false,
         hasReported: false,
       },
@@ -156,7 +222,12 @@ describe("renderReviewReportHtml", () => {
       generatedAt: "t",
       impact: {
         provable: { staleDocs: 23, riskTouches: 4, offPlan: 2, snapshots: 12 },
-        reported: { headline: 11, fixed: { correctness: 11, minor: 3 }, deferred: { correctness: 0, minor: 1 }, total: 15 },
+        reported: {
+          headline: 11,
+          fixed: { correctness: 11, minor: 3 },
+          deferred: { correctness: 0, minor: 1 },
+          total: 15,
+        },
         hasProvable: true,
         hasReported: true,
       },
@@ -199,7 +270,11 @@ describe("report command (temp git repo)", () => {
     await writeFile(join(tmp, "docs", "features", "auth.md"), "# auth\n");
     await writeFile(join(tmp, "src", "auth", "login.ts"), "export const a = 1;\n");
     const run = (args: string[]) =>
-      execFileSync("git", args, { cwd: tmp, stdio: "ignore", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
+      execFileSync("git", args, {
+        cwd: tmp,
+        stdio: "ignore",
+        env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+      });
     run(["init"]);
     run(["config", "user.email", "t@e.com"]);
     run(["config", "user.name", "T"]);

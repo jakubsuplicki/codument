@@ -71,10 +71,7 @@ export function assertRootIsRepoToplevel(root: string): void {
   const toplevel = getRepoToplevel(root);
   if (!toplevel) {
     // Inside a work tree but the toplevel is unresolvable — a broken git.
-    throw new GateError(
-      `git rev-parse --show-toplevel failed under ${root}`,
-      "git-failed",
-    );
+    throw new GateError(`git rev-parse --show-toplevel failed under ${root}`, "git-failed");
   }
   if (dirIdentity(root) !== dirIdentity(toplevel)) {
     throw new GateError(
@@ -122,6 +119,32 @@ export function getGitAuthor(root: string): string | null {
   const email = read("user.email");
   if (name && email) return `${name} <${email}>`;
   return name ?? email ?? null;
+}
+
+/**
+ * The commit authors ("Name <email>") of the commits in `base..head` — the people
+ * who actually MADE the change under review, read from the commit graph. This is a
+ * pure function of repo state (unlike `getGitAuthor`, which reads the ambient
+ * `git config user.*` of whoever runs the command), so it is the correct source of
+ * "the change author" for detecting a self-ack: an ack whose signer is one of these
+ * authors is a self-adjudication, wherever the review runs. An empty range (a
+ * pending working-tree diff with no commits, where authorship is not yet recorded)
+ * returns an empty set, so independence stays conservatively unproven rather than
+ * keyed to the current process identity. Never throws — an unreachable ref or git
+ * failure yields the empty set.
+ */
+export function getChangeAuthors(root: string, base: string, head = "HEAD"): Set<string> {
+  try {
+    const out = git(root, ["log", "--format=%an <%ae>", `${base}..${head}`]);
+    return new Set(
+      out
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0),
+    );
+  } catch {
+    return new Set();
+  }
 }
 
 interface StatusEntry {

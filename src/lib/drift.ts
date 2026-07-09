@@ -1,12 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { byteNormalize, readBlobAtRef } from "./two-ref.js";
+import { type Acknowledgment, ackCovers } from "./acknowledgment.js";
+import { type ComovementStatus, classifyComovement } from "./co-movement.js";
+import { type AnchorChange, type AnchorChangeKind, isSignatureMove } from "./fingerprint.js";
 import { resolveOwner } from "./ownership.js";
-import { classifyComovement, type ComovementStatus } from "./co-movement.js";
-import { ackCovers, type Acknowledgment } from "./acknowledgment.js";
-import { MODULE_ANCHOR_NAME } from "./ts-adapter.js";
 import type { Registry } from "./registry.js";
-import { isSignatureMove, type AnchorChange, type AnchorChangeKind } from "./fingerprint.js";
+import { MODULE_ANCHOR_NAME } from "./ts-adapter.js";
+import { byteNormalize, readBlobAtRef } from "./two-ref.js";
 
 // Per-symbol drift: the agent-judge-centric layer (decided 2026-06-27). For each
 // moved OWNED anchor it produces a precise finding — the symbol, its fingerprint
@@ -42,6 +42,9 @@ export interface DriftFinding {
   /** The recorded reason of the covering acknowledgment, when `acknowledged` — so
    *  review/`--json` can show WHY a move was exempted, not just that it was. */
   ackReason?: string;
+  /** The recorded signer of the covering acknowledgment, when `acknowledged` — so
+   *  the review/report acks card can badge it self vs independent of the author. */
+  ackSigner?: string;
 }
 
 export interface DriftResult {
@@ -125,7 +128,7 @@ export function computeDrift(
         signatureChanged,
         comovement,
         acknowledged,
-        ...(coveringAck ? { ackReason: coveringAck.reason } : {}),
+        ...(coveringAck ? { ackReason: coveringAck.reason, ackSigner: coveringAck.signer } : {}),
       });
       if (!acknowledged) kept.push(ch);
     }

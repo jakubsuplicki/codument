@@ -1,4 +1,4 @@
-import type { ReviewReport } from "../commands/review.js";
+import type { CoveringAck, ReviewReport } from "../commands/review.js";
 import type { ImpactLedger } from "./impact-ledger.js";
 
 // Self-contained HTML review report: inline CSS, no network, no JS (uses native
@@ -122,19 +122,13 @@ export function renderReviewReportHtml(data: ReportData): string {
     ? { cls: "warn", chip: "Needs review", title: "This change needs a look" }
     : { cls: "good", chip: "Clear", title: "Nothing suspicious — looks clean" };
 
-  const delta =
-    cov !== null && prev !== null && prev !== cov ? cov - prev : null;
-  const signedDelta =
-    delta === null ? "" : `(${delta > 0 ? "+" : "&minus;"}${Math.abs(delta)})`;
+  const delta = cov !== null && prev !== null && prev !== cov ? cov - prev : null;
+  const signedDelta = delta === null ? "" : `(${delta > 0 ? "+" : "&minus;"}${Math.abs(delta)})`;
 
   // Coverage gauge — a conic ring whose colour tracks the level. N/A when null.
   const gaugeClass = cov === null ? "na" : covClass(cov);
   const ringColor =
-    gaugeClass === "hi"
-      ? "var(--good)"
-      : gaugeClass === "mid"
-        ? "var(--warn)"
-        : "var(--risk)";
+    gaugeClass === "hi" ? "var(--good)" : gaugeClass === "mid" ? "var(--warn)" : "var(--risk)";
   const ringStyle =
     cov === null
       ? "background:#1c2740"
@@ -177,6 +171,7 @@ export function renderReviewReportHtml(data: ReportData): string {
 
   const demoHtml = data.demo ? renderDemo(data.demo) : "";
   const impactHtml = renderImpact(data.impact);
+  const acksHtml = renderAcks(data.review.coveringAcks);
 
   const byFeature = s.byFeature
     .map(
@@ -188,14 +183,15 @@ export function renderReviewReportHtml(data: ReportData): string {
     .join("");
 
   const detailRows = [
-    detailList("Stale docs", s.staleDocs.map((d) => `${d.feature} — ${d.doc}`)),
+    detailList(
+      "Stale docs",
+      s.staleDocs.map((d) => `${d.feature} — ${d.doc}`),
+    ),
     detailList("Unmapped changes", s.unmapped),
     detailList("Out-of-plan changes", plan ? s.outOfPlan : []),
     detailList(
       "High-risk touches",
-      s.riskTouches.map(
-        (r) => `${r.feature} [${r.risk.join(", ")}] — ${r.files.join(", ")}`,
-      ),
+      s.riskTouches.map((r) => `${r.feature} [${r.risk.join(", ")}] — ${r.files.join(", ")}`),
     ),
     detailList(
       "Dependents",
@@ -341,6 +337,19 @@ export function renderReviewReportHtml(data: ReportData): string {
   .ifoot{font-family:var(--mono);font-size:11px;color:var(--ink3);margin:12px 0 2px;line-height:1.6}
   .ifoot b{color:var(--ink2)}
 
+  /* acknowledgments in this change */
+  .acks{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 18px 12px}
+  .akhead{font-family:var(--mono);font-size:11px;letter-spacing:.6px;color:var(--ink3);padding:8px 0 4px}
+  .akrow{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:9px 0;font-size:14px}
+  .akrow+.akrow{border-top:1px solid var(--line)}
+  .akrow code{font-family:var(--mono);font-size:12.5px;color:var(--ink);background:var(--bg2);border:1px solid var(--line2);padding:1px 7px;border-radius:5px}
+  .akg{font-family:var(--mono);font-size:10px;color:var(--ink3)}
+  .akb{font-family:var(--mono);font-size:10px;letter-spacing:.8px;text-transform:uppercase;font-weight:700;padding:2px 7px;border-radius:5px;flex:none}
+  .akb.self{color:var(--warn);background:var(--warn-bg);border:1px solid var(--warn-ln)}
+  .akb.ind{color:var(--good);background:var(--good-bg);border:1px solid var(--good-ln)}
+  .aksig{font-family:var(--mono);font-size:11px;color:var(--ink3)}
+  .akrs{color:var(--ink2);flex:1 1 240px;min-width:0}
+
   /* collapsible detail blocks */
   details.block{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:12px;overflow:hidden}
   details.block>summary{cursor:pointer;list-style:none;padding:15px 18px;display:flex;align-items:center;gap:11px;font-weight:600;font-size:14px;color:var(--ink)}
@@ -396,6 +405,8 @@ export function renderReviewReportHtml(data: ReportData): string {
 
   ${impactHtml}
 
+  ${acksHtml}
+
   <div class="shead"><h2>Details</h2><span class="ln"></span></div>
   ${demoHtml}
   <details class="block">
@@ -426,9 +437,12 @@ function renderImpact(impact?: ImpactLedger): string {
   if (impact.hasProvable) {
     const p = impact.provable;
     const parts: string[] = [];
-    if (p.staleDocs > 0) parts.push(`${p.staleDocs} stale ${p.staleDocs === 1 ? "doc" : "docs"} flagged`);
-    if (p.riskTouches > 0) parts.push(`${p.riskTouches} high-risk ${p.riskTouches === 1 ? "touch" : "touches"}`);
-    if (p.offPlan > 0) parts.push(`${p.offPlan} off-plan ${p.offPlan === 1 ? "change" : "changes"}`);
+    if (p.staleDocs > 0)
+      parts.push(`${p.staleDocs} stale ${p.staleDocs === 1 ? "doc" : "docs"} flagged`);
+    if (p.riskTouches > 0)
+      parts.push(`${p.riskTouches} high-risk ${p.riskTouches === 1 ? "touch" : "touches"}`);
+    if (p.offPlan > 0)
+      parts.push(`${p.offPlan} off-plan ${p.offPlan === 1 ? "change" : "changes"}`);
     rows.push(
       `<div class="iline"><span class="ik prov">Provable</span><span class="iv">${esc(parts.join(" · "))}</span></div>`,
     );
@@ -449,12 +463,35 @@ function renderImpact(impact?: ImpactLedger): string {
   </div>`;
 }
 
+/** The "Acknowledgments in this change" audit card — every covering ack on one line,
+ *  badged self vs independent of the change author, so self-review is visible and
+ *  over-acking is loud. Empty string when the change set carries no covering ack. */
+function renderAcks(acks: CoveringAck[] | undefined): string {
+  if (!acks || acks.length === 0) return "";
+  const selfCount = acks.filter((a) => !a.independent).length;
+  const rows = acks
+    .map((a) => {
+      const badge = a.independent
+        ? `<span class="akb ind">independent</span>`
+        : `<span class="akb self">self</span>`;
+      const target =
+        a.grain === "file"
+          ? `<code>${esc(a.anchorId)}</code> <span class="akg">file</span>`
+          : `<code>${esc(a.symbol ?? a.anchorId)}</code>`;
+      return `<div class="akrow">${target} ${badge} <span class="aksig">${esc(a.signer)}</span> <span class="akrs">${esc(a.reason)}</span></div>`;
+    })
+    .join("\n    ");
+  return `
+  <div class="shead"><h2>Acknowledgments in this change</h2><span class="ln"></span></div>
+  <div class="acks">
+    <div class="akhead">${acks.length} covering &middot; ${selfCount} self-adjudicated &middot; ${acks.length - selfCount} independent</div>
+    ${rows}
+  </div>`;
+}
+
 function renderDemo(d: DemoExplainer): string {
   const rows = d.changeRows
-    .map(
-      (r) =>
-        `<tr><td><code>${esc(r.file)}</code></td><td>${esc(r.note)}</td></tr>`,
-    )
+    .map((r) => `<tr><td><code>${esc(r.file)}</code></td><td>${esc(r.note)}</td></tr>`)
     .join("");
   return `
   <details class="block">
@@ -470,9 +507,7 @@ function renderDemo(d: DemoExplainer): string {
 
 function detailList(title: string, items: string[]): string {
   if (items.length === 0) return "";
-  return `<h4>${esc(title)}</h4><ul>${items
-    .map((i) => `<li>${esc(i)}</li>`)
-    .join("")}</ul>`;
+  return `<h4>${esc(title)}</h4><ul>${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>`;
 }
 
 function dedupe(items: string[]): string[] {

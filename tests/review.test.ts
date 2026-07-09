@@ -1,15 +1,16 @@
-import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { afterEach, beforeEach, describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { buildReview, normalizeTestCommand } from "../src/commands/review.js";
+import { writeAck } from "../src/lib/acknowledgment.js";
+import { fileContentTransition } from "../src/lib/fingerprint.js";
 import { getWorkingTreeChanges } from "../src/lib/git.js";
 import { worktreeChangesSince } from "../src/lib/two-ref.js";
-import { writeAck } from "../src/lib/acknowledgment.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, "..", "dist", "cli.js");
@@ -182,8 +183,7 @@ describe("buildReview (temp git repo)", () => {
 
   it("warns, naming every approved plan and the winner, when more than one is approved", async () => {
     await scaffold({
-      "docs/plans/add-thing.md":
-        "---\nstatus: approved\n---\n\n## Scope\n\n- `src/lib/db.ts`\n",
+      "docs/plans/add-thing.md": "---\nstatus: approved\n---\n\n## Scope\n\n- `src/lib/db.ts`\n",
       "docs/plans/other-thing.md":
         "---\nstatus: approved\n---\n\n## Scope\n\n- `src/auth/login.ts`\n",
       "src/lib/db.ts": "export const db = { ok: true };\n",
@@ -234,11 +234,7 @@ describe("buildReview (temp git repo)", () => {
     });
 
     const report = buildReview(tmp);
-    assert.deepEqual(
-      report.state.unmapped,
-      [],
-      "no non-ASCII path misclassified as unmapped",
-    );
+    assert.deepEqual(report.state.unmapped, [], "no non-ASCII path misclassified as unmapped");
     assert.ok(
       report.state.changedSources.includes("src/föo.ts"),
       "föo.ts recognized as a changed source",
@@ -251,6 +247,121 @@ describe("buildReview (temp git repo)", () => {
       report.state.staleDocs.map((d) => d.feature).includes("intl"),
       "the owning doc is flagged stale with per-symbol drift",
     );
+  });
+});
+
+describe("acks card — self vs independent (buildReview + review CLI)", () => {
+  const AUTHOR = "Test <test@example.com>"; // what gitInit configures as the commit author
+
+  const headSha = (): string =>
+    execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmp, encoding: "utf-8" }).trim();
+
+  // Commit a body-only move of `login` (authored by AUTHOR, so it is a real change
+  // author in base..HEAD), then record an ack for it signed by `signer`. Independence
+  // is judged against the COMMIT author, not whoever runs review — so the review must
+  // be run with `--base <baseSha>` to see the committed change.
+  async function commitLoginMoveAndAck(signer: string): Promise<string> {
+    const baseSha = headSha();
+    await scaffold({ "src/auth/login.ts": "export const login = () => { return 3; };\n" });
+    gitCommitAll(tmp, "refactor login body");
+    const since = worktreeChangesSince(tmp, baseSha);
+    const f = buildReview(tmp, since, baseSha).drift.find((d) => d.symbol === "login");
+    assert.ok(f?.from && f?.to, "login moved (a body-only, ackable change)");
+    writeAck(tmp, {
+      anchorId: f!.anchorId,
+      fromHash: f!.from!,
+      toHash: f!.to!,
+      reason: "rename only; same call shape",
+      signer,
+    });
+    return baseSha;
+  }
+
+  it("an ack signed by a change author is badged self", async () => {
+    const baseSha = await commitLoginMoveAndAck(AUTHOR);
+    const since = worktreeChangesSince(tmp, baseSha);
+    const report = buildReview(tmp, since, baseSha);
+    assert.equal(report.coveringAcks.length, 1);
+    const ack = report.coveringAcks[0];
+    assert.equal(ack.grain, "symbol");
+    assert.equal(ack.symbol, "login");
+    assert.equal(ack.independent, false, "signer is a commit author → self");
+
+    const out = execFileSync("node", [CLI, "review", "--base", baseSha], {
+      cwd: tmp,
+      encoding: "utf-8",
+    });
+    assert.match(out, /Acknowledgments in this change/);
+    assert.match(out, /login \[self\]/);
+    assert.match(out, /1 covering \(1 self\)/);
+  });
+
+  it("an ack signed by someone other than the change author is badged independent", async () => {
+    const baseSha = await commitLoginMoveAndAck("Reviewer <reviewer@example.com>");
+    const since = worktreeChangesSince(tmp, baseSha);
+    const report = buildReview(tmp, since, baseSha);
+    assert.equal(
+      report.coveringAcks[0].independent,
+      true,
+      "signer is not among the commit authors → independent",
+    );
+
+    const out = execFileSync("node", [CLI, "review", "--base", baseSha], {
+      cwd: tmp,
+      encoding: "utf-8",
+    });
+    assert.match(out, /login \[independent\]/);
+    assert.match(out, /1 covering \(0 self\)/);
+  });
+
+  it("independence is keyed to the change author, not the review runner (CI purity)", async () => {
+    // The change author's own self-ack must stay `self` even when review runs under a
+    // DIFFERENT git identity (a fresh CI clone, a bot). This is the regression the
+    // adversarial review caught: keying independence to `git config user.*` of the
+    // runner flipped Alice's self-ack to a green [independent] badge in CI.
+    const baseSha = await commitLoginMoveAndAck(AUTHOR);
+    const since = worktreeChangesSince(tmp, baseSha);
+    // Simulate a different runner: change the local git identity after authoring.
+    execFileSync("git", ["config", "user.name", "CI Bot"], { cwd: tmp, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "ci@bot"], { cwd: tmp, stdio: "ignore" });
+    const report = buildReview(tmp, since, baseSha);
+    assert.equal(
+      report.coveringAcks[0].independent,
+      false,
+      "the AUTHOR's self-ack stays self even when a bot identity runs review",
+    );
+  });
+
+  it("a file-grain ack appears in the card as a file, with its badge", async () => {
+    // an additive export wakes auth file-grain; a file-grain ack covers it
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => {};\nexport const helper = () => 1;\n",
+    });
+    const { from, to } = fileContentTransition(tmp, "HEAD", "src/auth/login.ts");
+    assert.ok(from && to);
+    writeAck(tmp, {
+      anchorId: "src/auth/login.ts",
+      fromHash: from!,
+      toHash: to!,
+      reason: "internal helper; no public contract added",
+      signer: AUTHOR,
+    });
+    const report = buildReview(tmp);
+    const fileAck = report.coveringAcks.find((a) => a.grain === "file");
+    assert.ok(fileAck, "the file-grain ack is surfaced in the card");
+    assert.equal(fileAck.symbol, null);
+    assert.equal(fileAck.anchorId, "src/auth/login.ts");
+
+    const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
+    assert.match(out, /src\/auth\/login\.ts \(file\)/);
+  });
+
+  it("no covering ack → no card (a clean self-review isn't hidden, but there's nothing to show)", async () => {
+    await scaffold({ "src/auth/login.ts": "export const login = () => { return 5; };\n" });
+    const report = buildReview(tmp);
+    assert.deepEqual(report.coveringAcks, []);
+    const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
+    assert.doesNotMatch(out, /Acknowledgments in this change/);
   });
 });
 
@@ -297,7 +408,8 @@ describe("codument review (CLI)", () => {
       // The doc is updated in plain English, deliberately WITHOUT naming `login`
       // (the standard forbids symbol mirrors). The verdict clears because the doc
       // changed; the surface must agree, not nag via co-movement.
-      "docs/features/auth.md": "# auth\n\n## In plain terms\nSign-in now succeeds for valid input.\n",
+      "docs/features/auth.md":
+        "# auth\n\n## In plain terms\nSign-in now succeeds for valid input.\n",
     });
     const report = buildReview(tmp);
     assert.ok(
@@ -324,7 +436,7 @@ describe("codument review (CLI)", () => {
       signer: "agent",
     });
     const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
-    assert.match(out, /Acknowledged — no doc change owed/);
+    assert.match(out, /Acknowledgments in this change/);
     assert.match(out, /rename only; same call shape/);
     assert.match(out, /1 acked \(contract-neutral\)/);
   });
@@ -417,13 +529,19 @@ describe("codument review (CLI)", () => {
       execFileSync("node", [CLI, "review", "--bundle"], { cwd: tmp, encoding: "utf-8" }),
     );
     assert.ok(typeof bundle.base === "string" && bundle.base.length > 0, "bundle has a base");
-    assert.ok(bundle.changedSources.includes("src/auth/login.ts"), "bundle names the changed source");
+    assert.ok(
+      bundle.changedSources.includes("src/auth/login.ts"),
+      "bundle names the changed source",
+    );
 
     const requireReview = (): { status: number; out: string } => {
       try {
         return {
           status: 0,
-          out: execFileSync("node", [CLI, "review", "--require-review"], { cwd: tmp, encoding: "utf-8" }),
+          out: execFileSync("node", [CLI, "review", "--require-review"], {
+            cwd: tmp,
+            encoding: "utf-8",
+          }),
         };
       } catch (err) {
         const e = err as { status?: number; stdout?: string };
@@ -439,7 +557,11 @@ describe("codument review (CLI)", () => {
     // Record a clean review — the writer computes the fingerprint over THIS diff.
     await writeFile(
       join(tmp, "findings.json"),
-      JSON.stringify({ invariantsChecked: ["login returns a constant"], findings: [], signer: "test" }),
+      JSON.stringify({
+        invariantsChecked: ["login returns a constant"],
+        findings: [],
+        signer: "test",
+      }),
     );
     const recordOut = execFileSync("node", [CLI, "review", "--record", "findings.json"], {
       cwd: tmp,
@@ -468,7 +590,10 @@ describe("codument review (CLI)", () => {
     let status = 0;
     let out = "";
     try {
-      out = execFileSync("node", [CLI, "review", "--record", "bad.json"], { cwd: tmp, encoding: "utf-8" });
+      out = execFileSync("node", [CLI, "review", "--record", "bad.json"], {
+        cwd: tmp,
+        encoding: "utf-8",
+      });
     } catch (err) {
       const e = err as { status?: number; stdout?: string };
       status = e.status ?? 0;
@@ -607,7 +732,11 @@ describe("deletions are first-class in the verdict", () => {
     );
 
     const strict = run(["review", "--strict"], tmp);
-    assert.equal(strict.status, 1, "--strict fails on a deleted owned source with an unchanged doc");
+    assert.equal(
+      strict.status,
+      1,
+      "--strict fails on a deleted owned source with an unchanged doc",
+    );
     assert.match(strict.stdout, /deleted/i);
     assert.doesNotMatch(strict.stdout, /Working tree clean/);
   });

@@ -1,56 +1,57 @@
-import { join, resolve as resolvePath } from "node:path";
 import { readFileSync } from "node:fs";
+import { join, resolve as resolvePath } from "node:path";
 import pc from "picocolors";
-import { parseRegistryOrThrow, readRegistrySync, type Registry } from "../lib/registry.js";
+import { ackCovers, isFileGrainAck, normalizeIdentity, readAcks } from "../lib/acknowledgment.js";
+import { DEFAULT_EXCLUSION_SPEC, isExcluded } from "../lib/analyze.js";
 import {
+  type ApprovedPlan,
+  type ChangeState,
   computeChangeState,
   detectApprovedPlanScope,
   resolveFileGrainAcked,
-  type ApprovedPlan,
-  type ChangeState,
 } from "../lib/change-state.js";
+import { computeDrift, type DriftFinding } from "../lib/drift.js";
+import { fileContentTransition, gatherAnchorChanges } from "../lib/fingerprint.js";
 import {
   assertRootIsRepoToplevel,
+  getChangeAuthors,
+  getHeadSha,
   getWorkingTreeChanges,
   getWorkingTreeDeletions,
   isGitRepo,
-  getHeadSha,
 } from "../lib/git.js";
-import {
-  worktreeChangesSince,
-  worktreeDeletionsSince,
-  resolveBase,
-  readBlobAtRef,
-  refReachable,
-  blobExistsAtRef,
-  GateError,
-  EMPTY_TREE_SHA,
-} from "../lib/two-ref.js";
-import { gatherAnchorChanges } from "../lib/fingerprint.js";
-import { computeDrift, type DriftFinding } from "../lib/drift.js";
-import { readAcks } from "../lib/acknowledgment.js";
-import { emitCaught } from "../lib/review-events.js";
+import { parseRegistryOrThrow, type Registry, readRegistrySync } from "../lib/registry.js";
 import {
   findCoveringReview,
   gatherReviewFingerprint,
-  writeReview,
   parseReviewArtifact,
+  writeReview,
 } from "../lib/review-artifact.js";
 import { gatherReviewBundle } from "../lib/review-bundle.js";
 import {
-  evaluateReviewGate,
-  countResolvedMovedSymbols,
-  type ReviewGateResult,
-} from "../lib/review-gate.js";
-import {
   confirmFindings,
+  DEFAULT_TEST_SEARCH_DIRS,
   defaultCommandAvailable,
   makeTestRunner,
   resolveTestPath,
-  DEFAULT_TEST_SEARCH_DIRS,
 } from "../lib/review-confirm.js";
-import { isExcluded, DEFAULT_EXCLUSION_SPEC } from "../lib/analyze.js";
+import { emitCaught } from "../lib/review-events.js";
+import {
+  countResolvedMovedSymbols,
+  evaluateReviewGate,
+  type ReviewGateResult,
+} from "../lib/review-gate.js";
 import { MODULE_ANCHOR_NAME } from "../lib/ts-adapter.js";
+import {
+  blobExistsAtRef,
+  EMPTY_TREE_SHA,
+  GateError,
+  readBlobAtRef,
+  refReachable,
+  resolveBase,
+  worktreeChangesSince,
+  worktreeDeletionsSince,
+} from "../lib/two-ref.js";
 import { versionSkewNotice } from "../lib/version.js";
 
 interface ReviewOptions {
@@ -117,6 +118,25 @@ export interface ReviewReport {
    *  the resolution summary shows a file-ack AS an ack, never laundered as a doc
    *  update (over-acking stays visible). */
   fileGrainAcked: string[];
+  /** Every acknowledgment covering this change set (per-symbol and file-grain), with
+   *  its signer and whether that signer is independent of the change author. Rendered
+   *  as the "Acknowledgments in this change" card wherever the human already looks, so
+   *  self-review is distinguishable from independent review and over-acking is loud. */
+  coveringAcks: CoveringAck[];
+}
+
+/** One acknowledgment adjudicating this change — the shape both the `review` card and
+ *  the HTML report render from, so they can never disagree. `independent` is recomputed
+ *  from the signer vs the current change author (never a stored flag). */
+export interface CoveringAck {
+  anchorId: string;
+  grain: "symbol" | "file";
+  /** The symbol name for a per-symbol ack; null for a file-grain ack. */
+  symbol: string | null;
+  signer: string;
+  reason: string;
+  /** The signer differs from the change author (a second-party sign-off). */
+  independent: boolean;
 }
 
 /** How a moved-owned-symbol drift finding was resolved (or not) — kept in one place
@@ -188,13 +208,7 @@ export function buildReview(
   // Resolve per-symbol drift + acknowledgments: an acked move is adjudicated (a
   // recorded "refactor, no doc change owed" decision) and dropped from the set the
   // stale-doc verdict sees; co-movement is attached as info-only telemetry.
-  const { findings: drift, filtered } = computeDrift(
-    root,
-    baseRef,
-    registry,
-    anchorChanges,
-    acks,
-  );
+  const { findings: drift, filtered } = computeDrift(root, baseRef, registry, anchorChanges, acks);
   // File-grain acks (`codument ack <path>`): a bare-path ack covering a file's
   // current content clears its additive/concept/coarse staleness (never a moved
   // symbol). Resolved here (git+disk) and passed to the pure analyzer.
@@ -217,6 +231,49 @@ export function buildReview(
     // same change cannot dodge the wake.
     baseRegistry: deletions.length > 0 ? readRegistryAtRef(root, baseRef) : undefined,
   });
+  // The acks adjudicating this change, per-symbol and file-grain, with their signer
+  // and whether it is INDEPENDENT of the change author. The change author is read
+  // from the commit authorship of the change range (`base..HEAD`), NOT the ambient
+  // `git config user.*` of whoever runs review — so a self-ack stays self in CI or on
+  // any machine, and `buildReview` stays a pure function of repo state. A pending
+  // working-tree diff has no commits yet, so the author set is empty and independence
+  // is conservatively unproven (rendered self): a change becomes eligible for an
+  // "independent" badge only once its authorship is recorded in a commit.
+  const changeAuthors = new Set(
+    [...getChangeAuthors(root, baseRef)].map((a) => normalizeIdentity(a)),
+  );
+  const independentOf = (signer: string): boolean =>
+    changeAuthors.size > 0 && !changeAuthors.has(normalizeIdentity(signer));
+  const coveringAcks: CoveringAck[] = [];
+  for (const d of drift) {
+    if (d.acknowledged && d.ackSigner) {
+      coveringAcks.push({
+        anchorId: d.anchorId,
+        grain: "symbol",
+        symbol: d.symbol,
+        signer: d.ackSigner,
+        reason: d.ackReason ?? "",
+        independent: independentOf(d.ackSigner),
+      });
+    }
+  }
+  for (const file of fileGrainAcked) {
+    const { from, to } = fileContentTransition(root, baseRef, file);
+    if (from === null || to === null) continue;
+    const ack = acks.find((a) => isFileGrainAck(a) && ackCovers(a, file, from, to));
+    if (ack) {
+      coveringAcks.push({
+        anchorId: file,
+        grain: "file",
+        symbol: null,
+        signer: ack.signer,
+        reason: ack.reason,
+        independent: independentOf(ack.signer),
+      });
+    }
+  }
+  coveringAcks.sort((a, b) => (a.anchorId < b.anchorId ? -1 : a.anchorId > b.anchorId ? 1 : 0));
+
   return {
     version: 2,
     gate: "ok",
@@ -228,6 +285,7 @@ export function buildReview(
     state,
     drift,
     fileGrainAcked,
+    coveringAcks,
   };
 }
 
@@ -258,9 +316,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       process.exitCode = 1;
       return;
     }
-    console.log(
-      pc.yellow("  Not a git repository — review inspects the working-tree diff."),
-    );
+    console.log(pc.yellow("  Not a git repository — review inspects the working-tree diff."));
     return;
   }
 
@@ -362,7 +418,13 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     }
     const { set: realChangeSet } = computeRealChange(report, report.deletions);
     const resolveTest = (ref: string) => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS);
-    const fp = gatherReviewFingerprint(root, effectiveBase, realChangeSet, provisional.findings, resolveTest);
+    const fp = gatherReviewFingerprint(
+      root,
+      effectiveBase,
+      realChangeSet,
+      provisional.findings,
+      resolveTest,
+    );
     const path = writeReview(root, { ...provisional, diffFingerprint: fp });
     console.log(`  ${pc.green("✓")} Recorded adversarial review → ${path}`);
     return;
@@ -429,8 +491,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // (informational) and depends_on (a separate concern), so the gate stays
   // satisfiable — a genuine leaf feature with no deps can still pass.
   const strictFail =
-    !!options.strict &&
-    (report.state.unmapped.length > 0 || report.state.staleDocs.length > 0);
+    !!options.strict && (report.state.unmapped.length > 0 || report.state.staleDocs.length > 0);
 
   // Adversarial-review gate (opt-in). For a NON-TRIVIAL diff it requires a current,
   // fingerprint-bound review artifact whose findings — RE-CONFIRMED here by running
@@ -491,9 +552,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
         reviewGate
           ? {
               ...report,
-              reviewGate: confirmUnavailable
-                ? { ...reviewGate, confirmUnavailable }
-                : reviewGate,
+              reviewGate: confirmUnavailable ? { ...reviewGate, confirmUnavailable } : reviewGate,
             }
           : report,
         null,
@@ -639,9 +698,7 @@ function printHuman(report: ReviewReport): void {
 
   section(
     "Changed by feature",
-    state.byFeature.map(
-      (g) => `${pc.cyan(g.feature)} — ${g.files.join(", ")}`,
-    ),
+    state.byFeature.map((g) => `${pc.cyan(g.feature)} — ${g.files.join(", ")}`),
   );
 
   section(
@@ -678,9 +735,7 @@ function printHuman(report: ReviewReport): void {
   // the resolved/flagged decision here — so a correct intent-altitude doc update
   // resolves a finding, and a symbol-mirror doc earns no credit.
   const staleFeatures = new Set(report.state.staleDocs.map((s) => s.feature));
-  const unresolved = report.drift.filter(
-    (d) => !d.acknowledged && staleFeatures.has(d.feature),
-  );
+  const unresolved = report.drift.filter((d) => !d.acknowledged && staleFeatures.has(d.feature));
   if (unresolved.length > 0) {
     console.log(
       `  ${pc.bold("Symbol drift")} ${pc.dim("— resolve each: update the doc, or ack a contract-neutral move")}`,
@@ -690,7 +745,9 @@ function printHuman(report: ReviewReport): void {
       console.log(
         `    ${pc.dim("•")} ${pc.bold(d.symbol)} ${pc.dim(`(${d.kind}) in ${d.feature}`)}${sigTag}`,
       );
-      console.log(`        ${pc.dim("contract changed →")} update ${d.doc} ${pc.dim("at intent altitude")}`);
+      console.log(
+        `        ${pc.dim("contract changed →")} update ${d.doc} ${pc.dim("at intent altitude")}`,
+      );
       if (d.signatureChanged) {
         // A public signature moved: the contract changed, so NO ack applies (per
         // ADR 006). The only resolution is a doc update — name it, and do not
@@ -750,15 +807,25 @@ function printHuman(report: ReviewReport): void {
     console.log();
   }
 
-  section(
-    pc.dim("Acknowledged — no doc change owed (codument ack --list to manage)"),
-    report.drift
-      .filter((d) => d.acknowledged)
-      .map(
-        (d) =>
-          `${pc.dim("✓")} ${d.symbol}${d.ackReason ? ` — ${d.ackReason}` : ""} ${pc.dim(`→ ${d.doc}`)}`,
-      ),
-  );
+  // Acknowledgments in this change — the audit card, rendered wherever the human
+  // already looks. Every covering ack (per-symbol and file-grain) is one line with
+  // its signer badged self vs independent, so a self-adjudicated change is loud, not
+  // a quiet green, and over-acking is visible at the moment of the change.
+  if (report.coveringAcks.length > 0) {
+    const selfCount = report.coveringAcks.filter((a) => !a.independent).length;
+    console.log(
+      `  ${pc.bold("Acknowledgments in this change")} ${pc.dim(
+        `— ${report.coveringAcks.length} covering (${selfCount} self); codument ack --list to manage`,
+      )}`,
+    );
+    for (const a of report.coveringAcks) {
+      const badge = a.independent ? pc.green("[independent]") : pc.yellow("[self]");
+      const target =
+        a.grain === "file" ? pc.dim(`${a.anchorId} (file)`) : pc.bold(a.symbol ?? a.anchorId);
+      console.log(`    ${pc.dim("✓")} ${target} ${badge} ${pc.dim(`${a.signer}:`)} ${a.reason}`);
+    }
+    console.log();
+  }
 
   section(
     pc.yellow("High-risk areas touched"),
@@ -786,16 +853,12 @@ function printHuman(report: ReviewReport): void {
 
   section(
     "High-fanout changed files",
-    state.highFanout.map(
-      (f) => `${pc.yellow("⚠")} ${f.file} → ${f.features.join(", ")}`,
-    ),
+    state.highFanout.map((f) => `${pc.yellow("⚠")} ${f.file} → ${f.features.join(", ")}`),
   );
 
   section(
     "Dependents that may need re-review",
-    state.dependents.map(
-      (d) => `${pc.dim("•")} ${d.feature} (depends on ${d.dependsOn})`,
-    ),
+    state.dependents.map((d) => `${pc.dim("•")} ${d.feature} (depends on ${d.dependsOn})`),
   );
 
   console.log(
