@@ -1,23 +1,23 @@
 import { Command } from "commander";
 import pc from "picocolors";
+import { ackCommand } from "./commands/ack.js";
 import { adopt } from "./commands/adopt.js";
 import { auditCommand } from "./commands/audit.js";
-import { contextCommand } from "./commands/context.js";
 import { createBenchmarkCommand } from "./commands/benchmark.js";
+import { contextCommand } from "./commands/context.js";
+import { cost } from "./commands/cost.js";
 import { demo } from "./commands/demo.js";
 import { doctor } from "./commands/doctor.js";
-import { emitTokensCommand, emitReviewCommand } from "./commands/emit.js";
-import { ackCommand } from "./commands/ack.js";
+import { emitReviewCommand, emitTokensCommand } from "./commands/emit.js";
+import { feed } from "./commands/feed.js";
 import { init } from "./commands/init.js";
+import { mapCheck, mapMaterialize, mapRoute } from "./commands/map.js";
 import { report } from "./commands/report.js";
 import { review } from "./commands/review.js";
-import { watch } from "./commands/watch.js";
-import { feed } from "./commands/feed.js";
-import { cost } from "./commands/cost.js";
-import { stepsCommand } from "./commands/steps.js";
 import { scan } from "./commands/scan.js";
+import { stepsCommand } from "./commands/steps.js";
 import { update } from "./commands/update.js";
-import { mapRoute, mapCheck, mapMaterialize } from "./commands/map.js";
+import { watch } from "./commands/watch.js";
 import { RegistryError } from "./lib/registry.js";
 import { StateFileError } from "./lib/state-io.js";
 import { GateError } from "./lib/two-ref.js";
@@ -27,16 +27,15 @@ const program = new Command();
 
 program
   .name("codument")
-  .description("Docs-based guardrails for AI coding workflows: coverage scoring, doc-drift checks, and diff safety review.")
+  .description(
+    "Docs-based guardrails for AI coding workflows: coverage scoring, doc-drift checks, and diff safety review.",
+  )
   .version(version);
 
 program
   .command("init")
   .description("Initialize codument in your project")
-  .option(
-    "--agents <agents>",
-    "Comma-separated agent profiles to install: codex, claude",
-  )
+  .option("--agents <agents>", "Comma-separated agent profiles to install: codex, claude")
   .option("--force", "Overwrite existing files")
   .action(init);
 
@@ -51,7 +50,10 @@ program
     "Report documentation coverage (ownership, dependency, risk) and registry lint warnings",
   )
   .option("--json", "Emit the machine-readable report contract")
-  .option("--write", "Write .codument/coverage.json and .codument/coverage.svg (the score artifact + badge)")
+  .option(
+    "--write",
+    "Write .codument/coverage.json and .codument/coverage.svg (the score artifact + badge)",
+  )
   .option("--max-doc-lines <n>", "Whole-doc line threshold for bloat (default 400)")
   .option("--max-section-lines <n>", "Per-section line threshold for bloat (default 150)")
   .option("--max-completed-log <n>", "Completed-log [x] item threshold for bloat (default 15)")
@@ -76,13 +78,34 @@ program
     "Review the git diff against the registry: owners, stale docs, risk touches, out-of-plan and unmapped changes, dependents",
   )
   .option("--json", "Emit the machine-readable review contract")
-  .option("--log", "Append a `caught` snapshot (provable catches) to .codument/events.jsonl (for the impact ledger)")
-  .option("--strict", "Exit 1 if the change left a new source unmapped or a mapped doc stale (the step-sync gate)")
-  .option("--require-review", "Exit 1 if a non-trivial diff has no current adversarial-review artifact, or one with unresolved confirmed findings (opt-in; default-on flip is soak-deferred)")
-  .option("--test-command <argv...>", "how to run a finding's named test under --require-review; the literal {file} token is the resolved path. Pass the whole command as ONE quoted string, e.g. --test-command \"npx tsx --test {file}\" or \"vitest run {file}\" (default: npx --no-install tsx --test {file} — local-only, never a network fetch). Point at a TAP-emitting runner for non-node:test projects")
-  .option("--bundle", "Emit the adversarial-review bundle as JSON (the documented invariants + their tests + the diff an independent reviewer attacks) and exit")
-  .option("--record <file>", "Record a fingerprint-bound adversarial review from a findings JSON file ({invariantsChecked, findings, signer}); the gate then enforces it")
-  .option("--base <ref>", "Review the branch's drift since it diverged from <ref> (merge-base..working-tree), not just uncommitted changes")
+  .option(
+    "--log",
+    "Append a `caught` snapshot (provable catches) to .codument/events.jsonl (for the impact ledger)",
+  )
+  .option(
+    "--strict",
+    "Exit 1 if the change left a new source unmapped or a mapped doc stale (the step-sync gate)",
+  )
+  .option(
+    "--require-review",
+    "Exit 1 if a non-trivial diff has no current adversarial-review artifact, or one with unresolved confirmed findings (opt-in; default-on flip is soak-deferred)",
+  )
+  .option(
+    "--test-command <argv...>",
+    'how to run a finding\'s named test under --require-review; the literal {file} token is the resolved path. Pass the whole command as ONE quoted string, e.g. --test-command "npx tsx --test {file}" or "vitest run {file}" (default: npx --no-install tsx --test {file} — local-only, never a network fetch). Point at a TAP-emitting runner for non-node:test projects',
+  )
+  .option(
+    "--bundle",
+    "Emit the adversarial-review bundle as JSON (the documented invariants + their tests + the diff an independent reviewer attacks) and exit",
+  )
+  .option(
+    "--record <file>",
+    "Record a fingerprint-bound adversarial review from a findings JSON file ({invariantsChecked, findings, signer}); the gate then enforces it",
+  )
+  .option(
+    "--base <ref>",
+    "Review the branch's drift since it diverged from <ref> (merge-base..working-tree), not just uncommitted changes",
+  )
   .action(review);
 
 program
@@ -90,8 +113,14 @@ program
   .description(
     "Audit doc drift over committed history: for each documented feature, symbol moves in <base>..<head> whose owning doc got no attention in the same range. Informational — findings never change the exit code",
   )
-  .argument("<range>", "the commit range <baseRef>..<headRef>, e.g. v1.0.0..HEAD (diffed from the merge-base)")
-  .option("--json", "Emit the machine-readable audit contract (version-tagged; byte-identical for the same repo state)")
+  .argument(
+    "<range>",
+    "the commit range <baseRef>..<headRef>, e.g. v1.0.0..HEAD (diffed from the merge-base)",
+  )
+  .option(
+    "--json",
+    "Emit the machine-readable audit contract (version-tagged; byte-identical for the same repo state)",
+  )
   .option("--root <dir>", "project root (defaults to current directory)")
   .option("--dir <dir>", "project root (alias of --root)")
   .action((range, options) => auditCommand(range, options));
@@ -104,8 +133,14 @@ program
   .option("--feature <slug>", "pack the named feature")
   .option("--file <path>", "pack the feature(s) that own a source file")
   .option("--plan <path>", "pack every feature a plan's Feature Map routes to")
-  .option("--budget <tokens>", "trim the pack tail-first toward an estimated token budget (reports what it dropped)")
-  .option("--json", "Emit the machine-readable context contract (version-tagged; byte-identical for the same repo state)")
+  .option(
+    "--budget <tokens>",
+    "trim the pack tail-first toward an estimated token budget (reports what it dropped)",
+  )
+  .option(
+    "--json",
+    "Emit the machine-readable context contract (version-tagged; byte-identical for the same repo state)",
+  )
   .option("--root <dir>", "project root (defaults to current directory)")
   .option("--dir <dir>", "project root (alias of --root)")
   .action((options) => contextCommand(options));
@@ -120,9 +155,19 @@ program
     "the moved anchor <path>::<symbol> (run the exact line `codument review` prints, or <path>::<bareName>), OR a bare <path> for a file-grain ack of additive/concept staleness",
   )
   .option("--reason <text>", "why no doc change is owed — name the contract that stayed constant")
-  .option("--base <ref>", "resolve the move against the merge-base with <ref> (match the ref `review --base` used)")
-  .option("--signer <id>", "attribution (defaults to the git author; an independent signer is what strict-mode independence checks)")
+  .option(
+    "--base <ref>",
+    "resolve the move against the merge-base with <ref> (match the ref `review --base` used)",
+  )
+  .option(
+    "--signer <id>",
+    "attribution (defaults to the git author; an independent signer is what strict-mode independence checks)",
+  )
   .option("--list", "list recorded acknowledgments with their handles")
+  .option(
+    "--json",
+    "with --list, emit the acks as a versioned JSON contract (anchor, transition, signer, reason, recomputed validity)",
+  )
   .option("--remove <handle>", "remove a recorded acknowledgment by its handle")
   .option("--root <dir>", "project root (defaults to current directory)")
   .action((anchor, options) => ackCommand(anchor, options));
@@ -142,7 +187,10 @@ program
     "Click-through showcase: runs doctor → an AI change → review → coverage drop on a throwaway sample repo",
   )
   .option("--auto", "Run straight through without pausing between scenes")
-  .option("--live", "Live watch panel: one terminal, the change lands and the counts light up in place")
+  .option(
+    "--live",
+    "Live watch panel: one terminal, the change lands and the counts light up in place",
+  )
   .option("--dir <path>", "Where to materialize the sample repo (default: a temp dir)")
   .action(demo);
 
@@ -190,9 +238,15 @@ program
   .description(
     "Print the active plan's delivery-plan checklist (to mirror into a native to-do panel) and optionally log the active step for watch",
   )
-  .option("--plan <path>", "Plan doc to read (default: the single approved plan with an unchecked step)")
+  .option(
+    "--plan <path>",
+    "Plan doc to read (default: the single approved plan with an unchecked step)",
+  )
   .option("--json", "Machine-readable checklist with per-step to-do status (for mirroring)")
-  .option("--emit", "Append a `step` event for the active step into .codument/events.jsonl (for watch)")
+  .option(
+    "--emit",
+    "Append a `step` event for the active step into .codument/events.jsonl (for watch)",
+  )
   .option("--dir <path>", "Project root (default: current directory)")
   .option("--root <dir>", "Project root (default: current directory)")
   .action(stepsCommand);
@@ -227,36 +281,26 @@ map
 program
   .command("adopt")
   .description("Adopt an existing Codument project")
-  .option(
-    "--agents <agents>",
-    "Agent profiles to install or refresh: codex, claude",
-  )
+  .option("--agents <agents>", "Agent profiles to install or refresh: codex, claude")
   .option("--dry-run", "Preview adoption without modifying files")
   .action(adopt);
 
 program
   .command("update")
   .description("Update managed files after a codument package upgrade")
-  .option(
-    "--agents <agents>",
-    "Override stored agent profiles for this update: codex, claude",
-  )
+  .option("--agents <agents>", "Override stored agent profiles for this update: codex, claude")
   .option("--dry-run", "Preview changes without modifying files")
   .action(update);
 
 program
   .command("run [args...]")
   .alias("autopilot")
-  .description(
-    "Explain how to run the approved plan (Codument does not run your agent)",
-  )
+  .description("Explain how to run the approved plan (Codument does not run your agent)")
   .action(() => {
     // Derived from the registered commands at print time — a hand-maintained
     // list drifts the moment a command is added (cost/map/ack/emit all went
     // missing that way).
-    const others = program.commands
-      .map((c) => c.name())
-      .filter((name) => name !== "run");
+    const others = program.commands.map((c) => c.name()).filter((name) => name !== "run");
     console.log(
       [
         "Codument does not run your coding agent — your agent does.",

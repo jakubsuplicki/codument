@@ -2,25 +2,28 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import pc from "picocolors";
 import {
-  fileContentTransition,
-  gatherAnchorChanges,
-  isSignatureMove,
-  type AnchorChange,
-} from "../lib/fingerprint.js";
-import {
   ACKS_DIR,
+  type Acknowledgment,
   ackCovers,
   ackFileName,
+  isFileGrainAck,
   isIndependent,
   readAcks,
   writeAck,
-  type Acknowledgment,
 } from "../lib/acknowledgment.js";
+import {
+  type AckValidity,
+  type AnchorChange,
+  ackValidity,
+  fileContentTransition,
+  gatherAnchorChanges,
+  isSignatureMove,
+} from "../lib/fingerprint.js";
 import { getGitAuthor } from "../lib/git.js";
-import { resolveBase } from "../lib/two-ref.js";
-import { emitAck, emitAckRemove } from "../lib/review-events.js";
-import { readRegistrySync, type Registry } from "../lib/registry.js";
 import { resolveOwner } from "../lib/ownership.js";
+import { type Registry, readRegistrySync } from "../lib/registry.js";
+import { emitAck, emitAckRemove } from "../lib/review-events.js";
+import { resolveBase } from "../lib/two-ref.js";
 
 // `codument ack` — the reachable surface for the agent-judge loop. When a review
 // finding is a pure-internal refactor that owes no doc change, the agent records a
@@ -34,8 +37,39 @@ export interface AckCliOptions {
   base?: string;
   signer?: string;
   list?: boolean;
+  json?: boolean;
   remove?: string;
   root?: string;
+}
+
+// Versioned machine contract for `ack --list --json`: the recorded audit trail as
+// data, so a human or CI can query the ack-rate the trust model rests on. Validity
+// is RECOMPUTED per render (never a stored status), so an auto-invalidated ack is
+// visible as such. Independence is deliberately absent — it is a property of an ack
+// relative to a specific change's author, surfaced in the review card where that
+// author is known, not here where there is no single change in view.
+export interface AckJson {
+  /** The stable handle (`--remove <handle>`), the ack file's digest stem. */
+  handle: string;
+  /** The full anchor id: `<path>::<descriptor>` (symbol) or `<path>` (file-grain). */
+  anchorId: string;
+  /** The file the ack vouches for. */
+  path: string;
+  /** The symbol descriptor for a per-symbol ack; null for a file-grain ack. */
+  symbol: string | null;
+  grain: "symbol" | "file";
+  /** The fingerprint transition the ack is bound to. */
+  from: string;
+  to: string;
+  reason: string;
+  signer: string;
+  /** Recomputed against the working tree this run, never trusted from disk. */
+  validity: AckValidity;
+}
+
+export interface AckListJson {
+  version: 1;
+  acks: AckJson[];
 }
 
 const short = (fp: string): string => fp.slice(0, 8);
@@ -50,7 +84,8 @@ export function ackCommand(anchor: string | undefined, options: AckCliOptions): 
   const root = options.root ?? process.cwd();
 
   if (options.list) {
-    listAcks(root);
+    if (options.json) listAcksJson(root);
+    else listAcks(root);
     return;
   }
   if (options.remove !== undefined) {
@@ -64,7 +99,7 @@ export function ackCommand(anchor: string | undefined, options: AckCliOptions): 
   }
   if (!options.reason || options.reason.trim().length === 0) {
     fail(
-      '--reason is required — name the contract that stayed constant ' +
+      "--reason is required — name the contract that stayed constant " +
         '(e.g. "renamed a local; same inputs/outputs"), not a bare "refactor"',
     );
     return;
@@ -265,7 +300,9 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
     // suggest one for it.
     if (bodyMoved.length > 0) {
       console.log(
-        pc.dim("    Body-only moves: update the owning doc, or codument ack <path>::<symbol> each."),
+        pc.dim(
+          "    Body-only moves: update the owning doc, or codument ack <path>::<symbol> each.",
+        ),
       );
     }
     if (sigMoved.length > 0) {
@@ -320,6 +357,36 @@ function resolveAnchor(fullId: string, symbol: string, changes: AnchorChange[]):
   };
 }
 
+// Recompute each ack's standing against the working tree and shape it for the
+// machine contract — one place both the human and `--json` renderers read, so they
+// can never disagree about validity.
+function ackToJson(root: string, ack: Acknowledgment): AckJson {
+  const sep = ack.anchorId.indexOf("::");
+  const fileGrain = isFileGrainAck(ack);
+  return {
+    handle: handleOf(ack),
+    anchorId: ack.anchorId,
+    path: fileGrain ? ack.anchorId : ack.anchorId.slice(0, sep),
+    symbol: fileGrain ? null : ack.anchorId.slice(sep + 2),
+    grain: fileGrain ? "file" : "symbol",
+    from: ack.fromHash,
+    to: ack.toHash,
+    reason: ack.reason,
+    signer: ack.signer,
+    validity: ackValidity(root, ack),
+  };
+}
+
+// The dim tag a non-covering ack carries in the human list — an invalidated ack is
+// dead weight the user can `--remove`; an indeterminate one flags an unparseable
+// file to fix. A covering ack (the common case) stays unadorned.
+function validityTag(v: AckValidity): string {
+  if (v === "covering") return "";
+  return v === "invalidated"
+    ? pc.yellow(" (auto-invalidated — the anchor moved past it; codument ack --remove)")
+    : pc.dim(" (indeterminate — the file does not parse)");
+}
+
 function listAcks(root: string): void {
   const acks = readAcks(root);
   if (acks.length === 0) {
@@ -328,11 +395,22 @@ function listAcks(root: string): void {
   }
   console.log(pc.bold(`Acknowledgments (${acks.length})`));
   for (const a of acks) {
+    const validity = ackValidity(root, a);
     console.log(
-      `  ${pc.bold(handleOf(a))}  ${a.anchorId} ${pc.dim(`(${short(a.fromHash)}→${short(a.toHash)})`)}`,
+      `  ${pc.bold(handleOf(a))}  ${a.anchorId} ${pc.dim(
+        `(${short(a.fromHash)}→${short(a.toHash)})`,
+      )}${validityTag(validity)}`,
     );
     console.log(`    ${pc.dim(`${a.signer}:`)} ${a.reason}`);
   }
+}
+
+function listAcksJson(root: string): void {
+  const payload: AckListJson = {
+    version: 1,
+    acks: readAcks(root).map((a) => ackToJson(root, a)),
+  };
+  console.log(JSON.stringify(payload, null, 2));
 }
 
 function removeAck(root: string, handle: string): void {

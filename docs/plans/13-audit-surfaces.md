@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 13: Audit surfaces — visible acks + machine-readable impact ledger
@@ -24,13 +24,16 @@ ack-rate and the durable audit trail" (README:232, ADR 006). Make both actually 
 - `src/commands/ack.ts`
 - `src/commands/review.ts`
 - `src/commands/report.ts`
+- `src/cli.ts` (flag wiring)
 - `src/lib/report-html.ts`
 - `src/lib/acknowledgment.ts`
+- `src/lib/fingerprint.ts` (recomputed ack validity — adapter-dependent, so it lives with the fingerprint engine, not the deliberately-pure acknowledgment protocol)
 - `src/lib/impact-ledger.ts`
 - `tests/ack.test.ts`
 - `tests/review.test.ts`
 - `tests/report.test.ts`
 - `docs/features/adversarial-review-gate.md`
+- `docs/features/change-control-gate.md` (owns ack.ts + fingerprint.ts — the `ack --list --json` audit surface)
 - `docs/features/impact-ledger.md`
 
 No new source files — no feature map.
@@ -58,8 +61,10 @@ No new source files — no feature map.
 
 ## Delivery Plan
 
-- [ ] Step 1: `ack --list --json` + validity recomputation on render (never trust stored status);
-      tests incl. an auto-invalidated ack showing as such.
+- [x] Step 1: `ack --list --json` + validity recomputation on render (never trust stored status);
+      tests incl. an auto-invalidated ack showing as such. Validity is base-independent (`covering` /
+      `invalidated` / `indeterminate`), computed by `ackValidity` in `fingerprint.ts` (adapter-dependent)
+      and surfaced in both the human list (a dim tag) and the versioned `--json` contract.
 - [ ] Step 2: Acks card in `review` output + `report-html.ts`; tests assert self vs independent
       badges from fixture acks.
 - [ ] Step 3: `--require-independent-ack` wiring `isIndependent` into the gate's ack-filtering step;

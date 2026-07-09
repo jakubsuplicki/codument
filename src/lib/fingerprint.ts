@@ -1,6 +1,8 @@
-import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { type Acknowledgment, isFileGrainAck } from "./acknowledgment.js";
+import { classifyTsFile, tsAdapter } from "./ts-adapter.js";
 import {
   blobExistsAtRef,
   byteNormalize,
@@ -8,7 +10,6 @@ import {
   readBlobAtRef,
   refReachable,
 } from "./two-ref.js";
-import { classifyTsFile, tsAdapter } from "./ts-adapter.js";
 
 // An anchor binds an identity to a content fingerprint. The coarse adapter emits
 // one whole-file anchor; the precise TS adapter emits one per exported symbol —
@@ -118,16 +119,14 @@ function anchorsAtRef(root: string, ref: string, path: string): Anchor[] | null 
 // Diff two anchor sets by id: present only at head = "added", only at base =
 // "removed", a differing fingerprint = "changed". A null set means the file was
 // absent at that ref (added/removed wholesale). Sorted by id.
-function diffAnchorSets(
-  base: Anchor[] | null,
-  head: Anchor[] | null,
-): AnchorChange[] {
+function diffAnchorSets(base: Anchor[] | null, head: Anchor[] | null): AnchorChange[] {
   const baseById = new Map((base ?? []).map((a) => [a.id, a]));
   const headById = new Map((head ?? []).map((a) => [a.id, a]));
   const changes: AnchorChange[] = [];
   for (const [id, h] of headById) {
     const b = baseById.get(id);
-    if (!b) changes.push({ id, name: h.name, kind: "added", to: h.fingerprint, toSig: h.signature });
+    if (!b)
+      changes.push({ id, name: h.name, kind: "added", to: h.fingerprint, toSig: h.signature });
     else if (b.fingerprint !== h.fingerprint)
       changes.push({
         id,
@@ -141,7 +140,13 @@ function diffAnchorSets(
   }
   for (const [id, b] of baseById) {
     if (!headById.has(id))
-      changes.push({ id, name: b.name, kind: "removed", from: b.fingerprint, fromSig: b.signature });
+      changes.push({
+        id,
+        name: b.name,
+        kind: "removed",
+        from: b.fingerprint,
+        fromSig: b.signature,
+      });
   }
   return changes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
@@ -185,8 +190,7 @@ export function changedAnchorsAgainstWorktree(
   } catch {
     headContent = null; // deleted / unreadable in the working tree
   }
-  const headAnchors =
-    headContent === null ? null : adapterFor(path).anchors(path, headContent);
+  const headAnchors = headContent === null ? null : adapterFor(path).anchors(path, headContent);
   return diffAnchorSets(baseAnchors, headAnchors);
 }
 
@@ -244,11 +248,7 @@ export interface GatheredAnchors {
 // `unevaluable` files (parse errors) are omitted (file-grain) AND surfaced. If
 // `base` is unreachable (e.g. a fresh repo with no HEAD) the result is empty and
 // the gate degrades to file-grain. Reads git + disk, no clock — deterministic.
-export function gatherAnchorChanges(
-  root: string,
-  base: string,
-  paths: string[],
-): GatheredAnchors {
+export function gatherAnchorChanges(root: string, base: string, paths: string[]): GatheredAnchors {
   const anchorChanges: Record<string, AnchorChange[]> = {};
   const unevaluable: string[] = [];
   if (!refReachable(root, base)) return { anchorChanges, unevaluable };
@@ -322,8 +322,7 @@ export function fileContentTransition(
   } catch {
     headContent = null; // deleted / unreadable in the working tree
   }
-  const fp = (content: string): string =>
-    coarseAdapter.anchors(path, content)[0].fingerprint;
+  const fp = (content: string): string => coarseAdapter.anchors(path, content)[0].fingerprint;
   return {
     from: baseContent === null ? null : fp(baseContent),
     to: headContent === null ? null : fp(headContent),
@@ -346,4 +345,68 @@ export function contentChangedFiles(
     }
   }
   return [...changed].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+// The current standing of a recorded acknowledgment against the WORKING TREE —
+// recomputed on every render, never a stored status. An ack binds an anchor's
+// `to` fingerprint; it is `covering` only while the current content still hashes
+// to that exact `to`. `invalidated` is the auto-invalidation the ack model
+// promises made observable: the anchor moved past what the ack vouched for (a new
+// fingerprint), or the symbol/file it named is gone. `indeterminate` is the honest
+// gap — the file cannot be parsed right now (a parse error / conflict markers), so
+// the per-symbol fingerprint cannot be computed and the ack is neither confirmed
+// covering nor proven stale. Base-independent by construction: it asks only "does
+// today's content still match the vouch", so a committed acked change reads
+// `covering`, not moot. That makes it one-directional-safe: a gate-honored ack
+// (worktree still at the vouched `to`) ALWAYS reads `covering`, so the list never
+// mislabels a working ack `invalidated` and tells you to remove it. It does not
+// re-check the ack's `from` against a base — that half is base-relative and
+// `ack --list` carries no base — so a `review --base X` whose base moved under the
+// ack can still re-flag it; run `ack --base` matching `review --base` for exact
+// gate agreement.
+export type AckValidity = "covering" | "invalidated" | "indeterminate";
+
+export function ackValidity(root: string, ack: Acknowledgment): AckValidity {
+  if (isFileGrainAck(ack)) {
+    // A file-grain ack binds the whole-file COARSE fingerprint (as
+    // `fileContentTransition` records it), so recompute that same coarse hash.
+    let content: string;
+    try {
+      content = readFileSync(join(root, ack.anchorId), "utf-8");
+    } catch {
+      return "invalidated"; // the file the ack vouched for is gone from the tree
+    }
+    const fp = coarseAdapter.anchors(ack.anchorId, content)[0].fingerprint;
+    return fp === ack.toHash ? "covering" : "invalidated";
+  }
+  // A per-symbol ack binds one anchor's composite fingerprint. Find that anchor in
+  // the current worktree content and compare.
+  const file = ack.anchorId.slice(0, ack.anchorId.indexOf("::"));
+  let content: string;
+  try {
+    content = byteNormalize(readFileSync(join(root, file), "utf-8"));
+  } catch {
+    return "invalidated"; // the file is gone → nothing left to cover
+  }
+  // Mirror the gate's fail-loud stance: a precise file that no longer parses is
+  // `indeterminate`, never silently read as covering or invalidated.
+  if (isPreciseFile(file) && classifyTsFile(file, content).mode === "unevaluable") {
+    return "indeterminate";
+  }
+  let anchors: Anchor[];
+  try {
+    anchors = adapterFor(file).anchors(file, content);
+  } catch {
+    return "indeterminate";
+  }
+  // Resolve the anchor exactly as `diffAnchorSets` does — index by id into a Map,
+  // so a duplicate descriptor (TypeScript declaration merging: two `export
+  // interface Foo`, or `interface Foo` + `class Foo`, emit two anchors with the
+  // same id) resolves LAST-WINS, the same entry the gate recorded the ack's `to`
+  // from. A `find` (first-wins) would read a still-covering ack as invalidated on
+  // an unchanged tree, contradicting the gate's own verdict.
+  const anchor = new Map(anchors.map((a) => [a.id, a])).get(ack.anchorId);
+  // Symbol renamed/removed → the ack no longer names anything → auto-invalidated.
+  if (!anchor) return "invalidated";
+  return anchor.fingerprint === ack.toHash ? "covering" : "invalidated";
 }
