@@ -1,5 +1,5 @@
 ---
-status: draft
+status: shipped
 ---
 
 # Plan 15: Prose-altitude lint — mechanically enforce the doc standard
@@ -59,14 +59,15 @@ Run `codument map materialize src/lib/prose-altitude.ts`.
 - [ ] Step 1: `prose-altitude.ts` heuristics with fixture docs covering true and near-miss cases
       (identifier at line start inside a code fence must NOT fire; a path in a fix-table must not
       count as prose enumeration).
-- [ ] Step 2: Doctor wiring (Notes channel + `--json` tallies), exclusion-spec reuse; tests that
+- [x] Step 2: Doctor wiring (Notes channel + `--json` tallies), exclusion-spec reuse; tests that
       bare doctor exit codes are untouched.
-- [ ] Step 3: Dogfood run over this repo's docs; fix the clear violations it surfaces (at minimum
-      the Key files role/paths drift the review confirmed); record false-fire notes in
-      `doc-audience-layers.md` as the lint's initial soak baseline.
-- [ ] Step 4: Docs: registry-health.md gains the three info ids; doc-audience-layers.md's planned
-      check note replaced with the shipped description + promotion criteria (warn only after
-      soak shows acceptable false-fire rate).
+- [x] Step 3: Dogfood run over this repo's docs; fixed the clear violations (the 4 line-anchors in
+      domain-skills.md; corrected a Key-files heuristic false-positive that misread a prose sentence
+      as a bare-path entry); recorded the false-fire baseline in `doc-audience-layers.md` (symbol-mirror
+      over-fires on command docs; path-enumeration fires on transient delivery-plan/impact sections).
+- [x] Step 4: Docs: registry-health.md gains the three info ids invariant; doc-audience-layers.md's
+      planned-check note replaced with the shipped description + promotion criterion (warn only after
+      an id's own false-fire soak).
 
 ## Outcome
 

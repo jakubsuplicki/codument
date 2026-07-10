@@ -1,12 +1,15 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { adapterFor, isPreciseFile } from "./fingerprint.js";
 import { listIgnoredPaths } from "./git.js";
+import { analyzeProseAltitude } from "./prose-altitude.js";
 import {
   allSources,
   isMatureEntry,
   type Registry,
   type RegistryEntry,
 } from "./registry.js";
+import { MODULE_ANCHOR_NAME } from "./ts-adapter.js";
 
 // ── Canonical exclusion spec ────────────────────────────────────────────
 //
@@ -210,7 +213,10 @@ export type LintFindingId =
   | "over-decomposed"
   | "thin-doc"
   | "link-rot"
-  | "orphan-doc";
+  | "orphan-doc"
+  | "symbol-mirror"
+  | "line-anchor"
+  | "path-enumeration";
 
 // Bloat is measured by three independent signals, never one line count.
 // Conservative defaults, calibrated against fixtures/benchmarks/doc-bloat;
@@ -653,6 +659,9 @@ function computeLint(
   // bloated docs (each distinct doc checked once)
   findings.push(...computeBloat(root, entries, bloat));
 
+  // prose-altitude smells (info-only): a registered doc restating code mechanism.
+  findings.push(...computeProseAltitude(root, entries));
+
   // dangling intra-repo links across the whole docs/ knowledge base
   findings.push(...computeLinkRot(root));
 
@@ -850,6 +859,67 @@ function computeBloat(
   return findings;
 }
 
+// Prose-altitude smells over each registered feature/concept doc, rendered info-only
+// (Notes channel, never a warn, never a --strict fail). Reads each doc once and the
+// exported identifier names of its primary sources (for the symbol-mirror heuristic);
+// the pure heuristics live in prose-altitude.ts.
+function computeProseAltitude(root: string, entries: [string, RegistryEntry][]): LintFinding[] {
+  const findings: LintFinding[] = [];
+  for (const [key, entry] of entries) {
+    const doc = entry.doc;
+    if (!doc.endsWith(".md")) continue;
+    if (!(doc.startsWith("docs/features/") || doc.startsWith("docs/concepts/"))) continue;
+    const full = join(root, doc);
+    if (!existsSync(full)) continue;
+    let content: string;
+    try {
+      content = readFileSync(full, "utf-8");
+    } catch {
+      continue;
+    }
+    const exportedSymbols = exportedSymbolsOf(root, entry.primary_sources);
+    for (const f of analyzeProseAltitude({ feature: key, doc, content, exportedSymbols })) {
+      findings.push({
+        id: f.id,
+        severity: "info",
+        feature: f.feature,
+        file: f.doc,
+        message: `${f.doc}:${f.line}: ${f.message}`,
+        evidence: [f.evidence],
+      });
+    }
+  }
+  return findings;
+}
+
+// The exported identifier names of a set of source paths (precise TS files only; the
+// coarse adapter yields only a file basename, no symbols). The `<module>` residual
+// backstop is not a real symbol and is dropped.
+function exportedSymbolsOf(root: string, sources: string[]): string[] {
+  const names = new Set<string>();
+  for (const src of sources) {
+    if (!isPreciseFile(src)) continue;
+    const full = join(root, src);
+    if (!existsSync(full)) continue;
+    let content: string;
+    try {
+      content = readFileSync(full, "utf-8");
+    } catch {
+      continue;
+    }
+    // A malformed source is not doctor's problem to crash on — the symbol-mirror
+    // heuristic simply has no names to check for that file (fail-safe, info-only).
+    try {
+      for (const anchor of adapterFor(src).anchors(src, content)) {
+        if (anchor.name !== MODULE_ANCHOR_NAME) names.add(anchor.name);
+      }
+    } catch {
+      // skip this source's symbols
+    }
+  }
+  return [...names];
+}
+
 // Largest heading-delimited section by line count, with its heading title.
 function largestSection(lines: string[]): {
   maxSectionLines: number;
@@ -894,6 +964,9 @@ export const FINDING_ORDER: LintFindingId[] = [
   "thin-doc",
   "link-rot",
   "orphan-doc",
+  "symbol-mirror",
+  "line-anchor",
+  "path-enumeration",
 ];
 
 function sortFindings(findings: LintFinding[]): LintFinding[] {

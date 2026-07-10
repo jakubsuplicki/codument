@@ -70,6 +70,15 @@ remains pre-1.0.
   with `--json`, `--bundle`, or `--record`; stdout-only, so the pass/fail exit still
   comes from `--strict` and one step both annotates and fails the check. The README
   carries the two-step Actions recipe.
+- `doctor` prose-altitude lint: three deterministic, no-NLP lexical heuristics
+  (`symbol-mirror`, `line-anchor`, `path-enumeration`) that score every registered doc
+  for prose restating mechanism the code owns — a symbol name used as a sentence
+  subject, a `file.ts:42` line anchor, or a prose section re-enumerating a feature's
+  file list. It is the machine reading of the documentation standard's no-mechanism
+  invariant: info-only in doctor's Notes channel, excluded from the `--strict` verdict,
+  and it never fails a build. Promotion of any one smell to a warning is a separate
+  decision gated on that smell's own false-fire soak, like the change-control gate's
+  info→blocking flip.
 
 ### Changed
 - The change-control gate now splits each precise symbol anchor into a

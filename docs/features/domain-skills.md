@@ -98,8 +98,8 @@ detection, no install-gating, no per-repo selection, no merge/retire.**
 - **`review-work` stays the sole in-loop reviewer.** `code-reviewer` ships for its real seat (the
   per-feature agent `review-codebase` spawns, and the only review form on the codex profile). The
   senior-* skills lose their "reviewing X code" framing.
-- **Flat `DOMAIN_SKILLS`** (all seven) threaded through `installProfile` (`init.ts:140`),
-  `getManagedFiles` (`update.ts:56`), and `benchmark-quality.ts:205` via one helper. **The copy must
+- **Flat `DOMAIN_SKILLS`** (all seven) threaded through `installProfile`,
+  `getManagedFiles`, and `benchmark-quality.ts` via one helper. **The copy must
   become whole-skill-directory recursive** (`SKILL.md` + `references/*`), not single-file. No
   `detect.ts` change.
 - **One domain-keyed consult nudge** in the Intent-routing block: "consult the domain skill matching
@@ -152,7 +152,7 @@ Status: implemented (2026-06-24).
       `agent-profiles.ts` and a single `resolveSkills(profile)` helper; **change the install/update
       copy from single `SKILL.md` to recursive whole-skill-directory** (SKILL.md + `references/*`)
       for both `installProfile` (`init.ts`) and `getManagedFiles` (`update.ts`), and
-      `benchmark-quality.ts`; fix the `init.ts:150-152` count log. No `detect.ts` change.
+      `benchmark-quality.ts`; fix the install count log in `init.ts`. No `detect.ts` change.
 - [x] Step 8 (source — nudge): Add one conditional, domain-keyed consult bullet to the Intent-routing
       block in `scaffold.ts` `buildManagedSection()` (re-emitted to AGENTS.md + CLAUDE.md).
 - [x] Step 9 (docs/registry): Register the domain skills + their `references/*` under a

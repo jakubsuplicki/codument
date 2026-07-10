@@ -384,7 +384,8 @@
         "src/commands/doctor.ts",
         "src/lib/analyze.ts",
         "src/lib/badge.ts",
-        "src/lib/invariant-check.ts"
+        "src/lib/invariant-check.ts",
+        "src/lib/prose-altitude.ts"
       ],
       "related_sources": [],
       "docs": [
