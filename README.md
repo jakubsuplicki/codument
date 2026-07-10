@@ -261,6 +261,31 @@ npx codument review --require-review --test-command "npx tsx --test {file}"   # 
 
 **Per-symbol drift.** Staleness is resolved **per symbol**, not per whole file. `review` fingerprints each exported declaration's token stream across two git refs; when a documented symbol **moved** and its owning doc did not, only that symbol's owning feature wakes — the old whole-file cascade is dissolved. The verdict is a pure, reproducible function of `(base, head, codument version, algoStamp)` with no clock input. It enforces that a moved documented symbol and its owning doc stay **in sync** (waking the feature when they don't), not that the prose is correct — a born-wrong or already-drifted doc is out of scope by construction. A separate name-match signal (does the doc even mention the symbol) is kept as **info-only telemetry**, never a verdict input. Before hashing, each declaration's token stream is **canonicalized**: a name bound within the declaration (a parameter, a block local, a destructured or catch binding, a generic type parameter) is rewritten to a positional index, so a meaning-preserving local rename does not move the fingerprint at all. What still fires is a real change — a different free/imported/global reference, a type or contract-name change (a property key, an object shorthand, a constructor parameter property), or a structural edit.
 
+**SARIF for CI (`--format sarif`).** `review --format sarif` emits the verdict as [SARIF 2.1.0](https://sarifweb.azurewebsites.net/), the format GitHub code-scanning renders as inline annotations on a pull request's changed lines. No bot and no hosted service: it is a static file your existing CI step uploads. Every stale doc, unmapped source, out-of-plan change, and ownership ambiguity becomes one annotation, and a stale-doc annotation names the symbol that moved and its fingerprint transition. It is mutually exclusive with `--json` and changes only stdout — the exit code still comes from `--strict`, so **one step both prints the annotations and fails the check**. Two steps are the whole recipe: run `review` writing SARIF to a file, then upload it.
+
+```yaml
+# .github/workflows/codument.yml — annotate PRs, no bot, no network
+name: codument
+on: pull_request
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write        # required to upload SARIF
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # full history so --base can find the merge-base
+      - run: npx codument review --strict --base "origin/${{ github.base_ref }}" --format sarif > codument.sarif
+      - if: always()                # upload even on the run that fails the check, so annotations still appear
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: codument.sarif
+```
+
+`reviewdog` consumes the same file if you prefer it to code-scanning. When the gate cannot run (not a git repository, a wrong root, a git failure) the SARIF marks the invocation unsuccessful rather than reporting a false "clean."
+
 ### `codument ack` — clear a change that owes no doc change
 
 When a symbol moves but no documented contract changed, you don't paper over the gate with a mirror edit — you **acknowledge** it. An ack records a fingerprint-bound, **auto-invalidating** decision so `review` stops flagging it, and it takes two forms.

@@ -420,6 +420,7 @@
         "src/lib/import-graph.ts",
         "src/lib/ownership.ts",
         "src/lib/report-html.ts",
+        "src/lib/sarif.ts",
         "src/lib/ts-adapter.ts",
         "src/lib/ts-canonicalize.ts",
         "src/lib/two-ref.ts"

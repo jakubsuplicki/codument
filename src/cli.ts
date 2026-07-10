@@ -106,6 +106,14 @@ program
     "--base <ref>",
     "Review the branch's drift since it diverged from <ref> (merge-base..working-tree), not just uncommitted changes",
   )
+  .option(
+    "--require-independent-ack",
+    "Strict mode (ADR 006): only an ack whose signer is independent of the change's commit author clears a finding — a self-signed ack leaves it open (and --strict fails on it)",
+  )
+  .option(
+    "--format <format>",
+    "Output format for the verdict: sarif emits SARIF 2.1.0 for CI code-scanning (upload with github/codeql-action/upload-sarif or reviewdog); mutually exclusive with --json. Only changes stdout; combine with --strict for the failing check",
+  )
   .action(review);
 
 program
@@ -179,6 +187,7 @@ program
   )
   .option("--out <path>", "Output path (default .codument/report.html)")
   .option("--no-open", "Write the report without opening a browser")
+  .option("--json", "Emit the machine-readable report contract (impact ledger + acks)")
   .action(report);
 
 program

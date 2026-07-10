@@ -365,6 +365,151 @@ describe("acks card — self vs independent (buildReview + review CLI)", () => {
   });
 });
 
+describe("--require-independent-ack (ADR 006 strict mode)", () => {
+  const AUTHOR = "Test <test@example.com>";
+  const headSha = (): string =>
+    execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmp, encoding: "utf-8" }).trim();
+
+  // Commit a body-only move of `login` authored by AUTHOR, then ack it as `signer`.
+  async function commitLoginMoveAndAck(
+    signer: string,
+  ): Promise<{ baseSha: string; since: string[] }> {
+    const baseSha = headSha();
+    await scaffold({ "src/auth/login.ts": "export const login = () => { return 3; };\n" });
+    gitCommitAll(tmp, "refactor login body");
+    const since = worktreeChangesSince(tmp, baseSha);
+    const f = buildReview(tmp, since, baseSha).drift.find((d) => d.symbol === "login");
+    assert.ok(f?.from && f?.to);
+    writeAck(tmp, {
+      anchorId: f!.anchorId,
+      fromHash: f!.from!,
+      toHash: f!.to!,
+      reason: "internal refactor; same shape",
+      signer,
+    });
+    return { baseSha, since };
+  }
+
+  it("a self-signed ack does NOT clear the finding under the flag; it clears without it", async () => {
+    const { baseSha, since } = await commitLoginMoveAndAck(AUTHOR);
+    // no flag: the self-ack clears (byte-identical to before this step)
+    const off = buildReview(tmp, since, baseSha);
+    assert.deepEqual(off.state.staleDocs, [], "self-ack clears without the flag");
+    assert.equal(off.requireIndependentAck, false);
+    // flag on: the self-ack is not honored, so auth stays stale
+    const on = buildReview(tmp, since, baseSha, undefined, { requireIndependentAck: true });
+    assert.deepEqual(
+      on.state.staleDocs.map((d) => d.feature),
+      ["auth"],
+      "a self-ack does not clear under --require-independent-ack",
+    );
+    assert.equal(on.requireIndependentAck, true);
+    // the ignored self-ack is STILL shown in the card (not silently dropped)
+    const ack = on.coveringAcks.find((a) => a.symbol === "login");
+    assert.ok(ack, "the ignored self-ack is still surfaced");
+    assert.equal(ack.independent, false);
+  });
+
+  it("an independent ack DOES clear the finding under the flag", async () => {
+    const { baseSha, since } = await commitLoginMoveAndAck("Reviewer <reviewer@example.com>");
+    const on = buildReview(tmp, since, baseSha, undefined, { requireIndependentAck: true });
+    assert.deepEqual(on.state.staleDocs, [], "an independent ack clears even under the flag");
+  });
+
+  it("--strict + --require-independent-ack exits 1 on a self-acked move; the card marks it not counted", async () => {
+    const { baseSha } = await commitLoginMoveAndAck(AUTHOR);
+    // bare (no --strict) is informational → exit 0, but the card marks the self-ack ignored
+    const out = execFileSync(
+      "node",
+      [CLI, "review", "--base", baseSha, "--require-independent-ack"],
+      { cwd: tmp, encoding: "utf-8" },
+    );
+    assert.match(out, /login \[self — not counted\]/);
+    assert.match(out, /self-signed ack does not clear/);
+    // with --strict the self-acked stale doc fails the gate
+    assert.throws(
+      () =>
+        execFileSync(
+          "node",
+          [CLI, "review", "--base", baseSha, "--require-independent-ack", "--strict"],
+          { cwd: tmp, encoding: "utf-8" },
+        ),
+      (e: unknown) => (e as { status?: number }).status === 1,
+      "a self-acked stale doc fails --strict under the flag",
+    );
+  });
+
+  it("an independent ack passes --strict --require-independent-ack (exit 0)", async () => {
+    const { baseSha } = await commitLoginMoveAndAck("Reviewer <reviewer@example.com>");
+    const out = execFileSync(
+      "node",
+      [CLI, "review", "--base", baseSha, "--require-independent-ack", "--strict"],
+      { cwd: tmp, encoding: "utf-8" },
+    );
+    assert.match(out, /login \[independent\]/);
+  });
+
+  it("fail-open closed: an UNCOMMITTED ack cannot launder past the flag (authorship unverifiable)", async () => {
+    // A prior commit by someone else populates the commit-author set; the acked move
+    // itself is UNCOMMITTED, so its author is not in that set. Keying independence to
+    // committed authorship over an uncommitted change would falsely read "independent"
+    // (signer not among the committed authors) and clear the finding — the laundering
+    // hole the adversarial review found. It must fail CLOSED: nothing clears.
+    const baseSha = headSha();
+    execFileSync(
+      "git",
+      ["commit", "--allow-empty", "-m", "someone else's commit", "--author=Bob <bob@example.com>"],
+      { cwd: tmp, stdio: "ignore" },
+    );
+    await scaffold({ "src/auth/login.ts": "export const login = () => { return 7; };\n" });
+    const since = worktreeChangesSince(tmp, baseSha);
+    const f = buildReview(tmp, since, baseSha).drift.find((d) => d.symbol === "login");
+    assert.ok(f?.from && f?.to);
+    // even a "stranger" signer (not Bob) must not clear an uncommitted change
+    writeAck(tmp, {
+      anchorId: f!.anchorId,
+      fromHash: f!.from!,
+      toHash: f!.to!,
+      reason: "trust me",
+      signer: "Mallory <mallory@example.com>",
+    });
+    const on = buildReview(tmp, since, baseSha, undefined, { requireIndependentAck: true });
+    assert.equal(on.independenceUnverifiable, true, "an uncommitted change → unverifiable");
+    assert.deepEqual(
+      on.state.staleDocs.map((d) => d.feature),
+      ["auth"],
+      "no ack clears an uncommitted change under the flag (fail closed)",
+    );
+  });
+
+  it("a signature-move ack is never shown as covering (matches the gate, which never honors it)", async () => {
+    const baseSha = headSha();
+    await scaffold({ "src/auth/login.ts": "export const login = (x: number) => x;\n" }); // param added → signature move
+    gitCommitAll(tmp, "signature change");
+    const since = worktreeChangesSince(tmp, baseSha);
+    const f = buildReview(tmp, since, baseSha).drift.find((d) => d.symbol === "login");
+    assert.ok(f?.signatureChanged, "the move is a signature change");
+    // a hand-written / merged ack naming the exact sig-move transition exists...
+    writeAck(tmp, {
+      anchorId: f!.anchorId,
+      fromHash: f!.from!,
+      toHash: f!.to!,
+      reason: "trust me",
+      signer: "Reviewer <reviewer@example.com>",
+    });
+    const report = buildReview(tmp, since, baseSha);
+    assert.ok(
+      !report.coveringAcks.some((a) => a.symbol === "login"),
+      "a signature-move ack is not shown as a covering ack",
+    );
+    assert.deepEqual(
+      report.state.staleDocs.map((d) => d.feature),
+      ["auth"],
+      "and the gate keeps the signature move flagged",
+    );
+  });
+});
+
 describe("codument review (CLI)", () => {
   it("--json emits the contract and exits 0", async () => {
     await scaffold({

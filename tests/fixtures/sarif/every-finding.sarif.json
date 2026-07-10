@@ -1,0 +1,211 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "codument",
+          "informationUri": "https://github.com/jakubsuplicki/codument",
+          "rules": [
+            {
+              "id": "codument/stale-doc",
+              "name": "StaleDoc",
+              "shortDescription": {
+                "text": "A feature's source changed but its owning doc did not."
+              },
+              "helpUri": "https://github.com/jakubsuplicki/codument/blob/main/docs/features/change-control-gate.md",
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "codument/unmapped-source",
+              "name": "UnmappedSource",
+              "shortDescription": {
+                "text": "A changed source file has no owning doc in the registry."
+              },
+              "helpUri": "https://github.com/jakubsuplicki/codument/blob/main/docs/features/registry-health.md",
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "codument/out-of-plan",
+              "name": "OutOfPlan",
+              "shortDescription": {
+                "text": "A changed file falls outside the approved plan's scope."
+              },
+              "helpUri": "https://github.com/jakubsuplicki/codument/blob/main/docs/features/change-control-gate.md",
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "codument/ownership-lint",
+              "name": "OwnershipLint",
+              "shortDescription": {
+                "text": "A symbol on a shared file could not be resolved to a single owning feature."
+              },
+              "helpUri": "https://github.com/jakubsuplicki/codument/blob/main/docs/features/change-control-gate.md",
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "codument/unevaluable",
+              "name": "Unevaluable",
+              "shortDescription": {
+                "text": "A changed source file could not be parsed (parse error or conflict markers)."
+              },
+              "helpUri": "https://github.com/jakubsuplicki/codument/blob/main/docs/features/change-control-gate.md",
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "codument/out-of-plan",
+          "level": "warning",
+          "message": {
+            "text": "src/experimental/spike.ts changed outside the approved plan's scope."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/experimental/spike.ts"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "codument/ownership-lint",
+          "level": "warning",
+          "message": {
+            "text": "Symbol \"format\" on src/shared/util.ts is ambiguous across features: auth, billing. Set owned_symbols in the registry to name the owner."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/shared/util.ts"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "codument/stale-doc",
+          "level": "warning",
+          "message": {
+            "text": "Feature \"auth\" changed but its doc docs/features/auth.md did not. Moved: login (aaaa1111→bbbb2222)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/features/auth.md"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "relatedLocations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/auth/login.ts"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "codument/stale-doc",
+          "level": "warning",
+          "message": {
+            "text": "Feature \"billing\" changed but its doc docs/features/billing.md did not."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/features/billing.md"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "relatedLocations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/billing/charge.ts"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "codument/unevaluable",
+          "level": "warning",
+          "message": {
+            "text": "src/legacy/broken.ts could not be parsed (parse error or conflict markers); the gate evaluated it whole, not per-symbol. Fix the file so drift can be checked precisely."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/legacy/broken.ts"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "codument/unmapped-source",
+          "level": "warning",
+          "message": {
+            "text": "No doc owns src/lib/cache.ts. Add it to docs/.registry.json (or run codument map materialize)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/lib/cache.ts"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

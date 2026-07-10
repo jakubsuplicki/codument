@@ -33,6 +33,43 @@ remains pre-1.0.
   no source of truth and no ranking — every field is read verbatim. `--budget`
   trims tail-first (risk → related → deps → primary), never the selected head, and
   reports every dropped tier; `--json` is version-tagged.
+- `ack --list --json`: the recorded acknowledgments as a versioned machine
+  contract — each ack's anchor, transition, signer, reason, and a validity
+  recomputed against the working tree (`covering` / `invalidated` / `indeterminate`,
+  never trusted from disk) — so the ack-rate the trust model rests on is inspectable
+  rather than asserted, and a dead ack is visible to remove.
+- An "Acknowledgments in this change" card in `review` and the shareable HTML
+  report: every covering ack (per-symbol and file-grain) on one line with its
+  signer, badged **self** vs **independent** of the change's commit author, whenever
+  the change carries any — so an all-self-adjudicated change is loud rather than a
+  quiet green. Independence is judged from commit authorship (pure repo state),
+  never the ambient git identity of whoever runs review.
+- `review --require-independent-ack` (ADR 006 strict mode): only an ack whose signer
+  is independent of the change author clears a finding; a self-signed ack is not
+  honored and its stale-doc finding stays open under `--strict`, exactly as if
+  unacked. It fails **closed** — independence is provable only against committed
+  authorship, so a self-ack on an uncommitted change can never launder past the flag
+  by naming an unrelated prior commit's author. Off by default the verdict is
+  byte-identical.
+- `report --json`: the report's two machine sections — the cumulative impact ledger
+  and the acks card — as a versioned, timestamp-free contract, byte-identical across
+  runs so CI can diff it, and discriminated fail-closed (`gate: "unavailable"`)
+  whenever the gate cannot run — a non-git tree or a wrong root — like the other
+  `--json` surfaces. The same fix closes a fail-open hole on the HTML report: a
+  non-git tree no longer produces a green all-zeros report; both surfaces refuse and
+  exit nonzero.
+- `review --format sarif`: emit the gate verdict as SARIF 2.1.0 so a pull request gets
+  inline "this doc went stale because this symbol moved" annotations through
+  infrastructure teams already run (GitHub code-scanning upload or reviewdog) — no bot,
+  no hosted service, no new network calls. Stale docs (enriched with the moved symbol
+  and its fingerprint transition), unmapped sources, out-of-plan changes, ownership
+  lints, and unparseable files each become a result, so a parse error is never a silent
+  CI green; a gate that could not run marks the invocation unsuccessful AND exits
+  nonzero, so a CI gating on exit code alone never reads it as clean. Deterministic and
+  timestamp-free (byte-identical for identical repo state); a usage error to combine
+  with `--json`, `--bundle`, or `--record`; stdout-only, so the pass/fail exit still
+  comes from `--strict` and one step both annotates and fails the check. The README
+  carries the two-step Actions recipe.
 
 ### Changed
 - The change-control gate now splits each precise symbol anchor into a

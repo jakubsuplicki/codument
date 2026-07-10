@@ -1,5 +1,5 @@
 ---
-status: draft
+status: shipped
 ---
 
 # Plan 14: `review --format sarif` — findings as PR annotations, no bot
@@ -57,13 +57,14 @@ discriminant so the SARIF path has a defined failure shape). Also touches root-l
 
 ## Delivery Plan
 
-- [ ] Step 1: `sarif.ts` pure mapper with a golden-fixture test (a ReviewReport with every finding
+- [x] Step 1: `sarif.ts` pure mapper with a golden-fixture test (a ReviewReport with every finding
       kind → checked-in SARIF fixture, byte-compared).
-- [ ] Step 2: `--format sarif` flag on `review` (mutually exclusive with `--json`); e2e test in a
+- [x] Step 2: `--format sarif` flag on `review` (mutually exclusive with `--json`); e2e test in a
       scripted repo; determinism test.
-- [ ] Step 3: Validate the output against the SARIF 2.1.0 schema in a test (vendored schema file, no
-      network).
-- [ ] Step 4: README CI section: the two-line Actions recipe (run review, upload SARIF); doc + CHANGELOG.
+- [x] Step 3: Validate the output against the SARIF 2.1.0 schema in a test (vendored schema file, no
+      network). Dep-free: a small Draft-07-subset validator over the vendored schema (no ajv), with a
+      teeth test proving it rejects an unknown property and a bad enum.
+- [x] Step 4: README CI section: the two-line Actions recipe (run review, upload SARIF); doc + CHANGELOG.
 
 ## Outcome
 

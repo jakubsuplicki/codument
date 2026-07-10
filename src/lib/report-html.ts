@@ -171,7 +171,7 @@ export function renderReviewReportHtml(data: ReportData): string {
 
   const demoHtml = data.demo ? renderDemo(data.demo) : "";
   const impactHtml = renderImpact(data.impact);
-  const acksHtml = renderAcks(data.review.coveringAcks);
+  const acksHtml = renderAcks(data.review.coveringAcks, data.review.requireIndependentAck === true);
 
   const byFeature = s.byFeature
     .map(
@@ -347,6 +347,7 @@ export function renderReviewReportHtml(data: ReportData): string {
   .akb{font-family:var(--mono);font-size:10px;letter-spacing:.8px;text-transform:uppercase;font-weight:700;padding:2px 7px;border-radius:5px;flex:none}
   .akb.self{color:var(--warn);background:var(--warn-bg);border:1px solid var(--warn-ln)}
   .akb.ind{color:var(--good);background:var(--good-bg);border:1px solid var(--good-ln)}
+  .akb.ignored{color:var(--risk);background:var(--risk-bg);border:1px solid var(--risk-ln)}
   .aksig{font-family:var(--mono);font-size:11px;color:var(--ink3)}
   .akrs{color:var(--ink2);flex:1 1 240px;min-width:0}
 
@@ -466,14 +467,20 @@ function renderImpact(impact?: ImpactLedger): string {
 /** The "Acknowledgments in this change" audit card — every covering ack on one line,
  *  badged self vs independent of the change author, so self-review is visible and
  *  over-acking is loud. Empty string when the change set carries no covering ack. */
-function renderAcks(acks: CoveringAck[] | undefined): string {
+function renderAcks(acks: CoveringAck[] | undefined, requireIndependentAck = false): string {
   if (!acks || acks.length === 0) return "";
   const selfCount = acks.filter((a) => !a.independent).length;
+  const ignored = requireIndependentAck ? selfCount : 0;
   const rows = acks
     .map((a) => {
+      // Under --require-independent-ack a self ack did not clear its finding — badge
+      // it ignored (red) so a rejected self-review is visible, not silently dropped.
+      const isIgnored = requireIndependentAck && !a.independent;
       const badge = a.independent
         ? `<span class="akb ind">independent</span>`
-        : `<span class="akb self">self</span>`;
+        : isIgnored
+          ? `<span class="akb ignored">self &middot; not counted</span>`
+          : `<span class="akb self">self</span>`;
       const target =
         a.grain === "file"
           ? `<code>${esc(a.anchorId)}</code> <span class="akg">file</span>`
@@ -481,10 +488,14 @@ function renderAcks(acks: CoveringAck[] | undefined): string {
       return `<div class="akrow">${target} ${badge} <span class="aksig">${esc(a.signer)}</span> <span class="akrs">${esc(a.reason)}</span></div>`;
     })
     .join("\n    ");
+  const head =
+    ignored > 0
+      ? `${acks.length} covering &middot; ${ignored} self-ack${ignored === 1 ? "" : "s"} not counted (--require-independent-ack) &middot; ${acks.length - selfCount} independent`
+      : `${acks.length} covering &middot; ${selfCount} self-adjudicated &middot; ${acks.length - selfCount} independent`;
   return `
   <div class="shead"><h2>Acknowledgments in this change</h2><span class="ln"></span></div>
   <div class="acks">
-    <div class="akhead">${acks.length} covering &middot; ${selfCount} self-adjudicated &middot; ${acks.length - selfCount} independent</div>
+    <div class="akhead">${head}</div>
     ${rows}
   </div>`;
 }

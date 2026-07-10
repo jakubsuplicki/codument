@@ -3,10 +3,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { platform } from "node:os";
 import pc from "picocolors";
-import { assertRootIsRepoToplevel } from "../lib/git.js";
-import { buildReview } from "./review.js";
+import { assertRootIsRepoToplevel, isGitRepo } from "../lib/git.js";
+import { GateError } from "../lib/two-ref.js";
+import { buildReview, type CoveringAck } from "./review.js";
 import { buildReport } from "./doctor.js";
-import { buildImpactLedger } from "../lib/impact-ledger.js";
+import { buildImpactLedger, type ImpactLedger } from "../lib/impact-ledger.js";
 import {
   renderReviewReportHtml,
   type ReportData,
@@ -17,6 +18,28 @@ interface ReportOptions {
   root?: string;
   out?: string;
   open?: boolean;
+  json?: boolean;
+}
+
+/**
+ * The versioned `report --json` contract: the report's two machine-relevant
+ * sections — the all-sessions impact ledger and the acks adjudicating this change.
+ * Deliberately carries NO timestamp (the HTML report's `generatedAt` is a
+ * human-surface stamp), so the output is byte-identical across runs and a CI
+ * consumer can diff it. Version-tagged like `doctor --json`.
+ */
+export interface ReportJson {
+  version: 1;
+  impact: ImpactLedger;
+  acks: CoveringAck[];
+}
+
+export function buildReportJson(root: string): ReportJson {
+  return {
+    version: 1,
+    impact: buildImpactLedger(root),
+    acks: buildReview(root).coveringAcks,
+  };
 }
 
 // Reads the last persisted coverage (from `doctor --write`) so the report can
@@ -83,10 +106,63 @@ export function openInBrowser(path: string): boolean {
 
 export async function report(options: ReportOptions = {}): Promise<void> {
   const root = options.root ?? process.cwd();
+  // A gate that cannot run fails CLOSED on BOTH surfaces — the shareable HTML and
+  // the --json contract — never a misleading "all clean" verdict. A non-git tree has
+  // no verdict to compute (mirroring review's own non-git refusal), and a wrong root
+  // (a subdirectory) would answer the wrong question; either one exits nonzero rather
+  // than persisting or emitting a green report. Under --json the refusal is the same
+  // discriminated `gate: "unavailable"` shape the other --json surfaces use, so a
+  // consumer never reads an absent verdict as a pass.
+  if (!isGitRepo(root)) {
+    const reason = "not a git repository";
+    if (options.json) {
+      console.log(JSON.stringify({ version: 1, gate: "unavailable", reason }, null, 2));
+    } else {
+      console.log(pc.red(`  ✗ ${reason} (gate could not run)`));
+    }
+    process.exitCode = 1;
+    return;
+  }
   // The report renders the same gate verdict review refuses to compute from a
   // subdirectory root — refusing here too keeps the wrong verdict off the one
-  // surface that persists and gets shared (the cli boundary renders the error).
-  assertRootIsRepoToplevel(root);
+  // surface that persists and gets shared. Under --json the refusal stays
+  // machine-readable (a discriminated shape), so a JSON consumer never has to parse
+  // human error text; the human path lets the cli boundary render the GateError.
+  try {
+    assertRootIsRepoToplevel(root);
+  } catch (err) {
+    if (err instanceof GateError && options.json) {
+      console.log(
+        JSON.stringify({ version: 1, gate: "unavailable", reason: err.message }, null, 2),
+      );
+      process.exitCode = 1;
+      return;
+    }
+    throw err;
+  }
+
+  if (options.json) {
+    // The machine surface: ledger + acks, version-tagged and timestamp-free so it
+    // is byte-identical across runs. Never writes an artifact or opens a browser. A
+    // GateError raised while computing the verdict (e.g. git itself failing on an
+    // oversized diff) still comes back as the discriminated `gate: "unavailable"`
+    // shape, never human text to a JSON consumer — the same guarantee review --json
+    // makes for a mid-computation gate failure.
+    try {
+      console.log(JSON.stringify(buildReportJson(root), null, 2));
+    } catch (err) {
+      if (err instanceof GateError) {
+        console.log(
+          JSON.stringify({ version: 1, gate: "unavailable", reason: err.message }, null, 2),
+        );
+        process.exitCode = 1;
+        return;
+      }
+      throw err;
+    }
+    return;
+  }
+
   const out = writeReport(root, options.out);
 
   console.log(pc.bold("codument report"));

@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 13: Audit surfaces — visible acks + machine-readable impact ledger
@@ -65,12 +65,12 @@ No new source files — no feature map.
       tests incl. an auto-invalidated ack showing as such. Validity is base-independent (`covering` /
       `invalidated` / `indeterminate`), computed by `ackValidity` in `fingerprint.ts` (adapter-dependent)
       and surfaced in both the human list (a dim tag) and the versioned `--json` contract.
-- [ ] Step 2: Acks card in `review` output + `report-html.ts`; tests assert self vs independent
+- [x] Step 2: Acks card in `review` output + `report-html.ts`; tests assert self vs independent
       badges from fixture acks.
-- [ ] Step 3: `--require-independent-ack` wiring `isIndependent` into the gate's ack-filtering step;
+- [x] Step 3: `--require-independent-ack` wiring `isIndependent` into the gate's ack-filtering step;
       golden tests: self-ack ignored under the flag (finding persists), independent ack clears,
       no-flag behavior byte-identical to today.
-- [ ] Step 4: `report --json` (ledger + acks), versioned; byte-identical determinism test; docs
+- [x] Step 4: `report --json` (ledger + acks), versioned; byte-identical determinism test; docs
       updates in both feature docs + CHANGELOG.
 
 ## Outcome

@@ -41,6 +41,7 @@ import {
   evaluateReviewGate,
   type ReviewGateResult,
 } from "../lib/review-gate.js";
+import { gateUnavailableSarif, reviewReportToSarif } from "../lib/sarif.js";
 import { MODULE_ANCHOR_NAME } from "../lib/ts-adapter.js";
 import {
   blobExistsAtRef,
@@ -82,6 +83,14 @@ interface ReviewOptions {
    *  artifact, so the writer and the `--require-review` gate share one fingerprint
    *  contract (an agent cannot hand-compute it). */
   record?: string;
+  /** ADR 006 strict mode: only an ack whose signer is independent of the change
+   *  author clears a finding — a self-signed ack leaves the finding open (and so
+   *  `--strict` fails on it). Off by default; the verdict is unchanged without it. */
+  requireIndependentAck?: boolean;
+  /** Output format for the verdict. `"sarif"` emits SARIF 2.1.0 (for CI code-scanning
+   *  upload / reviewdog) instead of the human table; mutually exclusive with `--json`.
+   *  Only changes stdout — the exit code still comes from `--strict`. */
+  format?: string;
 }
 
 // A test command can arrive as real argv (`["node","--test","{file}"]`) or, because
@@ -121,8 +130,19 @@ export interface ReviewReport {
   /** Every acknowledgment covering this change set (per-symbol and file-grain), with
    *  its signer and whether that signer is independent of the change author. Rendered
    *  as the "Acknowledgments in this change" card wherever the human already looks, so
-   *  self-review is distinguishable from independent review and over-acking is loud. */
+   *  self-review is distinguishable from independent review and over-acking is loud.
+   *  Always the FULL set (self + independent), even under `--require-independent-ack`
+   *  where the self ones do not clear — so an ignored self-ack stays visible. */
   coveringAcks: CoveringAck[];
+  /** Whether `--require-independent-ack` was in force for this run: a self-signed ack
+   *  (signer is a change author) did NOT clear its finding, so a self-adjudicated move
+   *  stays flagged. Echoed so the renderers can mark such acks ignored. */
+  requireIndependentAck: boolean;
+  /** Under the flag, whether independence could NOT be verified at all — the change has
+   *  uncommitted edits in scope, or there is no committed author to check a signer
+   *  against. Then NO ack clears (fail closed): commit the change and review a committed
+   *  range so an independent signer can be checked. Always false without the flag. */
+  independenceUnverifiable: boolean;
 }
 
 /** One acknowledgment adjudicating this change — the shape both the `review` card and
@@ -189,6 +209,7 @@ export function buildReview(
   changedFiles?: string[],
   baseRef = "HEAD",
   deletedFiles?: string[],
+  opts: { requireIndependentAck?: boolean } = {},
 ): ReviewReport {
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
   // Callers that already computed the working-tree changes (e.g. `watch`, which
@@ -205,14 +226,55 @@ export function buildReview(
   // files come back as `unevaluable` (gated file-grain AND surfaced).
   const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, changes);
   const acks = readAcks(root);
+  // Change authorship (pure repo state) — the source of "the change author" for the
+  // self-vs-independent split, computed once and shared by the card and the strict
+  // independence gate below.
+  const changeAuthors = new Set(
+    [...getChangeAuthors(root, baseRef)].map((a) => normalizeIdentity(a)),
+  );
+  // Independence is provable only against COMMITTED authorship (`base..HEAD`). If a
+  // reviewed source file still carries an uncommitted edit, its author is not in
+  // `changeAuthors` (an uncommitted edit is nobody's commit yet), so a "signer not among
+  // the commit authors" test would falsely read independent — the laundering hole. Guard
+  // it: authorship is verifiable only when there IS a commit author AND no reviewed source
+  // file has an uncommitted edit. Scope the check to reviewed SOURCE — codument's own
+  // `.codument/` metadata (the ack artifacts themselves) and excluded/generated paths are
+  // never the reviewed change, and both leak untracked into the change set, so they must
+  // not read as "dirty". Pure: `git status` and `git log` are repo state, no ambient identity.
+  const inScopeSource = [...new Set([...changes, ...deletions])].filter(
+    (f) => !f.startsWith(".codument/") && !isExcluded(f, DEFAULT_EXCLUSION_SPEC),
+  );
+  const uncommitted = new Set([...getWorkingTreeChanges(root), ...getWorkingTreeDeletions(root)]);
+  const uncommittedInScope = inScopeSource.some((f) => uncommitted.has(f));
+  const authorshipVerifiable = changeAuthors.size > 0 && !uncommittedInScope;
+  const independentOf = (signer: string): boolean =>
+    authorshipVerifiable && !changeAuthors.has(normalizeIdentity(signer));
+  // `--require-independent-ack` (ADR 006 strict mode): only an ack whose signer is
+  // independent of the change author counts toward CLEARING a finding. A self-signed
+  // ack (or ANY ack when authorship is not verifiable) is dropped from the honored set,
+  // so its finding stays open exactly as if unacked — no new blocking semantics, just a
+  // stricter definition of "cleared", and it fails CLOSED (never launders a self-ack on
+  // an unverifiable change). Off by default, honoredAcks === acks, byte-identical.
+  const requireIndependentAck = opts.requireIndependentAck === true;
+  const honoredAcks = requireIndependentAck ? acks.filter((a) => independentOf(a.signer)) : acks;
+  // Under the flag, whether independence simply could not be verified (no committed
+  // author, or an uncommitted edit in scope) — distinct from "all covering acks were
+  // self", so the renderer can say WHY nothing cleared (commit + review a range).
+  const independenceUnverifiable = requireIndependentAck && !authorshipVerifiable;
   // Resolve per-symbol drift + acknowledgments: an acked move is adjudicated (a
   // recorded "refactor, no doc change owed" decision) and dropped from the set the
   // stale-doc verdict sees; co-movement is attached as info-only telemetry.
-  const { findings: drift, filtered } = computeDrift(root, baseRef, registry, anchorChanges, acks);
+  const { findings: drift, filtered } = computeDrift(
+    root,
+    baseRef,
+    registry,
+    anchorChanges,
+    honoredAcks,
+  );
   // File-grain acks (`codument ack <path>`): a bare-path ack covering a file's
   // current content clears its additive/concept/coarse staleness (never a moved
   // symbol). Resolved here (git+disk) and passed to the pure analyzer.
-  const fileGrainAcked = resolveFileGrainAcked(root, baseRef, changes, acks, unevaluable);
+  const fileGrainAcked = resolveFileGrainAcked(root, baseRef, changes, honoredAcks, unevaluable);
   const state = computeChangeState({
     registry,
     changedFiles: changes,
@@ -231,33 +293,38 @@ export function buildReview(
     // same change cannot dodge the wake.
     baseRegistry: deletions.length > 0 ? readRegistryAtRef(root, baseRef) : undefined,
   });
-  // The acks adjudicating this change, per-symbol and file-grain, with their signer
-  // and whether it is INDEPENDENT of the change author. The change author is read
-  // from the commit authorship of the change range (`base..HEAD`), NOT the ambient
-  // `git config user.*` of whoever runs review — so a self-ack stays self in CI or on
-  // any machine, and `buildReview` stays a pure function of repo state. A pending
-  // working-tree diff has no commits yet, so the author set is empty and independence
-  // is conservatively unproven (rendered self): a change becomes eligible for an
-  // "independent" badge only once its authorship is recorded in a commit.
-  const changeAuthors = new Set(
-    [...getChangeAuthors(root, baseRef)].map((a) => normalizeIdentity(a)),
-  );
-  const independentOf = (signer: string): boolean =>
-    changeAuthors.size > 0 && !changeAuthors.has(normalizeIdentity(signer));
+  // The acks adjudicating this change — the audit card both the human review and the
+  // HTML report read. Computed from the FULL ack set (not `honoredAcks`), so under
+  // `--require-independent-ack` a self-ack that did NOT clear its finding is still
+  // shown (badged self, ignored) rather than silently dropped: over-acking and
+  // rejected self-review both stay visible. Off the flag this set equals the honored
+  // resolution, so the verdict and the card are byte-identical to before.
   const coveringAcks: CoveringAck[] = [];
   for (const d of drift) {
-    if (d.acknowledged && d.ackSigner) {
+    // Match computeDrift's ack eligibility exactly: only a body-only `changed` move
+    // is ackable — an added/removed symbol has no transition, and a SIGNATURE move is
+    // never honored (per-symbol or file-grain). Skipping sig moves keeps the card from
+    // showing a hand-written/merged sig-move ack as "covering" a finding the gate still
+    // fails, and keeps the off-flag card byte-identical to the drift-derived build.
+    if (d.from === undefined || d.to === undefined || d.signatureChanged) continue;
+    const ack = acks.find((a) => ackCovers(a, d.anchorId, d.from as string, d.to as string));
+    if (ack) {
       coveringAcks.push({
         anchorId: d.anchorId,
         grain: "symbol",
         symbol: d.symbol,
-        signer: d.ackSigner,
-        reason: d.ackReason ?? "",
-        independent: independentOf(d.ackSigner),
+        signer: ack.signer,
+        reason: ack.reason,
+        independent: independentOf(ack.signer),
       });
     }
   }
-  for (const file of fileGrainAcked) {
+  // File-grain coverage for the card uses the FULL ack set too (a self file-ack stays
+  // visible under the flag), so resolve it independently of the honored gate set.
+  const cardFileGrainAcked = requireIndependentAck
+    ? resolveFileGrainAcked(root, baseRef, changes, acks, unevaluable)
+    : fileGrainAcked;
+  for (const file of cardFileGrainAcked) {
     const { from, to } = fileContentTransition(root, baseRef, file);
     if (from === null || to === null) continue;
     const ack = acks.find((a) => isFileGrainAck(a) && ackCovers(a, file, from, to));
@@ -286,11 +353,34 @@ export function buildReview(
     drift,
     fileGrainAcked,
     coveringAcks,
+    requireIndependentAck,
+    independenceUnverifiable,
   };
 }
 
 export async function review(options: ReviewOptions = {}): Promise<void> {
   const root = options.root ?? process.cwd();
+
+  // Output-format guard: SARIF is the only non-default format, and it cannot combine
+  // with --json (two machine shapes, one stdout). A usage error is human text + exit 1,
+  // never a half-valid document a consumer might parse.
+  const sarifMode = options.format === "sarif";
+  if (options.format !== undefined && !sarifMode) {
+    console.log(pc.red(`  ✗ unknown --format "${options.format}" (supported: sarif)`));
+    process.exitCode = 1;
+    return;
+  }
+  // SARIF is one machine shape on stdout; it cannot share the channel with another
+  // output mode (--json) or a mode that emits its own document and returns early
+  // (--bundle, --record). A silent override would hand CI a non-SARIF payload, so it
+  // is a usage error, not a quiet win-for-the-other-flag.
+  if (sarifMode && (options.json || options.bundle || options.record)) {
+    console.log(
+      pc.red("  ✗ --format sarif cannot combine with --json, --bundle, or --record; pick one output."),
+    );
+    process.exitCode = 1;
+    return;
+  }
 
   if (!isGitRepo(root)) {
     // The gate could not run — no repo to diff. Under a gating flag this fails
@@ -298,6 +388,15 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // `review` stays informational (exit 0). `--json` always emits a valid
     // discriminated shape, never a type-violating `state: null`.
     const failClosed = !!options.strict || !!options.requireReview;
+    if (sarifMode) {
+      // The SARIF's own discriminant says the gate could not run
+      // (executionSuccessful:false), so the exit code must agree — always nonzero,
+      // matching the wrong-root branch, so a CI gating on the exit code alone never
+      // reads a gate-unavailable run as green.
+      console.log(JSON.stringify(gateUnavailableSarif("not a git repository"), null, 2));
+      process.exitCode = 1;
+      return;
+    }
     if (options.json) {
       console.log(
         JSON.stringify(
@@ -329,20 +428,27 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // A subdirectory root produces WRONG answers (everything unmapped, every doc
     // fresh), not absent ones — assert loudly before any verdict is computed.
     assertRootIsRepoToplevel(root);
+    const reviewOpts = { requireIndependentAck: options.requireIndependentAck === true };
     if (options.base) {
       // Diff the working tree against the merge-base with `options.base` (the
       // branch's drift since it diverged). Resolve that base once so anchors and
       // the changed-file set answer the same question.
       const baseRef = resolveBase(root, options.base, "HEAD").sha;
       const changes = worktreeChangesSince(root, options.base);
-      report = buildReview(root, changes, baseRef, worktreeDeletionsSince(root, options.base));
+      report = buildReview(
+        root,
+        changes,
+        baseRef,
+        worktreeDeletionsSince(root, options.base),
+        reviewOpts,
+      );
       effectiveBase = baseRef;
     } else {
       // Default: working tree vs HEAD (what `git status` shows). Resolve HEAD to a
       // real object name (the empty tree before the first commit) so the fingerprint
       // base is a stable sha, never the literal "HEAD" — the step-5 writer records
       // exactly this value, and a fresh-repo/first-commit boundary cannot flip it.
-      report = buildReview(root);
+      report = buildReview(root, undefined, "HEAD", undefined, reviewOpts);
       effectiveBase = getHeadSha(root) ?? EMPTY_TREE_SHA;
     }
   } catch (err) {
@@ -351,6 +457,11 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // treats it as green. `--json` gets the same discriminated shape as the
     // non-git case, never broken output a consumer could misread.
     if (err instanceof GateError) {
+      if (sarifMode) {
+        console.log(JSON.stringify(gateUnavailableSarif(err.message), null, 2));
+        process.exitCode = 1;
+        return;
+      }
       if (options.json) {
         console.log(
           JSON.stringify(
@@ -545,6 +656,25 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     );
   }
   const reviewGateFail = !!reviewGate && !reviewGate.passed;
+
+  if (sarifMode) {
+    // The gate verdict as SARIF for CI code-scanning upload. Stdout only: the exit
+    // code still comes from --strict (and --require-review), so `review --strict
+    // --format sarif` both prints the annotations and fails the check. The
+    // adversarial-review gate has no result representation (its findings are not in
+    // the change-state), so a block is carried as an unsuccessful-invocation
+    // notification — otherwise an exit-1 --require-review run would upload a SARIF
+    // that reads as a clean pass.
+    const notifications: string[] = [];
+    if (reviewGateFail) {
+      notifications.push(
+        "adversarial review gate blocked: no current adversarial review covers this change, or it carries unresolved confirmed findings (run `codument review --require-review` for detail).",
+      );
+    }
+    console.log(JSON.stringify(reviewReportToSarif(report, notifications), null, 2));
+    if (strictFail || reviewGateFail) process.exitCode = 1;
+    return;
+  }
 
   if (options.json) {
     console.log(
@@ -813,16 +943,37 @@ function printHuman(report: ReviewReport): void {
   // a quiet green, and over-acking is visible at the moment of the change.
   if (report.coveringAcks.length > 0) {
     const selfCount = report.coveringAcks.filter((a) => !a.independent).length;
+    // Under --require-independent-ack a self-ack does not clear its finding: mark it
+    // ignored so the human sees WHY an acked move is still flagged.
+    const strict = report.requireIndependentAck;
+    const ignored = strict ? selfCount : 0;
     console.log(
       `  ${pc.bold("Acknowledgments in this change")} ${pc.dim(
-        `— ${report.coveringAcks.length} covering (${selfCount} self); codument ack --list to manage`,
+        `— ${report.coveringAcks.length} covering (${selfCount} self${
+          ignored > 0 ? `, ${ignored} not counted` : ""
+        }); codument ack --list to manage`,
       )}`,
     );
     for (const a of report.coveringAcks) {
-      const badge = a.independent ? pc.green("[independent]") : pc.yellow("[self]");
+      const isIgnored = strict && !a.independent;
+      const badge = a.independent
+        ? pc.green("[independent]")
+        : isIgnored
+          ? pc.red("[self — not counted]")
+          : pc.yellow("[self]");
       const target =
         a.grain === "file" ? pc.dim(`${a.anchorId} (file)`) : pc.bold(a.symbol ?? a.anchorId);
-      console.log(`    ${pc.dim("✓")} ${target} ${badge} ${pc.dim(`${a.signer}:`)} ${a.reason}`);
+      const mark = isIgnored ? pc.red("✗") : pc.dim("✓");
+      console.log(`    ${mark} ${target} ${badge} ${pc.dim(`${a.signer}:`)} ${a.reason}`);
+    }
+    if (ignored > 0) {
+      console.log(
+        pc.dim(
+          report.independenceUnverifiable
+            ? "    --require-independent-ack: independence could not be verified — the change has uncommitted edits (or no commit author). Commit it and review a committed range (--base) so an independent signer can be checked; no ack clears until then."
+            : "    --require-independent-ack: a self-signed ack does not clear its finding — have an independent signer ack, or update the doc.",
+        ),
+      );
     }
     console.log();
   }
