@@ -58,3 +58,26 @@ before planning; both are self-contained like 01–15.
 | [17](17-config-grain-calibration.md) | Config-file grain, coarse-ack signposts, ungated-source visibility | `export default` config files are coarse (every byte fires, nothing ackable is suggested); registered non-source files change silently |
 
 Run 16 before 17; they are independent but 17's CHANGELOG rides on 16's release framing.
+
+## Language expansion (18–25) — per-symbol drift beyond TypeScript
+
+Per-symbol resolution is the moat, and it is TS-only today. One substrate plan makes "precise"
+a single testable contract (tree-sitter WASM + a conformance battery every adapter must pass);
+the language plans then carry only genuinely language-specific decisions. All draft; approve in
+order — 18 is a hard prerequisite for 19 and 21–24.
+
+| Plan | Target | Depends on | Note |
+| --- | --- | --- | --- |
+| [18](18-language-adapter-substrate.md) | Substrate: WASM runtime + conformance battery | — | Everything below rides this |
+| [19](19-python-adapter.md) | Python | 18 | Biggest new market; per-member class split |
+| [20](20-sfc-component-adapter.md) | `.vue` / `.svelte` / `.astro` | 18 (battery only) | Closes our own dogfood's blind spot; script delegates to the TS engine |
+| [21](21-go-adapter.md) | Go | 18 | Cleanest public rule (capitalization) |
+| [22](22-rust-adapter.md) | Rust | 18 | Visibility-literal; macros bounded honestly |
+| [23](23-jvm-adapter.md) | Java + Kotlin | 18 | Enterprise pair; annotations are contract |
+| [24](24-dotnet-adapter.md) | C# | 18 | Partial classes, accessors, records pinned |
+| [25](25-language-matrix-presentation.md) | Language matrix: README/CLI presentation, parity-tested | any shipped adapter | Run LAST; the matrix mechanically cannot lie; the website mirrors it via its own repo's plan |
+
+Frameworks need no per-framework adapters: React/Next/Angular/Nest are `.ts`/`.tsx` (covered
+since day one), config-file shapes were calibrated by plan 17, and the component FILE FORMATS are
+plan 20. Long-tail candidates (Ruby, PHP, Swift, Scala, F#) get plans when demand shows — same
+substrate, same battery, same descriptor discipline.
