@@ -1,5 +1,11 @@
 import pc from "picocolors";
-import { HookError, inspectHook, installHook, uninstallHook } from "../lib/git-hooks.js";
+import {
+  HookError,
+  inspectHook,
+  installCiWorkflow,
+  installHook,
+  uninstallHook,
+} from "../lib/git-hooks.js";
 import { assertRootIsRepoToplevel } from "../lib/git.js";
 
 // The command surface over the pre-commit arm (src/lib/git-hooks.ts). All three
@@ -9,6 +15,7 @@ import { assertRootIsRepoToplevel } from "../lib/git.js";
 
 interface HooksOptions {
   root?: string;
+  ci?: boolean;
 }
 
 const STATE_LINES: Record<string, string> = {
@@ -48,6 +55,16 @@ export function hooksInstall(options: HooksOptions = {}): void {
     console.log(
       pc.dim("    Honest limit: the gate checks the working tree, not the staged bytes."),
     );
+    if (options.ci) {
+      const ci = installCiWorkflow(root);
+      const ciVerb = { created: "created", updated: "refreshed", unchanged: "already current" }[
+        ci.action
+      ];
+      console.log(pc.green(`  ✓ CI gate workflow ${ciVerb}: ${ci.path}`));
+      console.log(
+        pc.dim("    Make it a merge blocker: branch protection → require the gate check."),
+      );
+    }
   } catch (err) {
     fail(err);
   }

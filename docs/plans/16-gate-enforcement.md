@@ -92,7 +92,7 @@ Run `codument map materialize` for both new sources. Independent of Plan 17; run
       tests: in a temp repo with a red gate a real `git commit` is blocked, `--no-verify` and
       `CODUMENT_SKIP_GATE=1` pass it, a green gate commits normally, missing binary warns and
       passes.
-- [ ] Step 3: `--ci` scaffold + template + tests (fresh write, managed re-write, un-managed refusal);
+- [x] Step 3: `--ci` scaffold + template + tests (fresh write, managed re-write, un-managed refusal);
       the repo's own ci.yml PR gate job.
 - [ ] Step 4: docs — rescope `hooks.md` (three arms, one feature), change-control-gate invariant
       ("a red strict gate blocks a hooked commit; every escape is a named act"), ADR-013

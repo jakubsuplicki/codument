@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -120,6 +120,26 @@ describe("hooks command: end-to-end enforcement", { skip: process.platform === "
     run(tmp, "node", [CLI, "hooks", "uninstall"]);
     const sub = join(tmp, "docs");
     assert.throws(() => run(sub, "node", [CLI, "hooks", "install"]));
+  });
+
+  it("--ci scaffolds the PR workflow, refreshes managed, refuses unmanaged", () => {
+    seedRepo(tmp);
+    const wf = join(tmp, ".github", "workflows", "codument.yml");
+    run(tmp, "node", [CLI, "hooks", "install", "--ci"]);
+    const content = readFileSync(wf, "utf-8");
+    assert.ok(content.startsWith("# managed-by: codument"));
+    assert.ok(content.includes("review --strict --base"));
+
+    // Managed marker intact: refreshed in place on reinstall.
+    writeFileSync(wf, "# managed-by: codument\nname: stale-old-version\n");
+    run(tmp, "node", [CLI, "hooks", "install", "--ci"]);
+    assert.equal(readFileSync(wf, "utf-8"), content);
+
+    // Ownership taken (marker removed): refused, file untouched, exit nonzero.
+    const own = "name: my own workflow\non: [push]\n";
+    writeFileSync(wf, own);
+    assert.throws(() => run(tmp, "node", [CLI, "hooks", "install", "--ci"]));
+    assert.equal(readFileSync(wf, "utf-8"), own);
   });
 
   it("init --hooks installs the gate; init without the flag does not", () => {

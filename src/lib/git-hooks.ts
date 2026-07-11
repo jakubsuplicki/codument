@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs"
 import { join } from "node:path";
 import { atomicWriteFileSync } from "./events.js";
 import { getHooksDir } from "./git.js";
+import { readTemplate } from "./scaffold.js";
 
 // The git pre-commit hook is the local enforcement arm of the change-control
 // gate: `review --strict` already exits nonzero on an out-of-sync step, but
@@ -207,4 +208,35 @@ export function uninstallHook(root: string): { result: HookUninstallResult; hook
   atomicWriteFileSync(hookPath, remainder);
   chmodSync(hookPath, 0o755);
   return { result: "removed-block", hookPath };
+}
+
+export type CiInstallAction = "created" | "updated" | "unchanged";
+
+// The remote arm: a PR workflow running the same strict gate against the merge
+// base. First line of the template is an ownership marker — while it is
+// present, install refreshes the file on package upgrades; once the user
+// deletes the marker (taking ownership), codument refuses to overwrite. Making
+// the check *required* is a branch-protection setting, not something a CLI can
+// reach into.
+const CI_MARKER = "# managed-by: codument";
+
+export function installCiWorkflow(root: string): { action: CiInstallAction; path: string } {
+  const dest = join(root, ".github", "workflows", "codument.yml");
+  const desired = readTemplate("ci-codument.yml");
+  if (existsSync(dest)) {
+    const existing = readFileSync(dest, "utf-8");
+    if (existing === desired) return { action: "unchanged", path: dest };
+    if (!existing.startsWith(CI_MARKER)) {
+      throw new HookError(
+        `${dest} exists without the codument managed marker — refusing to overwrite your workflow.\n` +
+          `The gate step to add yourself is:\n` +
+          `  npx --no-install codument review --strict --base "origin/\${{ github.base_ref }}"`,
+      );
+    }
+    atomicWriteFileSync(dest, desired);
+    return { action: "updated", path: dest };
+  }
+  mkdirSync(join(dest, ".."), { recursive: true });
+  atomicWriteFileSync(dest, desired);
+  return { action: "created", path: dest };
 }

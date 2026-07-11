@@ -269,6 +269,7 @@ const hooks = program
 hooks
   .command("install")
   .description("Install or refresh the managed pre-commit block that runs `review --strict`")
+  .option("--ci", "Also scaffold the PR gate workflow (.github/workflows/codument.yml)")
   .option("--root <dir>", "Project root (default: current directory)")
   .action((options) => hooksInstall(options));
 

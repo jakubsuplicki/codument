@@ -1,0 +1,30 @@
+# managed-by: codument (hooks install --ci) — delete this line to take ownership;
+# codument will then refuse to overwrite your edits.
+name: codument
+
+on:
+  pull_request:
+
+jobs:
+  gate:
+    name: strict step-sync gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: codument review --strict
+        run: npx --no-install codument review --strict --base "origin/${{ github.base_ref }}"
+
+      # Want inline PR annotations? Swap the step above for the SARIF recipe in
+      # the codument README ("CI" section) — same verdict, rendered on the diff.
+      # Make this check REQUIRED via branch protection to turn the gate into a
+      # merge blocker: Settings → Branches → require the "strict step-sync gate"
+      # status check.
