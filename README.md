@@ -286,6 +286,21 @@ jobs:
 
 `reviewdog` consumes the same file if you prefer it to code-scanning. When the gate cannot run (not a git repository, a wrong root, a git failure) the SARIF marks the invocation unsuccessful rather than reporting a false "clean."
 
+### `codument hooks` — make the gate enforced, not advisory
+
+Everything above exits nonzero when a step is out of sync, but an exit code only gates a commit if something runs it at commit time. Two arms close that hole:
+
+```bash
+codument hooks install          # local: a pre-commit hook that runs `review --strict`
+codument hooks install --ci     # + remote: scaffold .github/workflows/codument.yml (PR gate)
+codument hooks status           # is the gate enforced here, and where
+codument hooks uninstall        # remove the managed block; your own hook lines survive
+```
+
+The pre-commit hook is a **managed block**: markers delimit the only region codument ever touches, an existing shell hook is appended to (never rewritten), a non-shell hook is refused with the one line to add manually, and `core.hooksPath`/worktree setups are honored by asking git. A red gate blocks the commit and names both escapes — `git commit --no-verify` or `CODUMENT_SKIP_GATE=1 git commit` — so skipping is a stated act, never a slip. If the codument binary is missing (a wiped `node_modules`), the hook warns loudly and lets the commit pass rather than bricking every commit. Honest limit: the gate evaluates the **working tree**, not the staged bytes, so with partial staging it is a speed bump, not a proof of the commit's contents.
+
+The local hook can always be skipped; the **CI check is the authority**. The scaffolded workflow runs the same strict gate against the PR's merge base — make it a *required* status check in branch protection and a red gate becomes a merge blocker. The workflow file is yours to evolve: it refreshes on reinstall only while its managed marker is present, and codument refuses to touch it once you delete the marker. `init --hooks` installs the pre-commit arm during project setup.
+
 ### `codument ack` — clear a change that owes no doc change
 
 When a symbol moves but no documented contract changed, you don't paper over the gate with a mirror edit — you **acknowledge** it. An ack records a fingerprint-bound, **auto-invalidating** decision so `review` stops flagging it, and it takes two forms.

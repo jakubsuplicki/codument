@@ -204,7 +204,9 @@
         "src/commands/hooks.ts"
       ],
       "related_sources": [],
-      "docs": [],
+      "docs": [
+        "docs/architecture/decisions/013-enforcement-arms-local-speed-bump-ci-authority.md"
+      ],
       "depends_on": [
         "lib"
       ],

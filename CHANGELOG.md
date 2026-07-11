@@ -7,6 +7,24 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+### Added
+- `codument hooks install|status|uninstall`: git pre-commit enforcement of the
+  strict gate. Install writes a marker-delimited managed block (an existing
+  shell hook is appended to, never rewritten; a non-shell hook is refused with
+  manual wiring instructions; `core.hooksPath` and linked worktrees are honored
+  by asking git). A red gate blocks the commit and names both escapes
+  (`--no-verify`, `CODUMENT_SKIP_GATE=1`) so skipping is a stated act; a missing
+  binary warns loudly and lets the commit pass instead of bricking commits.
+  `init --hooks` installs the same arm during setup. Born from a dogfood
+  measurement: a compliant agent still landed 1 commit in 44 through a
+  momentarily red advisory gate.
+- `codument hooks install --ci`: scaffolds `.github/workflows/codument.yml`, a
+  PR workflow running `review --strict --base` against the merge base — pair it
+  with branch protection to make the gate a required check. Marker-first
+  ownership: the file refreshes on reinstall while its managed marker is
+  present; delete the marker and codument refuses to overwrite your edits.
+  This repo's own CI now runs the same gate on every PR.
+
 ## [0.8.0] - 2026-07-10
 
 ### Added
