@@ -316,7 +316,7 @@ with `scan`, above) and on any release range of an adopted one.
 
 ```bash
 npx codument audit v1.0.0..HEAD
-npx codument audit v0.6.0..v0.7.0 --json   # version-tagged; byte-identical for the same repo state
+npx codument audit v0.7.0..v0.8.0 --json   # version-tagged; byte-identical for the same repo state
 ```
 
 - Same analyzer, same semantics as `review` — per-symbol staleness, deletions first-class (a
@@ -617,7 +617,7 @@ cd /path/to/codument
 npm --cache /private/tmp/codument-npm-cache pack
 
 cd /path/to/existing-project
-npm install -D ../codument/codument-0.7.0.tgz
+npm install -D ../codument/codument-0.8.0.tgz
 npx codument adopt --agents codex,claude
 ```
 </details>
