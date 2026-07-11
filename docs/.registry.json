@@ -200,7 +200,8 @@
       "type": "feature",
       "primary_sources": [
         "src/hooks/check-docs.ts",
-        "src/lib/git-hooks.ts"
+        "src/lib/git-hooks.ts",
+        "src/commands/hooks.ts"
       ],
       "related_sources": [],
       "docs": [],

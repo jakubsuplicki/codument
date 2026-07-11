@@ -85,10 +85,10 @@ Run `codument map materialize` for both new sources. Independent of Plan 17; run
 
 ## Delivery Plan
 
-- [ ] Step 1: `git-hooks.ts` — hooks-dir resolution helper in `git.ts` + managed-block
+- [x] Step 1: `git-hooks.ts` — hooks-dir resolution helper in `git.ts` + managed-block
       planner/writer/remover with foreign-hook classification and 0o755; unit tests in temp repos
       (fresh repo, existing sh hook, foreign hook, `core.hooksPath` set, reinstall idempotence).
-- [ ] Step 2: `codument hooks install|status|uninstall` + CLI registration + `init --hooks`; e2e
+- [x] Step 2: `codument hooks install|status|uninstall` + CLI registration + `init --hooks`; e2e
       tests: in a temp repo with a red gate a real `git commit` is blocked, `--no-verify` and
       `CODUMENT_SKIP_GATE=1` pass it, a green gate commits normally, missing binary warns and
       passes.

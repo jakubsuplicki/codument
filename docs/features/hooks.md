@@ -9,7 +9,7 @@ last_reviewed: 2026-06-29
 
 ## In plain terms
 
-Hooks are where codument meets the moments a change actually happens, and the feature now has two arms with opposite temperaments. The check-docs hook is an in-editor nudge: right after the agent writes or edits a source file, it cross-references that path against the documentation registry and prints a one-line terminal reminder naming every doc that maps to the file. It is a reminder, not a gate: it never blocks the edit and never fails. The git pre-commit arm is the opposite: a managed block in the repository's pre-commit hook that runs `review --strict` at commit time and blocks the commit while the gate is red. It exists because the advisory posture demonstrably leaks — a well-instructed agent still landed one commit through a momentarily red gate — and commit time is the last moment the repository can refuse quietly-drifted state.
+Hooks are where codument meets the moments a change actually happens, and the feature now has two arms with opposite temperaments. The check-docs hook is an in-editor nudge: right after the agent writes or edits a source file, it cross-references that path against the documentation registry and prints a one-line terminal reminder naming every doc that maps to the file. It is a reminder, not a gate: it never blocks the edit and never fails. The git pre-commit arm is the opposite: a managed block in the repository's pre-commit hook, installed with `codument hooks install` (or `init --hooks`), inspected with `hooks status`, removed with `hooks uninstall`, that runs `review --strict` at commit time and blocks the commit while the gate is red. It exists because the advisory posture demonstrably leaks — a well-instructed agent still landed one commit through a momentarily red gate — and commit time is the last moment the repository can refuse quietly-drifted state.
 
 ## Design approach
 
@@ -34,9 +34,11 @@ The reminder is failure-shy by construction. Every uncertain condition (no paylo
 - A pre-commit hook that is not a shell script is refused, never modified. *(test: `git-hooks.test.ts` "refuses a non-shell hook and leaves it untouched")*
 - Installation is idempotent: reinstalling over a current block is a byte-for-byte no-op. *(test: `git-hooks.test.ts` "is byte-idempotent on reinstall")*
 - The hooks directory comes from git (`core.hooksPath` and linked worktrees honored), never from a hand-derived `.git/hooks`. *(test: `git-hooks.test.ts` "honors core.hooksPath")*
-- Inside the block: a red strict gate blocks the commit with both escapes named; a missing gate binary warns and lets the commit pass. *(untested — the end-to-end commit-blocking test lands with the `hooks` command)*
+- Inside the block: a red strict gate blocks a real `git commit` with both escapes named; a green gate commits normally; a missing gate binary warns and lets the commit pass. *(tests: `hooks-command.test.ts` "a red strict gate blocks a real git commit; both escapes pass it", "a green gate lets the commit through with the hook active", "a missing binary warns loudly and lets the commit pass")*
+- The installer refuses to run from a repository subdirectory, because the hook it writes would gate a root where the registry does not live. *(test: `hooks-command.test.ts` "install refuses to run from a repo subdirectory")*
 
 ## Key files
 
 - `src/hooks/check-docs.ts` — the standalone editor hook: resolves the edited path and project root, reads the registry, and prints the doc-update reminder for a changed source file.
 - `src/lib/git-hooks.ts` — the pre-commit arm: managed-block planner/writer/remover, foreign-hook classification, and the gate block itself.
+- `src/commands/hooks.ts` — the `hooks install|status|uninstall` command surface over the pre-commit arm.

@@ -15,6 +15,7 @@ import {
 } from "../lib/agent-profiles.js";
 import { ensureClaudeDocsHook } from "../lib/claude-settings.js";
 import { detectProject } from "../lib/detect.js";
+import { HookError, installHook } from "../lib/git-hooks.js";
 import {
   ensureDir,
   skillsDir,
@@ -31,6 +32,7 @@ import { version as pkgVersion } from "../lib/version.js";
 interface InitOptions {
   force?: boolean;
   agents?: string;
+  hooks?: boolean;
 }
 
 export async function init(options: InitOptions): Promise<void> {
@@ -132,6 +134,22 @@ export async function init(options: InitOptions): Promise<void> {
       2,
     ) + "\n",
   );
+
+  // Opt-in enforcement: init never wires a gate the user did not ask for, and a
+  // project not yet under git degrades to a note rather than a failed init.
+  if (options.hooks) {
+    try {
+      const { action, hookPath } = installHook(root);
+      console.log(pc.green(`  ✓ pre-commit gate ${action}: ${hookPath}`));
+    } catch (error) {
+      if (error instanceof HookError) {
+        console.log(pc.yellow(`  • pre-commit gate skipped: ${(error as Error).message}`));
+        console.log(pc.dim("    Run `codument hooks install` once the repository exists."));
+      } else {
+        throw error;
+      }
+    }
+  }
 
   console.log();
   console.log(pc.green(pc.bold("Done!")));

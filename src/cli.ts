@@ -10,6 +10,7 @@ import { demo } from "./commands/demo.js";
 import { doctor } from "./commands/doctor.js";
 import { emitReviewCommand, emitTokensCommand } from "./commands/emit.js";
 import { feed } from "./commands/feed.js";
+import { hooksInstall, hooksStatus, hooksUninstall } from "./commands/hooks.js";
 import { init } from "./commands/init.js";
 import { mapCheck, mapMaterialize, mapRoute } from "./commands/map.js";
 import { report } from "./commands/report.js";
@@ -37,6 +38,7 @@ program
   .description("Initialize codument in your project")
   .option("--agents <agents>", "Comma-separated agent profiles to install: codex, claude")
   .option("--force", "Overwrite existing files")
+  .option("--hooks", "Also install the git pre-commit gate (codument hooks install)")
   .action(init);
 
 program
@@ -259,6 +261,28 @@ program
   .option("--dir <path>", "Project root (default: current directory)")
   .option("--root <dir>", "Project root (default: current directory)")
   .action(stepsCommand);
+
+const hooks = program
+  .command("hooks")
+  .description("Git pre-commit enforcement of the strict gate (install/status/uninstall)");
+
+hooks
+  .command("install")
+  .description("Install or refresh the managed pre-commit block that runs `review --strict`")
+  .option("--root <dir>", "Project root (default: current directory)")
+  .action((options) => hooksInstall(options));
+
+hooks
+  .command("status")
+  .description("Report whether the pre-commit gate is installed and where")
+  .option("--root <dir>", "Project root (default: current directory)")
+  .action((options) => hooksStatus(options));
+
+hooks
+  .command("uninstall")
+  .description("Remove the managed block (your own pre-commit lines are kept)")
+  .option("--root <dir>", "Project root (default: current directory)")
+  .action((options) => hooksUninstall(options));
 
 const map = program
   .command("map")
