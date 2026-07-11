@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import { GateError } from "./two-ref.js";
 
 // Git access for the diff analyzer. Codument is positioned as git-native, so we
@@ -271,4 +272,21 @@ export function getWorkingTreeDeletions(root: string): string[] {
     if (e.x === "D" || e.y === "D") files.add(e.path);
   }
   return sortPaths(files);
+}
+
+/**
+ * Absolute path of the directory git will actually read hooks from — honors
+ * `core.hooksPath` and linked worktrees, because `rev-parse --git-path hooks`
+ * resolves both. Null when git is unavailable or `root` is not a repository,
+ * so the caller can say "not a repo" rather than guess at `.git/hooks`.
+ */
+export function getHooksDir(root: string): string | null {
+  if (!isGitRepo(root)) return null;
+  try {
+    const p = git(root, ["rev-parse", "--git-path", "hooks"]).trim();
+    if (p.length === 0) return null;
+    return isAbsolute(p) ? p : resolve(root, p);
+  } catch {
+    return null;
+  }
 }

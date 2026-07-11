@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 16: enforce the gate — pre-commit hook installer + CI required check

@@ -199,7 +199,8 @@
       "doc": "docs/features/hooks.md",
       "type": "feature",
       "primary_sources": [
-        "src/hooks/check-docs.ts"
+        "src/hooks/check-docs.ts",
+        "src/lib/git-hooks.ts"
       ],
       "related_sources": [],
       "docs": [],
