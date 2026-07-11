@@ -45,3 +45,16 @@ pre-settled in its Decisions section (adjust at approval, not mid-run).
 
 Leverage order if picking selectively: 09 and 08 first (they change who wants the product), then
 10+11 together (they change what the gate can promise), then 12–14, then 15.
+
+## Dogfood findings (16–17) — from the 2026-07-11 website build
+
+Two plans born from a real external dogfood: an agent built a production website under the gate
+(44 commits) and reported where the discipline held and where it leaked. Verified against source
+before planning; both are self-contained like 01–15.
+
+| Plan | Theme | Finding it fixes |
+| --- | --- | --- |
+| [16](16-gate-enforcement.md) | Pre-commit hook installer + CI required check | 1-in-44 commits slipped through a momentarily red gate; instructions alone don't enforce |
+| [17](17-config-grain-calibration.md) | Config-file grain, coarse-ack signposts, ungated-source visibility | `export default` config files are coarse (every byte fires, nothing ackable is suggested); registered non-source files change silently |
+
+Run 16 before 17; they are independent but 17's CHANGELOG rides on 16's release framing.
