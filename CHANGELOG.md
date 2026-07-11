@@ -8,6 +8,30 @@ remains pre-1.0.
 ## [Unreleased]
 
 ### Added
+- Config-file grain: `export default <expr>` / `export = <expr>` (the
+  `defineNuxtConfig({...})` shape) now produces a precise `default.` anchor
+  instead of silently classifying the whole file coarse. A comment or
+  formatting edit fires nothing; an edit inside the config payload is one
+  named, body-only, ackable finding; swapping the producing callee is a
+  signature move that refuses the ack path (ADR 014). This kills the single
+  largest mirror-edit pressure measured in dogfooding: config files waking
+  their doc on every byte.
+- Coarse-file ack signposts: a stale doc caused by a file-grain (coarse)
+  source now prints BOTH honest routes inline — update the doc at intent
+  altitude, or the pasteable file-grain `codument ack <path>` — and the
+  `--strict` failure epilogue names the acknowledgment path beside
+  materialize/doc-update. The HTML report carries the same hint.
+- Registered-but-ungated surface: a changed file the registry names as a
+  source but no adapter gates (`.vue`, `.css`, `.json`, …) is now named with
+  its owning doc(s) in an info-only review section and an additive `--json`
+  field, instead of changing in silence while the registry claims it
+  load-bearing. Never a strict verdict input.
+
+### Changed
+- `ALGO_VERSION` 3 → 4 (anchor extraction changed). Per-symbol acknowledgments
+  recorded under the previous algorithm auto-invalidate (their fingerprints no
+  longer match any current transition — the binding working as designed);
+  file-grain acknowledgments bind the coarse content hash and survive.
 - `codument hooks install|status|uninstall`: git pre-commit enforcement of the
   strict gate. Install writes a marker-delimited managed block (an existing
   shell hook is appended to, never rewritten; a non-shell hook is refused with

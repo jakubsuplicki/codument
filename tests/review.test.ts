@@ -1150,3 +1150,107 @@ describe("ungated registered changes surface in review (info-only)", () => {
     assert.ok(out.includes("docs/features/site.md"), "owning doc not named");
   });
 });
+
+// Plan 17 acceptance: the full config-file arc, end to end — the exact friction
+// from the website dogfood, proven dead at the root.
+describe("config-file grain arc (nuxt.config.ts shape)", () => {
+  const CONFIG_REGISTRY = JSON.stringify(
+    {
+      features: {
+        site: {
+          doc: "docs/features/site.md",
+          type: "feature",
+          primary_sources: ["nuxt.config.ts"],
+          related_sources: [],
+          docs: [],
+          depends_on: [],
+          risk: [],
+          status: "current",
+        },
+      },
+    },
+    null,
+    2,
+  );
+  const BASE = [
+    "// site config",
+    "export default defineNuxtConfig({",
+    "  modules: ['@nuxt/content'],",
+    "})",
+    "",
+  ].join("\n");
+
+  function runReview(): { code: number; out: string } {
+    try {
+      const out = execFileSync("node", [CLI, "review", "--strict"], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: { ...process.env, NO_COLOR: "1" },
+      });
+      return { code: 0, out };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { code: e.status ?? 1, out: e.stdout ?? "" };
+    }
+  }
+
+  it("comment edit silent; value edit one ackable finding; ack clears; callee swap refused", async () => {
+    await scaffold({
+      "docs/features/site.md": "# site\n",
+      "nuxt.config.ts": BASE,
+      "docs/.registry.json": CONFIG_REGISTRY,
+    });
+    gitInit(tmp);
+
+    // 1. A comment-only edit fires nothing (the pre-ALGO-4 behavior fired here).
+    await scaffold({ "nuxt.config.ts": BASE.replace("// site config", "// reworded") });
+    let r = runReview();
+    assert.equal(r.code, 0, `comment edit must be silent, got:\n${r.out}`);
+
+    // 2. A value edit is ONE named body-only finding with a pasteable per-symbol ack.
+    await scaffold({
+      "nuxt.config.ts": BASE.replace("'@nuxt/content'", "'@nuxt/content', '@nuxt/image'"),
+    });
+    r = runReview();
+    assert.equal(r.code, 1, "value edit must gate");
+    assert.ok(r.out.includes("default"), "the default anchor must be named");
+    assert.ok(
+      r.out.includes("codument ack nuxt.config.ts::default."),
+      "pasteable per-symbol ack expected",
+    );
+
+    // 3. The pasted ack clears it.
+    execFileSync(
+      "node",
+      [CLI, "ack", "nuxt.config.ts::default.", "--reason", "module list grew; site contract unchanged"],
+      { cwd: tmp, encoding: "utf-8", env: { ...process.env, NO_COLOR: "1" } },
+    );
+    r = runReview();
+    assert.equal(r.code, 0, `ack must clear the gate, got:\n${r.out}`);
+
+    // 4. Swapping the producing callee is a signature move: ack refused, doc owed.
+    execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
+    execFileSync("git", ["commit", "--no-verify", "-m", "config change"], {
+      cwd: tmp,
+      stdio: "ignore",
+    });
+    await scaffold({
+      "nuxt.config.ts": BASE.replace("'@nuxt/content'", "'@nuxt/content', '@nuxt/image'").replace(
+        "defineNuxtConfig",
+        "defineOtherConfig",
+      ),
+    });
+    r = runReview();
+    assert.equal(r.code, 1);
+    assert.ok(r.out.includes("[signature changed]"), "callee swap must read as a signature move");
+    assert.throws(
+      () =>
+        execFileSync(
+          "node",
+          [CLI, "ack", "nuxt.config.ts::default.", "--reason", "should be refused"],
+          { cwd: tmp, encoding: "utf-8", env: { ...process.env, NO_COLOR: "1" }, stdio: "pipe" },
+        ),
+      "a signature move must not be ackable",
+    );
+  });
+});

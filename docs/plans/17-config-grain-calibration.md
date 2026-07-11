@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 17: config-file grain + coarse-ack signposts + ungated-source visibility
@@ -98,7 +98,7 @@ No new source files; no `map materialize` needed. Run after Plan 16.
 - [x] Step 3: change-state — ungated-registered field + printer info section + additive `--json`
       field; golden tests (a registered `.vue` change surfaces with its doc; an unregistered `.vue`
       change stays in otherChanged; strict exit code unaffected).
-- [ ] Step 4: docs — change-control-gate invariants (config-file grain promise; both-routes
+- [x] Step 4: docs — change-control-gate invariants (config-file grain promise; both-routes
       signpost; ungated-source notice), ADR-014 (default-export expressions are body-grain by
       design), CHANGELOG (ALGO bump + invalidation note), dogfood fixture arc as an e2e.
 
