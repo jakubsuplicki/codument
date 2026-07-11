@@ -878,6 +878,16 @@ function printHuman(report: ReviewReport): void {
     state.unevaluable.map((f) => `${pc.yellow("⚠")} ${f}`),
   );
 
+  // Info-only, never a strict input: the registry claims these files matter to a
+  // doc, but no adapter gates their staleness — say so instead of staying silent
+  // (the .vue blind spot found in the website dogfood).
+  section(
+    pc.dim("Registered but ungated (no adapter judges these — verify their docs by hand)"),
+    state.ungatedRegistered.map(
+      (u) => `${pc.dim("•")} ${u.file} ${pc.dim(`→ ${u.owners.map((o) => o.doc).join(", ")}`)}`,
+    ),
+  );
+
   // Per-symbol drift: owned symbols that moved. The deterministic verdict above is
   // the gate; this names each still-flagged symbol and BOTH ways to resolve it
   // inline — update the doc when a contract changed, or `codument ack` when it did

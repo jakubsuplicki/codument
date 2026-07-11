@@ -479,3 +479,68 @@ describe("detectApprovedPlanScope — root-level scope + multiple approved plans
     assert.deepStrictEqual(detectApprovedPlanScope(tmp)?.contenders, ["docs/plans/a.md"]);
   });
 });
+
+// Plan 17 step 3: a changed file the registry names as a source but that no
+// adapter gates (outside the source-extension spec: .vue, .css, …) must be
+// SURFACED with its owning docs — info-only, never a strict verdict input.
+describe("ungated registered changes (.vue blind spot)", () => {
+  const registry = {
+    features: {
+      website: {
+        doc: "docs/features/website.md",
+        type: "feature" as const,
+        primary_sources: ["app/components/Hero.vue", "src/site.ts"],
+        related_sources: ["app/assets/site.css"],
+        docs: [],
+        depends_on: [],
+        risk: [],
+        status: "current",
+      },
+    },
+  };
+
+  it("a registered .vue change surfaces with its owning doc", () => {
+    const s = computeChangeState({
+      registry: registry as never,
+      changedFiles: ["app/components/Hero.vue"],
+    });
+    assert.deepEqual(s.ungatedRegistered, [
+      {
+        file: "app/components/Hero.vue",
+        owners: [{ feature: "website", doc: "docs/features/website.md" }],
+      },
+    ]);
+    // Still in the other-changed bucket (it is not a recognized source)…
+    assert.deepEqual(s.otherChanged, ["app/components/Hero.vue"]);
+    // …and never a staleness verdict: strict inputs stay empty.
+    assert.deepEqual(s.staleDocs, []);
+    assert.deepEqual(s.unmapped, []);
+  });
+
+  it("a related-source registration counts too", () => {
+    const s = computeChangeState({
+      registry: registry as never,
+      changedFiles: ["app/assets/site.css"],
+    });
+    assert.equal(s.ungatedRegistered.length, 1);
+    assert.equal(s.ungatedRegistered[0].file, "app/assets/site.css");
+  });
+
+  it("an unregistered non-source change stays plain otherChanged", () => {
+    const s = computeChangeState({
+      registry: registry as never,
+      changedFiles: ["app/components/Other.vue", "logo.png"],
+    });
+    assert.deepEqual(s.ungatedRegistered, []);
+    assert.deepEqual(s.otherChanged, ["app/components/Other.vue", "logo.png"]);
+  });
+
+  it("a registered recognized source is gated normally, never listed as ungated", () => {
+    const s = computeChangeState({
+      registry: registry as never,
+      changedFiles: ["src/site.ts"],
+    });
+    assert.deepEqual(s.ungatedRegistered, []);
+    assert.equal(s.staleDocs.length, 1);
+  });
+});

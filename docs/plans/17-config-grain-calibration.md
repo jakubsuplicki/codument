@@ -95,7 +95,7 @@ No new source files; no `map materialize` needed. Run after Plan 16.
 - [x] Step 2: review ergonomics — coarse-file ack signpost in the stale-docs section, strict
       epilogue naming the file-grain ack, HTML report line; tests on printed output both ways (a
       coarse-only stale doc shows both routes; a precise-only one is unchanged).
-- [ ] Step 3: change-state — ungated-registered field + printer info section + additive `--json`
+- [x] Step 3: change-state — ungated-registered field + printer info section + additive `--json`
       field; golden tests (a registered `.vue` change surfaces with its doc; an unregistered `.vue`
       change stays in otherChanged; strict exit code unaffected).
 - [ ] Step 4: docs — change-control-gate invariants (config-file grain promise; both-routes

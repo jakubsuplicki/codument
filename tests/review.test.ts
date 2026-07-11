@@ -1113,3 +1113,40 @@ describe("coarse-file ack signpost", () => {
     );
   });
 });
+
+describe("ungated registered changes surface in review (info-only)", () => {
+  it("a changed registered .vue is named with its doc and strict stays green", async () => {
+    await scaffold({
+      "docs/features/site.md": "# site\n",
+      "app/Hero.vue": "<template><h1>hi</h1></template>\n",
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            site: {
+              doc: "docs/features/site.md",
+              type: "feature",
+              primary_sources: ["app/Hero.vue"],
+              related_sources: [],
+              docs: [],
+              depends_on: [],
+              risk: [],
+              status: "current",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    gitInit(tmp);
+    await scaffold({ "app/Hero.vue": "<template><h1>changed</h1></template>\n" });
+    const out = execFileSync("node", [CLI, "review", "--strict"], {
+      cwd: tmp,
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    assert.ok(out.includes("Registered but ungated"), "info section missing");
+    assert.ok(out.includes("app/Hero.vue"), "file not named");
+    assert.ok(out.includes("docs/features/site.md"), "owning doc not named");
+  });
+});

@@ -148,6 +148,17 @@ export interface ChangeState {
   /** Deleted source files — surfaced so a deletion is visibly part of the change,
    *  not silently absent from it (owned ones also wake their owners' docs). */
   deletedSources: string[];
+  /** Changed files the registry names as sources (primary or related) but that no
+   *  adapter gates for staleness (outside the source-extension spec: .vue, .css,
+   *  .json, …). The registry says "load-bearing", the gate cannot judge them —
+   *  fail-loud about the blind spot (info-only; never a strict verdict input).
+   *  Their docs are named so a human/agent can verify by hand. */
+  ungatedRegistered: UngatedRegisteredChange[];
+}
+
+export interface UngatedRegisteredChange {
+  file: string;
+  owners: { feature: string; doc: string }[];
 }
 
 function sortStrings(values: Iterable<string>): string[] {
@@ -203,6 +214,23 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
       (f) => !isDoc(f) && !isSourceFile(f, exclusion) && !isExcluded(f, exclusion),
     ),
   );
+
+  // Registered-but-ungated: a file the registry explicitly claims (so someone
+  // decided it matters to a doc) that lands in the other-changed bucket because
+  // no adapter recognizes its extension. Silence here would be a false "fresh".
+  const entryByKey = new Map(entries);
+  const ungatedRegistered: UngatedRegisteredChange[] = [];
+  for (const file of otherChanged) {
+    const owners = fileToFeatures.get(file);
+    if (!owners || owners.length === 0) continue;
+    ungatedRegistered.push({
+      file,
+      owners: owners
+        .slice()
+        .sort()
+        .map((key) => ({ feature: key, doc: entryByKey.get(key)?.doc ?? "" })),
+    });
+  }
 
   // group changed sources by owning feature
   const groups = new Map<string, string[]>();
@@ -456,6 +484,7 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     ownershipLints,
     unevaluable: sortStrings(input.unevaluable ?? []),
     deletedSources,
+    ungatedRegistered,
   };
 }
 
