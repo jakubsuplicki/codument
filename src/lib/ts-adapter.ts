@@ -126,10 +126,11 @@ function spanText(content: string, sf: ts.SourceFile, node: ts.Node): string {
 // `skip` prunes one subtree from the walk — passing a declaration's body yields
 // its SIGNATURE-only references (types, defaults, type params), which is how a
 // signature-referenced private helper is told apart from a body-referenced one.
-function collectFreeIdentifiers(root: ts.Node, skip?: ts.Node): Set<string> {
+function collectFreeIdentifiers(root: ts.Node, skip?: ts.Node | readonly ts.Node[]): Set<string> {
   const names = new Set<string>();
+  const skipSet = new Set<ts.Node>(skip ? (Array.isArray(skip) ? skip : [skip as ts.Node]) : []);
   const visit = (node: ts.Node) => {
-    if (node === skip) return;
+    if (skipSet.has(node)) return;
     if (ts.isPropertyAccessExpression(node)) {
       visit(node.expression);
       return;
@@ -144,7 +145,10 @@ function collectFreeIdentifiers(root: ts.Node, skip?: ts.Node): Set<string> {
     }
     ts.forEachChild(node, visit);
   };
-  ts.forEachChild(root, visit);
+  // Visit the root itself, not just its children: a body that IS a bare
+  // identifier (`export = api`, `() => helper`) is a real free reference, and
+  // starting at the children would silently drop it from the closure.
+  visit(root);
   return names;
 }
 
@@ -205,39 +209,52 @@ function compositeHash(ownSpan: string, members: { name: string; span: string }[
   return sha256(parts.join("\n"));
 }
 
-// The splittable body of a declaration — the region an ack MAY still clear as an
-// implementation-only move — or null when the whole declaration is signature
-// (its contract). Only an UNAMBIGUOUS function body splits: a function/method
-// declaration's block, or a variable whose initializer is DIRECTLY an arrow or
-// function expression. A class, interface, type alias, enum, plain (non-function)
-// const, and `export default <expr>` are all-signature: any change to them is a
-// contract change (never launderable). This is conservative by construction —
-// it over-wakes (a class-member impl refactor is not cheaply ackable) but never
-// under-wakes a real signature change. A wrapped initializer like
-// `memoize(() => {})` is a CallExpression, so it is all-signature too. */
-function bodyOf(node: ts.Node): ts.Node | undefined {
-  if (ts.isFunctionDeclaration(node)) return node.body;
+// The splittable body region(s) of a declaration — what an ack MAY still clear
+// as an implementation-only move — or empty when the whole declaration is
+// signature (its contract). An UNAMBIGUOUS function body splits: a function/
+// method declaration's block, or a variable whose initializer is DIRECTLY an
+// arrow or function expression. A class, interface, type alias, enum, and plain
+// (non-function) const are all-signature: any change to them is a contract
+// change (never launderable). A wrapped initializer like `memoize(() => {})` is
+// a CallExpression, so it is all-signature too. This is conservative by
+// construction — it over-wakes but never under-wakes a real signature change.
+//
+// `export default <expr>` / `export = <expr>` split deliberately (ADR 014): a
+// module whose single value export is an expression is the shape of virtually
+// every modern config file, and reading it all-signature would make every
+// config edit a non-ackable contract change. When the expression is a call
+// (`defineNuxtConfig({...})`), the callee stays signature — swapping the
+// producer is contract-grade — and the arguments are the body; any other
+// expression is wholly body under the `export default` frame.
+function bodiesOf(node: ts.Node): readonly ts.Node[] {
+  if (ts.isFunctionDeclaration(node)) return node.body ? [node.body] : [];
   if (ts.isVariableDeclaration(node) && node.initializer) {
     const init = node.initializer;
     if ((ts.isArrowFunction(init) || ts.isFunctionExpression(init)) && init.body) {
-      return init.body;
+      return [init.body];
     }
   }
-  return undefined;
+  if (ts.isExportAssignment(node)) {
+    const expr = node.expression;
+    if (ts.isCallExpression(expr)) return [...expr.arguments];
+    return [expr];
+  }
+  return [];
 }
 
 // The signature span text of a declaration: everything from its start up to the
-// body opener when it has a splittable body, else the whole declaration — rendered
-// through the canonicalizer so parameter and type-parameter names are positional.
+// first body region when it has a splittable body, else the whole declaration —
+// rendered through the canonicalizer so parameter and type-parameter names are
+// positional.
 function signatureSpan(
   content: string,
   sf: ts.SourceFile,
   node: ts.Node,
-  body: ts.Node | undefined,
+  bodies: readonly ts.Node[],
   canon: CanonMap,
 ): string {
   const start = node.getStart(sf);
-  const end = body ? body.getStart(sf) : node.getEnd();
+  const end = bodies.length > 0 ? bodies[0].getStart(sf) : node.getEnd();
   return renderWithCanon(content, start, end, canon);
 }
 
@@ -268,10 +285,10 @@ function fingerprintPair(
   // rename. Computed once here and applied to whichever sub-span each render covers.
   const canon = canonicalizeDecls(sf, nodes);
   for (const node of nodes) {
-    const body = bodyOf(node);
-    sigSpans.push(signatureSpan(content, sf, node, body, canon));
-    for (const r of collectFreeIdentifiers(node, body)) sigRefs.add(r);
-    if (body) {
+    const bodies = bodiesOf(node);
+    sigSpans.push(signatureSpan(content, sf, node, bodies, canon));
+    for (const r of collectFreeIdentifiers(node, bodies)) sigRefs.add(r);
+    for (const body of bodies) {
       bodySpans.push(renderWithCanon(content, body.getStart(sf), body.getEnd(), canon));
       for (const r of collectFreeIdentifiers(body)) bodyRefs.add(r);
     }
@@ -420,6 +437,17 @@ function tsAnchors(path: string, content: string): Anchor[] {
       continue;
     }
 
+    // `export default <expr>` / `export = <expr>` is an ExportAssignment, which
+    // carries NO modifiers — it must be recognized before the isExported guard
+    // or it silently degrades the whole file to coarse (the exact hole that made
+    // every `export default defineNuxtConfig({...})` config file fire on any
+    // byte). One `default.` anchor; the call-aware signature/body split lives in
+    // `bodiesOf` (ADR 014).
+    if (ts.isExportAssignment(stmt)) {
+      push("default", "default", [stmt], [stmt]);
+      continue;
+    }
+
     const isExported = hasModifier(stmt, ts.SyntaxKind.ExportKeyword);
     if (!isExported) continue;
     const isDefault = hasModifier(stmt, ts.SyntaxKind.DefaultKeyword);
@@ -445,9 +473,9 @@ function tsAnchors(path: string, content: string): Anchor[] {
       // body-splits a default function via `bodyOf`; a plain expression is all-sig.
       push("default", "default", [stmt], [stmt]);
     }
-    // Re-exports (`export { ... }`, `export * from`), `export =`, and namespace
-    // members produce no precise anchor here; the residual backstop below still
-    // covers them (never silently un-gated). Phase 2e classifies such files.
+    // Re-exports (`export { ... }`, `export * from`) and namespace members
+    // produce no precise anchor here; the residual backstop below still covers
+    // them (never silently un-gated). Phase 2e classifies such files.
   }
 
   // Residual backstop: every top-level statement no precise anchor covers —
@@ -532,7 +560,7 @@ export function classifyTsFile(path: string, content: string): TsClassification 
     // side-effect-only module, `export =`, or namespace members — gated whole-file.
     return {
       mode: "coarse",
-      reason: "no precise exports (re-export / side-effect / export= / namespace)",
+      reason: "no precise exports (re-export / side-effect / namespace)",
     };
   }
   // No anchors at all (comments / whitespace only): nothing to gate per-symbol; the

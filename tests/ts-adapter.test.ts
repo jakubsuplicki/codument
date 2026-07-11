@@ -475,9 +475,9 @@ describe("classifyTsFile (Phase 2d — precise|coarse|unevaluable)", () => {
     assert.match(c.reason, /no precise exports/);
   });
 
-  it("an `export =` module is coarse", () => {
+  it("an `export =` module is precise (a default anchor, like `export default`)", () => {
     const c = classifyTsFile("src/legacy.ts", "const x = 1;\nexport = x;\n");
-    assert.equal(c.mode, "coarse");
+    assert.equal(c.mode, "precise");
   });
 
   it("a namespace-only export is coarse", () => {
@@ -505,5 +505,86 @@ describe("classifyTsFile (Phase 2d — precise|coarse|unevaluable)", () => {
       'export { helper } from "./helper.js";\nexport function foo() {}\n',
     );
     assert.equal(c.mode, "precise");
+  });
+});
+
+// Plan 17: `export default <expr>` / `export = <expr>` (ExportAssignment) is a
+// precise `default.` anchor with a call-aware signature/body split (ADR 014) —
+// the fix for config files (nuxt.config.ts et al) degrading to coarse and firing
+// on every byte.
+describe("ExportAssignment anchors (config-file grain)", () => {
+  const CONFIG = [
+    "// site config",
+    "export default defineNuxtConfig({",
+    "  modules: ['@nuxt/content'],",
+    "  css: ['~/assets/tokens.css'],",
+    "})",
+    "",
+  ].join("\n");
+
+  function anchor(content: string, path = "nuxt.config.ts") {
+    const anchors = tsAdapter.anchors(path, content);
+    const a = anchors.find((x) => x.name === "default");
+    assert.ok(a, "default anchor must exist");
+    return a;
+  }
+
+  it("a defineNuxtConfig-shaped file is precise with one default anchor", () => {
+    assert.equal(classifyTsFile("nuxt.config.ts", CONFIG).mode, "precise");
+    const anchors = tsAdapter.anchors("nuxt.config.ts", CONFIG);
+    assert.deepEqual(
+      anchors.map((a) => a.id),
+      ["nuxt.config.ts::default."],
+    );
+  });
+
+  it("a comment-only edit moves nothing (token-stream invariance)", () => {
+    const edited = CONFIG.replace("// site config", "// totally reworded comment");
+    assert.equal(anchor(CONFIG).fingerprint, anchor(edited).fingerprint);
+  });
+
+  it("an edit inside the config object is a body-only move (ackable)", () => {
+    const edited = CONFIG.replace("'@nuxt/content'", "'@nuxt/content', '@nuxt/image'");
+    const before = anchor(CONFIG);
+    const after = anchor(edited);
+    assert.notEqual(before.fingerprint, after.fingerprint);
+    assert.equal(before.signature, after.signature);
+  });
+
+  it("swapping the producing callee is a signature move (contract, not ackable)", () => {
+    const edited = CONFIG.replace("defineNuxtConfig", "defineSomethingElse");
+    const before = anchor(CONFIG);
+    const after = anchor(edited);
+    assert.notEqual(before.signature, after.signature);
+  });
+
+  it("a non-call default export is wholly body under the export frame", () => {
+    const obj = "export default { retries: 3 };\n";
+    const edited = "export default { retries: 5 };\n";
+    const before = anchor(obj, "settings.ts");
+    const after = anchor(edited, "settings.ts");
+    assert.notEqual(before.fingerprint, after.fingerprint);
+    assert.equal(before.signature, after.signature);
+  });
+
+  it("`export = <identifier>` closes over the private value it exports", () => {
+    const v1 = "const api = { a: 1 };\nexport = api;\n";
+    const v2 = "const api = { a: 2 };\nexport = api;\n";
+    // The private const is closure-covered: exactly one anchor, no residual…
+    assert.deepEqual(
+      tsAdapter.anchors("legacy.ts", v1).map((a) => a.id),
+      ["legacy.ts::default."],
+    );
+    // …and editing the private value moves the default anchor, never reads fresh.
+    assert.notEqual(anchor(v1, "legacy.ts").fingerprint, anchor(v2, "legacy.ts").fingerprint);
+  });
+
+  it("anonymous `export default function` keeps its split (unchanged behavior)", () => {
+    const fn = "export default function () { return 1; }\n";
+    const bodyEdit = "export default function () { return 2; }\n";
+    const before = anchor(fn, "handler.ts");
+    const after = anchor(bodyEdit, "handler.ts");
+    assert.notEqual(before.fingerprint, after.fingerprint);
+    assert.equal(before.signature, after.signature);
   });
 });

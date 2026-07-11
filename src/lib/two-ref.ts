@@ -24,7 +24,7 @@ export const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 // positional index), so a meaning-preserving local rename no longer moves the
 // composite. v2 and v3 are both post-0.7.0 (unreleased), so users cross one
 // fingerprint-universe shift, not two.
-export const ALGO_VERSION = 3;
+export const ALGO_VERSION = 4;
 
 // The determinism unit: a verdict is reproducible only for a fixed parser, the
 // exact bundled TS version, and the algo version. A TS bump changes this stamp,

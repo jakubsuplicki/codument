@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 17: config-file grain + coarse-ack signposts + ungated-source visibility
@@ -88,7 +88,7 @@ No new source files; no `map materialize` needed. Run after Plan 16.
 
 ## Delivery Plan
 
-- [ ] Step 1: ts-adapter — ExportAssignment anchors with the call-aware signature/body split;
+- [x] Step 1: ts-adapter — ExportAssignment anchors with the call-aware signature/body split;
       `ALGO_VERSION` 4; classification tests (defineNuxtConfig fixture precise, `export =`, object
       literal, anonymous default fn unchanged); ack eligibility + invalidation tests across the
       bump.
