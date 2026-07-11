@@ -182,10 +182,24 @@ export function renderReviewReportHtml(data: ReportData): string {
     )
     .join("");
 
+  // Mirror the CLI's coarse-file signpost: when a stale doc's changed source was
+  // gated at file grain (no per-symbol drift entry), name the file-grain ack as
+  // the no-doc-impact resolution so the HTML surface never pressures a mirror edit.
+  const driftFiles = new Set((data.review.drift ?? []).map((d) => d.anchorId.split("::")[0]));
+  const unevaluableFiles = new Set(s.unevaluable);
   const detailRows = [
     detailList(
       "Stale docs",
-      s.staleDocs.map((d) => `${d.feature} — ${d.doc}`),
+      s.staleDocs.map((d) => {
+        const coarse = d.changedSources.filter(
+          (f) => !driftFiles.has(f) && !unevaluableFiles.has(f),
+        );
+        const hint =
+          coarse.length > 0
+            ? ` (update the doc, or file-grain ack: ${coarse.map((f) => `codument ack ${f}`).join(" · ")})`
+            : "";
+        return `${d.feature} — ${d.doc}${hint}`;
+      }),
     ),
     detailList("Unmapped changes", s.unmapped),
     detailList("Out-of-plan changes", plan ? s.outOfPlan : []),

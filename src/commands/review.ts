@@ -715,7 +715,12 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     );
     console.log(
       pc.dim(
-        "    Materialize unmapped sources (`codument map materialize <file>`) and update each stale doc, then re-run.",
+        "    Materialize unmapped sources (`codument map materialize <file>`), then resolve each stale doc:",
+      ),
+    );
+    console.log(
+      pc.dim(
+        "    update it at intent altitude, or acknowledge a change that owes no doc line (`codument ack <path>` / `codument ack <path>::<symbol>`), then re-run.",
       ),
     );
     process.exitCode = 1;
@@ -836,11 +841,28 @@ function printHuman(report: ReviewReport): void {
     state.deletedSources.map((f) => `${pc.yellow("⚠")} ${f}`),
   );
 
+  // A stale doc whose changed source was gated at FILE grain (a coarse file:
+  // .js, generated, re-export-only) produces no Symbol-drift entry, so without
+  // this signpost the only visible resolution is a doc edit — the exact pressure
+  // that breeds token mirror edits. Print both honest routes here, symmetric
+  // with the Symbol drift block. A precisely-evaluated file resolves per symbol
+  // below and gets no line; an unevaluable file is excluded because `ack`
+  // refuses it (fix the parse instead).
+  const driftFiles = new Set(report.drift.map((d) => d.anchorId.split("::")[0]));
+  const unevaluableFiles = new Set(state.unevaluable);
   section(
     pc.yellow("Stale docs (source changed, mapped doc did not)"),
-    state.staleDocs.map(
-      (d) => `${pc.yellow("⚠")} ${d.feature}: ${d.doc} (changed: ${d.changedSources.join(", ")})`,
-    ),
+    state.staleDocs.map((d) => {
+      let line = `${pc.yellow("⚠")} ${d.feature}: ${d.doc} (changed: ${d.changedSources.join(", ")})`;
+      const coarse = d.changedSources.filter((f) => !driftFiles.has(f) && !unevaluableFiles.has(f));
+      if (coarse.length > 0) {
+        line += `\n        ${pc.dim("doc impact    →")} update ${d.doc} ${pc.dim("at intent altitude")}`;
+        for (const f of coarse) {
+          line += `\n        ${pc.dim("no doc impact →")} ${pc.cyan(`codument ack ${f} --reason "..."`)} ${pc.dim("(file-grain; expires when the file changes again)")}`;
+        }
+      }
+      return line;
+    }),
   );
 
   section(

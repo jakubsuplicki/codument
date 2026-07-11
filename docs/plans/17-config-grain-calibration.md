@@ -92,7 +92,7 @@ No new source files; no `map materialize` needed. Run after Plan 16.
       `ALGO_VERSION` 4; classification tests (defineNuxtConfig fixture precise, `export =`, object
       literal, anonymous default fn unchanged); ack eligibility + invalidation tests across the
       bump.
-- [ ] Step 2: review ergonomics — coarse-file ack signpost in the stale-docs section, strict
+- [x] Step 2: review ergonomics — coarse-file ack signpost in the stale-docs section, strict
       epilogue naming the file-grain ack, HTML report line; tests on printed output both ways (a
       coarse-only stale doc shows both routes; a precise-only one is unchanged).
 - [ ] Step 3: change-state — ungated-registered field + printer info section + additive `--json`

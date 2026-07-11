@@ -1031,3 +1031,85 @@ describe("review in a non-git directory (fail closed)", () => {
     assert.equal(JSON.parse(r.stdout).gate, "unavailable");
   });
 });
+
+// Plan 17 step 2: a stale doc caused by a FILE-grain (coarse) source must print
+// both honest routes — doc update or file-grain ack — right where the pressure
+// is, and the --strict epilogue must name the ack path. A precisely-evaluated
+// file keeps its per-symbol resolution and gains no file-grain line.
+describe("coarse-file ack signpost", () => {
+  it("a coarse stale doc prints both routes and strict names the ack path", async () => {
+    await scaffold({
+      "docs/features/util.md": "# util\n",
+      "src/util.js": "export function fmt(x) { return String(x); }\n",
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            util: {
+              doc: "docs/features/util.md",
+              type: "feature",
+              primary_sources: ["src/util.js"],
+              related_sources: [],
+              docs: [],
+              depends_on: [],
+              risk: [],
+              status: "current",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    gitInit(tmp);
+    await scaffold({ "src/util.js": "export function fmt(x) { return `v:${x}`; }\n" });
+    let out = "";
+    try {
+      out = execFileSync("node", [CLI, "review", "--strict"], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: { ...process.env, NO_COLOR: "1" },
+      });
+      assert.fail("strict must exit nonzero on the stale doc");
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      assert.equal(e.status, 1);
+      out = e.stdout ?? "";
+    }
+    assert.ok(out.includes("no doc impact →"), "both-routes signpost missing");
+    assert.ok(out.includes('codument ack src/util.js --reason "..."'), "pasteable ack missing");
+    assert.ok(out.includes("doc impact    →"), "doc-update route missing");
+    assert.ok(
+      out.includes("acknowledge a change that owes no doc line"),
+      "strict epilogue must name the ack path",
+    );
+  });
+
+  it("a precise stale doc gets no file-grain line (per-symbol drift owns it)", async () => {
+    await scaffold({
+      "docs/features/auth.md": "# auth\n",
+      "docs/concepts/db.md": "# db\n",
+      "src/auth/login.ts": "export function login(u: string) { return u; }\n",
+      "src/lib/db.ts": "export const db = 1;\n",
+      "docs/.registry.json": JSON.stringify(REGISTRY, null, 2),
+    });
+    gitInit(tmp);
+    await scaffold({
+      "src/auth/login.ts": "export function login(u: string) { return u.trim(); }\n",
+    });
+    let out = "";
+    try {
+      out = execFileSync("node", [CLI, "review", "--strict"], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: { ...process.env, NO_COLOR: "1" },
+      });
+    } catch (err) {
+      out = (err as { stdout?: string }).stdout ?? "";
+    }
+    assert.ok(out.includes("Symbol drift"), "per-symbol drift block expected");
+    assert.ok(
+      !out.includes("no doc impact →"),
+      "a precisely-evaluated file must not get the file-grain signpost",
+    );
+  });
+});
