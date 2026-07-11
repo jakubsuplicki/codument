@@ -7,6 +7,8 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-10
+
 ### Added
 - `doctor --verify-invariants`: an opt-in mode that RUNS the test each registered
   doc's `## Invariants & boundaries` marker cites (not just checks the pointer
@@ -109,6 +111,18 @@ remains pre-1.0.
   auto-invalidate and must be re-recorded; file-grain (`ack <path>`) and
   module-residual acknowledgments are unaffected. No action is needed beyond
   re-acking any genuinely contract-neutral moves the next `review` re-flags.
+
+### Fixed
+- The adversarial review gate (`review --require-review`) and `doctor
+  --verify-invariants` now spawn each test child in a **verdict-pure environment** —
+  stripping ambient `NODE_OPTIONS` and coverage hooks alongside `NODE_TEST_CONTEXT`.
+  An IDE debugger's auto-attach injection (VS Code's *Auto Attach* sets
+  `NODE_OPTIONS=--require <js-debug bootloader>`) otherwise leaked into the spawned
+  `node --test`, crashing it before it emitted any TAP so a genuinely red test read as
+  `unrunnable` — the editor silently deciding the gate's verdict. The verdict is now a
+  pure function of the code, not the terminal it runs from. This also surfaced through
+  the `prepublishOnly` gate, where the same injection made `npm publish` fail from a
+  VS Code integrated terminal while passing headless.
 
 ## [0.7.0] - 2026-07-01
 
