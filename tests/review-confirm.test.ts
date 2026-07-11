@@ -5,6 +5,7 @@ import { writeFileSync, mkdtempSync, symlinkSync, rmSync, realpathSync } from "n
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  cleanNodeTestEnv,
   confirmFindings,
   defaultCommandAvailable,
   resolveTestPath,
@@ -233,6 +234,56 @@ describe("makeTestRunner — exit code maps to outcome", () => {
       if (prev === undefined) delete process.env.NODE_TEST_CONTEXT;
       else process.env.NODE_TEST_CONTEXT = prev;
     }
+  });
+
+  it("an ambient NODE_OPTIONS debugger injection cannot flip a real red test to unrunnable", () => {
+    // VS Code's "Auto Attach" injects `NODE_OPTIONS=--require <js-debug bootloader>`
+    // into the terminal. Inherited by a spawned `node --test`, a bootloader that fails
+    // to load crashes the child before it emits any TAP, so a genuinely red test reads
+    // as `unrunnable` — the editor silently deciding the gate's verdict. The runner
+    // strips ambient NODE_OPTIONS (cleanNodeTestEnv), so the verdict stays a pure
+    // function of the code. (Regression: this made `npm publish` fail from a VS Code
+    // terminal while passing headless.)
+    writeFileSync(join(tmp, "package.json"), '{"type":"module"}\n');
+    writeFileSync(
+      join(tmp, "red.test.js"),
+      'import{test}from"node:test";import a from"node:assert";test("x",()=>a.equal(1,2));\n',
+    );
+    const prev = process.env.NODE_OPTIONS;
+    process.env.NODE_OPTIONS = "--require /nonexistent-js-debug-bootloader.cjs";
+    try {
+      const run = makeTestRunner({ root: tmp, command: ["node", "--test", "{file}"] });
+      assert.equal(run("red.test.js").outcome, "failed");
+    } finally {
+      if (prev === undefined) delete process.env.NODE_OPTIONS;
+      else process.env.NODE_OPTIONS = prev;
+    }
+  });
+});
+
+describe("cleanNodeTestEnv — a spawned test's verdict is a pure function of the code", () => {
+  it("strips the parent test context, ambient NODE_OPTIONS, coverage, and the VS Code debugger injection", () => {
+    const env = cleanNodeTestEnv({
+      PATH: "/usr/bin",
+      HOME: "/home/me",
+      NODE_OPTIONS: '--require "/ext/js-debug/bootloader.js"',
+      NODE_V8_COVERAGE: "/cov",
+      NODE_TEST_CONTEXT: "child-v8",
+      VSCODE_INSPECTOR_OPTIONS: "{...}",
+    });
+    assert.equal(env.NODE_OPTIONS, undefined);
+    assert.equal(env.NODE_V8_COVERAGE, undefined);
+    assert.equal(env.NODE_TEST_CONTEXT, undefined);
+    assert.equal(env.VSCODE_INSPECTOR_OPTIONS, undefined);
+    // Non-test environment is preserved untouched.
+    assert.equal(env.PATH, "/usr/bin");
+    assert.equal(env.HOME, "/home/me");
+  });
+
+  it("does not mutate the source environment", () => {
+    const src = { NODE_OPTIONS: "--inspect", KEEP: "1" };
+    cleanNodeTestEnv(src);
+    assert.equal(src.NODE_OPTIONS, "--inspect");
   });
 });
 

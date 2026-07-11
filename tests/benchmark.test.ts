@@ -18,13 +18,16 @@ import {
   estimateTokens,
   runContextBenchmark,
 } from "../src/lib/benchmark-context.js";
+import { cleanNodeTestEnv } from "../src/lib/review-confirm.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 const CLI = join(ROOT, "dist", "cli.js");
 const CONTEXT_FIXTURE = join(ROOT, "fixtures", "benchmarks", "context-routing");
-const CHILD_ENV = { ...process.env };
-delete CHILD_ENV.NODE_TEST_CONTEXT;
+// Spawn the fixture's `node --test` in a verdict-pure env (strips the parent test
+// context AND ambient NODE_OPTIONS, incl. an IDE debugger's auto-attach injection that
+// would otherwise crash the child before it emits TAP). See cleanNodeTestEnv.
+const CHILD_ENV = cleanNodeTestEnv();
 
 function runCli(
   ...args: string[]

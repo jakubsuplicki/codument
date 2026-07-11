@@ -220,6 +220,36 @@ export function resolveTestPath(
   return null;
 }
 
+// The environment for a spawned test child, stripped of everything that could flip its
+// verdict independently of the target's own code — so a `failed`/`passed` result is a
+// pure function of the project, never of the shell the developer happens to run from.
+//
+// Removed:
+//   - `NODE_TEST_CONTEXT` (and any `NODE_TEST_*`): when the runner is itself invoked
+//     from inside a `node --test` process (a project wiring `codument review` /
+//     `doctor --verify-invariants` in as a test step), the child would inherit the
+//     parent's test-runner IPC context and exit 0 even on a FAILING test — a red test
+//     read as green, the false-pass the gate exists to forbid.
+//   - `NODE_OPTIONS` and `NODE_V8_COVERAGE`: an ambient flag (a coverage hook, a
+//     `--test-name-pattern`, and above all an IDE debugger's auto-attach injection —
+//     VS Code sets `NODE_OPTIONS=--require <js-debug bootloader>` plus
+//     `VSCODE_INSPECTOR_OPTIONS`) can make the child crash before it emits any TAP, so
+//     a genuinely red test reads as `unrunnable`. The editor silently deciding the
+//     gate's verdict is exactly what "pure function of the code" rules out.
+//
+// A project whose tests genuinely need a Node flag passes it in the test COMMAND (which
+// codument forwards verbatim), never via the ambient environment.
+export function cleanNodeTestEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env = { ...source };
+  delete env.NODE_OPTIONS;
+  delete env.NODE_V8_COVERAGE;
+  delete env.VSCODE_INSPECTOR_OPTIONS;
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("NODE_TEST_")) delete env[key];
+  }
+  return env;
+}
+
 // The real runner: resolve the test file, run it through the configured command,
 // and map the result. A missing file, a spawn error, or a kill/timeout is
 // `unrunnable` (never a pass); exit 0 is `passed`; any nonzero exit is `failed`.
@@ -227,14 +257,11 @@ export function makeTestRunner(opts: TestRunnerOptions): TestRunner {
   const command = opts.command ?? DEFAULT_TEST_COMMAND;
   const searchDirs = opts.searchDirs ?? DEFAULT_TEST_SEARCH_DIRS;
   const timeout = opts.timeoutMs ?? 120_000;
-  // Run the child in a CLEAN test context: strip NODE_TEST_CONTEXT so a spawned
-  // `node --test` file runs standalone and reports its OWN exit code. Without this,
-  // when the runner is itself invoked from inside a `node --test` process (a project
-  // running `codument review`/`doctor --verify-invariants` as a test step), the
-  // child inherits the parent's test-runner IPC context and exits 0 even on a
-  // FAILING test — a red test read as green, the exact false-pass the gate forbids.
-  const env = { ...process.env };
-  delete env.NODE_TEST_CONTEXT;
+  // Spawn the child in a clean env (see cleanNodeTestEnv) so its verdict is a pure
+  // function of the project, never the ambient shell: strips the parent test-runner
+  // context AND ambient NODE_OPTIONS, incl. an IDE debugger's auto-attach injection
+  // that would otherwise make a genuinely red test read as unrunnable.
+  const env = cleanNodeTestEnv();
   return (testRef: string): TestRunResult => {
     const resolved = resolveTestPath(opts.root, testRef, searchDirs);
     if (!resolved) return { outcome: "unrunnable", detail: `test not found: ${testRef}` };
