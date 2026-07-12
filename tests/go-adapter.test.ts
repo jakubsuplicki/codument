@@ -137,6 +137,34 @@ type Server struct {
     assert.equal(named(fieldEdit, "Server")?.signature, server?.signature);
   });
 
+  it("an iota block anchors WHOLE: inserting a member is a contract move for every constant in it", () => {
+    const src = `package s
+
+const (
+	Active Status = iota
+	Paused
+	Stopped
+)
+`;
+    const base = anchors(src);
+    assert.ok(named(base, "Paused"), "implicit-iota members are anchored");
+    // Inserting a member BEFORE Paused shifts its runtime value with zero
+    // change to its own bytes — the block grain makes that a signature move.
+    const inserted = anchors(src.replace("Active Status = iota\n", "Active Status = iota\n\tDraining\n"));
+    assert.notEqual(named(inserted, "Paused")?.signature, named(base, "Paused")?.signature);
+    assert.notEqual(named(inserted, "Stopped")?.signature, named(base, "Stopped")?.signature);
+  });
+
+  it("names co-declared in ONE spec share a span — editing one value moves both (pinned as intended)", () => {
+    const src = "package s\n\nconst A, B = 1, 2\n";
+    const base = anchors(src);
+    const edit = anchors(src.replace("1, 2", "5, 2"));
+    assert.notEqual(named(edit, "A")?.fingerprint, named(base, "A")?.fingerprint);
+    // B rides along: the spec is one span (the values are positional).
+    assert.notEqual(named(edit, "B")?.fingerprint, named(base, "B")?.fingerprint);
+    assert.equal(named(edit, "B")?.signature, named(base, "B")?.signature, "still body-only — ackable");
+  });
+
   it("init and package side effects ride the residual in source order", () => {
     const base = anchors(BASE);
     assert.ok(residual(base), "package clause + import + init must produce a residual");

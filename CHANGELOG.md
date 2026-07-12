@@ -13,7 +13,9 @@ remains pre-1.0.
   capitalized, no convention-hedging. Methods anchor under their receiver
   type (`Server#Handle().`) with pointer and value receivers sharing one
   identity (receiver kind is signature, not identity); grouped const/var
-  blocks anchor per declarator, so editing one constant moves only it; a
+  blocks anchor per spec, so editing one constant moves only it — except an
+  iota-style block, which anchors whole because inserting a member silently
+  shifts every later constant's value (a contract move, never silence); a
   struct's exported fields and their tags are contract (wire shape) while
   unexported fields are ackable body; a const/var value is ackable body.
   `init` funcs and package side effects ride the module residual, and the

@@ -164,9 +164,23 @@ function collectDecls(statements: readonly Node[]): GoDecl[] {
         if (name) push({ name, kind: "type" }, spec);
       }
     } else if (stmt.type === "const_declaration" || stmt.type === "var_declaration") {
-      for (const spec of stmt.namedChildren) {
-        if (spec.type !== "const_spec" && spec.type !== "var_spec") continue;
-        for (const name of specNames(spec)) push({ name, kind: "variable" }, spec);
+      // An iota-style const block (any spec with NO explicit value) is
+      // POSITIONAL: inserting a spec shifts every later constant's runtime
+      // value without changing its own bytes. Per-spec anchoring would read
+      // that as fresh — a silent miss on Go's most idiomatic enum pattern —
+      // so such a block anchors every name at BLOCK grain instead
+      // (over-fires within the block, never silent).
+      const specs = stmt.namedChildren.filter(
+        (n) => n.type === "const_spec" || n.type === "var_spec",
+      );
+      const iotaBlock =
+        stmt.type === "const_declaration" &&
+        specs.length > 1 &&
+        specs.some((sp) => !sp.childForFieldName("value"));
+      for (const spec of specs) {
+        for (const name of specNames(spec)) {
+          push({ name, kind: "variable" }, iotaBlock ? stmt : spec);
+        }
       }
     }
   }
@@ -198,6 +212,10 @@ function bodyRegionsOf(decl: GoDecl): Node[] {
         for (const f of fields?.namedChildren ?? []) {
           if (f.type !== "field_declaration") continue;
           const names = f.namedChildren.filter((n) => n.type === "field_identifier");
+          // An EMBEDDED field has no field_identifier, so it always stays on
+          // the signature side regardless of the embedded type's own case —
+          // deliberate: embedding changes method/field promotion, which is
+          // contract even when the embedded type is unexported.
           const unexported =
             names.length > 0 &&
             names.every((n) => {
@@ -210,6 +228,15 @@ function bodyRegionsOf(decl: GoDecl): Node[] {
     } else if (node.type === "const_spec" || node.type === "var_spec") {
       const v = node.childForFieldName("value");
       if (v) bodies.push(v);
+    } else if (node.type === "const_declaration" || node.type === "var_declaration") {
+      // Block-grain anchor (iota): every explicit value is body; the member
+      // list and its ORDER are contract, so inserting or reordering a spec is
+      // a signature move — exactly what a positional value shift is.
+      for (const spec of node.namedChildren) {
+        if (spec.type !== "const_spec" && spec.type !== "var_spec") continue;
+        const v = spec.childForFieldName("value");
+        if (v) bodies.push(v);
+      }
     }
   }
   return bodies;
