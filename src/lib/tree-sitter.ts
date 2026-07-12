@@ -44,6 +44,8 @@ export interface BundledGrammar {
 export const BUNDLED_GRAMMARS: readonly BundledGrammar[] = [
   { language: "c-sharp", file: "c-sharp.wasm" },
   { language: "go", file: "go.wasm" },
+  { language: "java", file: "java.wasm" },
+  { language: "kotlin", file: "kotlin.wasm" },
   { language: "python", file: "python.wasm" },
   { language: "rust", file: "rust.wasm" },
 ];

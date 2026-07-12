@@ -8,6 +8,21 @@ remains pre-1.0.
 ## [Unreleased]
 
 ### Added
+- JVM support, per symbol: `.java`, `.kt`, and `.kts` files are governed
+  through two bundled tree-sitter grammars under one anchor model, so a mixed
+  Java/Kotlin repo gates coherently instead of half-covered. Types anchor as
+  contract frames and methods, fields, and properties anchor individually
+  under nested chains, mirroring C#. Visibility follows each language's own
+  rule: Java anchors `public`/`protected` while a bare package-private default
+  joins the closure pool, whereas Kotlin's default is public so every
+  non-`private` declaration anchors and `internal` counts as public within
+  the repo. Annotations are contract (framework wiring like `@GetMapping`
+  refuses the ack path when added), a Kotlin data class's primary-constructor
+  parameters are contract, enums anchor whole, and overloads fold per name.
+  Canonical `src/test` source sets and `*Test`/`*Spec` files stay out of
+  scope; `audit` names drifted Java members and Kotlin functions over history.
+  A pathologically compact single-line Kotlin body classifies unevaluable
+  (fail-loud) rather than mis-anchoring — realistic multi-line code is precise.
 - The language-support matrix, mechanically unable to lie: a `LANGUAGE_MATRIX`
   manifest exported from the adapter registry is the one source of truth the
   README table renders from and `doctor` prints as a "gate languages" info

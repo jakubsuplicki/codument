@@ -101,6 +101,8 @@ export { csharpAdapter, classifyCSharpFile, warmCSharpAdapter } from "./lib/csha
 export type { CSharpAnchorKind, CSharpFileMode, CSharpClassification } from "./lib/csharp-adapter.js";
 export { rustAdapter, classifyRustFile, warmRustAdapter } from "./lib/rust-adapter.js";
 export type { RustAnchorKind, RustFileMode, RustClassification } from "./lib/rust-adapter.js";
+export { jvmAdapter, classifyJvmFile, warmJvmAdapter } from "./lib/jvm-adapter.js";
+export type { JvmAnchorKind, JvmFileMode, JvmClassification } from "./lib/jvm-adapter.js";
 export { sfcAdapter, classifySfcFile } from "./lib/sfc-adapter.js";
 export type { SfcFileMode, SfcClassification } from "./lib/sfc-adapter.js";
 export { resolveOwner, splitAnchorId } from "./lib/ownership.js";

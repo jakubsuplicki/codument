@@ -435,7 +435,8 @@
         "src/lib/ts-canonicalize.ts",
         "src/lib/two-ref.ts",
         "tests/adapter-conformance.ts",
-        "src/lib/csharp-adapter.ts"
+        "src/lib/csharp-adapter.ts",
+        "src/lib/jvm-adapter.ts"
       ],
       "related_sources": [],
       "docs": [

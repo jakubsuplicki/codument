@@ -64,13 +64,23 @@ export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
     "**/conftest.py",
     // Go's law: _test.go files are test binaries, never library surface.
     "**/*_test.go",
+    // JVM conventions: Surefire/JUnit `*Test`/`*Tests`/`*TestCase` naming and
+    // the canonical Maven/Gradle `src/test` source set (Java + Kotlin), never
+    // library surface.
+    "**/*Test.java",
+    "**/*Tests.java",
+    "**/*TestCase.java",
+    "**/*Test.kt",
+    "**/*Tests.kt",
+    "**/*Spec.kt",
+    "**/src/test/**",
     // Root-level test-fixture trees only — anchored (not a bare `fixtures` dir
     // name) so a project's real first-party source under e.g. `src/fixtures/`
     // is NOT silently dropped from governance.
     "fixtures/**",
     "scripts/generate-*",
   ],
-  extensions: [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".py", ".pyi", ".go", ".rs", ".cs", ".vue", ".svelte", ".astro"],
+  extensions: [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".py", ".pyi", ".go", ".rs", ".cs", ".java", ".kt", ".kts", ".vue", ".svelte", ".astro"],
 };
 
 // Exported so the Feature Map router (feature-map.ts) matches globs with the

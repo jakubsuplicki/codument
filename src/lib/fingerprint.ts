@@ -5,6 +5,7 @@ import { type Acknowledgment, isFileGrainAck } from "./acknowledgment.js";
 import { getWorkingTreeChanges, listTrackedFiles } from "./git.js";
 import { csharpAdapter } from "./csharp-adapter.js";
 import { goAdapter } from "./go-adapter.js";
+import { jvmAdapter } from "./jvm-adapter.js";
 import { pyAdapter } from "./py-adapter.js";
 import { rustAdapter } from "./rust-adapter.js";
 import { sfcAdapter } from "./sfc-adapter.js";
@@ -88,7 +89,7 @@ export const coarseAdapter: LanguageAdapter = {
 
 // Adapter registry, most-specific first: the precise adapters ahead of the
 // coarse fallback.
-const ADAPTERS: LanguageAdapter[] = [tsAdapter, pyAdapter, goAdapter, rustAdapter, csharpAdapter, sfcAdapter, coarseAdapter];
+const ADAPTERS: LanguageAdapter[] = [tsAdapter, pyAdapter, goAdapter, rustAdapter, csharpAdapter, jvmAdapter, sfcAdapter, coarseAdapter];
 
 export function adapterFor(path: string): LanguageAdapter {
   return ADAPTERS.find((a) => a.matches(path)) ?? coarseAdapter;
@@ -133,6 +134,13 @@ export const LANGUAGE_MATRIX: readonly LanguageMatrixRow[] = [
     language: "c-sharp",
     display: "C#",
     extensions: [".cs"],
+    grain: "per-symbol",
+    since: "0.9.0",
+  },
+  {
+    language: "jvm",
+    display: "Java / Kotlin",
+    extensions: [".java", ".kt", ".kts"],
     grain: "per-symbol",
     since: "0.9.0",
   },

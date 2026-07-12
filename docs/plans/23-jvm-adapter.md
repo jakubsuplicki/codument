@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 23: JVM adapter — Java + Kotlin, where enterprise agent adoption actually is
@@ -57,13 +57,27 @@ src/lib/jvm-adapter.ts | change-control-gate | feature | Java/Kotlin anchors: ty
 
 ## Delivery Plan
 
-- [ ] Step 1: grammars + extraction for Java (types/members/nesting, overload folding);
+- [x] Step 1: grammars + extraction for Java (types/members/nesting, overload folding);
       battery 1, 5–8.
-- [ ] Step 2: Kotlin extraction on the shared anchor model (default-public, top-level decls,
+- [x] Step 2: Kotlin extraction on the shared anchor model (default-public, top-level decls,
       data-class constructors); battery for both grammars.
-- [ ] Step 3: per-member split + closure + annotation calibration; battery 2–4 + JVM cases.
-- [ ] Step 4: registration + extension specs + e2e arcs + audit e2e; docs — matrix, README,
+- [x] Step 3: per-member split + closure + annotation calibration; battery 2–4 + JVM cases.
+- [x] Step 4: registration + extension specs + e2e arcs + audit e2e; docs — matrix, README,
       CHANGELOG, registry.
+
+## Grammar sourcing (settled during execution)
+
+Java rides the already-pinned `@vscode/tree-sitter-wasm@0.3.1` pack (same source
+as Go/Rust/Python/C#). Kotlin has NO grammar in that pack; the two candidates
+both load against the pinned runtime (ABI 14) and parse realistic ktlint-style
+code identically clean. The choice was `@tree-sitter-grammars/tree-sitter-kotlin@1.1.0`
+over `fwcd/tree-sitter-kotlin@0.3.8` on provenance: the former ships its `.wasm`
+inside a pinnable npm package (extractable by `npm install`, matching every other
+grammar's "pure function of a pinned package version" story per ADR-015), while
+fwcd only offers a loose GitHub release asset. Both grammars share Kotlin's
+inherent newline-sensitivity — a single-line `{ member }` body produces a false
+parse error — which is why compact single-line bodies classify unevaluable
+(fail-loud) rather than mis-anchor; production multi-line Kotlin is unaffected.
 
 ## Outcome
 

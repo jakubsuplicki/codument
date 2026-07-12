@@ -63,9 +63,10 @@ Run 16 before 17; they are independent but 17's CHANGELOG rides on 16's release 
 
 Per-symbol resolution is the moat. One substrate plan makes "precise" a single testable contract
 (tree-sitter WASM + a conformance battery every adapter must pass); the language plans then carry
-only genuinely language-specific decisions. 18 (substrate), 19 (Python), 20 (SFC), 21 (Go), 22 (Rust), 24 (C#), and 25 (matrix)
-are shipped; 23 (JVM) is draft pending a runtime-compatible Kotlin grammar (Java's is in hand —
-shipping it updates the matrix, whose parity test enforces the listing).
+only genuinely language-specific decisions. 18 (substrate), 19 (Python), 20 (SFC), 21 (Go),
+22 (Rust), 23 (JVM: Java + Kotlin), 24 (C#), and 25 (matrix) are ALL shipped — the language
+expansion is complete. The runtime-compatible Kotlin grammar was resolved to the pinnable
+`@tree-sitter-grammars/tree-sitter-kotlin` npm package (see plan 23's grammar-sourcing note).
 
 | Plan | Target | Depends on | Note |
 | --- | --- | --- | --- |

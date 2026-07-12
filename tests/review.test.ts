@@ -1576,3 +1576,106 @@ describe("go handler arc", () => {
     );
   });
 });
+
+describe("jvm controller arc", () => {
+  it("Java: a body refactor acks; adding @GetMapping to the method refuses the ack", async () => {
+    const JAVA =
+      "package server;\n\npublic class Controller {\n    public int handle(int n) {\n        return n;\n    }\n}\n";
+    await scaffold({
+      "docs/features/controller.md": "# controller\n",
+      "server/Controller.java": JAVA,
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            controller: {
+              doc: "docs/features/controller.md",
+              type: "feature",
+              primary_sources: ["server/Controller.java"],
+              related_sources: [],
+              docs: [],
+              depends_on: [],
+              risk: [],
+              status: "current",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    gitInit(tmp);
+    const env = { ...process.env, NO_COLOR: "1" };
+
+    // Body refactor: one ackable finding, cleared by the pasted ack.
+    await scaffold({ "server/Controller.java": JAVA.replace("return n;", "return n * 1;") });
+    assert.throws(() =>
+      execFileSync("node", [CLI, "review", "--strict"], { cwd: tmp, encoding: "utf-8", env, stdio: "pipe" }),
+    );
+    execFileSync(
+      "node",
+      [CLI, "ack", "server/Controller.java::Controller#handle().", "--reason", "identity refactor; contract unchanged"],
+      { cwd: tmp, encoding: "utf-8", env },
+    );
+    execFileSync("node", [CLI, "review", "--strict"], { cwd: tmp, encoding: "utf-8", env });
+
+    // Adding a framework annotation is a contract move the ack refuses.
+    execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
+    execFileSync("git", ["commit", "--no-verify", "-m", "ack landed"], { cwd: tmp, stdio: "ignore" });
+    await scaffold({
+      "server/Controller.java": JAVA.replace("    public int handle(int n)", '    @GetMapping("/h")\n    public int handle(int n)').replace(
+        "return n;",
+        "return n * 1;",
+      ),
+    });
+    assert.throws(
+      () =>
+        execFileSync(
+          "node",
+          [CLI, "ack", "server/Controller.java::Controller#handle().", "--reason", "should refuse"],
+          { cwd: tmp, encoding: "utf-8", env, stdio: "pipe" },
+        ),
+      "an annotation add is a signature move and must not be ackable",
+    );
+  });
+
+  it("Kotlin: a default-visibility function is gated with no modifier present", async () => {
+    const KOTLIN = "package app\n\nfun greet(name: String): String {\n    return \"hi \" + name\n}\n";
+    await scaffold({
+      "docs/features/greeter.md": "# greeter\n",
+      "app/Greeter.kt": KOTLIN,
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            greeter: {
+              doc: "docs/features/greeter.md",
+              type: "feature",
+              primary_sources: ["app/Greeter.kt"],
+              related_sources: [],
+              docs: [],
+              depends_on: [],
+              risk: [],
+              status: "current",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    gitInit(tmp);
+    const env = { ...process.env, NO_COLOR: "1" };
+
+    // No `public` keyword anywhere, yet the function gates per symbol: a body
+    // edit is one ackable finding addressable by its precise anchor id.
+    await scaffold({ "app/Greeter.kt": KOTLIN.replace('return "hi " + name', 'return "hey " + name') });
+    assert.throws(() =>
+      execFileSync("node", [CLI, "review", "--strict"], { cwd: tmp, encoding: "utf-8", env, stdio: "pipe" }),
+    );
+    execFileSync(
+      "node",
+      [CLI, "ack", "app/Greeter.kt::greet().", "--reason", "wording only; contract unchanged"],
+      { cwd: tmp, encoding: "utf-8", env },
+    );
+    execFileSync("node", [CLI, "review", "--strict"], { cwd: tmp, encoding: "utf-8", env });
+  });
+});

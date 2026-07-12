@@ -647,3 +647,48 @@ describe("codument audit — c# history through the real CLI", () => {
     );
   });
 });
+
+describe("codument audit — jvm history through the real CLI", () => {
+  let root: string;
+  const env = { ...process.env, NO_COLOR: "1" };
+  const run = (args: string[], cwd: string) =>
+    execFileSync("node", [CLI, ...args], { cwd, encoding: "utf-8", env });
+
+  before(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-audit-jvm-"));
+    git(root, ["init", "-q"]);
+    await write(root, "src/Handler.java", "public class Handler {\n    public int handle(int n) {\n        return n;\n    }\n}\n");
+    await write(root, "src/Greeter.kt", "fun greet(name: String): String {\n    return name\n}\n");
+    await write(root, "docs/features/handler.md", "# handler\n");
+    await write(root, "docs/features/greeter.md", "# greeter\n");
+    await write(
+      root,
+      "docs/.registry.json",
+      registryJson({
+        handler: entry("src/Handler.java", "docs/features/handler.md"),
+        greeter: entry("src/Greeter.kt", "docs/features/greeter.md"),
+      }),
+    );
+    git(root, ["add", "-A"]);
+    git(root, ["commit", "-q", "-m", "v1"]);
+    git(root, ["tag", "jvm1"]);
+    await write(root, "src/Handler.java", "public class Handler {\n    public int handle(int n) {\n        return n * 2;\n    }\n}\n");
+    await write(root, "src/Greeter.kt", "fun greet(name: String): String {\n    return \"hi \" + name\n}\n");
+    git(root, ["add", "-A"]);
+    git(root, ["commit", "-q", "-m", "v2"]);
+    git(root, ["tag", "jvm2"]);
+  });
+
+  after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("names the drifted Java member AND Kotlin function over the range — mixed repos light up together", () => {
+    const parsed = JSON.parse(run(["audit", "jvm1..jvm2", "--json"], root));
+    assert.equal(parsed.audit, "ok");
+    const moved = parsed.drifted
+      .flatMap((d: { symbolMoves: { symbol: string }[] }) => d.symbolMoves.map((m) => m.symbol))
+      .sort();
+    assert.deepEqual(moved, ["Handler#handle", "greet"]);
+  });
+});
