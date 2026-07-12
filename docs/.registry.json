@@ -199,9 +199,9 @@
       "doc": "docs/features/hooks.md",
       "type": "feature",
       "primary_sources": [
+        "src/commands/hooks.ts",
         "src/hooks/check-docs.ts",
-        "src/lib/git-hooks.ts",
-        "src/commands/hooks.ts"
+        "src/lib/git-hooks.ts"
       ],
       "related_sources": [],
       "docs": [
@@ -428,7 +428,8 @@
         "src/lib/sarif.ts",
         "src/lib/ts-adapter.ts",
         "src/lib/ts-canonicalize.ts",
-        "src/lib/two-ref.ts"
+        "src/lib/two-ref.ts",
+        "src/lib/tree-sitter.ts"
       ],
       "related_sources": [],
       "docs": [

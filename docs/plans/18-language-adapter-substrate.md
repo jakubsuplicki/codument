@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 18: language-adapter substrate — tree-sitter WASM runtime + adapter conformance suite
@@ -27,8 +27,11 @@ that makes "precise" mean ONE verifiable thing regardless of language.
 ## Scope
 
 - `package.json` (dependency: `web-tree-sitter`; vendored grammar `.wasm` files under `grammars/`,
-  shipped via `files`)
+  shipped via `files`; exact-pinned `@vscode/tree-sitter-wasm` devDependency as the tests' real
+  grammar binary until plan 19 vendors one)
 - `src/lib/tree-sitter.ts` (new: pinned runtime loader, lazy per-language init)
+- `src/lib/version.ts` (the layout-safe package-root walk-up becomes the shared root resolver the
+  grammar directory rides)
 - `src/lib/two-ref.ts` (algoStamp gains the adapter-manifest segment)
 - `tests/adapter-conformance.ts` (new: the parameterized battery), `tests/tree-sitter.test.ts`
 - `docs/concepts/lib.md`, `docs/features/change-control-gate.md`,
@@ -77,7 +80,7 @@ src/lib/tree-sitter.ts | change-control-gate | feature | pinned WASM runtime + l
 
 ## Delivery Plan
 
-- [ ] Step 1: `tree-sitter.ts` — runtime init, grammar registry keyed by language id, lazy load,
+- [x] Step 1: `tree-sitter.ts` — runtime init, grammar registry keyed by language id, lazy load,
       grammar-hash manifest; determinism tests (same bytes → identical S-expression across two
       fresh loads; a corrupted `.wasm` fails loud, never falls back).
 - [ ] Step 2: `adapter-conformance.ts` battery + the TS adapter run through it green; one seeded

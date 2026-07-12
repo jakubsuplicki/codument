@@ -50,7 +50,7 @@ Foundation utilities owned here:
 - `src/lib/claude-settings.ts` — normalizes `.claude/settings.json` down to one idempotent docs hook without disturbing unrelated hooks.
 - `src/lib/detect.ts` — sniffs project language, source directory, and framework from the filesystem and `package.json`.
 - `src/lib/markers.ts` — the HTML comment constants that bound the managed instruction section.
-- `src/lib/version.ts` — resolves codument's own version in any layout (bundled or not, by package name — never a consumer's manifest) and derives the scaffold-version skew notice the advisory surfaces print.
+- `src/lib/version.ts` — resolves codument's own package root and version in any layout (bundled or not, by package name — never a consumer's manifest); the one root resolver everything test-runner-reachable shares (the version number, the bundled grammar directory), and the source of the scaffold-version skew notice the advisory surfaces print.
 
 Feature modules this umbrella co-documents (behavior lives in the linked feature):
 

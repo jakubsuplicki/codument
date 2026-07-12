@@ -7,15 +7,16 @@ import { readJsonFileOrThrow, StateFileError } from "./state-io.js";
 // checking the name — works in both layouts (bundled `dist/`, unbundled
 // `src/lib/` under a test runner) and can never silently read a consumer's
 // package.json. scaffold.ts's packageRoot() stays bundle-strict because it
-// copies templates; the version only needs the number.
-function readOwnPackage(): { version: string } {
+// copies templates; this walk-up serves everything that must also work under
+// the test runner (the version number, the bundled grammar directory).
+function readOwnPackage(): { root: string; version: string } {
   let dir = dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 6; i++) {
     const candidate = join(dir, "package.json");
     if (existsSync(candidate)) {
       try {
         const parsed = JSON.parse(readFileSync(candidate, "utf-8"));
-        if (parsed.name === "codument") return parsed;
+        if (parsed.name === "codument") return { root: dir, version: parsed.version };
       } catch {
         // unreadable candidate — keep walking; the loud throw below still guards
       }
@@ -27,7 +28,14 @@ function readOwnPackage(): { version: string } {
   throw new Error("codument: could not locate its own package.json from " + import.meta.url);
 }
 
-export const version: string = readOwnPackage().version;
+const own = readOwnPackage();
+
+export const version: string = own.version;
+
+/** The directory holding codument's own package.json, in both layouts. */
+export function ownPackageRoot(): string {
+  return own.root;
+}
 
 // Dotted-numeric version compare (enough for codument's own x.y.z versions):
 // negative when a < b, zero when equal, positive when a > b.
