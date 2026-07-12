@@ -8,6 +8,17 @@ remains pre-1.0.
 ## [Unreleased]
 
 ### Added
+- C# support, per member: `.cs` files are governed through a bundled
+  tree-sitter grammar. `public`/`protected` anchor and `internal` counts as
+  public within the repo (internal surface is what the repo's own docs
+  describe). Types anchor as contract frames — attributes, modifiers,
+  generics, bases, and record positional parameters — while members anchor
+  individually under nested chains (`Outer#Inner#Method().`); partial-class
+  fragments in one file fold into one identity; a property's accessor list
+  is contract (`set` to `init` refuses the ack path) while accessor bodies
+  and initializers are ackable body; operators and indexers fold into
+  bounded per-type identities; and a top-level-statements Program.cs still
+  gates at residual grain. `audit` names drifted C# members over history.
 - Rust support, per symbol: `.rs` files are governed through a bundled
   tree-sitter grammar with the visibility literal as the law — any `pub`
   form anchors, `pub(crate)` included, because crate-internal surface is

@@ -427,6 +427,7 @@
         "src/lib/ownership.ts",
         "src/lib/py-adapter.ts",
         "src/lib/report-html.ts",
+        "src/lib/rust-adapter.ts",
         "src/lib/sarif.ts",
         "src/lib/sfc-adapter.ts",
         "src/lib/tree-sitter.ts",
@@ -434,7 +435,7 @@
         "src/lib/ts-canonicalize.ts",
         "src/lib/two-ref.ts",
         "tests/adapter-conformance.ts",
-        "src/lib/rust-adapter.ts"
+        "src/lib/csharp-adapter.ts"
       ],
       "related_sources": [],
       "docs": [

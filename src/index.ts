@@ -93,6 +93,8 @@ export { pyAdapter, classifyPyFile, warmPythonAdapter } from "./lib/py-adapter.j
 export type { PyAnchorKind, PyFileMode, PyClassification } from "./lib/py-adapter.js";
 export { goAdapter, classifyGoFile, warmGoAdapter } from "./lib/go-adapter.js";
 export type { GoAnchorKind, GoFileMode, GoClassification } from "./lib/go-adapter.js";
+export { csharpAdapter, classifyCSharpFile, warmCSharpAdapter } from "./lib/csharp-adapter.js";
+export type { CSharpAnchorKind, CSharpFileMode, CSharpClassification } from "./lib/csharp-adapter.js";
 export { rustAdapter, classifyRustFile, warmRustAdapter } from "./lib/rust-adapter.js";
 export type { RustAnchorKind, RustFileMode, RustClassification } from "./lib/rust-adapter.js";
 export { sfcAdapter, classifySfcFile } from "./lib/sfc-adapter.js";

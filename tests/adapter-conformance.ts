@@ -83,7 +83,7 @@ function anchorDelta(before: Anchor[], after: Anchor[]): string[] {
 // SCIP-shaped descriptor discipline: acks, ownership, drift, and SARIF stay
 // byte-identical in shape across languages because every adapter emits ids of
 // the form `<path>::<descriptor>` with one of these descriptor suffixes.
-const DESCRIPTOR = /^(?:[\w$]+#)?(?:[\w$]+\(\)\.|[\w$]+#|[\w$]+\.|default\.|<module>)$/;
+const DESCRIPTOR = /^(?:[\w$]+#)*(?:[\w$]+\(\)\.|[\w$]+#|[\w$]+\.|default\.|<module>)$/;
 
 export function checkAdapterConformance(h: AdapterHarness): ConformanceViolation[] {
   const { adapter, classify, fixtures: f } = h;

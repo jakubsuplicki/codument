@@ -1,5 +1,5 @@
 ---
-status: draft
+status: shipped
 ---
 
 # Plan 24: .NET adapter — C# for the other half of the enterprise
@@ -52,12 +52,12 @@ src/lib/csharp-adapter.ts | change-control-gate | feature | C# anchors: types + 
 
 ## Delivery Plan
 
-- [ ] Step 1: grammar + extraction (types/members/nesting, partial folding, top-level
+- [x] Step 1: grammar + extraction (types/members/nesting, partial folding, top-level
       statements); battery 1, 5–8.
-- [ ] Step 2: per-member split + closure + attribute/accessor/record calibration; battery 2–4 +
+- [x] Step 2: per-member split + closure + attribute/accessor/record calibration; battery 2–4 +
       C# cases.
-- [ ] Step 3: registration + extension spec + e2e arcs + audit e2e.
-- [ ] Step 4: docs — matrix, README, CHANGELOG, registry.
+- [x] Step 3: registration + extension spec + e2e arcs + audit e2e.
+- [x] Step 4: docs — matrix, README, CHANGELOG, registry.
 
 ## Outcome
 

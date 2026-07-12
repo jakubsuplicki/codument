@@ -1,5 +1,5 @@
 ---
-paths: ["src/**/*.ts", "src/**/*.tsx", "src/**/*.mts", "src/**/*.cts", "src/**/*.js", "src/**/*.jsx", "src/**/*.mjs", "src/**/*.cjs", "**/*.py", "**/*.pyi", "**/*.vue", "**/*.svelte", "**/*.astro", "**/*.go", "**/*.rs"]
+paths: ["src/**/*.ts", "src/**/*.tsx", "src/**/*.mts", "src/**/*.cts", "src/**/*.js", "src/**/*.jsx", "src/**/*.mjs", "src/**/*.cjs", "**/*.py", "**/*.pyi", "**/*.vue", "**/*.svelte", "**/*.astro", "**/*.go", "**/*.rs", "**/*.cs"]
 description: Enforces automatic documentation when source files are created or modified
 ---
 

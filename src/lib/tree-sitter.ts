@@ -42,6 +42,7 @@ export interface BundledGrammar {
 // One row per shipped adapter; each language becomes "source" only in the plan
 // that makes it judgeable, so this list and the extension spec grow together.
 export const BUNDLED_GRAMMARS: readonly BundledGrammar[] = [
+  { language: "c-sharp", file: "c-sharp.wasm" },
   { language: "go", file: "go.wasm" },
   { language: "python", file: "python.wasm" },
   { language: "rust", file: "rust.wasm" },

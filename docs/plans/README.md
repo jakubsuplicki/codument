@@ -63,8 +63,9 @@ Run 16 before 17; they are independent but 17's CHANGELOG rides on 16's release 
 
 Per-symbol resolution is the moat. One substrate plan makes "precise" a single testable contract
 (tree-sitter WASM + a conformance battery every adapter must pass); the language plans then carry
-only genuinely language-specific decisions. 18 (substrate), 19 (Python), 20 (SFC), 21 (Go), and 22 (Rust) are
-shipped; 23–25 are draft — approve one at a time, in order.
+only genuinely language-specific decisions. 18 (substrate), 19 (Python), 20 (SFC), 21 (Go), 22 (Rust), and 24 (C#)
+are shipped; 23 (JVM) is draft pending a runtime-compatible Kotlin grammar (Java's is in
+hand); 25 runs last.
 
 | Plan | Target | Depends on | Note |
 | --- | --- | --- | --- |
