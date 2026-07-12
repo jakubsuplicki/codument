@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_EXCLUSION_SPEC } from "../src/lib/analyze.js";
 import {
   LANGUAGE_MATRIX,
   adapterFor,
@@ -43,6 +44,20 @@ describe("language matrix — the claim that cannot lie", () => {
           adapterFor(`sample/file${ext}`).language,
           row.language,
           `${ext} must dispatch to ${row.language}`,
+        );
+      }
+    }
+  });
+
+  it("every matrix extension is IN the governance spec — dispatch alone is not enough", () => {
+    // adapterFor dispatch does not depend on the exclusion spec, so a future
+    // adapter registered without a spec addition would judge registered files
+    // while scan/coverage silently never discover them. Close that axis.
+    for (const row of LANGUAGE_MATRIX) {
+      for (const ext of row.extensions) {
+        assert.ok(
+          DEFAULT_EXCLUSION_SPEC.extensions.includes(ext),
+          `${ext} must be in DEFAULT_EXCLUSION_SPEC.extensions`,
         );
       }
     }

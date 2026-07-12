@@ -155,6 +155,36 @@ public partial class Server
     assert.notEqual(residual(edited)?.fingerprint, residual(base)?.fingerprint);
   });
 
+  it("#if-conditional members and types ANCHOR — conditional compilation is contract, never ackable residual churn", () => {
+    const src = `public class Api
+{
+#if DEBUG
+    public void DebugOnly()
+    {
+    }
+#endif
+    public int Get() { return 1; }
+}
+
+#if TRACING
+public class Tracer
+{
+    public void Emit() { }
+}
+#endif
+`;
+    const as = anchors(src);
+    assert.ok(byId(as, "Api#DebugOnly()."), "a #if member must anchor");
+    assert.ok(byId(as, "Tracer#"), "a #if type must anchor");
+    assert.ok(byId(as, "Tracer#Emit()."));
+    // A signature change inside the conditional block is a contract move.
+    const sigEdit = anchors(src.replace("DebugOnly()", "DebugOnly(int extra)"));
+    assert.notEqual(byId(sigEdit, "Api#DebugOnly().")?.signature, byId(as, "Api#DebugOnly().")?.signature);
+    // The directive's own condition stays visible: flipping it moves the residual.
+    const condEdit = anchors(src.replace("#if TRACING", "#if RELEASE"));
+    assert.notEqual(residual(condEdit)?.fingerprint, residual(as)?.fingerprint);
+  });
+
   it("classification: public members → precise; generated banner → coarse; parse error → unevaluable", () => {
     assert.equal(classifyCSharpFile(P, BASE).mode, "precise");
     assert.equal(

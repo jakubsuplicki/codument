@@ -211,10 +211,21 @@ function collect(root: Node): Collected {
         item.type === "namespace_declaration" ||
         item.type === "file_scoped_namespace_declaration"
       ) {
+        // A BLOCK namespace nests members under `body`. A FILE-SCOPED one has
+        // no body — its members are true top-level siblings this same loop
+        // visits next, so recursing into the node only walks its (harmless)
+        // qualified-name child into the residual.
         const body = item.childForFieldName("body");
-        // File-scoped namespaces put members directly in following siblings —
-        // the grammar nests them either way; walk whatever list exists.
         walkContainer((body ?? item).namedChildren, prefix);
+        continue;
+      }
+      if (item.type.startsWith("preproc_")) {
+        // `#if`/`#elif`/`#else` blocks: the DECLARATIONS inside are real code
+        // that must anchor (a conditionally-compiled public type is contract,
+        // not residual churn); the condition tokens themselves fall through
+        // this same dispatch into the residual, where their edit stays
+        // visible. Both `#if` arms of one identity fold, like cfg in Rust.
+        walkContainer(item.namedChildren, prefix);
         continue;
       }
       if (TYPE_NODES.has(item.type)) {
@@ -250,13 +261,28 @@ function collect(root: Node): Collected {
     }
 
     if (!body || typeNode.type === "enum_declaration") return;
-    for (const member of body.namedChildren) {
+    const isInterface = typeNode.type === "interface_declaration";
+    walkMembers(body.namedChildren, chain, name, isInterface);
+  };
+
+  const walkMembers = (
+    children: readonly Node[],
+    chain: string,
+    name: string,
+    isInterface: boolean,
+  ): void => {
+    for (const member of children) {
       if (member.type === "comment") continue;
+      if (member.type.startsWith("preproc_")) {
+        // Same rule as the container level: conditionally-compiled members
+        // anchor; the directive tokens stay visible through the residual.
+        walkMembers(member.namedChildren, chain, name, isInterface);
+        continue;
+      }
       if (TYPE_NODES.has(member.type)) {
         walkType(member, chain);
         continue;
       }
-      const isInterface = typeNode.type === "interface_declaration";
       const anchored = isInterface || memberIsPublic(member);
       if (METHOD_NODES.has(member.type)) {
         const mName = member.childForFieldName("name")?.text ?? name;
