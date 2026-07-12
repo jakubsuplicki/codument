@@ -146,13 +146,6 @@ const ITEM_KINDS: Record<string, RustDecl["kind"]> = {
   macro_definition: "macro",
 };
 
-interface CollectedItem {
-  decl: RustDecl | null; // null → residual content
-  nodes: Node[]; // the item plus its preceding attribute run
-  /** Private inherent-impl members / non-pub items keyed for the closure. */
-  privateNames: string[];
-}
-
 // Walk a declaration list, attaching each run of preceding `attribute_item`s
 // to the item that follows (derives are part of the item's surface).
 function itemsWithAttributes(children: readonly Node[]): { item: Node; nodes: Node[] }[] {
