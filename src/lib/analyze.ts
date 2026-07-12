@@ -50,6 +50,8 @@ export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
     "**/*.test.*",
     "**/*.spec.*",
     "**/*.d.ts",
+    "**/*.d.mts",
+    "**/*.d.cts",
     "**/*.seed.json",
     "**/generated/**",
     // Root-level test-fixture trees only — anchored (not a bare `fixtures` dir
@@ -58,7 +60,7 @@ export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
     "fixtures/**",
     "scripts/generate-*",
   ],
-  extensions: [".ts", ".tsx", ".js", ".jsx"],
+  extensions: [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"],
 };
 
 // Exported so the Feature Map router (feature-map.ts) matches globs with the
@@ -796,7 +798,7 @@ function isBarrelFile(path: string): boolean {
   // `.d.ts` is intentionally excluded: `generated-leakage` already fires a `warn`
   // for a declaration file listed as a source, so adding an `over-decomposed`
   // info on top would just misdirect from the real (leakage) problem.
-  return /^(index|types|barrel)\.(ts|tsx|js|jsx)$/.test(base);
+  return /^(index|types|barrel)\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/.test(base);
 }
 
 // Maps every distinct doc path to a representative owning feature, so a doc

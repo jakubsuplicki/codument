@@ -15,10 +15,14 @@ export async function detectProject(root: string): Promise<ProjectInfo> {
   const hasSrc = existsSync(join(root, "src"));
 
   const srcDir = hasSrc ? "src" : ".";
+  // The chosen family plus its module flavors, so the scaffolded always-document
+  // rule covers every file shape the gate governs for that language.
   const ext = hasTs ? "ts" : "js";
   const sourceGlobs = [
     `${srcDir}/**/*.${ext}`,
     `${srcDir}/**/*.${ext}x`,
+    `${srcDir}/**/*.m${ext}`,
+    `${srcDir}/**/*.c${ext}`,
   ];
 
   let framework: string | null = null;
@@ -83,7 +87,7 @@ async function hasNestedTypeScript(
       if (entry.name === "tsconfig.json") {
         return true;
       }
-      if (/\.(ts|tsx)$/.test(entry.name) && !entry.name.endsWith(".d.ts")) {
+      if (/\.(ts|tsx|mts|cts)$/.test(entry.name) && !/\.d\.(ts|mts|cts)$/.test(entry.name)) {
         return true;
       }
       continue;

@@ -535,6 +535,40 @@ describe("ungated registered changes (.vue blind spot)", () => {
     assert.deepEqual(s.otherChanged, ["app/components/Other.vue", "logo.png"]);
   });
 
+  it("a REGISTERED declaration artifact is surfaced, not silently dropped", () => {
+    const reg = {
+      features: {
+        types: {
+          doc: "docs/features/types.md",
+          type: "feature" as const,
+          primary_sources: ["types/api.d.ts"],
+          related_sources: [],
+          docs: [],
+          depends_on: [],
+          risk: [],
+          status: "current",
+        },
+      },
+    };
+    const s = computeChangeState({
+      registry: reg as never,
+      changedFiles: ["types/api.d.ts"],
+    });
+    assert.deepEqual(s.ungatedRegistered, [
+      { file: "types/api.d.ts", owners: [{ feature: "types", doc: "docs/features/types.md" }] },
+    ]);
+    // Still excluded from every verdict input and from other-changed.
+    assert.deepEqual(s.staleDocs, []);
+    assert.deepEqual(s.otherChanged, []);
+    // An UNREGISTERED declaration artifact stays fully silent, as before.
+    const quiet = computeChangeState({
+      registry: reg as never,
+      changedFiles: ["types/other.d.ts"],
+    });
+    assert.deepEqual(quiet.ungatedRegistered, []);
+    assert.deepEqual(quiet.otherChanged, []);
+  });
+
   it("a registered recognized source is gated normally, never listed as ungated", () => {
     const s = computeChangeState({
       registry: registry as never,

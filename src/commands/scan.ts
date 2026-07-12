@@ -149,8 +149,8 @@ async function collectSourceFiles(
       if (DEFAULT_EXCLUSION_SPEC.dirs.includes(entry.name)) continue;
       files.push(...(await collectSourceFiles(fullPath, root)));
     } else if (
-      /\.(ts|tsx|js|jsx)$/.test(entry.name) &&
-      !entry.name.endsWith(".d.ts")
+      /\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/.test(entry.name) &&
+      !/\.d\.(ts|mts|cts)$/.test(entry.name)
     ) {
       files.push(relative(root, fullPath));
     }

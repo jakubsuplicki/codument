@@ -148,11 +148,12 @@ export interface ChangeState {
   /** Deleted source files — surfaced so a deletion is visibly part of the change,
    *  not silently absent from it (owned ones also wake their owners' docs). */
   deletedSources: string[];
-  /** Changed files the registry names as sources (primary or related) but that no
-   *  adapter gates for staleness (outside the source-extension spec: .vue, .css,
-   *  .json, …). The registry says "load-bearing", the gate cannot judge them —
-   *  fail-loud about the blind spot (info-only; never a strict verdict input).
-   *  Their docs are named so a human/agent can verify by hand. */
+  /** Changed files the registry names as sources (primary or related) but that
+   *  the gate does not judge — outside the source-extension spec (.vue, .css,
+   *  .json, …) or excluded by it (declaration artifacts, generated files). The
+   *  registry says "load-bearing", the gate cannot judge them — fail-loud about
+   *  the blind spot (info-only; never a strict verdict input). Their docs are
+   *  named so a human/agent can verify by hand. */
   ungatedRegistered: UngatedRegisteredChange[];
 }
 
@@ -216,11 +217,17 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   );
 
   // Registered-but-ungated: a file the registry explicitly claims (so someone
-  // decided it matters to a doc) that lands in the other-changed bucket because
-  // no adapter recognizes its extension. Silence here would be a false "fresh".
+  // decided it matters to a doc) that the gate does not judge — because no
+  // adapter recognizes its extension (.vue, .css) OR because the default spec
+  // excludes it outright (a declaration artifact, a generated file). Built from
+  // the full changed set, not the other-changed bucket: exclusion silences the
+  // DEFAULT scope, but a registration is an explicit human claim, so silence for
+  // a registered file would be a false "fresh" whatever dropped it.
   const entryByKey = new Map(entries);
+  const changedSourceSet = new Set(changedSources);
   const ungatedRegistered: UngatedRegisteredChange[] = [];
-  for (const file of otherChanged) {
+  for (const file of sortStrings(changed)) {
+    if (isDoc(file) || changedSourceSet.has(file)) continue;
     const owners = fileToFeatures.get(file);
     if (!owners || owners.length === 0) continue;
     ungatedRegistered.push({

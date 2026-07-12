@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
 import { allSources, readRegistrySync, RegistryError } from "../lib/registry.js";
+import { isSourceFile } from "../lib/analyze.js";
 
 // This hook runs after Write/Edit tool use.
 // It checks if a source file was modified and reminds the developer that
@@ -57,8 +58,10 @@ const registryPath = join(root, "docs", ".registry.json");
 
 const relPath = relative(root, filePath);
 
-// Only care about source files (any directory, not just src/)
-if (!/\.(ts|tsx|js|jsx)$/.test(relPath)) process.exit(0);
+// Only care about files the gate itself governs — the ONE shared spec from the
+// analyzer, so the live nudge and the verdict can never disagree about what a
+// source is (a module-flavored config nudges; a .d.ts or test file does not).
+if (!isSourceFile(relPath)) process.exit(0);
 
 if (!existsSync(registryPath)) process.exit(0);
 

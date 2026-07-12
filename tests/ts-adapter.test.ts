@@ -588,3 +588,26 @@ describe("ExportAssignment anchors (config-file grain)", () => {
     assert.equal(before.signature, after.signature);
   });
 });
+
+// Extension-spec broadening: module-flavored TS is precise, declaration
+// artifacts of ANY flavor are coarse, and module-flavored JS never reaches the
+// precise adapter (it is coarse-gated like .js).
+describe("module-flavored extensions", () => {
+  it(".mts/.cts are precise; .d.mts/.d.cts classify as declaration files", () => {
+    const code = "export function f(x: number) { return x + 1; }\n";
+    assert.equal(classifyTsFile("src/loader.mts", code).mode, "precise");
+    assert.equal(classifyTsFile("src/loader.cts", code).mode, "precise");
+    assert.equal(classifyTsFile("src/types.d.mts", code).reason, "declaration file");
+    assert.equal(classifyTsFile("src/types.d.cts", code).reason, "declaration file");
+  });
+
+  it("the adapter matches .mts/.cts but never a declaration variant or JS flavor", () => {
+    assert.equal(tsAdapter.matches("src/loader.mts"), true);
+    assert.equal(tsAdapter.matches("src/loader.cts"), true);
+    assert.equal(tsAdapter.matches("src/types.d.mts"), false);
+    assert.equal(tsAdapter.matches("src/types.d.cts"), false);
+    assert.equal(tsAdapter.matches("src/types.d.ts"), false);
+    assert.equal(tsAdapter.matches("next.config.mjs"), false);
+    assert.equal(tsAdapter.matches("scripts/build.cjs"), false);
+  });
+});

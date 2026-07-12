@@ -28,6 +28,17 @@ remains pre-1.0.
   load-bearing. Never a strict verdict input.
 
 ### Changed
+- The source-extension spec now covers the module-flavored JS/TS family:
+  `.mts`/`.cts` are gated per-symbol (they always were parseable, never
+  reachable), `.mjs`/`.cjs` are gated at file grain like `.js`, and declaration
+  artifacts of any flavor (`.d.ts`/`.d.mts`/`.d.cts`) stay outside governance.
+  Upgrading repos with such files (a `next.config.mjs`, an `.mts` loader) may
+  see new unmapped-source or stale-doc findings — that is the gate seeing files
+  it previously ignored, not a regression. The whole advisory layer follows the
+  same spec: the editor nudge hook, the scaffolded always-document rule, project
+  detection, and the barrel heuristic all read the broadened family. A
+  registered-but-excluded file (a hand-written `.d.ts` named in the registry)
+  now rides the "Registered but ungated" surface instead of changing in silence.
 - `ALGO_VERSION` 3 → 4 (anchor extraction changed). Per-symbol acknowledgments
   recorded under the previous algorithm auto-invalidate (their fingerprints no
   longer match any current transition — the binding working as designed);

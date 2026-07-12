@@ -79,6 +79,17 @@ describe("exclusion spec", () => {
     assert.equal(isSourceFile("docs/features/auth.md"), false);
     assert.equal(isSourceFile("src/generated/api-types.ts"), false);
   });
+
+  it("module-flavored JS/TS extensions are source; declaration variants are not", () => {
+    assert.equal(isSourceFile("next.config.mjs"), true);
+    assert.equal(isSourceFile("scripts/build.cjs"), true);
+    assert.equal(isSourceFile("src/loader.mts"), true);
+    assert.equal(isSourceFile("src/loader.cts"), true);
+    // Declaration artifacts stay outside governance, whatever their flavor.
+    assert.equal(isSourceFile("src/types.d.ts"), false);
+    assert.equal(isSourceFile("src/types.d.mts"), false);
+    assert.equal(isSourceFile("src/types.d.cts"), false);
+  });
 });
 
 describe("discoverSourceFiles", () => {

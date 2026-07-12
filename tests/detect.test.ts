@@ -27,6 +27,8 @@ describe("detectProject", () => {
     assert.deepStrictEqual(info.sourceGlobs, [
       "src/**/*.ts",
       "src/**/*.tsx",
+      "src/**/*.mts",
+      "src/**/*.cts",
     ]);
     assert.equal(info.framework, null);
   });
@@ -36,7 +38,7 @@ describe("detectProject", () => {
 
     const info = await detectProject(tmp);
     assert.equal(info.language, "javascript");
-    assert.deepStrictEqual(info.sourceGlobs, ["./**/*.js", "./**/*.jsx"]);
+    assert.deepStrictEqual(info.sourceGlobs, ["./**/*.js", "./**/*.jsx", "./**/*.mjs", "./**/*.cjs"]);
   });
 
   it("detects typescript from nested source files", async () => {
@@ -46,7 +48,7 @@ describe("detectProject", () => {
 
     const info = await detectProject(tmp);
     assert.equal(info.language, "typescript");
-    assert.deepStrictEqual(info.sourceGlobs, ["./**/*.ts", "./**/*.tsx"]);
+    assert.deepStrictEqual(info.sourceGlobs, ["./**/*.ts", "./**/*.tsx", "./**/*.mts", "./**/*.cts"]);
   });
 
   it("ignores typescript inside generated and dependency directories", async () => {
@@ -56,7 +58,7 @@ describe("detectProject", () => {
 
     const info = await detectProject(tmp);
     assert.equal(info.language, "javascript");
-    assert.deepStrictEqual(info.sourceGlobs, ["./**/*.js", "./**/*.jsx"]);
+    assert.deepStrictEqual(info.sourceGlobs, ["./**/*.js", "./**/*.jsx", "./**/*.mjs", "./**/*.cjs"]);
   });
 
   it("detects root srcDir when no src/ directory", async () => {
@@ -65,7 +67,7 @@ describe("detectProject", () => {
 
     const info = await detectProject(tmp);
     assert.equal(info.srcDir, ".");
-    assert.deepStrictEqual(info.sourceGlobs, ["./**/*.ts", "./**/*.tsx"]);
+    assert.deepStrictEqual(info.sourceGlobs, ["./**/*.ts", "./**/*.tsx", "./**/*.mts", "./**/*.cts"]);
   });
 
   it("detects nextjs framework", async () => {

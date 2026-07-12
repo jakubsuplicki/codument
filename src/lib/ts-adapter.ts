@@ -534,7 +534,7 @@ const GENERATED_BANNER = /@generated\b|do not edit|auto-?generated/i;
 // fresh through an empty/partial precise anchor set — such files are routed to the
 // coarse file-grain gate instead, and a parse error is surfaced rather than trusted.
 export function classifyTsFile(path: string, content: string): TsClassification {
-  if (path.endsWith(".d.ts")) {
+  if (/\.d\.(ts|mts|cts)$/.test(path)) {
     return { mode: "coarse", reason: "declaration file" };
   }
   const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, /* setParentNodes */ true);
@@ -570,9 +570,10 @@ export function classifyTsFile(path: string, content: string): TsClassification 
 
 export const tsAdapter: LanguageAdapter = {
   language: "typescript",
-  // Precise for hand-written TS/TSX. `.d.ts` is a declaration/generated artifact
-  // and falls through to the coarse adapter; `classifyTsFile` refines generated /
-  // barrel / unsupported-export-form / parse-error classification for the gate.
-  matches: (path) => /\.(ts|tsx|mts|cts)$/.test(path) && !path.endsWith(".d.ts"),
+  // Precise for hand-written TS/TSX (`.mts`/`.cts` included). A declaration
+  // artifact (`.d.ts`/`.d.mts`/`.d.cts`) falls through to the coarse adapter;
+  // `classifyTsFile` refines generated / barrel / unsupported-export-form /
+  // parse-error classification for the gate.
+  matches: (path) => /\.(ts|tsx|mts|cts)$/.test(path) && !/\.d\.(ts|mts|cts)$/.test(path),
   anchors: tsAnchors,
 };

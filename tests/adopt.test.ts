@@ -99,7 +99,7 @@ describe("adopt command", () => {
     );
     assert.deepStrictEqual(meta.agents, ["codex", "claude"]);
     assert.equal(meta.project.language, "typescript");
-    assert.deepStrictEqual(meta.project.sourceGlobs, ["./**/*.ts", "./**/*.tsx"]);
+    assert.deepStrictEqual(meta.project.sourceGlobs, ["./**/*.ts", "./**/*.tsx", "./**/*.mts", "./**/*.cts"]);
 
     const settings = JSON.parse(
       await readFile(join(tmp, ".claude", "settings.json"), "utf-8"),

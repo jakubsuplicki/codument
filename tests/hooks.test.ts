@@ -96,6 +96,41 @@ describe("check-docs hook", () => {
     }
   });
 
+  it("nudges for module-flavored sources and stays silent for declaration artifacts", async () => {
+    const tmp = await createProject();
+    try {
+      const registry: Registry = {
+        features: {
+          config: {
+            doc: "docs/features/config.md",
+            type: "feature",
+            primary_sources: ["next.config.mjs", "types/api.d.ts"],
+            depends_on: [],
+            last_updated: "2026-07-12",
+            status: "current",
+          },
+        },
+      };
+      await writeFile(
+        join(tmp, "docs", ".registry.json"),
+        JSON.stringify(registry, null, 2) + "\n",
+      );
+      await writeFile(join(tmp, "next.config.mjs"), "export default {};\n");
+      await mkdir(join(tmp, "types"), { recursive: true });
+      await writeFile(join(tmp, "types", "api.d.ts"), "export type A = 1;\n");
+
+      // A governed module-flavored file nudges like any source…
+      const nudge = runHook(tmp, join(tmp, "next.config.mjs"));
+      assert.ok(nudge.includes('"config" (docs/features/config.md)'));
+      // …a declaration artifact the gate excludes produces no nudge (the shared
+      // spec, not a hook-local extension list, decides).
+      const silent = runHook(tmp, join(tmp, "types", "api.d.ts"));
+      assert.equal(silent.trim(), "");
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("does not match an un-migrated legacy registry (v2-only read)", async () => {
     const tmp = await createProject();
     try {
