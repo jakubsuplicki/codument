@@ -8,6 +8,18 @@ remains pre-1.0.
 ## [Unreleased]
 
 ### Added
+- Rust support, per symbol: `.rs` files are governed through a bundled
+  tree-sitter grammar with the visibility literal as the law — any `pub`
+  form anchors, `pub(crate)` included, because crate-internal surface is
+  load-bearing for the repo's own docs. Inherent-impl members anchor as
+  `Type#method().`, trait-impl members as `Type#Trait::method().` so a
+  trait-impl swap is its own identity; attributes and derives are contract;
+  a pub struct field is contract while a private field is ackable body;
+  enum variants are all contract; a const/static value is ackable body.
+  Macros are bounded honestly: a `macro_rules!` definition is one
+  all-signature anchor (a macro IS contract), item-position invocations and
+  inline `mod` blocks ride the module residual — expansion without rustc is
+  fiction, so it is not pretended at.
 - Go support, per symbol: `.go` files are governed through a bundled
   tree-sitter grammar with Go's own visibility law — exported means
   capitalized, no convention-hedging. Methods anchor under their receiver

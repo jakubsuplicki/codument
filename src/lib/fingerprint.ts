@@ -5,6 +5,7 @@ import { type Acknowledgment, isFileGrainAck } from "./acknowledgment.js";
 import { getWorkingTreeChanges, listTrackedFiles } from "./git.js";
 import { goAdapter } from "./go-adapter.js";
 import { pyAdapter } from "./py-adapter.js";
+import { rustAdapter } from "./rust-adapter.js";
 import { sfcAdapter } from "./sfc-adapter.js";
 import { TreeSitterError } from "./tree-sitter.js";
 import { tsAdapter } from "./ts-adapter.js";
@@ -86,7 +87,7 @@ export const coarseAdapter: LanguageAdapter = {
 
 // Adapter registry, most-specific first: the precise adapters ahead of the
 // coarse fallback.
-const ADAPTERS: LanguageAdapter[] = [tsAdapter, pyAdapter, goAdapter, sfcAdapter, coarseAdapter];
+const ADAPTERS: LanguageAdapter[] = [tsAdapter, pyAdapter, goAdapter, rustAdapter, sfcAdapter, coarseAdapter];
 
 export function adapterFor(path: string): LanguageAdapter {
   return ADAPTERS.find((a) => a.matches(path)) ?? coarseAdapter;

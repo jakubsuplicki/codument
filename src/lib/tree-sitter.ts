@@ -44,6 +44,7 @@ export interface BundledGrammar {
 export const BUNDLED_GRAMMARS: readonly BundledGrammar[] = [
   { language: "go", file: "go.wasm" },
   { language: "python", file: "python.wasm" },
+  { language: "rust", file: "rust.wasm" },
 ];
 
 export function grammarsDir(): string {

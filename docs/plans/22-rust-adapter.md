@@ -1,5 +1,5 @@
 ---
-status: draft
+status: shipped
 ---
 
 # Plan 22: Rust adapter — visibility-literal anchors for the most contract-conscious ecosystem
@@ -50,11 +50,11 @@ src/lib/rust-adapter.ts | change-control-gate | feature | Rust anchors: pub item
 
 ## Delivery Plan
 
-- [ ] Step 1: grammar + extraction (visibility rule, impl/trait descriptors); battery 1, 5–8.
-- [ ] Step 2: signature/body split (fields/variants/derives calibration) + closure; battery 2–4 +
+- [x] Step 1: grammar + extraction (visibility rule, impl/trait descriptors); battery 1, 5–8.
+- [x] Step 2: signature/body split (fields/variants/derives calibration) + closure; battery 2–4 +
       Rust-specific cases.
-- [ ] Step 3: registration + extension spec + e2e arc + audit e2e.
-- [ ] Step 4: docs — matrix, README, CHANGELOG, registry.
+- [x] Step 3: registration + extension spec + e2e arc + audit e2e.
+- [x] Step 4: docs — matrix, README, CHANGELOG, registry.
 
 ## Outcome
 

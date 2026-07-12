@@ -569,3 +569,42 @@ describe("codument audit — go history through the real CLI", () => {
     );
   });
 });
+
+describe("codument audit — rust history through the real CLI", () => {
+  let root: string;
+  const env = { ...process.env, NO_COLOR: "1" };
+  const run = (args: string[], cwd: string) =>
+    execFileSync("node", [CLI, ...args], { cwd, encoding: "utf-8", env });
+
+  before(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-audit-rs-"));
+    git(root, ["init", "-q"]);
+    await write(root, "src/handler.rs", "pub fn handle(n: usize) -> usize {\n    n\n}\n");
+    await write(root, "docs/features/handler.md", "# handler\n");
+    await write(
+      root,
+      "docs/.registry.json",
+      registryJson({ handler: entry("src/handler.rs", "docs/features/handler.md") }),
+    );
+    git(root, ["add", "-A"]);
+    git(root, ["commit", "-q", "-m", "v1"]);
+    git(root, ["tag", "rs1"]);
+    await write(root, "src/handler.rs", "pub fn handle(n: usize) -> usize {\n    n * 2\n}\n");
+    git(root, ["add", "-A"]);
+    git(root, ["commit", "-q", "-m", "v2"]);
+    git(root, ["tag", "rs2"]);
+  });
+
+  after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("names the drifted Rust symbol over the range — the fourth language lights up", () => {
+    const parsed = JSON.parse(run(["audit", "rs1..rs2", "--json"], root));
+    assert.equal(parsed.audit, "ok");
+    assert.deepEqual(
+      parsed.drifted[0].symbolMoves.map((m: { symbol: string }) => m.symbol),
+      ["handle"],
+    );
+  });
+});

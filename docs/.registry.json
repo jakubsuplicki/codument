@@ -422,6 +422,7 @@
         "src/lib/events.ts",
         "src/lib/fingerprint.ts",
         "src/lib/git.ts",
+        "src/lib/go-adapter.ts",
         "src/lib/import-graph.ts",
         "src/lib/ownership.ts",
         "src/lib/py-adapter.ts",
@@ -433,7 +434,7 @@
         "src/lib/ts-canonicalize.ts",
         "src/lib/two-ref.ts",
         "tests/adapter-conformance.ts",
-        "src/lib/go-adapter.ts"
+        "src/lib/rust-adapter.ts"
       ],
       "related_sources": [],
       "docs": [
