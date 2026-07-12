@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { platform } from "node:os";
 import pc from "picocolors";
+import { warmAdaptersForRepo } from "../lib/fingerprint.js";
 import { assertRootIsRepoToplevel, isGitRepo } from "../lib/git.js";
 import { GateError } from "../lib/two-ref.js";
 import { buildReview, type CoveringAck } from "./review.js";
@@ -106,6 +107,8 @@ export function openInBrowser(path: string): boolean {
 
 export async function report(options: ReportOptions = {}): Promise<void> {
   const root = options.root ?? process.cwd();
+  // Both report surfaces run the sync review builder; warm adapters up front.
+  await warmAdaptersForRepo(root);
   // A gate that cannot run fails CLOSED on BOTH surfaces — the shareable HTML and
   // the --json contract — never a misleading "all clean" verdict. A non-git tree has
   // no verdict to compute (mirroring review's own non-git refusal), and a wrong root

@@ -74,6 +74,10 @@ export {
   isPreciseFile,
   fileContentChange,
   contentChangedFiles,
+  classifySource,
+  warmAdaptersForPaths,
+  warmAdaptersForRepo,
+  warmAllAdapters,
 } from "./lib/fingerprint.js";
 export type {
   Anchor,
@@ -85,6 +89,8 @@ export type {
 } from "./lib/fingerprint.js";
 export { tsAdapter, MODULE_ANCHOR_NAME, classifyTsFile } from "./lib/ts-adapter.js";
 export type { TsAnchorKind, TsFileMode, TsClassification } from "./lib/ts-adapter.js";
+export { pyAdapter, classifyPyFile, warmPythonAdapter } from "./lib/py-adapter.js";
+export type { PyAnchorKind, PyFileMode, PyClassification } from "./lib/py-adapter.js";
 export { resolveOwner, splitAnchorId } from "./lib/ownership.js";
 export type { OwnershipResolution } from "./lib/ownership.js";
 export { auditRange } from "./lib/history-audit.js";

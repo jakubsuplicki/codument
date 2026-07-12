@@ -1,4 +1,5 @@
 import pc from "picocolors";
+import { warmAllAdapters } from "../lib/fingerprint.js";
 import { auditRange, type AuditEntry, type HistoryAudit } from "../lib/history-audit.js";
 import { assertRootIsRepoToplevel, isGitRepo } from "../lib/git.js";
 import { GateError } from "../lib/two-ref.js";
@@ -75,8 +76,11 @@ function renderEntry(audit: HistoryAudit, entry: AuditEntry): string[] {
   return lines;
 }
 
-export function auditCommand(range: string, options: AuditCliOptions = {}): void {
+export async function auditCommand(range: string, options: AuditCliOptions = {}): Promise<void> {
   const root = options.root ?? options.dir ?? process.cwd();
+  // History may contain a language the tree no longer does, so the audit warms
+  // EVERY warmable adapter before its synchronous walk.
+  await warmAllAdapters();
 
   const unavailable = (reason: string, humanLine: string): void => {
     if (options.json) emitJson({ version: 1, audit: "unavailable", reason });

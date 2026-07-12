@@ -18,6 +18,7 @@ import {
   fileContentTransition,
   gatherAnchorChanges,
   isSignatureMove,
+  warmAdaptersForRepo,
 } from "../lib/fingerprint.js";
 import { getGitAuthor } from "../lib/git.js";
 import { resolveOwner } from "../lib/ownership.js";
@@ -80,8 +81,11 @@ function fail(message: string): void {
   process.exitCode = 1;
 }
 
-export function ackCommand(anchor: string | undefined, options: AckCliOptions): void {
+export async function ackCommand(anchor: string | undefined, options: AckCliOptions): Promise<void> {
   const root = options.root ?? process.cwd();
+  // Recording and re-validating acks parses worktree content synchronously;
+  // warm whatever grammar the repo's files need first.
+  await warmAdaptersForRepo(root);
 
   if (options.list) {
     if (options.json) listAcksJson(root);

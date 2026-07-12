@@ -40,7 +40,9 @@ async function scaffold(files: Record<string, string>): Promise<void> {
 
 const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
 
-function capture(fn: () => void): { out: string; err: string; code: number | undefined } {
+async function capture(
+  fn: () => void | Promise<void>,
+): Promise<{ out: string; err: string; code: number | undefined }> {
   const origLog = console.log;
   const origErr = console.error;
   const origCode = process.exitCode;
@@ -54,7 +56,7 @@ function capture(fn: () => void): { out: string; err: string; code: number | und
     err += a.map(String).join(" ") + "\n";
   };
   try {
-    fn();
+    await fn();
   } finally {
     console.log = origLog;
     console.error = origErr;
@@ -77,7 +79,7 @@ const REGISTRY = {
 
 const A_SRC = "export function foo() {\n  return 1;\n}\n";
 
-describe("codument ack — the reachable agent-judge surface", () => {
+describe("codument ack — the reachable agent-judge surface", async () => {
   beforeEach(async () => {
     tmp = await mkdtemp(join(tmpdir(), "codument-ack-"));
     await scaffold({
@@ -98,7 +100,7 @@ describe("codument ack — the reachable agent-judge surface", () => {
       ["alpha"],
     );
 
-    const r = capture(() =>
+    const r = await capture(() =>
       ackCommand("src/a.ts::foo", { reason: "internal: same return shape", root: tmp }),
     );
     assert.equal(r.code, undefined, r.err);
@@ -113,7 +115,7 @@ describe("codument ack — the reachable agent-judge surface", () => {
 
   it("the exact anchorId review prints also resolves (the canonical invocation)", async () => {
     await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
-    const r = capture(() =>
+    const r = await capture(() =>
       ackCommand("src/a.ts::foo().", { reason: "refactor: contract unchanged", root: tmp }),
     );
     assert.equal(r.code, undefined, r.err);
@@ -122,7 +124,7 @@ describe("codument ack — the reachable agent-judge surface", () => {
 
   it("records an identity-bearing self-ack audit event (not just a count)", async () => {
     await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
-    capture(() => ackCommand("src/a.ts::foo", { reason: "same outputs", root: tmp }));
+    await capture(() => ackCommand("src/a.ts::foo", { reason: "same outputs", root: tmp }));
 
     const ack = readAllEvents(tmp).find((e) => e.type === "ack");
     assert.ok(ack, "an ack event was appended");
@@ -136,7 +138,7 @@ describe("codument ack — the reachable agent-judge surface", () => {
 
   it("a distinct --signer is recorded as an independent ack", async () => {
     await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
-    capture(() =>
+    await capture(() =>
       ackCommand("src/a.ts::foo", { reason: "reviewed", signer: "reviewer@x.com", root: tmp }),
     );
     const ack = readAllEvents(tmp).find((e) => e.type === "ack");
@@ -144,7 +146,7 @@ describe("codument ack — the reachable agent-judge surface", () => {
   });
 
   it("fails loud when there is nothing moved to ack", async () => {
-    const r = capture(() => ackCommand("src/a.ts::foo", { reason: "x", root: tmp }));
+    const r = await capture(() => ackCommand("src/a.ts::foo", { reason: "x", root: tmp }));
     assert.equal(r.code, 1);
     assert.match(r.err, /nothing to ack/);
     assert.equal(readAcks(tmp).length, 0);
@@ -164,7 +166,7 @@ describe("codument ack — the reachable agent-judge surface", () => {
     );
 
     // Paste the suggested command: it must actually succeed and clear the verdict.
-    const r = capture(() =>
+    const r = await capture(() =>
       ackCommand("src/a.ts", { reason: "helper swap; narration unchanged", root: tmp }),
     );
     assert.equal(r.code, undefined, r.err);
@@ -173,7 +175,7 @@ describe("codument ack — the reachable agent-judge surface", () => {
 
   it("rejects acking an ADDED symbol (it needs doc attention, not an ack)", async () => {
     await scaffold({ "src/a.ts": A_SRC + "export function bar() {\n  return 2;\n}\n" });
-    const r = capture(() => ackCommand("src/a.ts::bar", { reason: "x", root: tmp }));
+    const r = await capture(() => ackCommand("src/a.ts::bar", { reason: "x", root: tmp }));
     assert.equal(r.code, 1);
     assert.match(r.err, /was added, not changed/);
     // the rejection is a signpost: it names the file-grain alternative
@@ -182,7 +184,7 @@ describe("codument ack — the reachable agent-judge surface", () => {
 
   it("requires a reason", async () => {
     await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
-    const r = capture(() => ackCommand("src/a.ts::foo", { root: tmp }));
+    const r = await capture(() => ackCommand("src/a.ts::foo", { root: tmp }));
     assert.equal(r.code, 1);
     assert.match(r.err, /--reason is required/);
     assert.equal(readAcks(tmp).length, 0);
@@ -196,7 +198,7 @@ describe("codument ack — the reachable agent-judge surface", () => {
     await scaffold({
       "src/x.ts": "export function thing() {\n  return 2;\n}\nexport type thing = string;\n",
     });
-    const r = capture(() => ackCommand("src/x.ts::thing", { reason: "x", root: tmp }));
+    const r = await capture(() => ackCommand("src/x.ts::thing", { reason: "x", root: tmp }));
     assert.equal(r.code, 1);
     assert.match(r.err, /ambiguous/);
     assert.match(r.err, /src\/x\.ts::thing/); // lists the candidate descriptors
@@ -205,14 +207,14 @@ describe("codument ack — the reachable agent-judge surface", () => {
 
   it("--list shows recorded acks; --remove retracts (audited) and the flag returns", async () => {
     await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
-    capture(() => ackCommand("src/a.ts::foo", { reason: "refactor only", root: tmp }));
+    await capture(() => ackCommand("src/a.ts::foo", { reason: "refactor only", root: tmp }));
 
-    const listed = capture(() => ackCommand(undefined, { list: true, root: tmp }));
+    const listed = await capture(() => ackCommand(undefined, { list: true, root: tmp }));
     assert.match(listed.out, /Acknowledgments \(1\)/);
     assert.match(listed.out, /refactor only/);
 
     const handle = ackFileName(readAcks(tmp)[0]).replace(/\.json$/, "");
-    const removed = capture(() => ackCommand(undefined, { remove: handle, root: tmp }));
+    const removed = await capture(() => ackCommand(undefined, { remove: handle, root: tmp }));
     assert.equal(removed.code, undefined, removed.err);
     assert.equal(readAcks(tmp).length, 0);
     // the retraction is itself audited, and the verdict returns
@@ -225,7 +227,7 @@ describe("codument ack — the reachable agent-judge surface", () => {
 
   it("the ack auto-invalidates when the symbol moves again (through the CLI)", async () => {
     await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
-    capture(() => ackCommand("src/a.ts::foo", { reason: "refactor", root: tmp }));
+    await capture(() => ackCommand("src/a.ts::foo", { reason: "refactor", root: tmp }));
     assert.deepStrictEqual(
       buildReview(tmp).state.staleDocs,
       [],
@@ -241,7 +243,7 @@ describe("codument ack — the reachable agent-judge surface", () => {
   });
 });
 
-describe("ack loop end-to-end through the real CLI (the headline ergonomics)", () => {
+describe("ack loop end-to-end through the real CLI (the headline ergonomics)", async () => {
   beforeEach(async () => {
     tmp = await mkdtemp(join(tmpdir(), "codument-ack-e2e-"));
     await scaffold({
@@ -320,7 +322,7 @@ const staleFeatures = (root: string): string[] =>
     .state.staleDocs.map((d) => d.feature)
     .sort();
 
-describe("codument ack <path> — the file-grain surface", () => {
+describe("codument ack <path> — the file-grain surface", async () => {
   beforeEach(async () => {
     tmp = await mkdtemp(join(tmpdir(), "codument-ackfile-"));
     await scaffold({
@@ -342,7 +344,7 @@ describe("codument ack <path> — the file-grain surface", () => {
     await scaffold({ "src/a.ts": A_SRC + "export function bar() {\n  return 2;\n}\n" });
     assert.deepStrictEqual(staleFeatures(tmp), ["alpha"], "the added helper wakes alpha");
 
-    const r = capture(() =>
+    const r = await capture(() =>
       ackCommand("src/a.ts", { reason: "internal helper; no public contract added", root: tmp }),
     );
     assert.equal(r.code, undefined, r.err);
@@ -370,7 +372,7 @@ describe("codument ack <path> — the file-grain surface", () => {
     await scaffold({ "src/u.ts": U_SRC.replace("return 10;", "return 11;") });
     assert.deepStrictEqual(staleFeatures(tmp), ["util"], "the concept woke file-grain");
 
-    const r = capture(() =>
+    const r = await capture(() =>
       ackCommand("src/u.ts", { reason: "reordered internals; util contract unchanged", root: tmp }),
     );
     assert.equal(r.code, undefined, r.err);
@@ -389,14 +391,14 @@ describe("codument ack <path> — the file-grain surface", () => {
     assert.deepStrictEqual(staleFeatures(tmp), ["alpha"]);
 
     // File ack: records, but names the still-flagged moved owned symbol.
-    const r = capture(() => ackCommand("src/a.ts", { reason: "additive helper only", root: tmp }));
+    const r = await capture(() => ackCommand("src/a.ts", { reason: "additive helper only", root: tmp }));
     assert.equal(r.code, undefined, r.err);
     assert.match(r.out, /1 moved symbol\(s\) here are NOT cleared/);
     assert.match(r.out, /src\/a\.ts::foo/);
     assert.deepStrictEqual(staleFeatures(tmp), ["alpha"], "the moved foo() keeps alpha flagged");
 
     // Resolve the move with a symbol ack — now the file ack's additive residue clears.
-    const r2 = capture(() =>
+    const r2 = await capture(() =>
       ackCommand("src/a.ts::foo", { reason: "same return shape", root: tmp }),
     );
     assert.equal(r2.code, undefined, r2.err);
@@ -409,14 +411,14 @@ describe("codument ack <path> — the file-grain surface", () => {
 
   it("refuses to ack a file that does not parse (fail-loud stance preserved)", async () => {
     await scaffold({ "src/a.ts": "export function foo( {\n  return 1;\n" }); // syntax error
-    const r = capture(() => ackCommand("src/a.ts", { reason: "x", root: tmp }));
+    const r = await capture(() => ackCommand("src/a.ts", { reason: "x", root: tmp }));
     assert.equal(r.code, 1);
     assert.match(r.err, /does not parse/);
     assert.equal(readAcks(tmp).length, 0);
   });
 
-  it("refuses when there is no content change (nothing to ack)", () => {
-    const r = capture(() => ackCommand("src/a.ts", { reason: "x", root: tmp }));
+  it("refuses when there is no content change (nothing to ack)", async () => {
+    const r = await capture(() => ackCommand("src/a.ts", { reason: "x", root: tmp }));
     assert.equal(r.code, 1);
     assert.match(r.err, /unchanged.*nothing to ack/);
     assert.equal(readAcks(tmp).length, 0);
@@ -424,21 +426,21 @@ describe("codument ack <path> — the file-grain surface", () => {
 
   it("refuses an added (untracked) file — it needs doc attention, not a file ack", async () => {
     await scaffold({ "src/new.ts": "export const z = 1;\n" });
-    const r = capture(() => ackCommand("src/new.ts", { reason: "x", root: tmp }));
+    const r = await capture(() => ackCommand("src/new.ts", { reason: "x", root: tmp }));
     assert.equal(r.code, 1);
     assert.match(r.err, /was added, not changed/);
   });
 
   it("refuses a DELETED file — no acknowledgment clears a deletion (a removal owes doc attention)", async () => {
     await rm(join(tmp, "src", "a.ts"));
-    const r = capture(() => ackCommand("src/a.ts", { reason: "x", root: tmp }));
+    const r = await capture(() => ackCommand("src/a.ts", { reason: "x", root: tmp }));
     assert.equal(r.code, 1);
     assert.match(r.err, /was deleted, not changed/);
     assert.equal(readAcks(tmp).length, 0);
   });
 
-  it("still requires a reason for the bare-path form", () => {
-    const r = capture(() => ackCommand("src/a.ts", { root: tmp }));
+  it("still requires a reason for the bare-path form", async () => {
+    const r = await capture(() => ackCommand("src/a.ts", { root: tmp }));
     assert.equal(r.code, 1);
     assert.match(r.err, /--reason is required/);
   });
@@ -501,7 +503,7 @@ describe("a per-symbol ack never clears the concept umbrella (ADR-012, end-to-en
     );
 
     // the per-symbol ack adjudicates alpha's contract ONLY
-    const r = capture(() =>
+    const r = await capture(() =>
       ackCommand("src/a.ts::foo", { reason: "internal: same return shape", root: tmp }),
     );
     assert.equal(r.code, undefined, r.err);
@@ -512,7 +514,7 @@ describe("a per-symbol ack never clears the concept umbrella (ADR-012, end-to-en
     );
 
     // the file-grain judgment is what clears the umbrella's residue
-    const rf = capture(() =>
+    const rf = await capture(() =>
       ackCommand("src/a.ts", {
         reason: "file narration unchanged: helper-internal edit",
         root: tmp,
@@ -523,7 +525,7 @@ describe("a per-symbol ack never clears the concept umbrella (ADR-012, end-to-en
   });
 });
 
-describe("codument ack --list --json — the machine audit surface", () => {
+describe("codument ack --list --json — the machine audit surface", async () => {
   beforeEach(async () => {
     tmp = await mkdtemp(join(tmpdir(), "codument-acklist-"));
     await scaffold({
@@ -537,17 +539,17 @@ describe("codument ack --list --json — the machine audit surface", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  const listJson = (): { version: number; acks: Record<string, unknown>[] } => {
-    const r = capture(() => ackCommand(undefined, { list: true, json: true, root: tmp }));
+  const listJson = async (): Promise<{ version: number; acks: Record<string, unknown>[] }> => {
+    const r = await capture(() => ackCommand(undefined, { list: true, json: true, root: tmp }));
     assert.equal(r.code, undefined, r.err);
     return JSON.parse(r.out);
   };
 
   it("emits a versioned contract with the anchor, transition, signer, reason and validity", async () => {
     await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
-    capture(() => ackCommand("src/a.ts::foo", { reason: "internal: same shape", root: tmp }));
+    await capture(() => ackCommand("src/a.ts::foo", { reason: "internal: same shape", root: tmp }));
 
-    const payload = listJson();
+    const payload = await listJson();
     assert.equal(payload.version, 1);
     assert.equal(payload.acks.length, 1);
     const a = payload.acks[0];
@@ -564,26 +566,26 @@ describe("codument ack --list --json — the machine audit surface", () => {
 
   it("an ack that moved again shows validity: invalidated (in JSON and in the human list)", async () => {
     await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
-    capture(() => ackCommand("src/a.ts::foo", { reason: "refactor", root: tmp }));
-    assert.equal(listJson().acks[0].validity, "covering");
+    await capture(() => ackCommand("src/a.ts::foo", { reason: "refactor", root: tmp }));
+    assert.equal((await listJson()).acks[0].validity, "covering");
 
     // The symbol moves past what the ack vouched for → auto-invalidation, made visible.
     await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 999;") });
-    assert.equal(listJson().acks[0].validity, "invalidated");
+    assert.equal((await listJson()).acks[0].validity, "invalidated");
 
-    const human = capture(() => ackCommand(undefined, { list: true, root: tmp }));
+    const human = await capture(() => ackCommand(undefined, { list: true, root: tmp }));
     assert.match(human.out, /auto-invalidated/);
   });
 
   it("validity is base-independent: a covering ack stays covering after the change is committed", async () => {
     await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
-    capture(() => ackCommand("src/a.ts::foo", { reason: "refactor", root: tmp }));
-    assert.equal(listJson().acks[0].validity, "covering");
+    await capture(() => ackCommand("src/a.ts::foo", { reason: "refactor", root: tmp }));
+    assert.equal((await listJson()).acks[0].validity, "covering");
 
     execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
     execFileSync("git", ["commit", "-m", "land the refactor + ack"], { cwd: tmp, stdio: "ignore" });
     assert.equal(
-      listJson().acks[0].validity,
+      (await listJson()).acks[0].validity,
       "covering",
       "a committed acked change still matches the vouch — not read as moot/invalidated",
     );
@@ -591,9 +593,9 @@ describe("codument ack --list --json — the machine audit surface", () => {
 
   it("a file-grain ack round-trips as grain: file with a null symbol, and invalidates on a later edit", async () => {
     await scaffold({ "src/a.ts": A_SRC + "export function bar() {\n  return 2;\n}\n" });
-    capture(() => ackCommand("src/a.ts", { reason: "additive helper only", root: tmp }));
+    await capture(() => ackCommand("src/a.ts", { reason: "additive helper only", root: tmp }));
 
-    const a = listJson().acks[0];
+    const a = (await listJson()).acks[0];
     assert.equal(a.grain, "file");
     assert.equal(a.symbol, null);
     assert.equal(a.path, "src/a.ts");
@@ -602,18 +604,18 @@ describe("codument ack --list --json — the machine audit surface", () => {
     await scaffold({
       "src/a.ts": A_SRC + "export function bar() {\n  return 2;\n}\nexport const K = 3;\n",
     });
-    assert.equal(listJson().acks[0].validity, "invalidated");
+    assert.equal((await listJson()).acks[0].validity, "invalidated");
   });
 
   it("a symbol ack over a now-unparseable file reads indeterminate, never a false verdict", async () => {
     await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
-    capture(() => ackCommand("src/a.ts::foo", { reason: "refactor", root: tmp }));
+    await capture(() => ackCommand("src/a.ts::foo", { reason: "refactor", root: tmp }));
     await scaffold({ "src/a.ts": "export function foo( {\n  return 2;\n" }); // parse error
-    assert.equal(listJson().acks[0].validity, "indeterminate");
+    assert.equal((await listJson()).acks[0].validity, "indeterminate");
   });
 
-  it("empty list is a valid, versioned, empty contract (never a crash)", () => {
-    const payload = listJson();
+  it("empty list is a valid, versioned, empty contract (never a crash)", async () => {
+    const payload = await listJson();
     assert.equal(payload.version, 1);
     assert.deepEqual(payload.acks, []);
   });
@@ -642,7 +644,7 @@ describe("codument ack --list --json — the machine audit surface", () => {
       signer: "Test <test@example.com>",
     });
 
-    const ack = listJson().acks.find((a) => a.anchorId === "src/x.ts::Foo#");
+    const ack = (await listJson()).acks.find((a) => a.anchorId === "src/x.ts::Foo#");
     assert.ok(ack, "the ack is listed");
     assert.equal(
       ack.validity,
@@ -652,7 +654,7 @@ describe("codument ack --list --json — the machine audit surface", () => {
   });
 });
 
-describe("getGitAuthor", () => {
+describe("getGitAuthor", async () => {
   beforeEach(async () => {
     tmp = await mkdtemp(join(tmpdir(), "codument-author-"));
     await scaffold({ "src/a.ts": A_SRC });
@@ -676,7 +678,7 @@ describe("getGitAuthor", () => {
   });
 });
 
-describe("signature/body split — the ack acceptance table", () => {
+describe("signature/body split — the ack acceptance table", async () => {
   // base: a zero-arg exported function; its doc narrates the contract.
   const SIG_REG = {
     features: {
@@ -709,7 +711,7 @@ describe("signature/body split — the ack acceptance table", () => {
     await scaffold({ "src/a.ts": BODY_MOVED });
     const finding = buildReview(tmp).drift.find((d) => d.symbol === "foo");
     assert.equal(finding?.signatureChanged, false, "body-only move");
-    const r = capture(() =>
+    const r = await capture(() =>
       ackCommand("src/a.ts::foo", { reason: "same return shape", root: tmp }),
     );
     assert.equal(r.code, undefined, r.err);
@@ -725,7 +727,7 @@ describe("signature/body split — the ack acceptance table", () => {
       ["alpha"],
     );
 
-    const r = capture(() => ackCommand("src/a.ts::foo", { reason: "trust me", root: tmp }));
+    const r = await capture(() => ackCommand("src/a.ts::foo", { reason: "trust me", root: tmp }));
     assert.equal(r.code, 1);
     assert.match(r.err, /signature changed/);
     assert.equal(readAcks(tmp).length, 0, "no ack was written");
@@ -737,7 +739,7 @@ describe("signature/body split — the ack acceptance table", () => {
 
   it("a file-grain ack does NOT clear a signature move — the verdict persists", async () => {
     await scaffold({ "src/a.ts": SIG_MOVED });
-    const r = capture(() => ackCommand("src/a.ts", { reason: "file-level: trust me", root: tmp }));
+    const r = await capture(() => ackCommand("src/a.ts", { reason: "file-level: trust me", root: tmp }));
     assert.equal(r.code, undefined, r.err); // the file ack is recorded...
     // ...but the sig-moved symbol still wakes: a changed symbol is never file-ack-cleared.
     assert.match(r.out, /NOT cleared by a file ack/);

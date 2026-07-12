@@ -576,4 +576,5 @@ export const tsAdapter: LanguageAdapter = {
   // parse-error classification for the gate.
   matches: (path) => /\.(ts|tsx|mts|cts)$/.test(path) && !/\.d\.(ts|mts|cts)$/.test(path),
   anchors: tsAnchors,
+  classify: classifyTsFile,
 };

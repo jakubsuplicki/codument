@@ -90,6 +90,21 @@ describe("exclusion spec", () => {
     assert.equal(isSourceFile("src/types.d.mts"), false);
     assert.equal(isSourceFile("src/types.d.cts"), false);
   });
+
+  it("python is source; its test conventions and environment trees are not", () => {
+    assert.equal(isSourceFile("app/settings.py"), true);
+    assert.equal(isSourceFile("app/models.pyi"), true);
+    assert.equal(isSourceFile("manage.py"), true);
+    // pytest conventions — the `*.test.*` family's analogs.
+    assert.equal(isSourceFile("tests/test_models.py"), false);
+    assert.equal(isSourceFile("app/models_test.py"), false);
+    assert.equal(isSourceFile("tests/conftest.py"), false);
+    // Environment/bytecode trees never count as first-party source.
+    assert.equal(isSourceFile(".venv/lib/python3.12/site-packages/x.py"), false);
+    assert.equal(isSourceFile("venv/bin/activate_this.py"), false);
+    assert.equal(isSourceFile("app/__pycache__/settings.py"), false);
+    assert.equal(isSourceFile("app/settings.pyc"), false);
+  });
 });
 
 describe("discoverSourceFiles", () => {

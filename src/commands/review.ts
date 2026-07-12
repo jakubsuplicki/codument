@@ -11,7 +11,11 @@ import {
   resolveFileGrainAcked,
 } from "../lib/change-state.js";
 import { computeDrift, type DriftFinding } from "../lib/drift.js";
-import { fileContentTransition, gatherAnchorChanges } from "../lib/fingerprint.js";
+import {
+  fileContentTransition,
+  gatherAnchorChanges,
+  warmAdaptersForRepo,
+} from "../lib/fingerprint.js";
 import {
   assertRootIsRepoToplevel,
   getChangeAuthors,
@@ -428,6 +432,9 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // A subdirectory root produces WRONG answers (everything unmapped, every doc
     // fresh), not absent ones — assert loudly before any verdict is computed.
     assertRootIsRepoToplevel(root);
+    // The gate path below is synchronous; adapters that parse through a WASM
+    // grammar load it here or fail loud when reached cold.
+    await warmAdaptersForRepo(root);
     const reviewOpts = { requireIndependentAck: options.requireIndependentAck === true };
     if (options.base) {
       // Diff the working tree against the merge-base with `options.base` (the

@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import pc from "picocolors";
 import { buildReview, type ReviewReport } from "./review.js";
 import { buildReport, type DoctorReport } from "./doctor.js";
+import { warmAdaptersForRepo } from "../lib/fingerprint.js";
 import { assertRootIsRepoToplevel, isGitRepo, getWorkingTreeChanges } from "../lib/git.js";
 import { readRecentEvents, type CodumentEvent } from "../lib/events.js";
 import { summarizeImpact } from "../lib/impact-ledger.js";
@@ -557,6 +558,11 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
   // The watch run's start — turns logged after this drive the "this session" delta.
   const startedAt = new Date().toISOString();
 
+  // The frame builder is synchronous; adapters that parse through a WASM
+  // grammar load here (and again per data tick, so a language appearing
+  // mid-session warms instead of silently freezing the frame).
+  await warmAdaptersForRepo(root);
+
   if (options.once) {
     // Single frame, no screen clear — for CI/tests and one-shot inspection.
     if (feedOn) pumpFeed(root);
@@ -619,12 +625,17 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
   scheduleAnim();
   const dataTimer = setInterval(() => {
     if (feedOn) pumpFeed(root); // tail new session-log turns before recomputing
-    try {
-      cache = gatherFrameData(root);
-    } catch {
-      // A transient git failure mid-session must not crash the monitor: keep
-      // rendering the last good frame until a later tick recovers.
-    }
+    void (async () => {
+      try {
+        // Re-check per tick: the first .py appearing mid-session must warm,
+        // not throw into the catch below forever.
+        await warmAdaptersForRepo(root);
+        cache = gatherFrameData(root);
+      } catch {
+        // A transient git failure mid-session must not crash the monitor: keep
+        // rendering the last good frame until a later tick recovers.
+      }
+    })();
   }, dataMs);
 
   const stop = () => {

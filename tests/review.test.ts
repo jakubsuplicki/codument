@@ -1254,3 +1254,128 @@ describe("config-file grain arc (nuxt.config.ts shape)", () => {
     );
   });
 });
+
+describe("python settings arc (Django settings.py shape)", () => {
+  const PY_REGISTRY = JSON.stringify(
+    {
+      features: {
+        settings: {
+          doc: "docs/features/settings.md",
+          type: "feature",
+          primary_sources: ["app/settings.py"],
+          related_sources: [],
+          docs: [],
+          depends_on: [],
+          risk: [],
+          status: "current",
+        },
+      },
+    },
+    null,
+    2,
+  );
+  const BASE = [
+    '"""Project settings."""',
+    "",
+    "DEBUG = True",
+    'ALLOWED_HOSTS = ["localhost"]  # hosts allowed in dev',
+    "",
+    'def get_database_url(name="default"):',
+    "    # resolved lazily in dev",
+    "    return DATABASES[name]",
+    "",
+    'register_app("web")',
+    "",
+  ].join("\n");
+
+  function runReview(...extra: string[]): { code: number; out: string } {
+    try {
+      const out = execFileSync("node", [CLI, "review", "--strict", ...extra], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: { ...process.env, NO_COLOR: "1" },
+      });
+      return { code: 0, out };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { code: e.status ?? 1, out: e.stdout ?? "" };
+    }
+  }
+
+  it("comment edit silent; value edit one ackable finding; ack clears; signature move refused; never ungated", async () => {
+    await scaffold({
+      "docs/features/settings.md": "# settings\n\nDEBUG and the database url resolver.\n",
+      "app/settings.py": BASE,
+      "docs/.registry.json": PY_REGISTRY,
+    });
+    gitInit(tmp);
+
+    // 1. A comment-only edit fires nothing — token-stream invariance for Python.
+    await scaffold({
+      "app/settings.py": BASE.replace("# hosts allowed in dev", "# reworded comment"),
+    });
+    let r = runReview();
+    assert.equal(r.code, 0, `comment edit must be silent, got:\n${r.out}`);
+
+    // 2. A settings VALUE edit is ONE named, body-only, ackable finding — and the
+    // file is GATED per-symbol, never riding the ungated-registered surface.
+    await scaffold({ "app/settings.py": BASE.replace("DEBUG = True", "DEBUG = False") });
+    r = runReview();
+    assert.equal(r.code, 1, "value edit must gate");
+    assert.ok(r.out.includes("DEBUG"), "the DEBUG anchor must be named");
+    assert.ok(
+      r.out.includes("codument ack app/settings.py::DEBUG."),
+      `pasteable per-symbol ack expected, got:\n${r.out}`,
+    );
+    const json = JSON.parse(
+      execFileSync("node", [CLI, "review", "--json"], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: { ...process.env, NO_COLOR: "1" },
+      }),
+    );
+    assert.deepEqual(json.state.ungatedRegistered, [], "a governed .py is never 'ungated'");
+    assert.deepEqual(
+      json.state.staleDocs.map((d: { feature: string }) => d.feature),
+      ["settings"],
+    );
+
+    // 3. The pasted ack clears it.
+    execFileSync(
+      "node",
+      [CLI, "ack", "app/settings.py::DEBUG.", "--reason", "dev default flipped; contract unchanged"],
+      { cwd: tmp, encoding: "utf-8", env: { ...process.env, NO_COLOR: "1" } },
+    );
+    r = runReview();
+    assert.equal(r.code, 0, `ack must clear the gate, got:\n${r.out}`);
+
+    // 4. A default-value change on a documented def is a SIGNATURE move: the gate
+    // says so and the ack path refuses it.
+    execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
+    execFileSync("git", ["commit", "--no-verify", "-m", "settings change"], {
+      cwd: tmp,
+      stdio: "ignore",
+    });
+    await scaffold({
+      "app/settings.py": BASE.replace("DEBUG = True", "DEBUG = False").replace(
+        'name="default"',
+        'name="primary"',
+      ),
+    });
+    r = runReview();
+    assert.equal(r.code, 1);
+    assert.ok(
+      r.out.includes("[signature changed]"),
+      `a default-value change must read as a signature move, got:\n${r.out}`,
+    );
+    assert.throws(
+      () =>
+        execFileSync(
+          "node",
+          [CLI, "ack", "app/settings.py::get_database_url().", "--reason", "should be refused"],
+          { cwd: tmp, encoding: "utf-8", env: { ...process.env, NO_COLOR: "1" }, stdio: "pipe" },
+        ),
+      "a signature move must not be ackable",
+    );
+  });
+});

@@ -477,4 +477,6 @@ export const pyAdapter: LanguageAdapter = {
   // Type stubs (`.pyi`) anchor like any module — no cross-file stub matching.
   matches: (path) => /\.pyi?$/.test(path),
   anchors: pyAnchors,
+  classify: classifyPyFile,
+  warm: warmPythonAdapter,
 };

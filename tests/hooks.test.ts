@@ -131,6 +131,40 @@ describe("check-docs hook", () => {
     }
   });
 
+  it("nudges for a governed python source and stays silent for its test files", async () => {
+    const tmp = await createProject();
+    try {
+      const registry: Registry = {
+        features: {
+          settings: {
+            doc: "docs/features/settings.md",
+            type: "feature",
+            primary_sources: ["app/settings.py", "app/test_settings.py"],
+            depends_on: [],
+            last_updated: "2026-07-12",
+            status: "current",
+          },
+        },
+      };
+      await writeFile(
+        join(tmp, "docs", ".registry.json"),
+        JSON.stringify(registry, null, 2) + "\n",
+      );
+      await mkdir(join(tmp, "app"), { recursive: true });
+      await writeFile(join(tmp, "app", "settings.py"), "DEBUG = True\n");
+      await writeFile(join(tmp, "app", "test_settings.py"), "def test_debug():\n    pass\n");
+
+      const nudge = runHook(tmp, join(tmp, "app", "settings.py"));
+      assert.ok(nudge.includes('"settings" (docs/features/settings.md)'));
+      // pytest-convention files are outside the shared spec — no nudge, even
+      // when someone registers them.
+      const silent = runHook(tmp, join(tmp, "app", "test_settings.py"));
+      assert.equal(silent.trim(), "");
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("does not match an un-migrated legacy registry (v2-only read)", async () => {
     const tmp = await createProject();
     try {

@@ -10,11 +10,12 @@ import {
 } from "./two-ref.js";
 import {
   changedAnchorsFromHeadContent,
+  classifySource,
   isPreciseFile,
   type AnchorChange,
   type AnchorChangeKind,
 } from "./fingerprint.js";
-import { classifyTsFile } from "./ts-adapter.js";
+
 import { computeChangeState, type OwnershipLint } from "./change-state.js";
 import {
   parseRegistryOrThrow,
@@ -209,7 +210,7 @@ export function auditRange(root: string, base: string, head: string): HistoryAud
         "git-failed",
       );
     }
-    const klass = classifyTsFile(path, headContent);
+    const klass = classifySource(path, headContent);
     if (klass.mode === "unevaluable") {
       unevaluable.push(path);
       continue;

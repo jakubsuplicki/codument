@@ -41,12 +41,14 @@ describe("coarseAdapter", () => {
 });
 
 describe("adapterFor", () => {
-  it("resolves TS to the precise adapter and everything else to coarse", () => {
+  it("resolves each language to its precise adapter and everything else to coarse", () => {
     assert.equal(adapterFor("src/foo.ts").language, "typescript");
     assert.equal(adapterFor("src/foo.tsx").language, "typescript");
     assert.equal(adapterFor("src/foo.d.ts").language, "coarse");
     assert.equal(adapterFor("README.md").language, "coarse");
-    assert.equal(adapterFor("script.py").language, "coarse");
+    assert.equal(adapterFor("script.py").language, "python");
+    assert.equal(adapterFor("stubs.pyi").language, "python");
+    assert.equal(adapterFor("script.pyc").language, "coarse");
   });
 });
 

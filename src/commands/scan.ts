@@ -5,7 +5,7 @@ import pc from "picocolors";
 import { readRegistry, writeRegistry } from "../lib/registry.js";
 import { atomicWriteFileSync } from "../lib/events.js";
 import { readJsonFileOrThrow } from "../lib/state-io.js";
-import { DEFAULT_EXCLUSION_SPEC } from "../lib/analyze.js";
+import { DEFAULT_EXCLUSION_SPEC, isSourceFile } from "../lib/analyze.js";
 import { ensureDir } from "../lib/scaffold.js";
 
 interface FeatureGroup {
@@ -148,10 +148,9 @@ async function collectSourceFiles(
       // Shared with the analyzer so source discovery never disagrees.
       if (DEFAULT_EXCLUSION_SPEC.dirs.includes(entry.name)) continue;
       files.push(...(await collectSourceFiles(fullPath, root)));
-    } else if (
-      /\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/.test(entry.name) &&
-      !/\.d\.(ts|mts|cts)$/.test(entry.name)
-    ) {
+    } else if (isSourceFile(relative(root, fullPath))) {
+      // The analyzer's ONE source spec (extensions + exclusion globs), so scan
+      // proposes exactly the files the gate will govern — never a fifth copy.
       files.push(relative(root, fullPath));
     }
   }

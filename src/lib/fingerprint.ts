@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { type Acknowledgment, isFileGrainAck } from "./acknowledgment.js";
-import { classifyTsFile, tsAdapter } from "./ts-adapter.js";
+import { getWorkingTreeChanges, listTrackedFiles } from "./git.js";
+import { pyAdapter } from "./py-adapter.js";
+import { TreeSitterError } from "./tree-sitter.js";
+import { tsAdapter } from "./ts-adapter.js";
 import {
   blobExistsAtRef,
   byteNormalize,
@@ -45,6 +48,16 @@ export interface LanguageAdapter {
   matches(path: string): boolean;
   /** The anchors for a file's content at a given path. */
   anchors(path: string, content: string): Anchor[];
+  /** Refine how the gate treats a matched file: fully per-symbol (`precise`),
+   *  whole-file (`coarse`), or fail-loud (`unevaluable`). Absent → precise. */
+  classify?(
+    path: string,
+    content: string,
+  ): { mode: "precise" | "coarse" | "unevaluable"; reason: string };
+  /** Async pre-load (e.g. a WASM grammar) that the synchronous gate path
+   *  requires; the command layer awaits it up front. A cold adapter raises
+   *  TreeSitterError — loud, never a silent coarse fallback. */
+  warm?(): Promise<void>;
 }
 
 function sha256(text: string): string {
@@ -69,12 +82,66 @@ export const coarseAdapter: LanguageAdapter = {
   },
 };
 
-// Adapter registry, most-specific first: the precise TS adapter ahead of the
+// Adapter registry, most-specific first: the precise adapters ahead of the
 // coarse fallback.
-const ADAPTERS: LanguageAdapter[] = [tsAdapter, coarseAdapter];
+const ADAPTERS: LanguageAdapter[] = [tsAdapter, pyAdapter, coarseAdapter];
 
 export function adapterFor(path: string): LanguageAdapter {
   return ADAPTERS.find((a) => a.matches(path)) ?? coarseAdapter;
+}
+
+/** Adapter-dispatched classification — the ONE way any caller decides whether
+ *  a file is per-symbol, whole-file, or unevaluable. An adapter with no
+ *  classifier is always precise for the files it matches. Callers must never
+ *  reach for a language-specific classifier directly: that is how a second
+ *  language's files end up classified through the wrong parser. */
+export function classifySource(
+  path: string,
+  content: string,
+): { mode: "precise" | "coarse" | "unevaluable"; reason: string } {
+  const adapter = adapterFor(path);
+  return adapter.classify
+    ? adapter.classify(path, content)
+    : { mode: "precise", reason: "per-symbol adapter" };
+}
+
+/** Warm every adapter that some path in `paths` needs. The command layer
+ *  awaits this before entering the synchronous gate path. */
+export async function warmAdaptersForPaths(paths: Iterable<string>): Promise<void> {
+  for (const adapter of ADAPTERS) {
+    if (!adapter.warm) continue;
+    for (const p of paths) {
+      if (adapter.matches(p)) {
+        await adapter.warm();
+        break;
+      }
+    }
+  }
+}
+
+/** Warm the adapters a repo's content plausibly needs: tracked files plus
+ *  working-tree changes (so a just-added, untracked file counts). Cheap for a
+ *  repo that needs nothing — one `git ls-files` and no WASM. The listing is
+ *  ADVISORY: a broken git read here degrades to "nothing extra to warm" so the
+ *  warm never opens a failure channel ahead of the verdict path's own guarded
+ *  GateError (which the same broken git raises moments later, in the right
+ *  place); a genuinely needed-but-cold adapter still fails loud downstream. */
+export async function warmAdaptersForRepo(root: string): Promise<void> {
+  let paths: string[];
+  try {
+    paths = [...listTrackedFiles(root), ...getWorkingTreeChanges(root)];
+  } catch {
+    return;
+  }
+  await warmAdaptersForPaths(paths);
+}
+
+/** Warm every warmable adapter — for callers that walk HISTORY (audit), where
+ *  a language may appear in old commits without existing in the tree today. */
+export async function warmAllAdapters(): Promise<void> {
+  for (const adapter of ADAPTERS) {
+    if (adapter.warm) await adapter.warm();
+  }
 }
 
 export type AnchorChangeKind = "added" | "removed" | "changed";
@@ -240,14 +307,15 @@ export interface GatheredAnchors {
 
 // Best-effort per-symbol anchor changes for the changed files among `paths`,
 // comparing `base` to the working tree. A file is classified from its head content
-// (`classifyTsFile`): only `precise` files (≥1 exported symbol) get per-symbol
-// anchors; `coarse` files (non-TS, declaration/generated, re-export barrels,
-// `export =`, namespace, comments-only) are omitted so the change-state falls back
-// to file-grain ownership — this is what stops a `.ts` file whose real surface the
-// precise extractor can't anchor from reading as fresh through an empty anchor set;
-// `unevaluable` files (parse errors) are omitted (file-grain) AND surfaced. If
-// `base` is unreachable (e.g. a fresh repo with no HEAD) the result is empty and
-// the gate degrades to file-grain. Reads git + disk, no clock — deterministic.
+// by ITS adapter's classifier: only `precise` files (≥1 public symbol) get
+// per-symbol anchors; `coarse` files (unadapted languages, declaration/generated,
+// re-export barrels, dynamic `__all__`, namespace, comments-only) are omitted so
+// the change-state falls back to file-grain ownership — this is what stops a file
+// whose real surface the precise extractor can't anchor from reading as fresh
+// through an empty anchor set; `unevaluable` files (parse errors) are omitted
+// (file-grain) AND surfaced. If `base` is unreachable (e.g. a fresh repo with no
+// HEAD) the result is empty and the gate degrades to file-grain. Reads git +
+// disk, no clock — deterministic.
 export function gatherAnchorChanges(root: string, base: string, paths: string[]): GatheredAnchors {
   const anchorChanges: Record<string, AnchorChange[]> = {};
   const unevaluable: string[] = [];
@@ -260,7 +328,7 @@ export function gatherAnchorChanges(root: string, base: string, paths: string[])
     } catch {
       continue; // deleted/unreadable in the working tree → file-grain
     }
-    const klass = classifyTsFile(path, headContent);
+    const klass = classifySource(path, headContent);
     if (klass.mode === "unevaluable") {
       unevaluable.push(path);
       continue; // omit → file-grain (never fresh) + surfaced
@@ -271,7 +339,9 @@ export function gatherAnchorChanges(root: string, base: string, paths: string[])
         anchorsAtRef(root, base, path),
         adapterFor(path).anchors(path, headContent),
       );
-    } catch {
+    } catch (err) {
+      // A cold adapter is a command-layer wiring bug: loud, never file-grain.
+      if (err instanceof TreeSitterError) throw err;
       // base unreadable mid-loop → omit → file-grain fallback
     }
   }
@@ -390,13 +460,14 @@ export function ackValidity(root: string, ack: Acknowledgment): AckValidity {
   }
   // Mirror the gate's fail-loud stance: a precise file that no longer parses is
   // `indeterminate`, never silently read as covering or invalidated.
-  if (isPreciseFile(file) && classifyTsFile(file, content).mode === "unevaluable") {
+  if (isPreciseFile(file) && classifySource(file, content).mode === "unevaluable") {
     return "indeterminate";
   }
   let anchors: Anchor[];
   try {
     anchors = adapterFor(file).anchors(file, content);
-  } catch {
+  } catch (err) {
+    if (err instanceof TreeSitterError) throw err; // cold adapter — wiring bug, loud
     return "indeterminate";
   }
   // Resolve the anchor exactly as `diffAnchorSets` does — index by id into a Map,

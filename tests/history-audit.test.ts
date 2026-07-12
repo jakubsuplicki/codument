@@ -487,3 +487,45 @@ describe("codument audit — end-to-end through the real CLI", () => {
     }
   });
 });
+
+describe("codument audit — python history through the real CLI", () => {
+  let root: string;
+  const env = { ...process.env, NO_COLOR: "1" };
+  const run = (args: string[], cwd: string) =>
+    execFileSync("node", [CLI, ...args], { cwd, encoding: "utf-8", env });
+
+  before(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-audit-py-"));
+    git(root, ["init", "-q"]);
+    await write(root, "app/settings.py", '"""Settings."""\n\nDEBUG = True\n');
+    await write(root, "docs/features/settings.md", "# settings\n");
+    await write(
+      root,
+      "docs/.registry.json",
+      registryJson({ settings: entry("app/settings.py", "docs/features/settings.md") }),
+    );
+    git(root, ["add", "-A"]);
+    git(root, ["commit", "-q", "-m", "v1"]);
+    git(root, ["tag", "py1"]);
+    await write(root, "app/settings.py", '"""Settings."""\n\nDEBUG = False\n');
+    git(root, ["add", "-A"]);
+    git(root, ["commit", "-q", "-m", "v2"]);
+    git(root, ["tag", "py2"]);
+  });
+
+  after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("names the drifted Python symbol over the range — audit lights up for the second language", () => {
+    const out = run(["audit", "py1..py2", "--json"], root);
+    const parsed = JSON.parse(out);
+    assert.equal(parsed.audit, "ok");
+    assert.equal(parsed.driftedCount, 1);
+    assert.equal(parsed.drifted[0].feature, "settings");
+    assert.deepEqual(
+      parsed.drifted[0].symbolMoves.map((m: { file: string; symbol: string }) => `${m.file}::${m.symbol}`),
+      ["app/settings.py::DEBUG"],
+    );
+  });
+});

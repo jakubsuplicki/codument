@@ -220,6 +220,24 @@ export function listIgnoredPaths(root: string): string[] {
 }
 
 /**
+ * Every tracked path at HEAD, repo-relative and POSIX. The adapter warm-up's
+ * cheap "does this repo plausibly contain language X" probe — read-only, no
+ * verdict input. Empty outside a repo or on a broken read (the warm decision
+ * degrades to "nothing extra to warm"; the gate path itself stays fail-loud —
+ * a cold adapter raises rather than coarsens).
+ */
+export function listTrackedFiles(root: string): string[] {
+  if (!isGitRepo(root)) return [];
+  try {
+    return git(root, ["ls-files", "-z"])
+      .split("\0")
+      .filter((p) => p.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Changed paths in the working tree (modified, added, renamed, and untracked),
  * repo-relative and POSIX, sorted and deduped. Deletions are excluded from THIS
  * list because it carries extant paths only; they are a first-class change in

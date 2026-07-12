@@ -22,8 +22,10 @@ The engine deliberately owns no verdict logic. It resolves the range with the sa
 primitives the gate uses (merge-base semantics, so commits merged in from elsewhere are not
 misattributed to the range; no common ancestor degrades honestly to "everything is new"), gathers
 per-symbol anchor diffs between the two committed refs with the same classification discipline as
-the live gate (only files the precise adapter can fully anchor get per-symbol treatment; the rest
-fall back to whole-file grain; a parse-broken file is surfaced, never trusted), and hands
+the live gate (adapter-dispatched, so every precise language — TypeScript and Python alike — gets
+per-symbol treatment through its own parser; the rest fall back to whole-file grain; a
+parse-broken file is surfaced, never trusted; WASM-grammar adapters are all warmed up front, since
+history may contain a language the tree no longer does), and hands
 everything to the same pure analyzer the gate runs. One analyzer, two lenses — the audit and the
 gate structurally cannot disagree about what counts as drift.
 

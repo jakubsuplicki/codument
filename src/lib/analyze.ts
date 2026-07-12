@@ -39,12 +39,15 @@ export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
     ".next",
     ".nuxt",
     ".output",
+    ".venv",
     ".wxt",
+    "__pycache__",
     "__tests__",
     "build",
     "coverage",
     "dist",
     "node_modules",
+    "venv",
   ],
   globs: [
     "**/*.test.*",
@@ -54,13 +57,17 @@ export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
     "**/*.d.cts",
     "**/*.seed.json",
     "**/generated/**",
+    // Python test conventions — the `*.test.*` family's pytest analogs.
+    "**/test_*.py",
+    "**/*_test.py",
+    "**/conftest.py",
     // Root-level test-fixture trees only — anchored (not a bare `fixtures` dir
     // name) so a project's real first-party source under e.g. `src/fixtures/`
     // is NOT silently dropped from governance.
     "fixtures/**",
     "scripts/generate-*",
   ],
-  extensions: [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"],
+  extensions: [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".py", ".pyi"],
 };
 
 // Exported so the Feature Map router (feature-map.ts) matches globs with the
