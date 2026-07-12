@@ -73,7 +73,7 @@ src/lib/py-adapter.ts | change-control-gate | feature | Python anchors: module d
 
 - [x] Step 1: grammar vendored + `py-adapter.ts` anchor extraction (nodes → anchors, public rule,
       descriptors); classification precise|coarse|unevaluable; battery behaviors 1, 5–8 green.
-- [ ] Step 2: signature/body split incl. the per-member class composite + private-helper closure;
+- [x] Step 2: signature/body split incl. the per-member class composite + private-helper closure;
       battery behaviors 2–4 green + the language-specific signature cases.
 - [ ] Step 3: registration — adapter registered, `.py` into the extension spec, ungated-notice
       retirement for `.py`, e2e settings-arc + audit-on-python-history e2e.

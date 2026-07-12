@@ -80,10 +80,13 @@ function anchorId(path: string, name: string, kind: PyAnchorKind): string {
 // comments, length-prefixed exactly like the TS adapter's framing (injective —
 // `a b` and `"a b"` cannot collide) and indentation-free by construction (the
 // leaves carry no whitespace), so reformatting and comment churn move nothing
-// while `0x10` vs `16` and intra-string edits still fire.
-function tokenStreamHash(nodes: readonly Node[]): string {
+// while `0x10` vs `16` and intra-string edits still fire. Subtrees in
+// `exclude` are skipped wholesale — how a declaration's body region is carved
+// out of its signature hash.
+function tokenStreamHash(nodes: readonly Node[], exclude?: ReadonlySet<number>): string {
   const hash = createHash("sha256");
   const walk = (n: Node): void => {
+    if (exclude?.has(n.id)) return;
     if (n.childCount === 0) {
       if (n.type === "comment" || n.text.length === 0) return;
       hash.update(`${Buffer.byteLength(n.text, "utf8")}:`);
@@ -97,6 +100,27 @@ function tokenStreamHash(nodes: readonly Node[]): string {
   };
   for (const n of nodes) walk(n);
   return hash.digest("hex");
+}
+
+// Every identifier leaf under `nodes`, minus excluded subtrees — the raw
+// material of the private-helper closure. Deliberately scope-blind (v1, like
+// the plan says): a local that shadows a module-private name over-includes the
+// helper, which over-wakes but never launders.
+function collectIdentifiers(nodes: readonly Node[], exclude?: ReadonlySet<number>): Set<string> {
+  const refs = new Set<string>();
+  const walk = (n: Node): void => {
+    if (exclude?.has(n.id)) return;
+    if (n.type === "identifier") {
+      refs.add(n.text);
+      return;
+    }
+    for (let i = 0; i < n.childCount; i++) {
+      const child = n.child(i);
+      if (child) walk(child);
+    }
+  };
+  for (const n of nodes) walk(n);
+  return refs;
 }
 
 // A top-level declaration: one anchor identity plus every statement that
@@ -203,9 +227,131 @@ function isPublic(decl: PyDecl, all: AllSpec): boolean {
   return !decl.name.startsWith("_");
 }
 
-// Anchor extraction. Step-1 grain: a public declaration's fingerprint covers
-// its own span(s); the signature/body split and the private-helper closure land
-// in the next step. Private declarations ride the residual until then.
+function defBody(member: Node): Node | null {
+  const def =
+    member.type === "decorated_definition" ? member.childForFieldName("definition") : member;
+  return def?.childForFieldName("body") ?? null;
+}
+
+// The body regions of a declaration — what an ack may still clear as an
+// implementation-only move. A function's suite is body (decorators, name,
+// parameters with defaults, and the return annotation are contract). A class
+// splits per member: method suites and the class docstring are body; the class
+// frame, bases, every method's signature, and class-level assignments are
+// contract. A module assignment's VALUE is body while its targets and
+// annotation are contract — the settings-file calibration (ADR 014's frame
+// rule, restated for Python): editing `DEBUG = True` to `False` is one ackable
+// finding, renaming or re-typing the setting is not.
+function bodyRegionsOf(decl: PyDecl): Node[] {
+  const bodies: Node[] = [];
+  for (const node of decl.nodes) {
+    if (decl.kind === "function") {
+      const b = defBody(node);
+      if (b) bodies.push(b);
+    } else if (decl.kind === "class") {
+      const block = defBody(node);
+      if (!block) continue;
+      for (const member of block.namedChildren) {
+        if (member.type === "function_definition" || member.type === "decorated_definition") {
+          const b = defBody(member);
+          if (b) bodies.push(b);
+        } else if (
+          member.type === "expression_statement" &&
+          member.namedChildren[0]?.type === "string"
+        ) {
+          bodies.push(member);
+        }
+      }
+    } else if (node.type === "expression_statement") {
+      const inner = node.namedChildren[0];
+      const right = inner?.type === "assignment" ? inner.childForFieldName("right") : null;
+      if (right) bodies.push(right);
+    }
+  }
+  return bodies;
+}
+
+// Transitively include every module-private declaration reachable from the
+// seed names. A helper's hash covers its WHOLE surface (all merged nodes), so
+// a private change of any grain moves its public referencers. Sorted by name —
+// the member order is never a function of discovery order.
+function closureFromNames(
+  seeds: Iterable<string>,
+  privateByName: ReadonlyMap<string, Node[]>,
+): { name: string; hash: string }[] {
+  const included = new Map<string, Node[]>();
+  const stack = [...seeds];
+  while (stack.length > 0) {
+    const ref = stack.pop();
+    if (ref === undefined) continue;
+    const decls = privateByName.get(ref);
+    if (decls && !included.has(ref)) {
+      included.set(ref, decls);
+      for (const r of collectIdentifiers(decls)) stack.push(r);
+    }
+  }
+  return [...included.entries()]
+    .map(([name, nodes]) => ({ name, hash: tokenStreamHash(nodes) }))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+// Same composition rule as the TS adapter: the bare hash when nothing private
+// is referenced, else the own hash plus each helper's hash keyed by name.
+function compositeHash(own: string, members: readonly { name: string; hash: string }[]): string {
+  if (members.length === 0) return own;
+  return sha256([own, ...members.map((m) => `${m.name} ${m.hash}`)].join("\n"));
+}
+
+// The {signature, fingerprint} pair for one public declaration. Helpers
+// referenced from the signature side are contract (sig wins ties, so a helper
+// reachable from a default value can never be laundered into a body-only
+// move); helpers referenced only from the body stay ackable with it. The
+// composite binds both halves, so it moves on any real change.
+function pyFingerprintPair(
+  decl: PyDecl,
+  privateByName: ReadonlyMap<string, Node[]>,
+): { signature: string; fingerprint: string; closureNames: Set<string> } {
+  const bodies = bodyRegionsOf(decl);
+  const bodyIds: ReadonlySet<number> = new Set(bodies.map((b) => b.id));
+  const sigRefs = collectIdentifiers(decl.nodes, bodyIds);
+  const bodyRefs = collectIdentifiers(bodies);
+  const sigMembers = closureFromNames(sigRefs, privateByName);
+  const sigNames = new Set(sigMembers.map((m) => m.name));
+  const bodyMembers = closureFromNames(bodyRefs, privateByName).filter(
+    (m) => !sigNames.has(m.name),
+  );
+  const signature = compositeHash(tokenStreamHash(decl.nodes, bodyIds), sigMembers);
+  const body = compositeHash(tokenStreamHash(bodies), bodyMembers);
+  return {
+    signature,
+    fingerprint: sha256(`${signature}\n${body}`),
+    closureNames: new Set([...sigNames, ...bodyMembers.map((m) => m.name)]),
+  };
+}
+
+// The top-level names a statement binds (for residual accounting).
+function pyDeclaredNames(stmt: Node): string[] {
+  if (stmt.type === "decorated_definition" || stmt.type === "function_definition" || stmt.type === "class_definition") {
+    const def = stmt.type === "decorated_definition" ? stmt.childForFieldName("definition") : stmt;
+    const name = def?.childForFieldName("name")?.text;
+    return name ? [name] : [];
+  }
+  if (stmt.type === "expression_statement") {
+    const inner = stmt.namedChildren[0];
+    if (inner?.type !== "assignment") return [];
+    const left = inner.childForFieldName("left");
+    if (!left) return [];
+    if (left.type === "identifier") return [left.text];
+    if (left.type === "pattern_list" || left.type === "tuple_pattern") {
+      return left.namedChildren.filter((t) => t.type === "identifier").map((t) => t.text);
+    }
+  }
+  return [];
+}
+
+// Anchor extraction: one per public declaration, fingerprinted over the
+// signature/body split and transitively closed over referenced module-private
+// helpers, plus the residual backstop.
 export function pyAnchors(path: string, content: string): Anchor[] {
   const language = requireWarm();
   const tree = parseSync(language, byteNormalize(content));
@@ -216,11 +362,28 @@ export function pyAnchors(path: string, content: string): Anchor[] {
     const anchors: Anchor[] = [];
     const anchoredStmts = new Set<Node>();
 
+    // The private-helper pool: every non-public declaration, keyed by name
+    // (kinds merged — `_f = …` shadowing `def _f` is one surface).
+    const privateByName = new Map<string, Node[]>();
+    for (const decl of decls) {
+      if (isPublic(decl, all)) continue;
+      const existing = privateByName.get(decl.name);
+      if (existing) existing.push(...decl.nodes);
+      else privateByName.set(decl.name, [...decl.nodes]);
+    }
+
+    // Private names pulled into some public anchor's closure: those
+    // declarations are covered by a precise anchor and leave the residual.
+    const closureCovered = new Set<string>();
+
     for (const decl of decls) {
       if (!isPublic(decl, all)) continue;
+      const pair = pyFingerprintPair(decl, privateByName);
+      for (const n of pair.closureNames) closureCovered.add(n);
       anchors.push({
         id: anchorId(path, decl.name, decl.kind),
-        fingerprint: tokenStreamHash(decl.nodes),
+        fingerprint: pair.fingerprint,
+        signature: pair.signature,
         name: decl.name,
         kind: decl.kind,
       });
@@ -228,12 +391,16 @@ export function pyAnchors(path: string, content: string): Anchor[] {
     }
 
     // Residual backstop: every top-level statement no precise anchor covers —
-    // imports, side effects, docstrings, private declarations (until the
-    // closure lands), and `__all__` itself. Hashed per-statement in source
-    // order (execution order is semantic). With a static `__all__`, that
-    // assignment is the residual's SIGNATURE side: editing the public list is
-    // a contract move, while docstring/side-effect churn stays body-only.
-    const residual = statements.filter((s) => !anchoredStmts.has(s));
+    // imports, side effects, docstrings, uncovered private declarations, and
+    // `__all__` itself. Hashed per-statement in source order (execution order
+    // is semantic). With a static `__all__`, that assignment is the residual's
+    // SIGNATURE side: editing the public list is a contract move, while
+    // docstring/side-effect churn stays body-only.
+    const residual = statements.filter((s) => {
+      if (anchoredStmts.has(s)) return false;
+      const names = pyDeclaredNames(s);
+      return !(names.length > 0 && names.every((n) => closureCovered.has(n)));
+    });
     if (residual.length > 0) {
       const allStmts = residual.filter((s) => {
         if (s.type !== "expression_statement") return false;

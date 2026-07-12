@@ -3,6 +3,7 @@ import { before, describe, it } from "node:test";
 import type { Anchor } from "../src/lib/fingerprint.js";
 import { classifyPyFile, pyAdapter, warmPythonAdapter } from "../src/lib/py-adapter.js";
 import { TreeSitterError } from "../src/lib/tree-sitter.js";
+import { type AdapterHarness, checkAdapterConformance } from "./adapter-conformance.js";
 
 const P = "src/shapes.py";
 
@@ -234,5 +235,150 @@ register_shapes("area", "perimeter")
     assert.deepEqual(a, b);
     const crlfBom = "\uFEFF" + BASE.replace(/\n/g, "\r\n");
     assert.deepEqual(anchors(crlfBom), a);
+  });
+});
+
+describe("python conformance battery — full", () => {
+  before(async () => {
+    await warmPythonAdapter();
+  });
+
+  it("the Python adapter passes all eight behaviors", () => {
+    const pyHarness: AdapterHarness = {
+      adapter: pyAdapter,
+      classify: (path, content) => classifyPyFile(path, content).mode,
+      fixtures: {
+        path: P,
+        base: BASE,
+        formatted: BASE.replace("# area is clamped", "# reworded, same code").replace(
+          "import math\n",
+          "import math\n\n\n",
+        ),
+        bodyEdit: {
+          symbol: "perimeter",
+          content: BASE.replace("return 2 * (w + h)", "return (w + h) * 2"),
+        },
+        signatureEdit: {
+          symbol: "perimeter",
+          content: BASE.replace("def perimeter(w, h):", "def perimeter(w, h, pad=0):"),
+        },
+        helperEdit: {
+          symbol: "area",
+          content: BASE.replace("return 0 if n < 0 else n", "return 0 if n <= 0 else n"),
+        },
+        residualEdit: BASE.replace(
+          'register_shapes("area", "perimeter")',
+          'register_shapes("area")',
+        ),
+        reordered: BASE.replace(
+          "def perimeter(w, h):\n    return 2 * (w + h)\n\ndef _hidden_but_public(x):\n    return x\n",
+          "def _hidden_but_public(x):\n    return x\n\ndef perimeter(w, h):\n    return 2 * (w + h)\n",
+        ),
+        parseError: "def broken((:\n",
+      },
+    };
+    assert.deepEqual(checkAdapterConformance(pyHarness), []);
+  });
+});
+
+describe("python signature/body split — language-specific contract cases", () => {
+  before(async () => {
+    await warmPythonAdapter();
+  });
+
+  const pairOf = (content: string, name: string) => {
+    const a = named(anchors(content), name);
+    assert.ok(a, `${name} must be anchored`);
+    assert.ok(a.signature, `${name} must carry a signature`);
+    return a;
+  };
+
+  it("a decorator edit is a signature move", () => {
+    const src = "@cache\ndef handler(x):\n    return x\n";
+    const after = src.replace("@cache", "@lru_cache(maxsize=8)");
+    assert.notEqual(pairOf(after, "handler").signature, pairOf(src, "handler").signature);
+  });
+
+  it("a default-value change is a signature move", () => {
+    const src = "def f(x=1):\n    return x\n";
+    const after = src.replace("x=1", "x=2");
+    assert.notEqual(pairOf(after, "f").signature, pairOf(src, "f").signature);
+  });
+
+  it("a return-annotation change is a signature move", () => {
+    const src = "def f(x) -> int:\n    return x\n";
+    const after = src.replace("-> int", "-> str");
+    assert.notEqual(pairOf(after, "f").signature, pairOf(src, "f").signature);
+  });
+
+  it("a docstring-only edit is body: fingerprint moves, signature holds", () => {
+    const src = 'def f(x):\n    """Adds nothing."""\n    return x\n';
+    const after = src.replace("Adds nothing.", "Reworded doc.");
+    const was = pairOf(src, "f");
+    const now = pairOf(after, "f");
+    assert.notEqual(now.fingerprint, was.fingerprint);
+    assert.equal(now.signature, was.signature);
+  });
+
+  it("a parameter rename is a signature move (no canonicalization in v1 — the plan-11 analog is a named follow-up)", () => {
+    assert.notEqual(
+      pairOf("def f(b):\n    return b\n", "f").signature,
+      pairOf("def f(a):\n    return a\n", "f").signature,
+    );
+  });
+
+  it("class: a method suite edit is body; a method signature edit is contract", () => {
+    const base = pairOf(BASE, "Greeter");
+    const suiteEdit = pairOf(BASE.replace('return f"hi {name}"', 'return f"yo {name}"'), "Greeter");
+    assert.notEqual(suiteEdit.fingerprint, base.fingerprint);
+    assert.equal(suiteEdit.signature, base.signature);
+    const sigEdit = pairOf(
+      BASE.replace("def greet(self, name):", "def greet(self, name, shout=False):"),
+      "Greeter",
+    );
+    assert.notEqual(sigEdit.signature, base.signature);
+  });
+
+  it("class: a class-level assignment change is contract; the class docstring is body", () => {
+    const base = pairOf(BASE, "Greeter");
+    const attrEdit = pairOf(BASE.replace('unit = "m2"', 'unit = "ft2"'), "Greeter");
+    assert.notEqual(attrEdit.signature, base.signature);
+    const withDoc = BASE.replace("class Greeter:\n", 'class Greeter:\n    """Greets."""\n');
+    const docBase = pairOf(withDoc, "Greeter");
+    const docEdit = pairOf(withDoc.replace("Greets.", "Greets, reworded."), "Greeter");
+    assert.notEqual(docEdit.fingerprint, docBase.fingerprint);
+    assert.equal(docEdit.signature, docBase.signature);
+  });
+
+  it("module assignment: the VALUE is ackable body, the target and annotation are contract (the settings-file calibration)", () => {
+    const src = "DEBUG = True\nTIMEOUT: int = 30\n";
+    const valueEdit = pairOf(src.replace("True", "False"), "DEBUG");
+    const base = pairOf(src, "DEBUG");
+    assert.notEqual(valueEdit.fingerprint, base.fingerprint);
+    assert.equal(valueEdit.signature, base.signature);
+    const annBase = pairOf(src, "TIMEOUT");
+    const annEdit = pairOf(src.replace("TIMEOUT: int", "TIMEOUT: float"), "TIMEOUT");
+    assert.notEqual(annEdit.signature, annBase.signature);
+  });
+
+  it("sig wins ties: a helper reachable from a default value moves the SIGNATURE", () => {
+    const src = "_DEFAULT = 5\n\ndef f(x=_DEFAULT):\n    return x\n";
+    const after = src.replace("_DEFAULT = 5", "_DEFAULT = 6");
+    assert.notEqual(pairOf(after, "f").signature, pairOf(src, "f").signature);
+  });
+
+  it("the helper closure is transitive", () => {
+    const src =
+      "def _b(n):\n    return n + 1\n\ndef _a(n):\n    return _b(n)\n\ndef g(n):\n    return _a(n)\n";
+    const after = src.replace("return n + 1", "return n + 2");
+    assert.notEqual(pairOf(after, "g").fingerprint, pairOf(src, "g").fingerprint);
+  });
+
+  it("a covered private leaves the residual; editing it never wakes the residual", () => {
+    const base = anchors(BASE);
+    const after = anchors(BASE.replace("_SCALE = 3", "_SCALE = 4"));
+    assert.notEqual(named(after, "area")?.fingerprint, named(base, "area")?.fingerprint);
+    assert.equal(residual(after)?.fingerprint, residual(base)?.fingerprint);
+    assert.equal(named(after, "perimeter")?.fingerprint, named(base, "perimeter")?.fingerprint);
   });
 });
