@@ -1,0 +1,13 @@
+# Bundled tree-sitter grammars
+
+Each `.wasm` here is a tree-sitter grammar compiled to WebAssembly, shipped in
+the package so a parse is a pure function of (content bytes, grammar bytes,
+runtime bytes) — never of an ambient toolchain (ADR 015). A binary is added
+only in the plan that makes its language judgeable, and REPLACING one is an
+algo-visible event: the determinism stamp digests this directory's content
+hashes, so a grammar bump re-baselines that language's anchors instead of
+silently changing verdicts.
+
+| file | grammar | provenance | ABI |
+| --- | --- | --- | --- |
+| `python.wasm` | tree-sitter-python (MIT) | `@vscode/tree-sitter-wasm@0.3.1` (MIT), sha256 `16108b50df4ee9a30168794252ab55e7c93bfc5765d7fa0aa3e335752c515f47` | 15 |

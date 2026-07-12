@@ -39,10 +39,11 @@ export interface BundledGrammar {
   readonly file: string;
 }
 
-// One row per shipped adapter. Empty until the first adapter plan vendors its
-// grammar; each language becomes "source" only in the plan that makes it
-// judgeable, so this list and the extension spec grow together.
-export const BUNDLED_GRAMMARS: readonly BundledGrammar[] = [];
+// One row per shipped adapter; each language becomes "source" only in the plan
+// that makes it judgeable, so this list and the extension spec grow together.
+export const BUNDLED_GRAMMARS: readonly BundledGrammar[] = [
+  { language: "python", file: "python.wasm" },
+];
 
 export function grammarsDir(): string {
   return join(ownPackageRoot(), "grammars");
@@ -55,6 +56,7 @@ export function grammarsDir(): string {
 // every attempt instead of wedging into a half-initialized state.
 type Runtime = typeof import("web-tree-sitter");
 let runtimePromise: Promise<Runtime> | null = null;
+let runtimeModule: Runtime | null = null;
 let runtimeReady = false;
 
 function runtime(): Promise<Runtime> {
@@ -64,6 +66,7 @@ function runtime(): Promise<Runtime> {
       const require = createRequire(import.meta.url);
       const wasmPath = require.resolve("web-tree-sitter/web-tree-sitter.wasm");
       await wts.Parser.init({ locateFile: () => wasmPath });
+      runtimeModule = wts;
       runtimeReady = true;
       return wts;
     })();
@@ -127,12 +130,18 @@ export async function loadLanguageFromFile(absPath: string): Promise<Language> {
   }
 }
 
-/** Parse content with a loaded grammar. The returned tree lives on the WASM
- *  heap until the caller deletes it or the process exits — fine for a one-shot
- *  CLI verdict; a long-lived caller (watch) must `tree.delete()` per tick. */
-export async function parseWith(language: Language, content: string): Promise<Tree> {
-  const { Parser } = await runtime();
-  const parser = new Parser();
+/** Parse content with a loaded grammar, synchronously. The gate pipeline is
+ *  synchronous, so adapters parse through this after their async warm; a cold
+ *  runtime is a loud error, never a silent coarse verdict. The returned tree
+ *  lives on the WASM heap until the caller deletes it or the process exits —
+ *  a repeated caller (an adapter under watch) must `tree.delete()` per use. */
+export function parseSync(language: Language, content: string): Tree {
+  if (!runtimeModule) {
+    throw new TreeSitterError(
+      "WASM runtime not initialized — warm the adapter (load its grammar) before the sync gate path runs",
+    );
+  }
+  const parser = new runtimeModule.Parser();
   try {
     parser.setLanguage(language);
     const tree = parser.parse(content);
@@ -143,6 +152,12 @@ export async function parseWith(language: Language, content: string): Promise<Tr
   } finally {
     parser.delete();
   }
+}
+
+/** Async convenience over `parseSync` for callers outside the sync gate path. */
+export async function parseWith(language: Language, content: string): Promise<Tree> {
+  await runtime();
+  return parseSync(language, content);
 }
 
 export interface GrammarManifestEntry {

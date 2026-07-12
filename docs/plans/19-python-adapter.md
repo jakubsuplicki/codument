@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 19: Python adapter — per-symbol staleness for the second-biggest agent ecosystem
@@ -71,7 +71,7 @@ src/lib/py-adapter.ts | change-control-gate | feature | Python anchors: module d
 
 ## Delivery Plan
 
-- [ ] Step 1: grammar vendored + `py-adapter.ts` anchor extraction (nodes → anchors, public rule,
+- [x] Step 1: grammar vendored + `py-adapter.ts` anchor extraction (nodes → anchors, public rule,
       descriptors); classification precise|coarse|unevaluable; battery behaviors 1, 5–8 green.
 - [ ] Step 2: signature/body split incl. the per-member class composite + private-helper closure;
       battery behaviors 2–4 green + the language-specific signature cases.

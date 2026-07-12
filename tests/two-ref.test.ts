@@ -51,9 +51,9 @@ describe("algoStamp", () => {
     assert.ok(stamp.includes(`algo=${ALGO_VERSION}`));
     assert.equal(stamp, algoStamp());
   });
-  it("carries no grammar segment while no grammar is bundled", () => {
-    assert.ok(!algoStamp().includes("grammars="));
-    assert.equal(algoStamp([]), algoStamp());
+  it("digests the bundled grammar set; an empty manifest carries no segment", () => {
+    assert.ok(algoStamp().includes("grammars="), "python grammar is bundled → segment present");
+    assert.ok(!algoStamp([]).includes("grammars="));
   });
   it("a grammar bump is an algo-visible event; entry order is not", () => {
     const python = { language: "python", sha256: "a".repeat(64) };

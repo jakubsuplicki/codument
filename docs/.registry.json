@@ -430,7 +430,8 @@
         "src/lib/ts-adapter.ts",
         "src/lib/ts-canonicalize.ts",
         "src/lib/two-ref.ts",
-        "tests/adapter-conformance.ts"
+        "tests/adapter-conformance.ts",
+        "src/lib/py-adapter.ts"
       ],
       "related_sources": [],
       "docs": [

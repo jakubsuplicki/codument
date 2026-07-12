@@ -145,7 +145,12 @@ describe("grammar manifest", () => {
     );
   });
 
-  it("is empty until the first adapter bundles a grammar", () => {
-    assert.deepEqual(grammarManifest(), []);
+  it("carries every bundled grammar — python since its adapter shipped", () => {
+    const manifest = grammarManifest();
+    assert.deepEqual(
+      manifest.map((m) => m.language),
+      ["python"],
+    );
+    assert.match(manifest[0].sha256, /^[0-9a-f]{64}$/);
   });
 });
