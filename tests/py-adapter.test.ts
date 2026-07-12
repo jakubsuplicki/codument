@@ -117,6 +117,34 @@ describe("python anchor extraction", () => {
     assert.notEqual(named(after, "y")?.fingerprint, y.fingerprint);
   });
 
+  it("a CHAINED assignment anchors every target; a later-target rename is never ackable body churn", () => {
+    const as = anchors("x = y = 1\n");
+    assert.ok(named(as, "x"), "x anchored");
+    assert.ok(named(as, "y"), "y anchored — a chained target must never vanish");
+    // The value is the shared ackable body: editing it moves both, sigs hold.
+    const valueEdit = anchors("x = y = 2\n");
+    assert.notEqual(named(valueEdit, "x")?.fingerprint, named(as, "x")?.fingerprint);
+    assert.equal(named(valueEdit, "x")?.signature, named(as, "x")?.signature);
+    // Renaming the LATER target is a contract event: y's anchor disappears and
+    // x's SIGNATURE moves (the chain is x's contract), never a body-only move.
+    const renamed = anchors("x = z = 1\n");
+    assert.equal(named(renamed, "y"), undefined);
+    assert.ok(named(renamed, "z"));
+    assert.notEqual(named(renamed, "x")?.signature, named(as, "x")?.signature);
+  });
+
+  it("splatted and nested unpacking targets are all anchored", () => {
+    const as = anchors("a, *rest = [1, 2, 3]\n(b, c), d = (4, 5), 6\n");
+    for (const name of ["a", "rest", "b", "c", "d"]) {
+      assert.ok(named(as, name), `${name} must be anchored`);
+    }
+  });
+
+  it("a chained __all__ is dynamic — the surface is never guessed through a chain", () => {
+    assert.equal(classifyPyFile(P, 'X = __all__ = ["a"]\n\ndef a():\n    return 1\n').mode, "coarse");
+    assert.equal(classifyPyFile(P, '__all__ = X = ["a"]\n\ndef a():\n    return 1\n').mode, "coarse");
+  });
+
   it("same-name defs merge into one run (an @overload stack is one surface)", () => {
     const src =
       "from typing import overload\n\n@overload\ndef f(x: int) -> int: ...\n@overload\ndef f(x: str) -> str: ...\ndef f(x):\n    return x\n";

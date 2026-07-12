@@ -61,10 +61,10 @@ Run 16 before 17; they are independent but 17's CHANGELOG rides on 16's release 
 
 ## Language expansion (18–25) — per-symbol drift beyond TypeScript
 
-Per-symbol resolution is the moat, and it is TS-only today. One substrate plan makes "precise"
-a single testable contract (tree-sitter WASM + a conformance battery every adapter must pass);
-the language plans then carry only genuinely language-specific decisions. All draft; approve in
-order — 18 is a hard prerequisite for 19 and 21–24.
+Per-symbol resolution is the moat. One substrate plan makes "precise" a single testable contract
+(tree-sitter WASM + a conformance battery every adapter must pass); the language plans then carry
+only genuinely language-specific decisions. 18 (substrate) and 19 (Python) are shipped; 20–25
+are draft — approve one at a time, in order.
 
 | Plan | Target | Depends on | Note |
 | --- | --- | --- | --- |

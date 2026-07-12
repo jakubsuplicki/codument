@@ -121,6 +121,49 @@ describe("codument doctor (CLI)", () => {
     assert.ok(out.includes("Documentation coverage"));
     assert.ok(out.includes("ownership"));
   });
+
+  it("runs green over a Python repo — the symbol heuristics warm their grammar instead of going blind", async () => {
+    const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const dir = await mkdtemp(join(tmpdir(), "codument-doctor-py-"));
+    try {
+      execFileSync("git", ["init", "-q"], { cwd: dir });
+      await mkdir(join(dir, "app"), { recursive: true });
+      await mkdir(join(dir, "docs", "features"), { recursive: true });
+      await writeFile(join(dir, "app", "settings.py"), "DEBUG = True\n");
+      await writeFile(
+        join(dir, "docs", "features", "settings.md"),
+        "# settings\n\nRuntime flags for the app.\n",
+      );
+      await writeFile(
+        join(dir, "docs", ".registry.json"),
+        JSON.stringify(
+          {
+            features: {
+              settings: {
+                doc: "docs/features/settings.md",
+                type: "feature",
+                primary_sources: ["app/settings.py"],
+                related_sources: [],
+                docs: [],
+                depends_on: [],
+                risk: [],
+                status: "current",
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      );
+      // A cold python adapter would crash doctor (rethrown, never swallowed);
+      // a green run proves the command warms before its symbol heuristics.
+      const out = execFileSync("node", [CLI, "doctor"], { cwd: dir, encoding: "utf-8" });
+      assert.ok(out.includes("Documentation coverage"));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("codument doctor --strict (CLI gating)", () => {

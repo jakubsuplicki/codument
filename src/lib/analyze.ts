@@ -9,6 +9,7 @@ import {
   type Registry,
   type RegistryEntry,
 } from "./registry.js";
+import { TreeSitterError } from "./tree-sitter.js";
 import { MODULE_ANCHOR_NAME } from "./ts-adapter.js";
 
 // ── Canonical exclusion spec ────────────────────────────────────────────
@@ -918,11 +919,15 @@ function exportedSymbolsOf(root: string, sources: string[]): string[] {
     }
     // A malformed source is not doctor's problem to crash on — the symbol-mirror
     // heuristic simply has no names to check for that file (fail-safe, info-only).
+    // A COLD adapter is different: that is a command-layer wiring bug, and
+    // swallowing it here would blind the heuristic for a whole language with
+    // zero signal — loud, never silent.
     try {
       for (const anchor of adapterFor(src).anchors(src, content)) {
         if (anchor.name !== MODULE_ANCHOR_NAME) names.add(anchor.name);
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof TreeSitterError) throw err;
       // skip this source's symbols
     }
   }

@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 19: Python adapter — per-symbol staleness for the second-biggest agent ecosystem
@@ -77,7 +77,7 @@ src/lib/py-adapter.ts | change-control-gate | feature | Python anchors: module d
       battery behaviors 2–4 green + the language-specific signature cases.
 - [x] Step 3: registration — adapter registered, `.py` into the extension spec, ungated-notice
       retirement for `.py`, e2e settings-arc + audit-on-python-history e2e.
-- [ ] Step 4: docs — gate doc language matrix, README row, CHANGELOG, registry.
+- [x] Step 4: docs — gate doc language matrix, README row, CHANGELOG, registry.
 
 ## Outcome
 

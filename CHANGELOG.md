@@ -8,6 +8,24 @@ remains pre-1.0.
 ## [Unreleased]
 
 ### Added
+- Python support, per symbol: `.py`/`.pyi` files are governed by the same
+  staleness gate as TypeScript, through a bundled tree-sitter grammar (no
+  interpreter, no ambient toolchain — the parse is a pure function of the
+  package version). A static `__all__` is honored as the public surface and
+  its edit is a contract move; otherwise the underscore convention decides.
+  Signature/body calibration matches how Python is actually written: a def's
+  decorators, parameters (defaults included), and return annotation are
+  contract while the suite — docstrings included — is ackable body; classes
+  split per member; a module assignment's VALUE is ackable body while its
+  target and annotation are contract, so a `settings.py` flip is one named
+  ackable finding and a rename is not. Public symbols close transitively
+  over referenced module-private helpers. pytest conventions and environment
+  trees (`venv`, `__pycache__`) stay out of scope; a dynamic `__all__` or a
+  parse error is gated whole-file or surfaced, never guessed at. `audit`
+  names drifted Python symbols over committed history, and SARIF/acks/drift
+  output are shape-identical across languages. Existing repos with Python
+  files will see new findings on upgrade — that is the gate seeing files it
+  previously ignored.
 - Language-adapter substrate: the parsing foundation for per-symbol precision
   beyond TypeScript. Grammars are tree-sitter binaries compiled to WASM,
   shipped inside the package and loaded through the exact-pinned

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import pc from "picocolors";
 import { atomicWriteFileSync } from "../lib/events.js";
+import { warmAdaptersForRepo } from "../lib/fingerprint.js";
 import { assertRootIsRepoToplevel } from "../lib/git.js";
 import { GateError } from "../lib/two-ref.js";
 import { versionSkewNotice } from "../lib/version.js";
@@ -175,6 +176,11 @@ function num(value: string | number | undefined): number | undefined {
 
 export async function doctor(options: DoctorOptions = {}): Promise<void> {
   const root = options.root ?? process.cwd();
+  // The prose-altitude heuristic extracts per-symbol names through the same
+  // adapters as the gate; warm WASM grammars first or a whole language's
+  // symbol-mirror nudge would be blind (a cold adapter is rethrown, not
+  // swallowed, so this is load-bearing, not advisory).
+  await warmAdaptersForRepo(root);
   // A subdirectory root is refused for the same reason the gate refuses it: the
   // rest of the toolchain rejects this root as wrong, and a health score
   // published for a root the gate refuses would let the two surfaces disagree.

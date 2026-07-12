@@ -13,6 +13,7 @@ import { join, dirname, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { createInterface } from "node:readline";
 import pc from "picocolors";
+import { warmAdaptersForRepo } from "../lib/fingerprint.js";
 import { packageRoot } from "../lib/scaffold.js";
 import { buildReport, writeCoverageArtifacts } from "./doctor.js";
 import { buildReview } from "./review.js";
@@ -162,6 +163,11 @@ export async function demo(options: DemoOptions = {}): Promise<void> {
     process.exitCode = 1;
     return;
   }
+
+  // The bundled fixture is TS-only today, but that is fixture composition,
+  // not an invariant — warm here (ahead of the live/static fork) so a future
+  // .py in the fixture cannot cold-crash either path.
+  await warmAdaptersForRepo(dir);
 
   if (options.live ?? false) {
     await demoLive(dir, fixture, auto, interactive);

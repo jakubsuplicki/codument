@@ -149,8 +149,15 @@ function readDunderAll(statements: readonly Node[]): AllSpec {
     if (inner.type === "assignment" || inner.type === "augmented_assignment") {
       const left = inner.childForFieldName("left");
       if (left?.type === "identifier" && left.text === "__all__") {
+        // A chained `__all__ = X = [...]` re-binds the surface through another
+        // name — not statically clean; treat as dynamic below via the
+        // right-must-be-a-literal-list check.
         if (inner.type === "augmented_assignment") dynamic = true;
         else assignments.push(inner);
+      } else if (inner.type === "assignment" && assignmentNames(inner).includes("__all__")) {
+        // `X = __all__ = [...]`: __all__ bound through a chain the simple
+        // left-read cannot attribute — the surface is not statically knowable.
+        dynamic = true;
       }
     }
   }
@@ -205,18 +212,12 @@ function collectDecls(statements: readonly Node[]): PyDecl[] {
     if (node.type === "expression_statement") {
       const inner = node.namedChildren[0];
       if (inner?.type !== "assignment") continue; // augmented/call/docstring → residual
-      const left = inner.childForFieldName("left");
-      if (!left) continue;
-      if (left.type === "identifier") {
-        if (left.text !== "__all__") push(left.text, "variable", stmt);
-      } else if (left.type === "pattern_list" || left.type === "tuple_pattern") {
-        // `x, y = ...`: one anchor per plain identifier target, each spanning
-        // the whole statement (the targets cannot be split apart).
-        for (const target of left.namedChildren) {
-          if (target.type === "identifier") push(target.text, "variable", stmt);
-        }
+      // One anchor per bound name — multi-target, nested, splatted, and CHAINED
+      // (`x = y = 1`) alike — each spanning the whole statement (the targets
+      // cannot be split apart).
+      for (const name of assignmentNames(inner)) {
+        if (name !== "__all__") push(name, "variable", stmt);
       }
-      // Attribute/subscript targets (`obj.attr = …`) are effects → residual.
     }
   }
   return [...byKey.values()];
@@ -225,6 +226,52 @@ function collectDecls(statements: readonly Node[]): PyDecl[] {
 function isPublic(decl: PyDecl, all: AllSpec): boolean {
   if (all.present) return !all.dynamic && all.names.has(decl.name);
   return !decl.name.startsWith("_");
+}
+
+// Every name an assignment target binds, through nesting and splats:
+// identifiers, `x, y`, `(a, b), c`, `a, *rest`. Attribute/subscript targets
+// (`obj.attr = …`) bind nothing — they are effects and stay residual.
+function targetNames(target: Node): string[] {
+  if (target.type === "identifier") return [target.text];
+  if (
+    target.type === "pattern_list" ||
+    target.type === "tuple_pattern" ||
+    target.type === "list_pattern"
+  ) {
+    return target.namedChildren.flatMap(targetNames);
+  }
+  if (target.type === "list_splat_pattern") {
+    return target.namedChildren.flatMap(targetNames);
+  }
+  return [];
+}
+
+// All names a (possibly chained) assignment binds. `x = y = 1` is NESTED in
+// the grammar — `left: x, right: (assignment left: y right: 1)` — so each
+// link's left is walked; missing one would let a later target vanish into the
+// first target's body and read a rename as ackable churn.
+function assignmentNames(assignment: Node): string[] {
+  const names: string[] = [];
+  let link: Node | null = assignment;
+  while (link && link.type === "assignment") {
+    const left = link.childForFieldName("left");
+    if (left) names.push(...targetNames(left));
+    link = link.childForFieldName("right");
+  }
+  return names;
+}
+
+// The VALUE of a (possibly chained) assignment: the final right-hand side
+// after every `=` link. Everything before it — every target, every
+// annotation — is contract.
+function assignmentValue(assignment: Node): Node | null {
+  let link: Node = assignment;
+  while (true) {
+    const right = link.childForFieldName("right");
+    if (!right) return null;
+    if (right.type !== "assignment") return right;
+    link = right;
+  }
 }
 
 function defBody(member: Node): Node | null {
@@ -264,8 +311,11 @@ function bodyRegionsOf(decl: PyDecl): Node[] {
       }
     } else if (node.type === "expression_statement") {
       const inner = node.namedChildren[0];
-      const right = inner?.type === "assignment" ? inner.childForFieldName("right") : null;
-      if (right) bodies.push(right);
+      // The FINAL right of a chained assignment: `x = y = 1`'s body is `1`,
+      // never the nested `y = 1` link — a later target is contract, and a
+      // rename of it must read as a signature move, not ackable body churn.
+      const value = inner?.type === "assignment" ? assignmentValue(inner) : null;
+      if (value) bodies.push(value);
     }
   }
   return bodies;
@@ -339,12 +389,7 @@ function pyDeclaredNames(stmt: Node): string[] {
   if (stmt.type === "expression_statement") {
     const inner = stmt.namedChildren[0];
     if (inner?.type !== "assignment") return [];
-    const left = inner.childForFieldName("left");
-    if (!left) return [];
-    if (left.type === "identifier") return [left.text];
-    if (left.type === "pattern_list" || left.type === "tuple_pattern") {
-      return left.namedChildren.filter((t) => t.type === "identifier").map((t) => t.text);
-    }
+    return assignmentNames(inner);
   }
   return [];
 }
