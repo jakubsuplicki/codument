@@ -424,6 +424,7 @@
         "src/lib/git.ts",
         "src/lib/import-graph.ts",
         "src/lib/ownership.ts",
+        "src/lib/py-adapter.ts",
         "src/lib/report-html.ts",
         "src/lib/sarif.ts",
         "src/lib/tree-sitter.ts",
@@ -431,7 +432,7 @@
         "src/lib/ts-canonicalize.ts",
         "src/lib/two-ref.ts",
         "tests/adapter-conformance.ts",
-        "src/lib/py-adapter.ts"
+        "src/lib/sfc-adapter.ts"
       ],
       "related_sources": [],
       "docs": [

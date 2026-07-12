@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 20: single-file-component adapter — `.vue` / `.svelte` / `.astro` stop being invisible
@@ -65,9 +65,9 @@ src/lib/sfc-adapter.ts | change-control-gate | feature | SFC block split: script
 
 ## Delivery Plan
 
-- [ ] Step 1: block scanner (vue/svelte/astro shapes, unevaluable on malformed) + script
+- [x] Step 1: block scanner (vue/svelte/astro shapes, unevaluable on malformed) + script
       delegation; battery behaviors via the delegated engine + scanner determinism tests.
-- [ ] Step 2: `template.`/`style.` pseudo-anchors with markup trivia folding; ack e2e (template
+- [x] Step 2: `template.`/`style.` pseudo-anchors with markup trivia folding; ack e2e (template
       tweak → one ackable finding; script contract change → signature move refused).
 - [ ] Step 3: registration + extension spec + ungated-notice retirement; e2e on a
       website-shaped fixture (the dogfood repo's shape: component edit wakes exactly its owning

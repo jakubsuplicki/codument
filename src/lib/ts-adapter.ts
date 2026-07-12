@@ -332,7 +332,22 @@ function declaredNames(stmt: ts.Statement): string[] {
 // Extract one anchor per exported global declaration (fingerprint closed over
 // referenced same-file private helpers), plus one residual backstop anchor for
 // the module-top-level content no precise anchor covers.
-function tsAnchors(path: string, content: string): Anchor[] {
+export interface TsExtractionOptions {
+  /** Treat EVERY top-level declaration as public — no private pool, no closure.
+   *  The `<script setup>` / Svelte-instance / Astro-frontmatter surface: nothing
+   *  is exported by design, and the template binds the top level, so each
+   *  declaration is the component's contract. Default off — the exported-only
+   *  rule — and the default path is byte-identical to before this option
+   *  existed (no ALGO event). */
+  allTopLevelPublic?: boolean;
+}
+
+export function tsAnchors(
+  path: string,
+  content: string,
+  opts: TsExtractionOptions = {},
+): Anchor[] {
+  const allPublic = opts.allTopLevelPublic === true;
   const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, /* setParentNodes */ true);
   const anchors: Anchor[] = [];
 
@@ -365,7 +380,7 @@ function tsAnchors(path: string, content: string): Anchor[] {
     }
   }
   const runExported = (run: ts.FunctionDeclaration[]): boolean =>
-    run.some((m) => hasModifier(m, ts.SyntaxKind.ExportKeyword));
+    allPublic || run.some((m) => hasModifier(m, ts.SyntaxKind.ExportKeyword));
 
   // Index every non-exported top-level declaration by name, so closures can pull
   // in the exact span of a referenced private helper (per-declarator for
@@ -374,6 +389,7 @@ function tsAnchors(path: string, content: string): Anchor[] {
   // exported anchor, never to `privateByName`.
   const privateByName = new Map<string, ts.Node[]>();
   for (const stmt of sf.statements) {
+    if (allPublic) break; // every declaration is public — the pool stays empty
     if (hasModifier(stmt, ts.SyntaxKind.ExportKeyword)) continue;
     if (ts.isFunctionDeclaration(stmt) && stmt.name) {
       const run = stmtToRun.get(stmt);
@@ -448,7 +464,7 @@ function tsAnchors(path: string, content: string): Anchor[] {
       continue;
     }
 
-    const isExported = hasModifier(stmt, ts.SyntaxKind.ExportKeyword);
+    const isExported = allPublic || hasModifier(stmt, ts.SyntaxKind.ExportKeyword);
     if (!isExported) continue;
     const isDefault = hasModifier(stmt, ts.SyntaxKind.DefaultKeyword);
 
@@ -533,7 +549,11 @@ const GENERATED_BANNER = /@generated\b|do not edit|auto-?generated/i;
 // barrel, `export =`, a namespace, generated output) from silently reading as
 // fresh through an empty/partial precise anchor set — such files are routed to the
 // coarse file-grain gate instead, and a parse error is surfaced rather than trusted.
-export function classifyTsFile(path: string, content: string): TsClassification {
+export function classifyTsFile(
+  path: string,
+  content: string,
+  opts: TsExtractionOptions = {},
+): TsClassification {
   if (/\.d\.(ts|mts|cts)$/.test(path)) {
     return { mode: "coarse", reason: "declaration file" };
   }
@@ -547,7 +567,7 @@ export function classifyTsFile(path: string, content: string): TsClassification 
   if (GENERATED_BANNER.test(content.slice(0, 2000))) {
     return { mode: "coarse", reason: "generated banner" };
   }
-  const anchors = tsAnchors(path, content);
+  const anchors = tsAnchors(path, content, opts);
   const preciseCount = anchors.filter((a) => a.kind !== "module").length;
   if (preciseCount > 0) {
     return {
