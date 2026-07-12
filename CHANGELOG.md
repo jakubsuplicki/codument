@@ -7,6 +7,8 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-12
+
 ### Added
 - JVM support, per symbol: `.java`, `.kt`, and `.kts` files are governed
   through two bundled tree-sitter grammars under one anchor model, so a mixed
