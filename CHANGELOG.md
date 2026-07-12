@@ -8,6 +8,24 @@ remains pre-1.0.
 ## [Unreleased]
 
 ### Added
+- Language-adapter substrate: the parsing foundation for per-symbol precision
+  beyond TypeScript. Grammars are tree-sitter binaries compiled to WASM,
+  shipped inside the package and loaded through the exact-pinned
+  `web-tree-sitter` runtime, so a parse is a pure function of content bytes
+  and package version — never of an ambient toolchain (ADR 015). Loading is
+  lazy (a TS-only repo never initializes WASM) and fail-loud (a missing or
+  corrupt grammar raises instead of silently coarsening). No language ships
+  yet; each arrives with its adapter.
+- Adapter conformance battery: the eight behaviors that define "precise"
+  (format invariance, ackable body vs never-ackable signature, helper
+  closure, module residual, unevaluable parse errors, order independence,
+  byte determinism, SCIP descriptor discipline) are now one parameterized
+  suite every adapter must pass. The bundled TypeScript adapter passes it;
+  a seeded mutant proves the battery rejects a broken adapter.
+- The determinism stamp (`algoStamp`) digests the bundled grammar set once
+  any adapter ships one, making a grammar upgrade an algo-visible event
+  exactly like a TypeScript version bump. While no grammar is bundled the
+  stamp is unchanged, so existing installs cross no invalidation boundary.
 - Config-file grain: `export default <expr>` / `export = <expr>` (the
   `defineNuxtConfig({...})` shape) now produces a precise `default.` anchor
   instead of silently classifying the whole file coarse. A comment or

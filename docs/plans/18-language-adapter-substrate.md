@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 18: language-adapter substrate — tree-sitter WASM runtime + adapter conformance suite
@@ -86,7 +86,7 @@ tests/adapter-conformance.ts | change-control-gate | feature | the battery that 
       fresh loads; a corrupted `.wasm` fails loud, never falls back).
 - [x] Step 2: `adapter-conformance.ts` battery + the TS adapter run through it green; one seeded
       mutation proves the battery rejects a broken adapter.
-- [ ] Step 3: algoStamp adapter-manifest segment + invalidation tests across a simulated grammar
+- [x] Step 3: algoStamp adapter-manifest segment + invalidation tests across a simulated grammar
       bump; ADR-015 (WASM-only, bundled-parser determinism, battery-as-contract); docs, CHANGELOG,
       registry.
 

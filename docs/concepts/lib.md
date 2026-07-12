@@ -57,6 +57,7 @@ Feature modules this umbrella co-documents (behavior lives in the linked feature
 - `src/lib/analyze.ts` — deterministic coverage and lint analyzer and the canonical exclusion spec. ([[registry-health]])
 - `src/lib/badge.ts` — no-network static SVG coverage badge renderer. ([[registry-health]])
 - `src/lib/change-state.ts` — shared deterministic diff analyzer behind review and watch. ([[change-control-gate]])
+- `src/lib/tree-sitter.ts` — lazy bundled-WASM parsing substrate for languages beyond TypeScript, with the grammar-hash manifest the determinism stamp digests. ([[change-control-gate]])
 - `src/lib/git.ts` — thin git-native data source: working-tree changes and author, run with `GIT_OPTIONAL_LOCKS=0`. ([[change-control-gate]])
 - `src/lib/events.ts` — append-only `.codument/events.jsonl` flow-event log the watch view tails. ([[change-control-gate]])
 - `src/lib/report-html.ts` — self-contained HTML review report renderer (verdict, coverage delta, finding cards). ([[change-control-gate]])

@@ -51,6 +51,25 @@ describe("algoStamp", () => {
     assert.ok(stamp.includes(`algo=${ALGO_VERSION}`));
     assert.equal(stamp, algoStamp());
   });
+  it("carries no grammar segment while no grammar is bundled", () => {
+    assert.ok(!algoStamp().includes("grammars="));
+    assert.equal(algoStamp([]), algoStamp());
+  });
+  it("a grammar bump is an algo-visible event; entry order is not", () => {
+    const python = { language: "python", sha256: "a".repeat(64) };
+    const go = { language: "go", sha256: "b".repeat(64) };
+    const stamp = algoStamp([python, go]);
+    assert.ok(stamp.includes("grammars="));
+    // Same manifest → same stamp, every call; either order (sorted segment,
+    // caller-independent).
+    assert.equal(stamp, algoStamp([python, go]));
+    assert.equal(stamp, algoStamp([go, python]));
+    // A bumped grammar hash → a different stamp: the simulated grammar upgrade.
+    const bumped = { language: "python", sha256: "c".repeat(64) };
+    assert.notEqual(stamp, algoStamp([bumped, go]));
+    // Adding a language is equally visible.
+    assert.notEqual(stamp, algoStamp([python]));
+  });
 });
 
 describe("EMPTY_TREE_SHA", () => {

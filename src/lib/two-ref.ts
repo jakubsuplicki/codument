@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import ts from "typescript";
+import { type GrammarManifestEntry, grammarManifest } from "./tree-sitter.js";
 
 // Two-ref determinism plumbing for the freshness gate. Everything here is a pure
 // function of repo state at two refs — no wall clock enters any result. This
@@ -27,10 +29,21 @@ export const EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 export const ALGO_VERSION = 4;
 
 // The determinism unit: a verdict is reproducible only for a fixed parser, the
-// exact bundled TS version, and the algo version. A TS bump changes this stamp,
-// which later phases use to invalidate anchors rather than mass-stale the repo.
-export function algoStamp(): string {
-  return `parser=tworef;ts=${ts.version};algo=${ALGO_VERSION}`;
+// exact bundled TS version, the algo version, and — once any adapter bundles a
+// grammar — the exact bundled grammar set. A TS bump changes this stamp, which
+// later phases use to invalidate anchors rather than mass-stale the repo; a
+// grammar upgrade is the same algo-visible event for its language. The segment
+// is a digest over (language, content hash) pairs sorted here (codepoint order,
+// caller-independent) and is OMITTED while no grammar ships, so TS-only
+// installs cross no stamp shift before the first adapter release.
+export function algoStamp(manifest: readonly GrammarManifestEntry[] = grammarManifest()): string {
+  const base = `parser=tworef;ts=${ts.version};algo=${ALGO_VERSION}`;
+  if (manifest.length === 0) return base;
+  const lines = manifest
+    .map((m) => `${m.language}:${m.sha256}`)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const digest = createHash("sha256").update(lines.join("\n"), "utf8").digest("hex");
+  return `${base};grammars=${digest}`;
 }
 
 // execFileSync's default maxBuffer is 1MB; git output on a large tree (e.g.
