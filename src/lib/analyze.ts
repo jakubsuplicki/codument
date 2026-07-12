@@ -62,13 +62,15 @@ export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
     "**/test_*.py",
     "**/*_test.py",
     "**/conftest.py",
+    // Go's law: _test.go files are test binaries, never library surface.
+    "**/*_test.go",
     // Root-level test-fixture trees only — anchored (not a bare `fixtures` dir
     // name) so a project's real first-party source under e.g. `src/fixtures/`
     // is NOT silently dropped from governance.
     "fixtures/**",
     "scripts/generate-*",
   ],
-  extensions: [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".py", ".pyi", ".vue", ".svelte", ".astro"],
+  extensions: [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".py", ".pyi", ".go", ".vue", ".svelte", ".astro"],
 };
 
 // Exported so the Feature Map router (feature-map.ts) matches globs with the

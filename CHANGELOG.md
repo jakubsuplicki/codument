@@ -8,6 +8,19 @@ remains pre-1.0.
 ## [Unreleased]
 
 ### Added
+- Go support, per symbol: `.go` files are governed through a bundled
+  tree-sitter grammar with Go's own visibility law — exported means
+  capitalized, no convention-hedging. Methods anchor under their receiver
+  type (`Server#Handle().`) with pointer and value receivers sharing one
+  identity (receiver kind is signature, not identity); grouped const/var
+  blocks anchor per declarator, so editing one constant moves only it; a
+  struct's exported fields and their tags are contract (wire shape) while
+  unexported fields are ackable body; a const/var value is ackable body.
+  `init` funcs and package side effects ride the module residual, and the
+  cgo preamble comment before `import "C"` is treated as the compiled
+  content it is instead of folding away as trivia. `_test.go` files stay
+  out of scope; `// Code generated … DO NOT EDIT.` classifies coarse via
+  the shared banner rule; `audit` names drifted Go symbols over history.
 - Vue/Svelte/Astro support, per part: single-file components are governed by
   the same gate. Script blocks delegate to the TypeScript engine keyed on the
   component path (`Hero.vue::area().` is a normal per-symbol anchor with the

@@ -149,8 +149,8 @@ describe("grammar manifest", () => {
     const manifest = grammarManifest();
     assert.deepEqual(
       manifest.map((m) => m.language),
-      ["python"],
+      ["go", "python"],
     );
-    assert.match(manifest[0].sha256, /^[0-9a-f]{64}$/);
+    for (const m of manifest) assert.match(m.sha256, /^[0-9a-f]{64}$/);
   });
 });

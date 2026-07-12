@@ -1,5 +1,5 @@
 ---
-status: draft
+status: shipped
 ---
 
 # Plan 21: Go adapter — the cleanest public-surface semantics of any target
@@ -54,12 +54,12 @@ src/lib/go-adapter.ts | change-control-gate | feature | Go anchors: package-leve
 
 ## Delivery Plan
 
-- [ ] Step 1: grammar + extraction (public rule, receiver-method descriptors, grouped decls);
+- [x] Step 1: grammar + extraction (public rule, receiver-method descriptors, grouped decls);
       battery 1, 5–8.
-- [ ] Step 2: signature/body split (struct-tag and unexported-field calibration) + closure;
+- [x] Step 2: signature/body split (struct-tag and unexported-field calibration) + closure;
       battery 2–4 + Go-specific cases.
-- [ ] Step 3: registration + extension spec + e2e arc + audit-on-go-history e2e.
-- [ ] Step 4: docs — matrix, README, CHANGELOG, registry.
+- [x] Step 3: registration + extension spec + e2e arc + audit-on-go-history e2e.
+- [x] Step 4: docs — matrix, README, CHANGELOG, registry.
 
 ## Outcome
 

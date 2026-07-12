@@ -1515,3 +1515,64 @@ describe("sfc component arc (the website dogfood shape)", () => {
     );
   });
 });
+
+describe("go handler arc", () => {
+  it("a body refactor is ackable; a param add is a signature move the ack refuses", async () => {
+    const GO = "package server\n\nfunc Handle(n int) int {\n\treturn n\n}\n";
+    await scaffold({
+      "docs/features/handler.md": "# handler\n",
+      "server/handler.go": GO,
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            handler: {
+              doc: "docs/features/handler.md",
+              type: "feature",
+              primary_sources: ["server/handler.go"],
+              related_sources: [],
+              docs: [],
+              depends_on: [],
+              risk: [],
+              status: "current",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    gitInit(tmp);
+    const env = { ...process.env, NO_COLOR: "1" };
+
+    // Body refactor: one ackable finding, and the pasted ack clears it.
+    await scaffold({ "server/handler.go": GO.replace("return n", "return n * 1") });
+    assert.throws(() =>
+      execFileSync("node", [CLI, "review", "--strict"], { cwd: tmp, encoding: "utf-8", env, stdio: "pipe" }),
+    );
+    execFileSync(
+      "node",
+      [CLI, "ack", "server/handler.go::Handle().", "--reason", "identity refactor; contract unchanged"],
+      { cwd: tmp, encoding: "utf-8", env },
+    );
+    execFileSync("node", [CLI, "review", "--strict"], { cwd: tmp, encoding: "utf-8", env });
+
+    // A param add is a signature move: refused.
+    execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
+    execFileSync("git", ["commit", "--no-verify", "-m", "ack landed"], { cwd: tmp, stdio: "ignore" });
+    await scaffold({
+      "server/handler.go": GO.replace("Handle(n int) int", "Handle(n, pad int) int").replace(
+        "return n",
+        "return n * 1",
+      ),
+    });
+    assert.throws(
+      () =>
+        execFileSync(
+          "node",
+          [CLI, "ack", "server/handler.go::Handle().", "--reason", "should refuse"],
+          { cwd: tmp, encoding: "utf-8", env, stdio: "pipe" },
+        ),
+      "a signature move must not be ackable",
+    );
+  });
+});

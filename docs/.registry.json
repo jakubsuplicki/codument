@@ -427,12 +427,13 @@
         "src/lib/py-adapter.ts",
         "src/lib/report-html.ts",
         "src/lib/sarif.ts",
+        "src/lib/sfc-adapter.ts",
         "src/lib/tree-sitter.ts",
         "src/lib/ts-adapter.ts",
         "src/lib/ts-canonicalize.ts",
         "src/lib/two-ref.ts",
         "tests/adapter-conformance.ts",
-        "src/lib/sfc-adapter.ts"
+        "src/lib/go-adapter.ts"
       ],
       "related_sources": [],
       "docs": [

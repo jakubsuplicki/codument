@@ -529,3 +529,43 @@ describe("codument audit — python history through the real CLI", () => {
     );
   });
 });
+
+describe("codument audit — go history through the real CLI", () => {
+  let root: string;
+  const env = { ...process.env, NO_COLOR: "1" };
+  const run = (args: string[], cwd: string) =>
+    execFileSync("node", [CLI, ...args], { cwd, encoding: "utf-8", env });
+
+  before(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-audit-go-"));
+    git(root, ["init", "-q"]);
+    await write(root, "server/handler.go", "package server\n\nfunc Handle(n int) int {\n\treturn n\n}\n");
+    await write(root, "docs/features/handler.md", "# handler\n");
+    await write(
+      root,
+      "docs/.registry.json",
+      registryJson({ handler: entry("server/handler.go", "docs/features/handler.md") }),
+    );
+    git(root, ["add", "-A"]);
+    git(root, ["commit", "-q", "-m", "v1"]);
+    git(root, ["tag", "go1"]);
+    await write(root, "server/handler.go", "package server\n\nfunc Handle(n int) int {\n\treturn n * 2\n}\n");
+    git(root, ["add", "-A"]);
+    git(root, ["commit", "-q", "-m", "v2"]);
+    git(root, ["tag", "go2"]);
+  });
+
+  after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("names the drifted Go symbol over the range — the third language lights up", () => {
+    const parsed = JSON.parse(run(["audit", "go1..go2", "--json"], root));
+    assert.equal(parsed.audit, "ok");
+    assert.equal(parsed.driftedCount, 1);
+    assert.deepEqual(
+      parsed.drifted[0].symbolMoves.map((m: { symbol: string }) => m.symbol),
+      ["Handle"],
+    );
+  });
+});
