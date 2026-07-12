@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Anchor, LanguageAdapter } from "./fingerprint.js";
-import { MODULE_ANCHOR_NAME } from "./ts-adapter.js";
+import { GENERATED_BANNER, MODULE_ANCHOR_NAME } from "./ts-adapter.js";
 import {
   type Language,
   loadLanguage,
@@ -477,9 +477,6 @@ export interface PyClassification {
   mode: PyFileMode;
   reason: string;
 }
-
-// Same content-only generated-code signal the TS classifier uses.
-const GENERATED_BANNER = /@generated\b|do not edit|auto-?generated/i;
 
 // Classify a Python file for the gate: per-symbol (`precise`), whole-file
 // (`coarse` — script/side-effect modules, re-export shims, dynamic `__all__`,

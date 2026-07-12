@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
+import ts from "typescript";
 import type { Anchor, LanguageAdapter } from "./fingerprint.js";
 import {
   classifyTsFile,
+  GENERATED_BANNER,
   MODULE_ANCHOR_NAME,
   type TsClassification,
   tsAnchors,
@@ -55,48 +57,165 @@ class SfcScanError extends Error {}
 
 // Match a top-level opening tag at `pos` (which must point at "<"). Returns
 // the tag name, raw attrs, and the offset just past the ">" — or null when the
-// text at `pos` is not a well-formed opening tag.
+// text at `pos` is not a well-formed opening tag. QUOTE-AWARE: a `>` inside a
+// quoted attribute value (Vue 3.3+ `<script generic="T extends X<Y>">`) never
+// terminates the tag.
 function readOpenTag(
   source: string,
   pos: number,
 ): { tag: string; attrs: string; end: number; selfClosing: boolean } | null {
-  const m = /^<([A-Za-z][\w-]*)((?:\s[^>]*)?)>/.exec(source.slice(pos));
-  if (!m) return null;
-  const rawAttrs = m[2] ?? "";
-  return {
-    tag: m[1],
-    attrs: rawAttrs.trim().replace(/\/$/, "").trim(),
-    end: pos + m[0].length,
-    selfClosing: /\/\s*$/.test(rawAttrs),
-  };
+  const name = /^<([A-Za-z][\w-]*)/.exec(source.slice(pos));
+  if (!name) return null;
+  let i = pos + name[0].length;
+  // A tag name must be followed by whitespace, "/", or ">" — else it is text.
+  if (i < source.length && !/[\s/>]/.test(source[i])) return null;
+  let quote: string | null = null;
+  while (i < source.length) {
+    const ch = source[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === ">") {
+      const rawAttrs = source.slice(pos + name[0].length, i);
+      return {
+        tag: name[1],
+        attrs: rawAttrs.trim().replace(/\/$/, "").trim(),
+        end: i + 1,
+        selfClosing: /\/\s*$/.test(rawAttrs),
+      };
+    }
+    i++;
+  }
+  return null; // ran off the file inside the tag → not a well-formed open
 }
 
-// Find the matching close tag for `tag` starting at `from`, honoring nested
-// same-name OPEN tags (a Vue template legitimately contains nested
-// `<template #slot>` elements). Script/style content never legally contains
-// its own close tag, so depth handling is only ever exercised for markup tags.
-function findClose(source: string, tag: string, from: number): { start: number; end: number } {
-  const open = new RegExp(`<${tag}(?=[\\s/>])`, "g");
-  const close = new RegExp(`</${tag}\\s*>`, "g");
-  let depth = 1;
-  let pos = from;
+// The matching close for a SCRIPT block, found by lexing the content as
+// JS/TS with the bundled scanner: a `</script>` inside a string literal,
+// comment, or template literal sits INSIDE a token, so a candidate only
+// counts when it appears at a token boundary. This is what keeps a doc URL
+// or code sample containing "</script>" from silently splitting the block
+// and reclassifying real exports as template churn. (A regex literal
+// containing the close tag can still false-trigger — the scanner cannot
+// disambiguate `/` without parser context — but the leftover fragment then
+// fails the delegated parse or the loose-text rule, loud rather than silent.)
+function findScriptClose(
+  source: string,
+  tag: string,
+  from: number,
+): { start: number; end: number } {
+  const closeRe = new RegExp(`^</${tag}\\s*>`, "i");
+  const rest = source.slice(from);
+  const scanner = ts.createScanner(
+    ts.ScriptTarget.Latest,
+    /* skipTrivia */ true,
+    ts.LanguageVariant.Standard,
+    rest,
+  );
   while (true) {
-    close.lastIndex = pos;
-    const c = close.exec(source);
-    if (!c) throw new SfcScanError(`unclosed <${tag}> block`);
-    open.lastIndex = pos;
-    let o = open.exec(source);
-    // Count intervening opens (not self-closing) before this close.
-    while (o && o.index < c.index) {
-      const tail = readOpenTag(source, o.index);
-      if (tail && !tail.selfClosing) depth++;
-      open.lastIndex = o.index + 1;
-      o = open.exec(source);
+    const kind = scanner.scan();
+    const tokenStart = scanner.getTokenStart();
+    const m = closeRe.exec(rest.slice(tokenStart));
+    if (m) return { start: from + tokenStart, end: from + tokenStart + m[0].length };
+    if (kind === ts.SyntaxKind.EndOfFileToken) {
+      throw new SfcScanError(`unclosed <${tag}> block`);
     }
-    depth--;
-    if (depth === 0) return { start: c.index, end: c.index + c[0].length };
-    pos = c.index + c[0].length;
   }
+}
+
+// The matching close for a STYLE block: skip CSS comments and quoted strings
+// so `content: "</style>"` never splits the block.
+function findStyleClose(
+  source: string,
+  tag: string,
+  from: number,
+): { start: number; end: number } {
+  const closeRe = new RegExp(`^</${tag}\\s*>`, "i");
+  let i = from;
+  let quote: string | null = null;
+  while (i < source.length) {
+    const ch = source[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+      i++;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      i++;
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
+      const end = source.indexOf("*/", i + 2);
+      if (end === -1) throw new SfcScanError(`unclosed comment in <${tag}> block`);
+      i = end + 2;
+      continue;
+    }
+    if (ch === "<") {
+      const m = closeRe.exec(source.slice(i));
+      if (m) return { start: i, end: i + m[0].length };
+    }
+    i++;
+  }
+  throw new SfcScanError(`unclosed <${tag}> block`);
+}
+
+// The matching close for a MARKUP block (template / custom), honoring nested
+// same-name open tags (a Vue template legitimately contains nested
+// `<template #slot>` elements), quoted attribute values (`title="</template>"`
+// never closes), and HTML comments.
+function findMarkupClose(
+  source: string,
+  tag: string,
+  from: number,
+): { start: number; end: number } {
+  const closeRe = new RegExp(`^</${tag}\\s*>`, "i");
+  const openRe = new RegExp(`^<${tag}(?=[\\s/>])`, "i");
+  let depth = 1;
+  let i = from;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch !== "<") {
+      i++;
+      continue;
+    }
+    if (source.startsWith("<!--", i)) {
+      const end = source.indexOf("-->", i + 4);
+      if (end === -1) throw new SfcScanError(`unclosed HTML comment in <${tag}> block`);
+      i = end + 3;
+      continue;
+    }
+    const closeM = closeRe.exec(source.slice(i));
+    if (closeM) {
+      depth--;
+      if (depth === 0) return { start: i, end: i + closeM[0].length };
+      i += closeM[0].length;
+      continue;
+    }
+    if (openRe.test(source.slice(i))) {
+      const open = readOpenTag(source, i);
+      if (open) {
+        if (!open.selfClosing) depth++;
+        i = open.end;
+        continue;
+      }
+    }
+    // Any other tag: hop over it quote-aware so a `</template>` inside an
+    // attribute value is never seen as a close.
+    const other = readOpenTag(source, i);
+    if (other) {
+      i = other.end;
+      continue;
+    }
+    i++;
+  }
+  throw new SfcScanError(`unclosed <${tag}> block`);
+}
+
+function findClose(source: string, tag: string, from: number): { start: number; end: number } {
+  if (tag === "script") return findScriptClose(source, tag, from);
+  if (tag === "style") return findStyleClose(source, tag, from);
+  return findMarkupClose(source, tag, from);
 }
 
 // Segment an SFC into its top-level blocks plus loose markup. Astro's
@@ -305,6 +424,12 @@ export interface SfcClassification {
 export function classifySfcFile(path: string, content: string): SfcClassification {
   let scan: SfcScan;
   const normalized = byteNormalize(content);
+  // The generated banner usually rides an HTML comment at the file head — which
+  // is trivia to the scanner and never reaches the delegated script classifier,
+  // so it must be checked on the WHOLE file here.
+  if (GENERATED_BANNER.test(normalized.slice(0, 2000))) {
+    return { mode: "coarse", reason: "generated banner" };
+  }
   try {
     scan = scanSfc(path, normalized);
   } catch (err) {

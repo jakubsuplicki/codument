@@ -8,6 +8,18 @@ remains pre-1.0.
 ## [Unreleased]
 
 ### Added
+- Vue/Svelte/Astro support, per part: single-file components are governed by
+  the same gate. Script blocks delegate to the TypeScript engine keyed on the
+  component path (`Hero.vue::area().` is a normal per-symbol anchor with the
+  full signature/body split and helper closure); `<script setup>`, Svelte
+  instance scripts, and Astro frontmatter treat every top-level declaration
+  as the component's public surface, since the template binds the top level.
+  Template and style are named body-grain anchors with markup/CSS trivia
+  folding — a real edit is one ackable finding, a comment or reformat is
+  silence, never a whole-file wake. Block extraction is a small deterministic
+  scanner (no third-party SFC grammar); a file it cannot segment is surfaced
+  as unevaluable, never guessed. The "Registered but ungated" notice retires
+  itself for these extensions now that judgment arrived — its design intent.
 - Python support, per symbol: `.py`/`.pyi` files are governed by the same
   staleness gate as TypeScript, through a bundled tree-sitter grammar (no
   interpreter, no ambient toolchain — the parse is a pure function of the

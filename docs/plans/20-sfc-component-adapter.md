@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 20: single-file-component adapter — `.vue` / `.svelte` / `.astro` stop being invisible
@@ -72,7 +72,7 @@ src/lib/sfc-adapter.ts | change-control-gate | feature | SFC block split: script
 - [x] Step 3: registration + extension spec + ungated-notice retirement; e2e on a
       website-shaped fixture (the dogfood repo's shape: component edit wakes exactly its owning
       feature doc).
-- [ ] Step 4: docs — gate-doc matrix, README row, CHANGELOG, registry.
+- [x] Step 4: docs — gate-doc matrix, README row, CHANGELOG, registry.
 
 ## Outcome
 

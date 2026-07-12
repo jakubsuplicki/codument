@@ -539,9 +539,10 @@ export interface TsClassification {
 }
 
 // A generated-code banner near the file head — the portable, content-only signal
-// for codegen output committed as `.ts` (outDir-based detection needs tsconfig and
-// is deferred). Matched case-insensitively in the first lines only.
-const GENERATED_BANNER = /@generated\b|do not edit|auto-?generated/i;
+// for codegen output committed as source (outDir-based detection needs tsconfig
+// and is deferred). Matched case-insensitively in the first lines only. ONE spec,
+// shared by every adapter's classifier — a per-language copy would drift.
+export const GENERATED_BANNER = /@generated\b|do not edit|auto-?generated/i;
 
 // Classify a TS file for the gate: does the precise per-symbol path fully apply,
 // is it only coarse-gatable, or is it un-evaluable (fail loud)? This is what keeps
