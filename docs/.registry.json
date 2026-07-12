@@ -426,10 +426,11 @@
         "src/lib/ownership.ts",
         "src/lib/report-html.ts",
         "src/lib/sarif.ts",
+        "src/lib/tree-sitter.ts",
         "src/lib/ts-adapter.ts",
         "src/lib/ts-canonicalize.ts",
         "src/lib/two-ref.ts",
-        "src/lib/tree-sitter.ts"
+        "tests/adapter-conformance.ts"
       ],
       "related_sources": [],
       "docs": [

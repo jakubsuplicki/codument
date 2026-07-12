@@ -39,6 +39,7 @@ that makes "precise" mean ONE verifiable thing regardless of language.
 
 ```feature-map
 src/lib/tree-sitter.ts | change-control-gate | feature | pinned WASM runtime + lazy grammar loader
+tests/adapter-conformance.ts | change-control-gate | feature | the battery that defines "precise" for every adapter
 ```
 
 ## Non-goals
@@ -83,7 +84,7 @@ src/lib/tree-sitter.ts | change-control-gate | feature | pinned WASM runtime + l
 - [x] Step 1: `tree-sitter.ts` — runtime init, grammar registry keyed by language id, lazy load,
       grammar-hash manifest; determinism tests (same bytes → identical S-expression across two
       fresh loads; a corrupted `.wasm` fails loud, never falls back).
-- [ ] Step 2: `adapter-conformance.ts` battery + the TS adapter run through it green; one seeded
+- [x] Step 2: `adapter-conformance.ts` battery + the TS adapter run through it green; one seeded
       mutation proves the battery rejects a broken adapter.
 - [ ] Step 3: algoStamp adapter-manifest segment + invalidation tests across a simulated grammar
       bump; ADR-015 (WASM-only, bundled-parser determinism, battery-as-contract); docs, CHANGELOG,
