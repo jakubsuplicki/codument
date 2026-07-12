@@ -69,7 +69,7 @@ src/lib/sfc-adapter.ts | change-control-gate | feature | SFC block split: script
       delegation; battery behaviors via the delegated engine + scanner determinism tests.
 - [x] Step 2: `template.`/`style.` pseudo-anchors with markup trivia folding; ack e2e (template
       tweak → one ackable finding; script contract change → signature move refused).
-- [ ] Step 3: registration + extension spec + ungated-notice retirement; e2e on a
+- [x] Step 3: registration + extension spec + ungated-notice retirement; e2e on a
       website-shaped fixture (the dogfood repo's shape: component edit wakes exactly its owning
       feature doc).
 - [ ] Step 4: docs — gate-doc matrix, README row, CHANGELOG, registry.

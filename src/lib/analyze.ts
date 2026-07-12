@@ -68,7 +68,7 @@ export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
     "fixtures/**",
     "scripts/generate-*",
   ],
-  extensions: [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".py", ".pyi"],
+  extensions: [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".py", ".pyi", ".vue", ".svelte", ".astro"],
 };
 
 // Exported so the Feature Map router (feature-map.ts) matches globs with the

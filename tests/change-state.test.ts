@@ -481,9 +481,11 @@ describe("detectApprovedPlanScope — root-level scope + multiple approved plans
 });
 
 // Plan 17 step 3: a changed file the registry names as a source but that no
-// adapter gates (outside the source-extension spec: .vue, .css, …) must be
+// adapter gates (outside the source-extension spec: .css, .json, …) must be
 // SURFACED with its owning docs — info-only, never a strict verdict input.
-describe("ungated registered changes (.vue blind spot)", () => {
+// (.vue was the founding example; plan 20's adapter RETIRED it from this
+// surface — the notice retires itself per file type as judgment arrives.)
+describe("ungated registered changes (non-source blind spot)", () => {
   const registry = {
     features: {
       website: {
@@ -499,27 +501,46 @@ describe("ungated registered changes (.vue blind spot)", () => {
     },
   };
 
-  it("a registered .vue change surfaces with its owning doc", () => {
+  it("a registered .css change surfaces with its owning doc", () => {
     const s = computeChangeState({
       registry: registry as never,
-      changedFiles: ["app/components/Hero.vue"],
+      changedFiles: ["app/assets/site.css"],
     });
     assert.deepEqual(s.ungatedRegistered, [
       {
-        file: "app/components/Hero.vue",
+        file: "app/assets/site.css",
         owners: [{ feature: "website", doc: "docs/features/website.md" }],
       },
     ]);
     // Still in the other-changed bucket (it is not a recognized source)…
-    assert.deepEqual(s.otherChanged, ["app/components/Hero.vue"]);
+    assert.deepEqual(s.otherChanged, ["app/assets/site.css"]);
     // …and never a staleness verdict: strict inputs stay empty.
     assert.deepEqual(s.staleDocs, []);
     assert.deepEqual(s.unmapped, []);
   });
 
-  it("a related-source registration counts too", () => {
+  it("RETIREMENT: a registered .vue is now GATED source — it never rides the ungated surface", () => {
     const s = computeChangeState({
       registry: registry as never,
+      changedFiles: ["app/components/Hero.vue"],
+    });
+    assert.deepEqual(s.ungatedRegistered, []);
+    assert.deepEqual(s.changedSources, ["app/components/Hero.vue"]);
+    assert.deepEqual(s.staleDocs.map((d) => d.feature), ["website"]);
+  });
+
+  it("a related-source registration counts too", () => {
+    const reg = {
+      features: {
+        website: {
+          ...registry.features.website,
+          primary_sources: ["src/site.ts"],
+          related_sources: ["app/assets/site.css"],
+        },
+      },
+    };
+    const s = computeChangeState({
+      registry: reg as never,
       changedFiles: ["app/assets/site.css"],
     });
     assert.equal(s.ungatedRegistered.length, 1);
@@ -529,10 +550,10 @@ describe("ungated registered changes (.vue blind spot)", () => {
   it("an unregistered non-source change stays plain otherChanged", () => {
     const s = computeChangeState({
       registry: registry as never,
-      changedFiles: ["app/components/Other.vue", "logo.png"],
+      changedFiles: ["app/assets/other.css", "logo.png"],
     });
     assert.deepEqual(s.ungatedRegistered, []);
-    assert.deepEqual(s.otherChanged, ["app/components/Other.vue", "logo.png"]);
+    assert.deepEqual(s.otherChanged, ["app/assets/other.css", "logo.png"]);
   });
 
   it("a REGISTERED declaration artifact is surfaced, not silently dropped", () => {

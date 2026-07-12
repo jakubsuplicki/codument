@@ -1115,17 +1115,20 @@ describe("coarse-file ack signpost", () => {
 });
 
 describe("ungated registered changes surface in review (info-only)", () => {
-  it("a changed registered .vue is named with its doc and strict stays green", async () => {
+  // .vue was this surface's founding example; plan 20's adapter retired it —
+  // the notice retires itself per file type as judgment arrives. .css remains
+  // genuinely ungated.
+  it("a changed registered .css is named with its doc and strict stays green", async () => {
     await scaffold({
       "docs/features/site.md": "# site\n",
-      "app/Hero.vue": "<template><h1>hi</h1></template>\n",
+      "app/site.css": ".hero { color: red; }\n",
       "docs/.registry.json": JSON.stringify(
         {
           features: {
             site: {
               doc: "docs/features/site.md",
               type: "feature",
-              primary_sources: ["app/Hero.vue"],
+              primary_sources: ["app/site.css"],
               related_sources: [],
               docs: [],
               depends_on: [],
@@ -1139,14 +1142,14 @@ describe("ungated registered changes surface in review (info-only)", () => {
       ),
     });
     gitInit(tmp);
-    await scaffold({ "app/Hero.vue": "<template><h1>changed</h1></template>\n" });
+    await scaffold({ "app/site.css": ".hero { color: green; }\n" });
     const out = execFileSync("node", [CLI, "review", "--strict"], {
       cwd: tmp,
       encoding: "utf-8",
       env: { ...process.env, NO_COLOR: "1" },
     });
     assert.ok(out.includes("Registered but ungated"), "info section missing");
-    assert.ok(out.includes("app/Hero.vue"), "file not named");
+    assert.ok(out.includes("app/site.css"), "file not named");
     assert.ok(out.includes("docs/features/site.md"), "owning doc not named");
   });
 });
@@ -1373,6 +1376,139 @@ describe("python settings arc (Django settings.py shape)", () => {
         execFileSync(
           "node",
           [CLI, "ack", "app/settings.py::get_database_url().", "--reason", "should be refused"],
+          { cwd: tmp, encoding: "utf-8", env: { ...process.env, NO_COLOR: "1" }, stdio: "pipe" },
+        ),
+      "a signature move must not be ackable",
+    );
+  });
+});
+
+describe("sfc component arc (the website dogfood shape)", () => {
+  const SFC_REGISTRY = JSON.stringify(
+    {
+      features: {
+        hero: {
+          doc: "docs/features/hero.md",
+          type: "feature",
+          primary_sources: ["components/Hero.vue"],
+          related_sources: [],
+          docs: [],
+          depends_on: [],
+          risk: [],
+          status: "current",
+        },
+        footer: {
+          doc: "docs/features/footer.md",
+          type: "feature",
+          primary_sources: ["components/Footer.vue"],
+          related_sources: [],
+          docs: [],
+          depends_on: [],
+          risk: [],
+          status: "current",
+        },
+      },
+    },
+    null,
+    2,
+  );
+  const HERO = [
+    "<template>",
+    "  <!-- hero headline -->",
+    "  <h1>{{ headline() }}</h1>",
+    "</template>",
+    "",
+    '<script setup lang="ts">',
+    "function headline(): string {",
+    '  return "hi";',
+    "}",
+    "</script>",
+    "",
+    "<style scoped>",
+    ".hero { color: red; }",
+    "</style>",
+    "",
+  ].join("\n");
+  const FOOTER = "<template><footer>© zenzero</footer></template>\n";
+
+  function runReview(): { code: number; out: string } {
+    try {
+      const out = execFileSync("node", [CLI, "review", "--strict"], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: { ...process.env, NO_COLOR: "1" },
+      });
+      return { code: 0, out };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { code: e.status ?? 1, out: e.stdout ?? "" };
+    }
+  }
+
+  it("a component edit wakes exactly its owning doc; a template tweak is one ackable finding; a script contract change refuses the ack", async () => {
+    await scaffold({
+      "docs/features/hero.md": "# hero\n\nThe headline component.\n",
+      "docs/features/footer.md": "# footer\n",
+      "components/Hero.vue": HERO,
+      "components/Footer.vue": FOOTER,
+      "docs/.registry.json": SFC_REGISTRY,
+    });
+    gitInit(tmp);
+
+    // 1. A markup comment reword fires nothing.
+    await scaffold({
+      "components/Hero.vue": HERO.replace("<!-- hero headline -->", "<!-- reworded -->"),
+    });
+    let r = runReview();
+    assert.equal(r.code, 0, `comment edit must be silent, got:\n${r.out}`);
+
+    // 2. A real template tweak is ONE named ackable finding on the owning
+    // feature only — Footer's doc must not wake (the cascade stays dissolved).
+    await scaffold({
+      "components/Hero.vue": HERO.replace("<h1>{{ headline() }}</h1>", "<h2>{{ headline() }}</h2>"),
+    });
+    r = runReview();
+    assert.equal(r.code, 1, "template tweak must gate");
+    assert.ok(r.out.includes("template"), "the template pseudo-anchor must be named");
+    assert.ok(!r.out.includes("footer"), `footer must not wake, got:\n${r.out}`);
+    assert.ok(
+      r.out.includes("codument ack components/Hero.vue::template."),
+      `pasteable template ack expected, got:\n${r.out}`,
+    );
+
+    // 3. The pasted ack clears it.
+    execFileSync(
+      "node",
+      [CLI, "ack", "components/Hero.vue::template.", "--reason", "heading level; content unchanged"],
+      { cwd: tmp, encoding: "utf-8", env: { ...process.env, NO_COLOR: "1" } },
+    );
+    r = runReview();
+    assert.equal(r.code, 0, `template ack must clear the gate, got:\n${r.out}`);
+
+    // 4. A script CONTRACT change (setup surface: return type) is a signature
+    // move and the ack path refuses it.
+    execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
+    execFileSync("git", ["commit", "--no-verify", "-m", "template tweak + ack"], {
+      cwd: tmp,
+      stdio: "ignore",
+    });
+    await scaffold({
+      "components/Hero.vue": HERO.replace(
+        "function headline(): string {",
+        "function headline(loud = false): string {",
+      ).replace("<h1>{{ headline() }}</h1>", "<h2>{{ headline() }}</h2>"),
+    });
+    r = runReview();
+    assert.equal(r.code, 1);
+    assert.ok(
+      r.out.includes("[signature changed]"),
+      `a setup-surface param add must read as a signature move, got:\n${r.out}`,
+    );
+    assert.throws(
+      () =>
+        execFileSync(
+          "node",
+          [CLI, "ack", "components/Hero.vue::headline().", "--reason", "should be refused"],
           { cwd: tmp, encoding: "utf-8", env: { ...process.env, NO_COLOR: "1" }, stdio: "pipe" },
         ),
       "a signature move must not be ackable",
