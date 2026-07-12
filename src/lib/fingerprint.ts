@@ -94,6 +94,75 @@ export function adapterFor(path: string): LanguageAdapter {
   return ADAPTERS.find((a) => a.matches(path)) ?? coarseAdapter;
 }
 
+/** One row of the language-support matrix — the single source of truth every
+ *  presentation surface (README table, doctor info line, the website's copy)
+ *  renders from or is parity-tested against. Rows list what IS shipped, never
+ *  roadmap; the parity test makes a shipped-but-unlisted or listed-but-
+ *  unshipped language a red test. */
+export interface LanguageMatrixRow {
+  /** The registered adapter's language id. */
+  language: string;
+  display: string;
+  extensions: readonly string[];
+  grain: "per-symbol" | "blocks" | "file";
+  /** The codument version that first shipped the adapter. */
+  since: string;
+}
+
+// Kept adjacent to ADAPTERS on purpose: the parity test asserts these rows
+// and the registered precise adapters are the same set, so the matrix cannot
+// drift from the registry it describes.
+export const LANGUAGE_MATRIX: readonly LanguageMatrixRow[] = [
+  {
+    language: "typescript",
+    display: "TypeScript",
+    extensions: [".ts", ".tsx", ".mts", ".cts"],
+    grain: "per-symbol",
+    since: "0.7.0",
+  },
+  {
+    language: "python",
+    display: "Python",
+    extensions: [".py", ".pyi"],
+    grain: "per-symbol",
+    since: "0.9.0",
+  },
+  { language: "go", display: "Go", extensions: [".go"], grain: "per-symbol", since: "0.9.0" },
+  { language: "rust", display: "Rust", extensions: [".rs"], grain: "per-symbol", since: "0.9.0" },
+  {
+    language: "c-sharp",
+    display: "C#",
+    extensions: [".cs"],
+    grain: "per-symbol",
+    since: "0.9.0",
+  },
+  {
+    language: "sfc",
+    display: "Vue / Svelte / Astro",
+    extensions: [".vue", ".svelte", ".astro"],
+    grain: "blocks",
+    since: "0.9.0",
+  },
+];
+
+/** The registered PRECISE adapter ids (everything ahead of the coarse
+ *  fallback) — what the matrix's parity test compares against. */
+export function preciseAdapterIds(): string[] {
+  return ADAPTERS.filter((a) => a !== coarseAdapter).map((a) => a.language);
+}
+
+/** The README's matrix table, rendered from the manifest — one deterministic
+ *  shape shared by the docs and the parity test. */
+export function renderLanguageMatrixTable(): string {
+  const rows = LANGUAGE_MATRIX.map(
+    (r) =>
+      `| ${r.display} | ${r.extensions.map((e) => `\`${e}\``).join(" ")} | ${r.grain} | ${r.since} |`,
+  );
+  return ["| Language | Files | Resolution | Since |", "| --- | --- | --- | --- |", ...rows].join(
+    "\n",
+  );
+}
+
 /** Adapter-dispatched classification — the ONE way any caller decides whether
  *  a file is per-symbol, whole-file, or unevaluable. An adapter with no
  *  classifier is always precise for the files it matches. Callers must never

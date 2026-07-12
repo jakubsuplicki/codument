@@ -75,6 +75,9 @@ export {
   fileContentChange,
   contentChangedFiles,
   classifySource,
+  LANGUAGE_MATRIX,
+  preciseAdapterIds,
+  renderLanguageMatrixTable,
   warmAdaptersForPaths,
   warmAdaptersForRepo,
   warmAllAdapters,
@@ -82,6 +85,7 @@ export {
 export type {
   Anchor,
   LanguageAdapter,
+  LanguageMatrixRow,
   AnchorChange,
   AnchorChangeKind,
   FileChange,

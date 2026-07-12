@@ -2,7 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import pc from "picocolors";
 import { atomicWriteFileSync } from "../lib/events.js";
-import { warmAdaptersForRepo } from "../lib/fingerprint.js";
+import { LANGUAGE_MATRIX, warmAdaptersForRepo } from "../lib/fingerprint.js";
 import { assertRootIsRepoToplevel } from "../lib/git.js";
 import { GateError } from "../lib/two-ref.js";
 import { versionSkewNotice } from "../lib/version.js";
@@ -296,6 +296,12 @@ function printHuman(report: DoctorReport, strictFail = false): void {
   for (const r of coverage.ratios) {
     console.log(ratioLine(r));
   }
+  // The same manifest the README matrix is parity-tested against — one truth.
+  console.log(
+    pc.dim(
+      `  gate languages: ${LANGUAGE_MATRIX.map((r) => `${r.display} (${r.grain})`).join(" · ")}`,
+    ),
+  );
   console.log();
 
   if (lint.count === 0) {

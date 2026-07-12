@@ -8,6 +8,14 @@ remains pre-1.0.
 ## [Unreleased]
 
 ### Added
+- The language-support matrix, mechanically unable to lie: a `LANGUAGE_MATRIX`
+  manifest exported from the adapter registry is the one source of truth the
+  README table renders from and `doctor` prints as a "gate languages" info
+  line. A parity test asserts the README table is byte-equal to the manifest
+  rendering and that the manifest and the registered precise adapters are the
+  same set — a shipped-but-unlisted or listed-but-unshipped language is a red
+  test, not a stale claim. The manifest is part of the public API so external
+  surfaces (like a website) can render against the installed release.
 - C# support, per member: `.cs` files are governed through a bundled
   tree-sitter grammar. `public`/`protected` anchor and `internal` counts as
   public within the repo (internal surface is what the repo's own docs

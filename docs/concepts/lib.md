@@ -42,7 +42,7 @@ Each module's behavior, invariants, and decisions live where it is owned. This d
 
 Foundation utilities owned here:
 
-- `src/index.ts` — public package barrel; re-exports the registry, analyzer, gate primitives, and agent-profile helpers for programmatic consumers.
+- `src/index.ts` — public package barrel; re-exports the registry, analyzer, gate primitives, agent-profile helpers, and the language-support manifest (`LANGUAGE_MATRIX`) for programmatic consumers — external surfaces render support claims against the installed release, never a hand-copied list.
 - `src/lib/registry.ts` — typed read, write, and single-entry update for the v2 `docs/.registry.json` model every analyzer reads.
 - `src/lib/state-io.ts` — the fail-loud state-file primitive: reads config JSON, returning nothing when absent but raising rather than defaulting when present-but-unparseable, so a writer never overwrites what it could not read.
 - `src/lib/agent-profiles.ts` — maps the neutral delivery workflow onto agent-specific output (which instruction files, skills, and directories each profile writes) and the ordered core skill list.

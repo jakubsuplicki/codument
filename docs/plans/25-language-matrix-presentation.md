@@ -1,5 +1,5 @@
 ---
-status: draft
+status: shipped
 ---
 
 # Plan 25: the language-support matrix — presented properly, and mechanically unable to lie
@@ -58,11 +58,11 @@ repo's own plan so each repo's plans stay executable in place.
 
 ## Delivery Plan
 
-- [ ] Step 1: `LANGUAGE_MATRIX` manifest derived from registered adapters + doctor info line;
+- [x] Step 1: `LANGUAGE_MATRIX` manifest derived from registered adapters + doctor info line;
       unit tests.
-- [ ] Step 2: README matrix table rendered from the manifest (hand-written, parity-enforced) +
+- [x] Step 2: README matrix table rendered from the manifest (hand-written, parity-enforced) +
       the parity test proving it red on a seeded mismatch, green as shipped.
-- [ ] Step 3: docs — gate-doc pointer, CHANGELOG; confirm the website-repo plan consumed the
+- [x] Step 3: docs — gate-doc pointer, CHANGELOG; confirm the website-repo plan consumed the
       final matrix (checklist item, no file changes here).
 
 ## Outcome
