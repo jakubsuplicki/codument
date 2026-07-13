@@ -1,8 +1,8 @@
 <div align="center">
 
-# codument
+<img src="docs/assets/readme-hero.png" alt="codument — change control for AI-made changes" width="880">
 
-**Change control for AI-made changes.**
+<br><br>
 
 A deterministic, git-native safety layer for what your coding agent touches.
 Two independent adversarial gates, and the docs-backed workflow that produces them.
@@ -11,7 +11,7 @@ Two independent adversarial gates, and the docs-backed workflow that produces th
 [![npm](https://img.shields.io/npm/v/codument?style=flat&logo=npm&label=npm&color=CB3837)](https://www.npmjs.com/package/codument)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A518-339933?style=flat&logo=nodedotjs&logoColor=white)](package.json)
-[![Tests](https://img.shields.io/badge/tests-880%2B_passing-brightgreen?style=flat)](tests)
+[![Tests](https://img.shields.io/badge/tests-1100%2B_passing-brightgreen?style=flat)](tests)
 
 <!-- what it is -->
 [![deterministic core](https://img.shields.io/badge/core-deterministic-0d9488?style=flat)](#3--check--terminal-deterministic-core--independent-adversarial-gates)

@@ -1,0 +1,62 @@
+<svg width="1280" height="448" viewBox="0 0 1280 448" xmlns="http://www.w3.org/2000/svg">
+  <!-- codument README banner. Distilled from the website's radar design language
+       (website/scripts/og.svg): slate ground, faint grid lattice, cyan range
+       rings + sweep, an amber pinned symbol for the caught drift, mono wordmark
+       with a cyan block cursor. Source of truth; rasterized to readme-hero.png
+       with real system fonts (Menlo / Avenir Next) via @resvg/resvg-js so it
+       renders identically on GitHub with no font fallbacks. -->
+  <defs>
+    <radialGradient id="glow" cx="0.82" cy="-0.08" r="0.9">
+      <stop offset="0" stop-color="#284a68" stop-opacity="0.28"/>
+      <stop offset="0.62" stop-color="#284a68" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sweepFan" x1="1050" y1="215" x2="1188" y2="98" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4fe0f2" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#4fe0f2" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="frame"><rect width="1280" height="448"/></clipPath>
+  </defs>
+
+  <!-- Ground -->
+  <rect width="1280" height="448" fill="#080d15"/>
+  <rect width="1280" height="448" fill="url(#glow)"/>
+
+  <g clip-path="url(#frame)">
+    <!-- Grid lattice -->
+    <g stroke="#92b4d6" stroke-opacity="0.06" stroke-width="1">
+      <path d="M0 64H1280M0 128H1280M0 192H1280M0 256H1280M0 320H1280M0 384H1280"/>
+      <path d="M80 0V448M160 0V448M240 0V448M320 0V448M400 0V448M480 0V448M560 0V448M640 0V448M720 0V448M800 0V448M880 0V448M960 0V448M1040 0V448M1120 0V448M1200 0V448"/>
+    </g>
+
+    <!-- Radar: range rings extend past the frame like the hero -->
+    <g fill="none" stroke="#5ed6e8">
+      <circle cx="1050" cy="215" r="100" stroke-opacity="0.22" stroke-width="1.4"/>
+      <circle cx="1050" cy="215" r="200" stroke-opacity="0.13" stroke-width="1.3"/>
+      <circle cx="1050" cy="215" r="312" stroke-opacity="0.07" stroke-width="1.2"/>
+    </g>
+    <path d="M1050 215 L1186 96 L1214 226 Z" fill="url(#sweepFan)"/>
+    <line x1="1050" y1="215" x2="1186" y2="96" stroke="#78ebfa" stroke-opacity="0.65" stroke-width="2"/>
+    <circle cx="1050" cy="215" r="4" fill="#78ebfa" fill-opacity="0.9"/>
+
+    <!-- Pinned symbol: the caught drift, amber blip + bracket + fingerprint -->
+    <circle cx="1150" cy="106" r="34" fill="#ffb45c" fill-opacity="0.11"/>
+    <circle cx="1186" cy="96" r="4.5" fill="#ffb45c"/>
+    <g font-family="Menlo, monospace">
+      <text x="1050" y="104" font-size="22" fill="#ffb45c" fill-opacity="0.95">rotateToken()</text>
+      <text x="1050" y="128" font-size="16" fill="#ffb45c" fill-opacity="0.72">fp b31c9ae</text>
+    </g>
+    <g fill="none" stroke="#ffb45c" stroke-opacity="0.85" stroke-width="2">
+      <path d="M1035 78 v14 M1035 78 h14 M1211 78 h14 M1225 78 v14 M1035 140 v-14 M1035 140 h14 M1225 140 v-14 M1211 140 h14"/>
+    </g>
+  </g>
+
+  <!-- Wordmark + cyan block cursor -->
+  <text x="90" y="204" font-family="Menlo, monospace" font-size="88" font-weight="700" fill="#dce8f4">codument</text>
+  <rect x="516" y="142" width="24" height="64" fill="#4fe0f2"/>
+
+  <!-- Tagline + sub + prompt -->
+  <text x="94" y="272" font-family="Avenir Next, Avenir, Helvetica, sans-serif" font-size="29" font-weight="600" letter-spacing="2.5" fill="#94a8bd">CHANGE CONTROL FOR AI-MADE CHANGES.</text>
+  <text x="94" y="316" font-family="Menlo, monospace" font-size="18" fill="#647a90">docs as code underneath · trusted context back out</text>
+  <text x="94" y="392" font-family="Menlo, monospace" font-size="19" fill="#4fe0f2">$ npx codument</text>
+  <line x1="0" y1="447" x2="1280" y2="447" stroke="#4fe0f2" stroke-opacity="0.22" stroke-width="2"/>
+</svg>
