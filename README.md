@@ -24,11 +24,6 @@ Two independent adversarial gates, and the docs-backed workflow that produces th
 [![Codex · portable](https://img.shields.io/badge/Codex-portable-412991?style=flat&logo=openai&logoColor=white)](#1--set-up--terminal-once)
 [![any AGENTS.md agent](https://img.shields.io/badge/AGENTS.md-any_agent-64748b?style=flat)](#1--set-up--terminal-once)
 
-<!-- in the box -->
-[![19 CLI commands](https://img.shields.io/badge/CLI-19_commands-334155?style=flat)](#3--check--terminal-deterministic-core--independent-adversarial-gates)
-[![15 skills](https://img.shields.io/badge/skills-15-7C3AED?style=flat)](#2--build--your-agent-ongoing)
-[![2 adversarial gates](https://img.shields.io/badge/adversarial_gates-2-B45309?style=flat)](#the-two-adversarial-gates-independent-proportional)
-
 <br>
 
 <img src="docs/assets/codument-watch-hero.png" alt="codument watch: a live, deterministic panel attributing agent spend to each feature; verdict CLEAN, cost $4,007.22 across 31 sessions, with a per-feature 'where it went' breakdown" width="820">
@@ -37,19 +32,22 @@ Two independent adversarial gates, and the docs-backed workflow that produces th
 
 <br>
 
-**[Website](https://codument.studio/)** · **[Quick start](#try-it-on-your-own-repo--two-commands-zero-commitment)** · **[30-second demo](#try-it-in-30-seconds)** · **[How it works](#what-it-is)** · **[Docs](docs/)** · **[Report an issue](https://github.com/jakubsuplicki/codument/issues)**
+**[Website](https://codument.studio/)** · **[Quick start](#try-it-on-your-own-repo--two-commands-zero-commitment)** · **[30-second demo](#try-it-in-30-seconds)** · **[Autopilot](#autopilot)** · **[How it works](#what-it-is)** · **[Docs](docs/)** · **[Report an issue](https://github.com/jakubsuplicki/codument/issues)**
 
 </div>
 
 ## What it is
 
-Codument has **two sides** that work together, and an **independent adversarial layer** for when you want more than facts:
+Codument has two sides that work together, plus an independent adversarial layer for when you want more than facts:
 
-- **A delivery workflow your agent runs.** Docs-backed planning, source-to-doc ownership, review discipline, and commit hygiene. You just chat; your agent routes intent into the right phase from the installed instructions. Core loop: `grill → plan → approve → implement → verify → document → review → commit`.
-- **Deterministic CLI checks you run.** Local, no-network, no-AI commands that read the repo and report the facts: `doctor` (coverage + lint), `review` (what a change touched, what went stale, per-symbol drift), `watch` (a live view). Same repo state → same output. This core stays honestly deterministic — no model, no network, reproducible.
-- **Two independent adversarial gates — verify, don't trust.** On top of the deterministic core sit two gates that *do* involve an AI reviewer but never ask you to trust its word. They are **proportional**, not skippable extras: they fire on the work that warrants them and are skipped on trivial edits. A **plan adversary** contests the written plan before code exists (`map check --plan`); it only ever raises grounded objections and it **never blocks** — the human adjudicates. A **review adversary** contests any non-trivial diff after the work (`review --require-review`), handed a fingerprint-bound bundle to attack; it blocks **only** when a finding's named test is genuinely red on a live re-run. The AI proposes; a deterministic oracle (a re-run test, a grounding projection, an auto-invalidating ack) decides. That is why adding AI here does not undercut "deterministic by default": every verdict the gates hand back is pinned to something reproducible.
+- **A delivery workflow your agent runs.** Docs-backed planning, source-to-doc ownership, review discipline, and commit hygiene. You just chat; your agent routes intent into the right phase. Core loop: `grill → plan → approve → implement → verify → document → review → commit`.
+- **Deterministic CLI checks you run.** Local, no-network, no-AI commands that read the repo and report the facts: `doctor` (coverage + lint), `review` (what a change touched, what went stale, per-symbol drift), `watch` (a live view). Same repo state, same output. No model, no network, reproducible.
+- **Two independent adversarial gates that verify, don't trust.** A plan adversary contests the written plan before code exists and never blocks; a review adversary contests a non-trivial diff and blocks only when a finding's named test is genuinely red on a live re-run. The AI proposes; a deterministic oracle decides, so adding AI here never undercuts "deterministic by default".
 
-The link between all of it is **`docs/.registry.json`** — a registry mapping each source file to the feature/doc that owns it. The workflow writes it as it builds; the checks read it to reason about every change; the gates project it into the contract an adversary attacks.
+The connective tissue is **`docs/.registry.json`**, a registry mapping each source file to the feature/doc that owns it: the workflow writes it as it builds, the checks read it to reason about every change, and the gates project it into the contract an adversary attacks.
+
+<details>
+<summary>Architecture at a glance</summary>
 
 ```mermaid
 flowchart TB
@@ -69,9 +67,11 @@ flowchart TB
   REG -.->|projected into the contract an adversary attacks| ADV
 ```
 
+</details>
+
 ## How you run it
 
-codument is two tools used in two places — keeping them straight is the whole trick:
+codument is two tools used in two places, and keeping them straight is the whole trick:
 
 | Where | What it's for | Examples |
 | --- | --- | --- |
@@ -80,25 +80,36 @@ codument is two tools used in two places — keeping them straight is the whole 
 
 **Rule of thumb: the CLI finds and reports; your agent fixes.** Codument never writes your code or docs.
 
-The flow, start to finish:
+## Works with your stack
 
-```text
-1. Set up    terminal · once      npm i -D codument  →  codument init | scan | adopt
-2. Build     agent · ongoing      just chat: grill → plan → implement → review → commit
-3. Check     terminal · anytime   codument doctor | review | watch
-4. Fix       agent                /update-docs … your agent clears what the checks found
-5. Upgrade   terminal · rare      codument update   (after bumping the package)
-```
+| Language | Files | Resolution | Since |
+| --- | --- | --- | --- |
+| TypeScript | `.ts` `.tsx` `.mts` `.cts` | per-symbol | 0.7.0 |
+| Python | `.py` `.pyi` | per-symbol | 0.9.0 |
+| Go | `.go` | per-symbol | 0.9.0 |
+| Rust | `.rs` | per-symbol | 0.9.0 |
+| C# | `.cs` | per-symbol | 0.9.0 |
+| Java / Kotlin | `.java` `.kt` `.kts` | per-symbol | 0.9.0 |
+| Vue / Svelte / Astro | `.vue` `.svelte` `.astro` | blocks | 0.9.0 |
+
+Per-symbol resolution for TypeScript, Python, Go, Rust, C#, Java, and Kotlin; per-part for Vue/Svelte/Astro; whole-file for JavaScript. Every other registered file is surfaced on change, never judged. The table is parity-tested against the adapter registry (`tests/language-matrix.test.ts`), so a shipped-but-unlisted or listed-but-unshipped language is a red test, not a stale claim.
+
+<details>
+<summary>Per-language anchor semantics (honest bounds)</summary>
+
+TypeScript (`.ts`/`.tsx`, module flavors `.mts`/`.cts` included) resolves **per symbol** — including config files shaped like `export default defineNuxtConfig({...})`, which carry a precise `default.` anchor (comment and formatting edits fire nothing; a payload edit is one ackable finding; swapping the producing callee is a contract change). **Python** (`.py`/`.pyi`) resolves **per symbol** through a bundled tree-sitter grammar (no interpreter, no ambient toolchain): a static `__all__` is honored as the public surface (its edit is a contract move), otherwise the underscore convention decides; a def's decorators, parameters, defaults, and return annotation are contract while the suite (docstrings included) is ackable body; classes split per member; a module assignment's value is ackable body while its target and annotation are contract — so a `settings.py` value flip is one named ackable finding, and pytest conventions (`test_*.py`, `*_test.py`, `conftest.py`) plus environment trees (`venv`, `__pycache__`) stay out of scope. **Go** (`.go`) resolves **per symbol** through a bundled tree-sitter grammar: exported means capitalized (Go's own law), methods anchor under their receiver type with pointer and value receivers sharing one identity, grouped `const`/`var` blocks anchor per spec (names co-declared in one spec share a span, and an iota-style block anchors whole — inserting a member shifts later values, so it reads as a contract move, never silence), a struct's exported fields and tags are contract while unexported fields are ackable body, and `_test.go` files stay out of scope. **Rust** (`.rs`) resolves **per symbol**: any `pub` form anchors (including `pub(crate)` — load-bearing inside the repo), impl members anchor under their type and trait-impl members under a trait-qualified identity, derives and attributes are contract, pub struct fields are contract while private fields are ackable body, and a macro definition is one all-signature anchor with invocations honestly bounded to the residual (no expansion without rustc). **C#** (`.cs`) resolves **per symbol** (its members are its symbols): types anchor as contract frames while methods, properties, and fields anchor individually under nested type chains, partial-class fragments in one file fold into one identity, a property's accessor list (`get; set;` vs `get; init;`) is contract while accessor bodies and initializers are ackable, record positional parameters are contract, and top-level-statement files (minimal hosting) still gate at residual grain. **Java and Kotlin** (`.java`/`.kt`/`.kts`) resolve **per symbol** through one anchor model over two bundled grammars, so a mixed JVM repo gates coherently: types are contract frames and methods, fields, and properties anchor individually under nested chains; annotations are contract (framework wiring like `@Service`/`@GetMapping` IS the interface); a data class's primary-constructor parameters are contract (the equality surface); enums anchor whole and overloads fold per name. Visibility follows each language's own rule — Java anchors `public`/`protected` while a bare package-private default joins the closure pool, whereas Kotlin's default is public so every non-`private` declaration anchors and `internal` counts as public within the repo. Canonical `src/test` source sets and `*Test`/`*Spec` files stay out of scope; a pathologically compact single-line Kotlin body classifies unevaluable (fail-loud) rather than mis-anchoring, while realistic multi-line code gates per symbol. **Vue, Svelte, and Astro components** (`.vue`/`.svelte`/`.astro`) resolve **per part**: script blocks get full per-symbol treatment through the TypeScript engine (a `<script setup>` block's top-level declarations are the component's public surface), while template and style are named, body-grain anchors — a markup tweak is one ackable finding, a markup comment or reformat is silence, and a script contract change refuses the ack path. JavaScript (`.js`/`.jsx`/`.mjs`/`.cjs`) is gated at **whole-file grain**: any content change wakes the owning doc, cleared by a doc update or a file-grain ack. Declaration artifacts (`.d.ts`/`.d.mts`/`.d.cts`) are excluded outright — generated API surface, not judged; if you register one anyway, it is named in the ungated section rather than dropped. Everything else — `.css`, `.json`, another language entirely — is **never judged**: register such a file and `review` names it with its owning doc(s) in an info-only "Registered but ungated" section instead of staying silent, but no staleness verdict is computed for it. New languages arrive as adapters on the gate's language-adapter seam, each required to pass the same eight-behavior conformance battery before it ships. The agent workflow around the gate — plans, registry, the docs standard, the adversarial gates — is language-agnostic.
+
+</details>
 
 ## Try it in 30 seconds
 
-One command runs a click-through showcase on a throwaway sample repo — your docs today → an AI makes a sweeping change → exactly what that change broke that you'd otherwise merge blind, opened as an HTML report. Press Enter to advance each scene (or add `--auto`).
+One command runs a click-through showcase on a throwaway sample repo: your docs today, an AI makes a sweeping change, then exactly what that change broke that you'd otherwise merge blind, opened as an HTML report. Press Enter to advance each scene (or add `--auto`).
 
 ```bash
 npx codument demo
 ```
 
-Or watch it happen live in a single terminal — the change-state panel starts clean, then the AI change lands and the counts light up in place:
+Or watch it live in a single terminal, the change-state panel starting clean, then lighting up in place as the AI change lands:
 
 ```bash
 npx codument demo --live
@@ -115,11 +126,7 @@ npx codument scan                    # propose a registry + doc scaffolds (nothi
 npx codument audit v1.0.0..HEAD      # replay your history against that map
 ```
 
-`scan` proposes which docs would own which sources; `audit` then reports every feature whose
-source moved in the range while its doc got no attention — per symbol, with an honest "doc never
-committed" where no doc existed yet. That is the drift the live gate would have caught. Read the
-damage report, then decide. Nothing is gated and nothing needs committing — delete the scaffolds
-and you've adopted nothing.
+`scan` proposes which docs would own which sources; `audit` then reports every feature whose source moved in the range while its doc got no attention, per symbol, with an honest "doc never committed" where none existed yet. That is the drift the live gate would have caught. Nothing is gated and nothing needs committing: delete the scaffolds and you've adopted nothing.
 
 ## 1 · Set up — terminal, once
 
@@ -128,6 +135,17 @@ npm install -D codument
 ```
 
 Then run **one** of these, matching your project:
+
+```bash
+npx codument init      # new project: scaffold docs + the agent workflow
+npx codument scan      # existing code, no docs yet: propose a registry + scaffolds
+npx codument adopt     # existing Codument project: normalize + refresh
+```
+
+`init` installs the Claude profile by default (`AGENTS.md`/`CLAUDE.md`, `.claude/` skills + agents + rules, `docs/` with the registry). Pick profiles explicitly with `--agents claude`, `--agents codex`, or `--agents codex,claude`.
+
+<details>
+<summary>What each entry point does, in full</summary>
 
 ### New project → `init`
 
@@ -163,6 +181,8 @@ npx codument adopt --agents codex,claude
 
 Use `adopt` when a project already has Codument docs or an older `.codument-meta.json`. It normalizes `docs/.registry.json` into the ownership shape (`primary_sources`, `related_sources`, `docs`, `depends_on`, `risk`), backs the previous file up as `docs/.registry.backup.json`, refreshes `.codument-meta.json`, and installs/updates the selected agent profiles. To re-derive the registry from source at any time, re-run `scan` — it overwrites the machine-derived entries while preserving your human-authored `docs`/`depends_on`/`risk`.
 
+</details>
+
 ## 2 · Build — your agent, ongoing
 
 Chat normally. Codument's always-loaded instructions route clear intent into the right delivery skill; slash commands are just explicit overrides when you want to force a phase.
@@ -170,6 +190,30 @@ Chat normally. Codument's always-loaded instructions route clear intent into the
 <p align="center">
   <img src="docs/assets/codument-workflow.png" alt="The codument delivery workflow: charter (new project, once) → grill → plan → plan adversary (proportional) → approve (you decide) → implement & verify → document → review (you decide) → review adversary (proportional) → commit; two independent adversarial gates, verify don't trust; the CLI finds and reports, your agent fixes" width="760">
 </p>
+
+### Autopilot
+
+Once a plan is approved, tell your agent **"codument, run the plan"** (also recognized: "run the plan", "codument this plan", "autopilot", or `/work-step --auto`). It then works the approved plan end to end, implementing, reviewing, and committing each remaining step for you: one focused commit per step, under your own identity, no AI co-author trailer.
+
+It is opt-in per run and off by default. The per-step gates still run; autopilot only stops *waiting* for your routine confirmation. It hard-pauses for anything that needs a real decision, and you can say **"pause"** or **"stop autopilot"** to drop back to one gated step at a time.
+
+<details>
+<summary>Autopilot precondition, pause conditions, and why there's no CLI command for it</summary>
+
+Codument never runs your coding agent — your agent does. So you trigger autopilot by telling your agent, not by running a CLI command. Running `codument run` (alias `autopilot`) only prints this reminder and points you back at the phrase; the CLI itself does setup and deterministic checks, never your agent.
+
+Autopilot will not start until the plan is approved (`Status: approved`), and it pauses to ask when something needs a real decision:
+
+- a review finding that needs a human judgment call (and always for changes touching public interfaces, security, data loss, or dependencies),
+- a failing verification, or
+- a change that would fall outside the approved plan.
+
+To run a single fully-gated step instead, say **"work the next step"** or `/work-step` without `--auto`.
+
+</details>
+
+<details>
+<summary>How the workflow routes intent, and the installed skills</summary>
 
 ```mermaid
 flowchart LR
@@ -201,15 +245,25 @@ The installed workflow skills:
 
 They travel with a set of domain-expertise skills — `senior-backend`, `senior-architect`, `senior-frontend`, `frontend-design`, `motion-craft`, `code-reviewer`, `review-codebase`. Those are advisory craft depth your agent consults when a step fits their domain; they never replace the workflow gates above.
 
-Keep working state compact. A feature doc carries the standard's durable layers — plain-terms orientation, design approach, invariants with their test pointers, decisions, key files. A plan's delivery scaffolding (checklist, acceptance criteria, verification) lives in the doc only while the work is in flight and compacts out when it ships — never a transcript of every agent turn. (To run an approved plan end-to-end without per-step prompts, see **Autopilot** in Reference.)
+Keep working state compact. A feature doc carries the standard's durable layers — plain-terms orientation, design approach, invariants with their test pointers, decisions, key files. A plan's delivery scaffolding (checklist, acceptance criteria, verification) lives in the doc only while the work is in flight and compacts out when it ships, never a transcript of every agent turn.
+
+</details>
 
 ## 3 · Check — terminal (deterministic core + independent adversarial gates)
 
-The commands below are local, need no network and no AI model, and produce the same output for the same repo state — they read the registry, the filesystem, and `git`. The two **adversarial gates** at the end of this section are the opt-in exception: they involve an AI reviewer but decide every verdict with a deterministic oracle (a re-run test, a grounding projection), so the default path stays reproducible.
+The commands below are local, need no network and no AI model, and produce the same output for the same repo state: they read the registry, the filesystem, and `git`. The two **adversarial gates** at the end of this section are the opt-in exception: they involve an AI reviewer but decide every verdict with a deterministic oracle (a re-run test, a grounding projection), so the default path stays reproducible.
 
 ### `codument doctor` — documentation coverage
 
 "Test coverage for your docs." A deterministic gap-finder, not a quality judge.
+
+```bash
+npx codument doctor
+npx codument doctor --strict   # exit 1 on findings, to gate a CI step
+```
+
+<details>
+<summary>Coverage / lint / notes channels, and all four flags</summary>
 
 ```bash
 npx codument doctor
@@ -226,22 +280,20 @@ It reports separate channels, never blended into one number:
 
 `doctor` is warning-only by default: neither findings nor notes change the exit code. Add `--strict` to make findings exit 1 (notes still never do), so a CI step can block a merge until they are cleared.
 
+</details>
+
 ### `codument review` — review an AI change
 
-Reads the uncommitted git diff against the registry and reports what changed and what is suspicious:
+Reads the uncommitted git diff against the registry and reports what changed and what is suspicious: changed files grouped by owning feature, **stale docs** (a source moved but its mapped doc did not), high-risk areas touched, out-of-plan changes, and unmapped sources. It reports repo facts and gaps; it does not certify that a change is safe.
 
 ```bash
 npx codument review
-npx codument review --json
+npx codument review --json          # machine-readable
+npx codument review --base main     # branch drift since the merge-base with <ref>, not just uncommitted
 ```
 
-- changed files grouped by the feature that owns them
-- **stale docs** — a source changed but its mapped doc did not
-- **high-risk areas touched** (auth, data-loss, etc.)
-- **out-of-plan changes** when an approved plan (`Status: approved` with a `## Scope`) is detected
-- **unmapped changes**, high-fanout files, and dependent features that may need re-review
-
-It reports repo facts and gaps — it does not certify that a change is safe.
+<details>
+<summary>Every review flag, per-symbol drift, and SARIF output for CI</summary>
 
 The `review` command has grown beyond the default report. Every flag below is optional; with no flags it is the deterministic reporter above.
 
@@ -260,25 +312,6 @@ npx codument review --require-review --test-command "npx tsx --test {file}"   # 
 - **`--bundle`** emits the adversarial-review bundle (the documented invariants + their tests + the diff) as JSON — the contract an independent reviewer attacks. The deterministic oracle that *decides* is the re-run of a finding's named test, never the bundle itself. **`--record <file>`** records a fingerprint-bound review from a findings JSON (`{invariantsChecked, findings, signer}`) that **`--require-review`** then enforces — exiting 1 on a non-trivial diff with no current artifact, or one carrying unresolved confirmed findings. A finding **blocks only** when its named test is red on a live re-run (`--test-command`, `{file}` = the resolved path; default `npx --no-install tsx --test {file}` — resolved locally, **never fetched from the network**); point it at a TAP-emitting runner for non-`node:test` projects. When no runner is resolvable without a fetch, the summary says so by name ("confirm step could not run — pass `--test-command`") instead of silently reading advisory. Opt-in today; the default-on flip is soak-deferred.
 
 **Per-symbol drift.** Staleness is resolved **per symbol**, not per whole file. `review` fingerprints each exported declaration's token stream across two git refs; when a documented symbol **moved** and its owning doc did not, only that symbol's owning feature wakes — the old whole-file cascade is dissolved. The verdict is a pure, reproducible function of `(base, head, codument version, algoStamp)` with no clock input. It enforces that a moved documented symbol and its owning doc stay **in sync** (waking the feature when they don't), not that the prose is correct — a born-wrong or already-drifted doc is out of scope by construction. A separate name-match signal (does the doc even mention the symbol) is kept as **info-only telemetry**, never a verdict input. Before hashing, each declaration's token stream is **canonicalized**: a name bound within the declaration (a parameter, a block local, a destructured or catch binding, a generic type parameter) is rewritten to a positional index, so a meaning-preserving local rename does not move the fingerprint at all. What still fires is a real change — a different free/imported/global reference, a type or contract-name change (a property key, an object shorthand, a constructor parameter property), or a structural edit.
-
-### Language support
-
-| Language | Files | Resolution | Since |
-| --- | --- | --- | --- |
-| TypeScript | `.ts` `.tsx` `.mts` `.cts` | per-symbol | 0.7.0 |
-| Python | `.py` `.pyi` | per-symbol | 0.9.0 |
-| Go | `.go` | per-symbol | 0.9.0 |
-| Rust | `.rs` | per-symbol | 0.9.0 |
-| C# | `.cs` | per-symbol | 0.9.0 |
-| Java / Kotlin | `.java` `.kt` `.kts` | per-symbol | 0.9.0 |
-| Vue / Svelte / Astro | `.vue` `.svelte` `.astro` | blocks | 0.9.0 |
-
-JavaScript (`.js`/`.jsx`/`.mjs`/`.cjs`) is gated at whole-file grain; anything else registered in
-the registry is surfaced on change, never judged. Planned next: Java + Kotlin (plan 23). This
-table is parity-tested against the adapter registry (`tests/language-matrix.test.ts`), so a
-shipped-but-unlisted or listed-but-unshipped language is a red test, not a stale claim.
-
-**Language support (honest bounds).** TypeScript (`.ts`/`.tsx`, module flavors `.mts`/`.cts` included) resolves **per symbol** — including config files shaped like `export default defineNuxtConfig({...})`, which carry a precise `default.` anchor (comment and formatting edits fire nothing; a payload edit is one ackable finding; swapping the producing callee is a contract change). **Python** (`.py`/`.pyi`) resolves **per symbol** through a bundled tree-sitter grammar (no interpreter, no ambient toolchain): a static `__all__` is honored as the public surface (its edit is a contract move), otherwise the underscore convention decides; a def's decorators, parameters, defaults, and return annotation are contract while the suite (docstrings included) is ackable body; classes split per member; a module assignment's value is ackable body while its target and annotation are contract — so a `settings.py` value flip is one named ackable finding, and pytest conventions (`test_*.py`, `*_test.py`, `conftest.py`) plus environment trees (`venv`, `__pycache__`) stay out of scope. **Go** (`.go`) resolves **per symbol** through a bundled tree-sitter grammar: exported means capitalized (Go's own law), methods anchor under their receiver type with pointer and value receivers sharing one identity, grouped `const`/`var` blocks anchor per spec (names co-declared in one spec share a span, and an iota-style block anchors whole — inserting a member shifts later values, so it reads as a contract move, never silence), a struct's exported fields and tags are contract while unexported fields are ackable body, and `_test.go` files stay out of scope. **Rust** (`.rs`) resolves **per symbol**: any `pub` form anchors (including `pub(crate)` — load-bearing inside the repo), impl members anchor under their type and trait-impl members under a trait-qualified identity, derives and attributes are contract, pub struct fields are contract while private fields are ackable body, and a macro definition is one all-signature anchor with invocations honestly bounded to the residual (no expansion without rustc). **C#** (`.cs`) resolves **per symbol** (its members are its symbols): types anchor as contract frames while methods, properties, and fields anchor individually under nested type chains, partial-class fragments in one file fold into one identity, a property's accessor list (`get; set;` vs `get; init;`) is contract while accessor bodies and initializers are ackable, record positional parameters are contract, and top-level-statement files (minimal hosting) still gate at residual grain. **Java and Kotlin** (`.java`/`.kt`/`.kts`) resolve **per symbol** through one anchor model over two bundled grammars, so a mixed JVM repo gates coherently: types are contract frames and methods, fields, and properties anchor individually under nested chains; annotations are contract (framework wiring like `@Service`/`@GetMapping` IS the interface); a data class's primary-constructor parameters are contract (the equality surface); enums anchor whole and overloads fold per name. Visibility follows each language's own rule — Java anchors `public`/`protected` while a bare package-private default joins the closure pool, whereas Kotlin's default is public so every non-`private` declaration anchors and `internal` counts as public within the repo. Canonical `src/test` source sets and `*Test`/`*Spec` files stay out of scope; a pathologically compact single-line Kotlin body classifies unevaluable (fail-loud) rather than mis-anchoring, while realistic multi-line code gates per symbol. **Vue, Svelte, and Astro components** (`.vue`/`.svelte`/`.astro`) resolve **per part**: script blocks get full per-symbol treatment through the TypeScript engine (a `<script setup>` block's top-level declarations are the component's public surface), while template and style are named, body-grain anchors — a markup tweak is one ackable finding, a markup comment or reformat is silence, and a script contract change refuses the ack path. JavaScript (`.js`/`.jsx`/`.mjs`/`.cjs`) is gated at **whole-file grain**: any content change wakes the owning doc, cleared by a doc update or a file-grain ack. Declaration artifacts (`.d.ts`/`.d.mts`/`.d.cts`) are excluded outright — generated API surface, not judged; if you register one anyway, it is named in the ungated section rather than dropped. Everything else — `.css`, `.json`, another language entirely — is **never judged**: register such a file and `review` names it with its owning doc(s) in an info-only "Registered but ungated" section instead of staying silent, but no staleness verdict is computed for it. New languages arrive as adapters on the gate's language-adapter seam, each required to pass the same eight-behavior conformance battery before it ships. The agent workflow around the gate — plans, registry, the docs standard, the adversarial gates — is language-agnostic.
 
 **SARIF for CI (`--format sarif`).** `review --format sarif` emits the verdict as [SARIF 2.1.0](https://sarifweb.azurewebsites.net/), the format GitHub code-scanning renders as inline annotations on a pull request's changed lines. No bot and no hosted service: it is a static file your existing CI step uploads. Every stale doc, unmapped source, out-of-plan change, and ownership ambiguity becomes one annotation, and a stale-doc annotation names the symbol that moved and its fingerprint transition. It is mutually exclusive with `--json` and changes only stdout — the exit code still comes from `--strict`, so **one step both prints the annotations and fails the check**. Two steps are the whole recipe: run `review` writing SARIF to a file, then upload it.
 
@@ -304,6 +337,11 @@ jobs:
 ```
 
 `reviewdog` consumes the same file if you prefer it to code-scanning. When the gate cannot run (not a git repository, a wrong root, a git failure) the SARIF marks the invocation unsuccessful rather than reporting a false "clean."
+
+</details>
+
+<details>
+<summary>Enforce the gate, ack a neutral move, or audit history: <code>hooks</code> · <code>ack</code> · <code>audit</code></summary>
 
 ### `codument hooks` — make the gate enforced, not advisory
 
@@ -344,37 +382,30 @@ npx codument ack src/foo.ts::bar --base main --signer alice   # match review --b
 
 ### `codument audit` — score doc drift over committed history
 
-The live gate pointed backwards: for each documented feature, symbol moves in a commit range whose
-owning doc got no attention in the same range. Runnable on a repo that has adopted nothing (pair it
-with `scan`, above) and on any release range of an adopted one.
+The live gate pointed backwards: for each documented feature, symbol moves in a commit range whose owning doc got no attention in the same range. Runnable on a repo that has adopted nothing (pair it with `scan`, above) and on any release range of an adopted one.
 
 ```bash
 npx codument audit v1.0.0..HEAD
 npx codument audit v0.7.0..v0.8.0 --json   # version-tagged; byte-identical for the same repo state
 ```
 
-- Same analyzer, same semantics as `review` — per-symbol staleness, deletions first-class (a
-  rename's old path included), the registry-entry-removal dodge closed, parse-broken files
-  surfaced instead of trusted. The range is diffed from the merge-base, so merged-in commits are
-  not misattributed.
-- Acknowledgments don't apply retroactively — an ack adjudicates the live working tree, not an
-  arbitrary historical range — so the audit reports raw drift.
-- **Informational by contract:** findings never change the exit code; `--json` carries
-  `driftedCount` so you can threshold it yourself. Only an audit that *could not run* (bad range,
-  unreachable ref, broken git) exits non-zero — "could not look" never reads as "no drift".
+- Same analyzer, same semantics as `review` — per-symbol staleness, deletions first-class (a rename's old path included), the registry-entry-removal dodge closed, parse-broken files surfaced instead of trusted. The range is diffed from the merge-base, so merged-in commits are not misattributed.
+- Acknowledgments don't apply retroactively — an ack adjudicates the live working tree, not an arbitrary historical range — so the audit reports raw drift.
+- **Informational by contract:** findings never change the exit code; `--json` carries `driftedCount` so you can threshold it yourself. Only an audit that *could not run* (bad range, unreachable ref, broken git) exits non-zero — "could not look" never reads as "no drift".
 
-### `codument report` — the same review as a shareable HTML page
-
-```bash
-npx codument report          # writes .codument/report.html and opens it
-npx codument report --no-open --out review.html
-```
-
-A self-contained page (no network, no JS) that leads with a plain-language verdict and the coverage delta, with finding cards and a collapsible per-file breakdown — instead of a wall of terminal text.
+</details>
 
 ### `codument watch` — live terminal view
 
-A second terminal that continuously refreshes the same change-state while your agent works (no daemon, zero extra dependencies):
+A second terminal that continuously refreshes the same change-state while your agent works (no daemon, zero extra dependencies). It leads with a plain-words verdict (`✓ CLEAN`, `▲ DRIFTING`, `■ AT RISK`, or `⊘ OFF-PLAN`) over the all-sessions estimated cost and a per-feature breakdown, and it reuses the exact analyzer `review` uses, so the live view and the snapshot can never disagree.
+
+```bash
+npx codument watch
+npx codument watch --once          # one frame, for CI/inspection
+```
+
+<details>
+<summary>watch flags, the event log (<code>feed</code>, <code>steps</code>), and estimated token cost (<code>emit</code>, <code>rates</code>, <code>cost</code>)</summary>
 
 ```bash
 npx codument watch
@@ -383,7 +414,7 @@ npx codument watch --interval 1000
 npx codument watch --dir ../other  # watch another repo without cd
 ```
 
-`watch` leads with a plain-words verdict — `✓ CLEAN`, `▲ DRIFTING`, `■ AT RISK`, or `⊘ OFF-PLAN` — over the all-sessions estimated cost and a per-feature breakdown. It reuses the exact analyzer `review` uses, so the live view and the snapshot can never disagree, and it tails the append-only `.codument/events.jsonl` flow log.
+`watch` tails the append-only `.codument/events.jsonl` flow log.
 
 ### `codument feed` — populate the event log from the agent's session
 
@@ -468,9 +499,26 @@ by model
 
 It's a pure read — it never tails or mutates the log (refresh capture with `feed`/`watch` first) and needs no git repo, just a `.codument/events.jsonl`. Cost is derived from the rate table at read time (an **estimate**, never a bill); an unknown model is flagged `unpriced` rather than priced wrong.
 
+</details>
+
+<details>
+<summary>The same review as a shareable HTML page: <code>codument report</code></summary>
+
+```bash
+npx codument report          # writes .codument/report.html and opens it
+npx codument report --no-open --out review.html
+```
+
+A self-contained page (no network, no JS) that leads with a plain-language verdict and the coverage delta, with finding cards and a collapsible per-file breakdown — instead of a wall of terminal text.
+
+</details>
+
 ### The two adversarial gates (independent, proportional)
 
-Alongside the deterministic checks, Codument can run two **adversarial** gates. Both are proportional (they fire on the work that warrants them, not on trivial edits), both project the same committed docs and registry into a contract an independent reviewer attacks, and neither introduces a new source of truth or a model call on the verdict path. The principle is **verify, don't trust**: an AI raises the objection or finding; a deterministic oracle decides what it means.
+Alongside the deterministic checks, Codument can run two **adversarial** gates. Both are proportional (they fire on the work that warrants them, not on trivial edits), both project the same committed docs and registry into a contract an independent reviewer attacks, and neither introduces a new source of truth or a model call on the verdict path. The principle is **verify, don't trust**: an AI raises the objection or finding, and a deterministic oracle decides what it means. A **plan adversary** (`map check --plan`) contests the plan before code exists and never blocks; the human adjudicates. A **review adversary** (`review --require-review`) contests a non-trivial diff and hard-blocks only when a finding's named test is genuinely red on a live re-run.
+
+<details>
+<summary>How each gate works, and its honest limits</summary>
 
 **Plan adversary — `codument map check --plan <path>`.** Before any code is written, an independent adversary reads *only* the plan plus a deterministic grounding projection over `docs/.registry.json` and the committed feature docs (invariants, test pointers, dependency edges, risk tags, Feature-Map rows — emit it with `map check --plan <path> --json`). It surfaces only **grounded** objections — each must cite a committed constraint the plan contradicts or name a load-bearing assumption the grill left unresolved — one tight line each, most-serious-first, folded into the same open-questions block of the approval summary you already read. It **never blocks**, never rewrites the plan, never reopens the grill; the **human adjudicates** at the existing approve/change gate. "No material objections" is the correct, expected output for a well-grilled plan, not a failure. A plan with no Feature Map runs no adversary (proportionality skip).
 *Honest limit:* its quality is **prompt-enforced, not test-backed**. A plan has no executable oracle, so groundedness — not correctness — is the only honest deterministic analog; no mechanism can prove an objection is grounded or catch a fabricated one, and manufacturing a weak objection is the cardinal failure the mandate guards against but cannot mechanically prevent. On a host without subagents no automatic independent pass runs at all — it degrades to a manual handoff (grounding + a paste-ready prompt + a plain statement that no independent pass ran), so the guarantee is genuinely weaker there. And because it never blocks, a wrong plan a human waves through is not stopped by the tool.
@@ -478,9 +526,16 @@ Alongside the deterministic checks, Codument can run two **adversarial** gates. 
 **Review adversary — `codument review --require-review`.** After the work, an independent adversary presumed to be hunting for failure is handed a precise **bundle** to attack (`review --bundle`): the diff, the documented invariants it must not break and the tests that pin them, the relevant plan slice, and ownership/blast facts. The verdict is **verify, don't trust** — a finding hard-**blocks only** when its named test is genuinely red when the gate **re-runs it on the spot** (a nonzero exit counts as red only with TAP evidence the runner actually executed tests); the fix flips it green. The gate re-derives every status and never trusts what an artifact claims. The artifact (`.codument/reviews/<id>.json`) is fingerprint-bound over the full change set *and* the named tests, so editing the diff or tampering a test after review auto-reopens the gate. It is opt-in; proportionality skips trivial edits; non-testable/judgment findings are recorded and routed to the review decision point, never auto-blocked.
 *Honest limit:* an **empty or omitted-findings review still passes** — the gate enforces the review *ritual* (a diff-bound artifact enumerating the invariants checked) and verifies *declared* findings, but it does **not** certify thoroughness. Requiring TAP evidence to call a red test blocking means a runner that does not emit TAP (vitest/jest in default reporters) makes a real red test read as unrunnable → advisory (**fail-open**); a non-`node:test` project must point `--test-command` at a TAP-emitting runner or its findings stay advisory. The default runner resolves **local-only** (`npx --no-install`): the verdict path never downloads code, and a project where nothing resolves gets a named "confirm step could not run" condition in the summary rather than a silent always-green. Default-on is soak-deferred, so it is opt-in today, and only a finding reducible to a runnable failing test can ever block.
 
+</details>
+
 ## 4 · Fix — from findings to clean
 
-`doctor` and `review` report findings; they never auto-fix — codument stays a deterministic checker, so there is no `codument fix`. You clear findings the way you build features: your agent fixes them with the installed skills, then you re-run the check to confirm. A finding that re-runs clean is the "done" signal. The finding's *type* tells you which lever to pull:
+`doctor` and `review` report findings; they never auto-fix, so there is no `codument fix`. You clear findings the way you build features: your agent fixes them with the installed skills, then you re-run the check to confirm. A finding that re-runs clean is the "done" signal. The skills already know this loop: `/update-docs` starts from `codument doctor` and `/review-work` starts from `codument review`, so your agent pulls the findings and clears them without you reciting them.
+
+<details>
+<summary>What each finding type means and how to clear it (and why high-fanout is a note, not a finding)</summary>
+
+The finding's *type* tells you which lever to pull:
 
 | Finding | What it means | How to clear it |
 | --- | --- | --- |
@@ -497,7 +552,9 @@ Alongside the deterministic checks, Codument can run two **adversarial** gates. 
 
 **`high-fanout` is a note, not a finding — don't "clear" it.** A file mapped across many features is usually *correct*: shared infra (security rules, shared types, a root layout, a barrel file) is supposed to be mapped widely, and that breadth is exactly what lets `review` flag every dependent when it changes. Collapsing it to one owner to zero the count **severs that signal** — and the single owner is often the wrong one. Act only when the breadth is genuinely wrong (a test helper or unrelated utility mapped into features that don't own it); otherwise leave shared infra mapped widely, or raise `--high-fanout` if the threshold is noisy for your repo. "Clean" never requires touching it.
 
-The skills already know this loop: `/update-docs` starts from `codument doctor` and `/review-work` starts from `codument review`, so your agent pulls the findings and clears them without you reciting them. Keep docs compact as you go and `bloated-doc` rarely fires.
+Keep docs compact as you go and `bloated-doc` rarely fires.
+
+</details>
 
 ## 5 · Upgrade — terminal, on version bumps
 
@@ -506,30 +563,22 @@ After bumping the codument package, re-sync the managed files (skills, rules, `A
 ```bash
 npx codument update --dry-run   # preview first
 npx codument update
+```
+
+<details>
+<summary>Override stored profiles, and what <code>update</code> touches</summary>
+
+```bash
 npx codument update --agents codex,claude   # override stored profiles
 ```
 
 `update` only refreshes codument's own managed files — it never touches your docs or code. Entries you've customized are backed up to `<file>.backup`; symlinked/pointer skill entries are left untouched.
 
+</details>
+
 ---
 
 ## Reference
-
-<details>
-<summary><b>Autopilot — "codument it"</b></summary>
-
-Codument never runs your coding agent — your agent does. So you trigger autopilot by telling your agent, not by running a CLI command. Running `codument run` (alias `autopilot`) only prints this reminder and points you back at the phrase — the CLI itself does setup and deterministic checks, never your agent.
-
-Once a plan is approved, tell your agent **"codument, run the plan"** (also recognized: "run the plan", "codument this plan", "autopilot", or `/work-step --auto`). Your agent then works the approved plan end to end: for each remaining step it implements, reviews, and commits without stopping for routine confirmations — one focused commit per step, under your own identity (no AI co-author trailer).
-
-Autopilot is opt-in per run and off by default. The per-step gates still run; autopilot only stops *waiting* for your routine confirmation. It will not start until the plan is approved (`Status: approved`), and it pauses to ask when something needs a real decision:
-
-- a review finding that needs a human judgment call (and always for changes touching public interfaces, security, data loss, or dependencies),
-- a failing verification, or
-- a change that would fall outside the approved plan.
-
-To stop early, say **"pause"** or **"stop autopilot"**. To run a single fully-gated step, say **"work the next step"** or `/work-step` without `--auto`.
-</details>
 
 <details>
 <summary><b>Proof benchmarks</b></summary>
@@ -590,6 +639,7 @@ npx codument benchmark score /tmp/bench-loop --mode loop --baseline /tmp/bench-n
 ```
 
 Each bug has a hidden detector test that passes only when the bug is fixed; the answer key never ships into the scenario, so the agent can't read it. The `--baseline` comparison reports the loop-vs-no-loop delta. Because the no-loop baseline catches ~nothing by construction, the honest claim is "review catches X% that would otherwise ship," not a natural-catch-rate comparison.
+
 </details>
 
 <details>
@@ -612,6 +662,7 @@ Codument's docs follow two ideas that make them durable rather than decorative:
   A human reads the top and expands downward to learn; the agent reads all of it. Audience is a *presentation* concern, never a storage one — so there's only ever one thing to keep true. The machine-readable side — ownership, dependencies, risk — lives solely in `docs/.registry.json`, never duplicated into doc frontmatter where it would drift. And the line for what belongs in prose at all: keep only what survives a refactor that renames every symbol; mechanism is read live from the code.
 
 Docs come in types — **features** (a capability), **concepts** (a cross-cutting idea), and **ADRs** (a recorded architecture decision) — and the layering applies within each.
+
 </details>
 
 <details>
@@ -629,6 +680,7 @@ docs/
 ```
 
 The registry is the source of truth for which docs own which source files. Agents must check it before and after source edits.
+
 </details>
 
 <details>
@@ -651,9 +703,10 @@ cd /path/to/codument
 npm --cache /private/tmp/codument-npm-cache pack
 
 cd /path/to/existing-project
-npm install -D ../codument/codument-0.8.0.tgz
+npm install -D ../codument/codument-0.9.0.tgz
 npx codument adopt --agents codex,claude
 ```
+
 </details>
 
 ## Contributing
@@ -678,7 +731,7 @@ Thanks to Matt Pocock's [mattpocock/skills](https://github.com/mattpocock/skills
 
 - Node.js >= 18
 - An AI coding agent that can read repo instructions and markdown skills
-- A TypeScript, Python, Go, Rust, C#, JavaScript, or Vue/Svelte/Astro codebase for the staleness gate (per-symbol for TS/Python/Go/Rust/C#, per-part for components, whole-file for JS) — other file types are surfaced via registration, not judged (see "Language support")
+- A supported-language codebase for the staleness gate (see [Works with your stack](#works-with-your-stack)). Other file types are surfaced via registration, not judged.
 
 ## License
 
