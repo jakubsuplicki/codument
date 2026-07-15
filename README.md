@@ -144,6 +144,8 @@ npx codument adopt     # existing Codument project: normalize + refresh
 
 `init` installs the Claude profile by default (`AGENTS.md`/`CLAUDE.md`, `.claude/` skills + agents + rules, `docs/` with the registry). Pick profiles explicitly with `--agents claude`, `--agents codex`, or `--agents codex,claude`.
 
+**Then have your agent write the docs.** On an existing codebase, `scan` only lays down empty scaffolds (marked `needs-review`). Tell your agent **`/update-docs`** and it reads your source to fill the registry's feature and concept docs with real content, giving `doctor` and `review` something to check against. That is the agent skill, not the `codument update` CLI in step 5 (which only re-syncs codument's own managed files on a version bump).
+
 <details>
 <summary>What each entry point does, in full</summary>
 
