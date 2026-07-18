@@ -144,6 +144,8 @@ npx codument adopt     # existing Codument project: normalize + refresh
 
 `init` installs the Claude profile by default (`AGENTS.md`/`CLAUDE.md`, `.claude/` skills + agents + rules, `docs/` with the registry). Pick profiles explicitly with `--agents claude`, `--agents codex`, or `--agents codex,claude`.
 
+**Start a fresh agent session after setup.** Your agent reads its Codument workflow from files this step writes: `CLAUDE.md`/`AGENTS.md`, plus the `.claude/` skills and subagents. Coding agents load these when a session starts, so one you already had open won't see them. After `init` (or `scan`/`adopt`), start a new session (or run `/clear`) and your agent picks up the delivery loop, the skills, and the `/update-docs` step below. The git pre-commit gate from `codument hooks install` is the exception: git honors it on the next commit, no restart needed.
+
 **Then have your agent write the docs.** On an existing codebase, `scan` only lays down empty scaffolds (marked `needs-review`). Tell your agent **`/update-docs`** and it reads your source to fill the registry's feature and concept docs with real content, giving `doctor` and `review` something to check against. That is the agent skill, not the `codument update` CLI in step 5 (which only re-syncs codument's own managed files on a version bump).
 
 <details>
