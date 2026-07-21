@@ -83,3 +83,24 @@ Frameworks need no per-framework adapters: React/Next/Angular/Nest are `.ts`/`.t
 since day one), config-file shapes were calibrated by plan 17, and the component FILE FORMATS are
 plan 20. Long-tail candidates (Ruby, PHP, Swift, Scala, F#) get plans when demand shows — same
 substrate, same battery, same descriptor discipline.
+
+## Field defects — nested-repo monorepo dogfood (26–29)
+
+Four plans from a 2026-07-20 field report: `/update-docs` on a real monorepo (no root repo, two
+nested git repos) hit a doctor crash, a silently-inverted coverage signal, and a missing exclusion
+escape hatch. Every reported defect was verified against source and reproduced live against the
+built 0.9.0 CLI before planning — and the verification found the reported mechanisms partly wrong
+(scan never consults gitignore in ANY repo; the crash is a warm-set/consumption-set divergence,
+not a missing warm call) plus one worse defect the report missed: a **false green from
+`review --strict`** when an owned source changes inside a nested member repo (the gitlink lands in
+"other" and the stale-doc verdict never fires; submodule super-repos are equally blind).
+
+| Plan | Theme | Fixes |
+| --- | --- | --- |
+| [26](26-honest-scope-resolution.md) | Honest scope: typed unknown, complete warm, one discovery path | doctor crash (root cause); scan's gitignore blindness; unknown-read-as-empty false 100%; generated-leakage lint net |
+| [27](27-configurable-exclusions.md) | `exclude` block in `.codument-meta.json` | no escape hatch for `out/`, `public-preprod/`; adopt deleting hand-added meta keys; README's phantom affordance |
+| [28](28-nested-repo-workspace.md) | Nested-repo workspaces: aggregate git truth across members | the gate false-green (worst defect); nested `.gitignore` aggregation; submodule blindness; workspace-honest refusals |
+| [29](29-prose-altitude-test-links.md) | Prose-altitude calibration | `path-enumeration` penalizing the standard's required invariant→test links; per-mention over-counting |
+
+Run 26 → 27 → 28 (26's typed seam and unified discovery are load-bearing for both; 27 is where the
+user-facing workaround lands; 28 is the deep topology fix). 29 is independent — run it anytime.
