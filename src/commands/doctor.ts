@@ -15,6 +15,7 @@ import {
   type CoverageRatio,
   type CoverageReport,
   type LintFinding,
+  type ScopeConfidence,
 } from "../lib/analyze.js";
 import {
   honestyRatio,
@@ -102,6 +103,9 @@ export interface DoctorReport {
   registryExists: boolean;
   inScopeSourceCount: number;
   coverage: CoverageReport;
+  /** Whether the scored denominator was computed over a verified scope. Additive
+   *  to the v1 contract: consumers that ignore it read exactly what they did. */
+  scope: ScopeConfidence;
   lint: {
     // Actionable warnings only — a clean registry has count === 0. Informational
     // notes (e.g. high-fanout) are kept out of this number so "clean" can never
@@ -164,6 +168,7 @@ export function buildReport(
     registryExists,
     inScopeSourceCount: result.inScopeSourceCount,
     coverage: result.coverage,
+    scope: result.scope,
     lint: { count: findings.length, byId, findings, notes },
   };
 }
@@ -295,6 +300,21 @@ function printHuman(report: DoctorReport, strictFail = false): void {
   console.log(`  Documentation coverage: ${headline}`);
   for (const r of coverage.ratios) {
     console.log(ratioLine(r));
+  }
+  // A score is only as good as the scope it was computed over. When the ignore
+  // rules could not be read, build output may sit in the denominator AS source —
+  // and because mapped build output lifts numerator and denominator together, the
+  // number can read better than the truth. Say so next to the number, or the
+  // reader's only clue is a figure that looks unusually good.
+  // Informational, not a warning: a plain non-git directory is a legitimate way
+  // to use codument, not a misconfiguration. Yellow is this file's actionable-
+  // finding colour and would read as "problem"; this is disclosure.
+  if (report.scope.gitIgnore === "unavailable") {
+    console.log(
+      pc.cyan(
+        `  note: ${report.scope.reason} — .gitignore rules were not applied, so this scope may include build output`,
+      ),
+    );
   }
   // The same manifest the README matrix is parity-tested against — one truth.
   console.log(

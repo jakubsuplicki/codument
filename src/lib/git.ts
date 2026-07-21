@@ -200,6 +200,20 @@ export type GitPathListing =
   | { ok: true; paths: string[] }
   | { ok: false; reason: string };
 
+/**
+ * A stable `reason` for a failed git invocation. Node's own error text
+ * ("Command failed: <argv>") is an internal formatting detail that is not
+ * contractually stable across Node majors, and this reason reaches a machine
+ * surface (`doctor --json`'s `scope.reason`) that a CI job may diff — so the
+ * redundant prefix is stripped and ours is the one we own. The argv itself is
+ * fixed, and `git()` pipes stderr to /dev/null, so no cwd, PID, locale, or
+ * stderr text can vary the result for identical repo state.
+ */
+function gitFailureReason(err: unknown): string {
+  const detail = (err as Error).message.replace(/^Command failed: /, "");
+  return `git failed: ${detail}`;
+}
+
 /** The reason string for a root git cannot read as a repository. */
 export const NOT_A_REPO = "not a git repository";
 
@@ -226,7 +240,7 @@ export function listIgnoredPaths(root: string): GitPathListing {
       "-z",
     ]);
   } catch (err) {
-    return { ok: false, reason: `git failed: ${(err as Error).message}` };
+    return { ok: false, reason: gitFailureReason(err) };
   }
   const paths = new Set<string>();
   for (const entry of out.split("\0")) {
@@ -256,7 +270,7 @@ export function listTrackedFiles(root: string): GitPathListing {
         .filter((p) => p.length > 0),
     };
   } catch (err) {
-    return { ok: false, reason: `git failed: ${(err as Error).message}` };
+    return { ok: false, reason: gitFailureReason(err) };
   }
 }
 

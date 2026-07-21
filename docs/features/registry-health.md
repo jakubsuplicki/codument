@@ -2,7 +2,7 @@
 title: Registry health
 status: current
 type: feature
-last_reviewed: 2026-06-28
+last_reviewed: 2026-07-21
 ---
 
 # Registry health
@@ -31,6 +31,7 @@ The badge is a coverage figure, not a quality or correctness score, and absolute
 
 - `doctor` runs with no network and no AI model, and is a pure function of repo state: identical inputs yield an identical report and score, independent of run, filesystem-traversal order, or wall clock. *(tests: `analyze.test.ts` determinism + rollup-order suites; `doctor.test.ts` "is deterministic across runs")*
 - The exclusion spec is applied to both numerator and denominator: a generated or test path filters out of the in-scope set even when some registry entry lists it as a source. *(test: `analyze.test.ts` exclusion-spec and coverage-ratio suites)*
+- **A score whose scope could not be verified is published WITH that fact, never as a bare number.** The denominator normally subtracts git's real ignore set; when those rules cannot be determined (no repository at the root, or git itself failing) the scope silently widened to the static exclusion spec alone, admitting build output as first-party source. That failure is not neutral — mapped build output lifts numerator and denominator together, so the percentage reads *better* than the truth, which is how a monorepo whose root was not a repository reported full coverage over a tree that was 37% compiled output: most confident exactly where most wrong. The analysis therefore carries a scope verdict out with the score, `doctor` prints the caveat beside the coverage headline, and `--json` carries it additively (no version bump — a consumer that ignores the field reads exactly what it read before). It is disclosure, not a finding: it never becomes a warning and never moves the exit code, because the repository is not misconfigured — codument simply could not see it. *(tests: `doctor.test.ts` "doctor discloses an unverified scope" — applied inside a repo with no extra output, unavailable-with-reason outside one, the caveat printed beside the number, the additive `--json` field, determinism)*
 - Coverage and lint are never blended into one number; bloat and other mess stay lint findings and never move the coverage score. *(tests: `analyze.test.ts` lint and bloat suites; `doctor.test.ts` two-axis report)*
 - The headline is the equal-weight average of ratios with a non-empty denominator; a zero-denominator ratio is excluded, never scored 0% or 100%, and an all-N/A repo yields a null score, not zero. *(test: `analyze.test.ts` rollup invariance and null-score cases)*
 - No wall-clock value enters the score; any freshness window is commit-count based. *(honest boundary — the freshness/drift ratio is re-sourced from the change-control gate and reads N/A here until it lands; the no-`now()` rule is structural in `analyze.ts`)*

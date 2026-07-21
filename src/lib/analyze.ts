@@ -288,11 +288,31 @@ export interface AnalyzeInput {
   bloat?: BloatThresholds;
 }
 
+/**
+ * Whether the denominator this analysis scored was computed against git's real
+ * ignore rules, or against the static exclusion spec alone because those rules
+ * could not be determined.
+ *
+ * A score is only as trustworthy as the scope it was computed over. When the
+ * ignore set is unavailable, generated and build output can enter the
+ * denominator as first-party source, and — because such files inflate the
+ * numerator and denominator together once mapped — the resulting percentage can
+ * read HIGHER than the truth. So "unavailable" must travel with the number
+ * rather than being silently absorbed into it.
+ */
+export interface ScopeConfidence {
+  gitIgnore: "applied" | "unavailable";
+  /** Why the ignore rules could not be determined; absent when applied. */
+  reason?: string;
+}
+
 export interface AnalysisResult {
   coverage: CoverageReport;
   lint: LintFinding[];
   /** Count of in-scope source files on disk (the ownership denominator). */
   inScopeSourceCount: number;
+  /** How much of the scope this result was computed over was actually verified. */
+  scope: ScopeConfidence;
 }
 
 function round2(value: number): number {
@@ -359,10 +379,9 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
   // source, so they must not inflate the coverage denominator. When git cannot
   // determine the ignore set at all, the denominator falls back to the static
   // exclusion spec alone — a strictly wider scope that may count build output as
-  // undocumented source. The fallback is now a deliberate choice made here rather
-  // than an empty list arriving indistinguishable from "nothing is ignored"; it is
-  // not yet disclosed on any surface, which is what makes the reported coverage
-  // number still overconfident under a non-repo root.
+  // first-party source. That fallback is a deliberate choice made here, and it
+  // travels out on `scope` so the surfaces reporting the number can disclose that
+  // it was computed over an unverified scope.
   const ignoredListing = listIgnoredPaths(root);
   const isIgnored = makeIgnoredPredicate(
     ignoredListing.ok ? ignoredListing.paths : [],
@@ -407,7 +426,14 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     dependedUpon,
   );
 
-  return { coverage, lint, inScopeSourceCount: inScopeFiles.length };
+  return {
+    coverage,
+    lint,
+    inScopeSourceCount: inScopeFiles.length,
+    scope: ignoredListing.ok
+      ? { gitIgnore: "applied" }
+      : { gitIgnore: "unavailable", reason: ignoredListing.reason },
+  };
 }
 
 function computeCoverage(

@@ -416,3 +416,110 @@ describe("doctor --verify-invariants (opt-in; bare mode untouched)", () => {
     assert.ok(!("invariants" in out), "no invariants key without --verify-invariants");
   });
 });
+
+// ── Scope confidence ────────────────────────────────────────────────────
+//
+// The field report's sharpest line: "The tool was most confident exactly where
+// it was most wrong." A monorepo with no root git repo scored 100% coverage
+// while 37% of the mapped "source" was compiled output. The ignore rules could
+// not be read, so build output entered the denominator as first-party source —
+// and because mapped build output lifts numerator and denominator together, the
+// number read BETTER than the truth. These pin that the number now travels with
+// the fact that its scope was never verified.
+
+describe("doctor discloses an unverified scope", () => {
+  let repo: string;
+  let nonRepo: string;
+
+  const scaffold = async (dir: string) => {
+    await mkdir(join(dir, "docs"), { recursive: true });
+    await writeFile(join(dir, "docs", ".registry.json"), JSON.stringify({ features: {} }));
+  };
+
+  beforeEach(async () => {
+    repo = await mkdtemp(join(tmpdir(), "codument-scope-repo-"));
+    nonRepo = await mkdtemp(join(tmpdir(), "codument-scope-nonrepo-"));
+    execFileSync("git", ["init", "-q"], { cwd: repo });
+    await scaffold(repo);
+    await scaffold(nonRepo);
+  });
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+    await rm(nonRepo, { recursive: true, force: true });
+  });
+
+  it("reports scope applied, and says nothing extra, inside a real repo", () => {
+    const report = buildReport(repo);
+    assert.equal(report.scope.gitIgnore, "applied");
+    assert.equal(report.scope.reason, undefined);
+
+    const out = execFileSync("node", [CLI, "doctor"], { cwd: repo, encoding: "utf-8" });
+    assert.doesNotMatch(out, /gitignore rules were not applied/i);
+  });
+
+  it("reports scope unavailable with a reason outside a repo", () => {
+    const report = buildReport(nonRepo);
+    assert.equal(report.scope.gitIgnore, "unavailable");
+    assert.equal(report.scope.reason, "not a git repository");
+  });
+
+  it("prints the caveat beside the coverage number, never only the number", () => {
+    const out = execFileSync("node", [CLI, "doctor"], { cwd: nonRepo, encoding: "utf-8" });
+    assert.match(out, /Documentation coverage/);
+    assert.match(out, /not a git repository/);
+    assert.match(out, /\.gitignore rules were not applied/);
+    assert.match(out, /may include build output/);
+  });
+
+  it("carries scope additively on the --json contract without a version bump", () => {
+    const out = execFileSync("node", [CLI, "doctor", "--json"], {
+      cwd: nonRepo,
+      encoding: "utf-8",
+    });
+    const report = JSON.parse(out);
+    // Additive: the version is untouched and every pre-existing key still reads
+    // exactly as before, so a consumer that ignores `scope` is unaffected.
+    assert.equal(report.version, 1);
+    assert.ok("coverage" in report && "lint" in report);
+    assert.deepStrictEqual(report.scope, {
+      gitIgnore: "unavailable",
+      reason: "not a git repository",
+    });
+  });
+
+  it("reports scope unavailable when git itself fails, naming the failure", async () => {
+    // The third branch: git says we ARE in a work tree, but the listing
+    // subcommand fails (a broken/oversized invocation). An unreadable repository
+    // must not read as a clean empty scope any more than a non-repo does.
+    // Asserted through buildReport rather than the CLI on purpose: the command
+    // layer's toplevel assertion refuses a broken git earlier and louder, which
+    // is correct — this pins the analysis layer's own answer underneath it.
+    const { chmod, writeFile: wf } = await import("node:fs/promises");
+    const fakeBin = await mkdtemp(join(tmpdir(), "codument-fakegit-"));
+    try {
+      await wf(
+        join(fakeBin, "git"),
+        `#!/bin/sh\nfor a in "$@"; do\n  if [ "$a" = "--is-inside-work-tree" ]; then echo true; exit 0; fi\ndone\nexit 3\n`,
+      );
+      await chmod(join(fakeBin, "git"), 0o755);
+      const orig = process.env.PATH;
+      process.env.PATH = `${fakeBin}:${orig ?? ""}`;
+      try {
+        const report = buildReport(nonRepo);
+        assert.equal(report.scope.gitIgnore, "unavailable");
+        // Matched, never compared exact: the tail is Node's child_process error
+        // text, an internal detail that is not stable across Node majors.
+        assert.match(report.scope.reason ?? "", /^git failed: /);
+      } finally {
+        process.env.PATH = orig;
+      }
+    } finally {
+      await rm(fakeBin, { recursive: true, force: true });
+    }
+  });
+
+  it("stays deterministic — the scope field is a pure function of repo state", () => {
+    assert.deepStrictEqual(buildReport(nonRepo), buildReport(nonRepo));
+    assert.deepStrictEqual(buildReport(repo), buildReport(repo));
+  });
+});
