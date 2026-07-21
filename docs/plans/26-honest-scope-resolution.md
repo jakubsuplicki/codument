@@ -122,9 +122,15 @@ No new source files; no `map materialize` needed.
       logged here as owed rather than silently absorbed.
       Scope uncertainty is also persisted to `lastScan.scopeUnverified`, because the registry the
       run writes outlives the console note that qualified it.
-- [ ] Step 5: lint net — `computeLint` receives `isIgnored`; `generated-leakage` fires on a
-      gitignored registry source with rule-named evidence; e2e on the reproduced fixture (9
-      artifacts in registry → 9 findings); CHANGELOG.
+- [x] Step 5: lint net — `computeLint` receives `isIgnored`; `generated-leakage` fires on a
+      gitignored registry source with rule-named evidence; CHANGELOG.
+      Delivered as branch-isolated unit cases over a real temp repo rather than the single
+      9-artifact e2e this step originally specified: each rule (git-ignored / unignored /
+      statically-excluded / undeterminable) is pinned separately, plus the multi-artifact field
+      shape, the both-rules-match case (exactly one finding, so `--strict` counts cannot
+      double-count), and the false-positive guard that a TRACKED file matching a gitignore
+      pattern is never flagged. That last case is what makes the finding safe as a `warn`, and
+      the original single e2e would not have covered it.
 
 ## Outcome
 

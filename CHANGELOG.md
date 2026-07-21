@@ -7,6 +7,62 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+### Fixed
+- `doctor` no longer crashes on a registry-mapped source whose language grammar
+  git could not reveal. The adapter warm set was derived from git's view
+  (`ls-files` plus working-tree status) while the analyzers walk the registry,
+  and git's view is not a superset of it: a nested member repository reports as
+  a single gitlink rather than its contents, a root git cannot read reports
+  nothing, and a git-ignored file is never reported at all. Any such mapped file
+  reached a synchronous parser cold and aborted the whole command with
+  `TreeSitterError: <language> grammar not loaded`. The warm set is now the union
+  of both views. Affects every bundled language, not only Python.
+- `scan` now honors `.gitignore`. Its private walker shared the exclusion spec
+  with the health analyzer but had dropped the ignore predicate, so it proposed
+  build output the analyzer would never have counted — in **any** repository, not
+  only the monorepo that surfaced it. Because a registry entry is durable, a
+  single scan of a project with an unlisted build directory (a `tsc` `outDir` of
+  `out/`, a deployed `public-preprod/`) wrote those artifacts in as first-party
+  sources and every later run inherited them. Discovery now runs through the
+  analyzer's own walker. **Behavior change:** scan proposes fewer files on repos
+  with git-ignored source-extension output; it also no longer proposes symlinked
+  source files (matching the analyzer, which never counted them), returns sorted
+  rather than traversal-ordered results, and now skips an unreadable
+  subdirectory silently where it previously crashed. That last one is inherited
+  from the shared walker and is a regression in loudness, not an improvement;
+  it is owed a fix rather than left unsaid.
+- `generated-leakage` now fires on a git-ignored file listed as a source. The
+  predicate was computed for the coverage denominator and never passed to the
+  lint, so the one check that could have caught a registry full of build
+  artifacts reported nothing. **Upgrade note:** a registry that already maps an
+  untracked, git-ignored path will newly fail `doctor --strict`, with no code
+  change on your part. Resolve it by un-mapping the file or by tracking it — the
+  rule deliberately has no config escape hatch, since silencing leakage
+  invisibly is the failure it exists to prevent. Only *untracked* ignored files
+  are flagged, so a file you deliberately committed is never called build
+  output however broad the pattern matching it.
+
+### Added
+- `doctor` discloses when coverage was scored over a scope it could not verify.
+  When the ignore rules cannot be determined, the denominator silently widened to
+  the static exclusion spec alone and admitted build output as first-party
+  source; because mapped build output lifts numerator and denominator together,
+  the percentage read *better* than the truth. A monorepo with no repository at
+  its root reported full coverage over a tree that was 37% compiled output. The
+  caveat now prints beside the coverage headline, and `--json` carries
+  `scope: { gitIgnore, reason? }` **additively** — `version` is unchanged and a
+  consumer that ignores the field reads exactly what it read before. It is
+  disclosure, never a finding: it does not affect the lint count or the exit
+  code. `scan` prints the same caveat and records `lastScan.scopeUnverified`,
+  because the registry a scan writes outlives the note that qualified it.
+
+### Changed
+- Git path enumerations (`listIgnoredPaths`, `listTrackedFiles`) report either an
+  answer or a reason they have none, instead of returning an empty list for both.
+  Internal API; no CLI surface changes. This is ADR-003's rule — "the gate could
+  not run" must be distinguishable from "the gate ran and passed" — applied to
+  scope resolution rather than to the verdict.
+
 ## [0.9.0] - 2026-07-12
 
 ### Added

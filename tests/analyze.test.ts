@@ -1,9 +1,10 @@
-import { describe, it } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
   analyze,
@@ -651,5 +652,161 @@ describe("registry graph integrity (dangling-depends-on + orphan-doc)", () => {
     // Info, never warn: an unowned page is a question ("own it or know why
     // not"), not a CI failure — the plans page and docs-root page never fire.
     assert.equal(orphans[0].severity, "info");
+  });
+});
+
+// ── generated-leakage sees git's ground truth ───────────────────────────
+//
+// The safety net that should have caught the field defect was structurally
+// blind: analyze computed the gitignore predicate for the coverage denominator
+// and never handed it to computeLint, so the lint tested only the static
+// exclusion spec. A registry holding 378 gitignored build artifacts reported
+// "Lint: no findings" — the one check that could have caught the leak had the
+// answer in scope and did not look.
+
+describe("generated-leakage consults git's ignore set, not only the static spec", () => {
+  let tmp: string;
+
+  const git = (args: string[]) =>
+    execFileSync("git", args, {
+      cwd: tmp,
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@t",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@t",
+      },
+    });
+
+  const analyzeWith = (sources: string[]) =>
+    analyze({
+      root: tmp,
+      srcDir: ".",
+      registry: {
+        features: {
+          app: {
+            doc: "docs/features/app.md",
+            type: "feature",
+            primary_sources: sources,
+            related_sources: [],
+            docs: [],
+            depends_on: [],
+            risk: [],
+            status: "current",
+          },
+        },
+      },
+    });
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-leak-"));
+    await mkdir(join(tmp, "app"), { recursive: true });
+    await mkdir(join(tmp, "out"), { recursive: true });
+    await mkdir(join(tmp, "docs", "features"), { recursive: true });
+    await writeFile(join(tmp, ".gitignore"), "out/\n");
+    await writeFile(join(tmp, "app", "real.ts"), "export const a = 1;\n");
+    await writeFile(join(tmp, "out", "gen.js"), "exports.g = 1;\n");
+    await writeFile(join(tmp, "app", "thing.test.ts"), "export const t = 1;\n");
+    await writeFile(join(tmp, "docs", "features", "app.md"), "# app\n\nPromise.\n");
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("flags a git-ignored file listed as a source, naming git as the rule", () => {
+    git(["init"]);
+    const leaks = analyzeWith(["app/real.ts", "out/gen.js"]).lint.filter(
+      (f) => f.id === "generated-leakage",
+    );
+    assert.equal(leaks.length, 1);
+    assert.equal(leaks[0].file, "out/gen.js");
+    // The evidence must name WHICH rule fired: git's ignore set is a stronger
+    // claim ("the repo itself declared this untracked") than a glob heuristic.
+    assert.match(leaks[0].message, /git-ignored/);
+  });
+
+  it("does not flag an unignored, non-excluded source", () => {
+    git(["init"]);
+    const leaks = analyzeWith(["app/real.ts"]).lint.filter(
+      (f) => f.id === "generated-leakage",
+    );
+    assert.deepStrictEqual(leaks, []);
+  });
+
+  it("does not flag a TRACKED file that merely matches a gitignore pattern", () => {
+    // The false-positive guard, and the reason this rule is safe to make a warn:
+    // `ls-files --others --ignored` lists only UNTRACKED ignored files, so a file
+    // the project committed is never claimed to be build output — however broad
+    // the pattern that would otherwise match it. A deliberately-committed
+    // `.env.example` or vendored file stays documentable.
+    git(["init"]);
+    git(["add", "app/real.ts", "docs/features/app.md"]);
+    git(["commit", "-m", "track the source"]);
+    // Only NOW does a pattern matching the tracked file appear.
+    writeFileSync(join(tmp, ".gitignore"), "out/\n*.ts\n");
+    // Precondition: git agrees the pattern matches, yet the file is tracked.
+    assert.equal(git(["check-ignore", "--no-index", "app/real.ts"]).trim(), "app/real.ts");
+
+    const leaks = analyzeWith(["app/real.ts"]).lint.filter(
+      (f) => f.id === "generated-leakage",
+    );
+    assert.deepStrictEqual(leaks, [], "a tracked file is never build output");
+  });
+
+  it("reports one finding per source, never two, when both rules match", () => {
+    // A `.d.ts` inside an ignored build dir matches the static spec AND git's
+    // ignore set. The lint id feeds doctor --strict's exit code and the report's
+    // counts, so a file must contribute exactly one finding.
+    git(["init"]);
+    writeFileSync(join(tmp, "out", "types.d.ts"), "export declare const x: number;\n");
+    const leaks = analyzeWith(["out/types.d.ts"]).lint.filter(
+      (f) => f.id === "generated-leakage",
+    );
+    assert.equal(leaks.length, 1);
+    assert.match(leaks[0].message, /git-ignored/, "the stronger rule wins the evidence");
+  });
+
+  it("flags every git-ignored source, one finding each (the field shape)", () => {
+    // The reported registry held hundreds of build artifacts and produced
+    // "Lint: no findings". Scaled down, this is that shape.
+    git(["init"]);
+    for (const n of [1, 2, 3]) {
+      writeFileSync(join(tmp, "out", `gen${n}.js`), `exports.g = ${n};\n`);
+    }
+    const leaks = analyzeWith([
+      "app/real.ts",
+      "out/gen1.js",
+      "out/gen2.js",
+      "out/gen3.js",
+    ]).lint.filter((f) => f.id === "generated-leakage");
+    assert.equal(leaks.length, 3);
+    assert.deepStrictEqual(
+      leaks.map((f) => f.file).sort(),
+      ["out/gen1.js", "out/gen2.js", "out/gen3.js"],
+    );
+  });
+
+  it("still flags a statically-excluded source, with the spec's own wording", () => {
+    git(["init"]);
+    const leaks = analyzeWith(["app/real.ts", "app/thing.test.ts"]).lint.filter(
+      (f) => f.id === "generated-leakage",
+    );
+    assert.equal(leaks.length, 1);
+    assert.equal(leaks[0].file, "app/thing.test.ts");
+    assert.match(leaks[0].message, /matches an exclusion rule/);
+  });
+
+  it("cannot flag git-ignored leakage when the ignore rules are undeterminable", () => {
+    // No `git init`: the honest limit. The lint cannot claim a file is ignored
+    // by a repository it could not read — which is exactly why doctor discloses
+    // the unverified scope rather than leaving the clean lint to imply safety.
+    const result = analyzeWith(["app/real.ts", "out/gen.js"]);
+    assert.deepStrictEqual(
+      result.lint.filter((f) => f.id === "generated-leakage"),
+      [],
+    );
+    assert.equal(result.scope.gitIgnore, "unavailable");
   });
 });

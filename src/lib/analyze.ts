@@ -424,6 +424,7 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     highFanoutThreshold,
     bloat,
     dependedUpon,
+    isIgnored,
   );
 
   return {
@@ -512,6 +513,7 @@ function computeLint(
   highFanoutThreshold: number,
   bloat: BloatThresholds,
   dependedUpon: Set<string>,
+  isIgnored: (relPosixPath: string) => boolean,
 ): LintFinding[] {
   const findings: LintFinding[] = [];
   const entryKeys = new Set(entries.map(([key]) => key));
@@ -534,8 +536,23 @@ function computeLint(
     // exclusion spec, not the file's true nature, is what's asserted here: the
     // heuristic can match hand-authored data (e.g. *.seed.json), so the message
     // names the rule, not a claim that the file is generated.
+    // Two independent rules can put a file out of scope, and the evidence names
+    // which one fired. Git's own ignore set is the stronger signal — the repo
+    // itself declared the file not worth tracking — and it was previously
+    // invisible here: the predicate was computed for the coverage denominator
+    // and never handed to the lint, so a registry full of gitignored build
+    // output produced "Lint: no findings". The one check that could have caught
+    // the leak had the answer in scope and did not look.
     for (const source of allSources(entry)) {
-      if (isExcluded(source, exclusion)) {
+      if (isIgnored(source)) {
+        findings.push({
+          id: "generated-leakage",
+          severity: "warn",
+          feature: key,
+          file: source,
+          message: `${key}: git-ignored file listed as source — the repository ignores it, so it is build/generated output, not documented source: ${source}`,
+        });
+      } else if (isExcluded(source, exclusion)) {
         findings.push({
           id: "generated-leakage",
           severity: "warn",
