@@ -110,9 +110,18 @@ No new source files; no `map materialize` needed.
       `gatherFrameData`), which stays far below the two git subprocesses the same tick spawns.
 - [x] Step 3: honest denominator — analyze threads scope confidence; doctor human note + additive
       `--json` scope field; golden tests for repo (unchanged), non-repo (note + field), git-failure.
-- [ ] Step 4: one discovery path — scan routes through `discoverSourceFiles` with the ignore
+- [x] Step 4: one discovery path — scan routes through `discoverSourceFiles` with the ignore
       predicate + unknown-scope warning; e2e: gitignored artifacts in a real repo are not proposed;
       non-repo root proposes but warns; doc-claim corrections in commands.md/registry-health.md.
+      Adopting the analyzer's walker carries two deltas beyond the gitignore fix, both accepted as
+      the point of having one path: a symlinked source file is no longer proposed (the analyzer
+      gates on `isFile()`, so scan proposing one was itself a disagreement — it could never have
+      been counted), and results are sorted and deduped rather than in traversal order. A third is
+      inherited and NOT an improvement: an unreadable subdirectory is now silently skipped where
+      scan used to crash. It is pre-existing shared behavior, out of this plan's scope, and is
+      logged here as owed rather than silently absorbed.
+      Scope uncertainty is also persisted to `lastScan.scopeUnverified`, because the registry the
+      run writes outlives the console note that qualified it.
 - [ ] Step 5: lint net — `computeLint` receives `isIgnored`; `generated-leakage` fires on a
       gitignored registry source with rule-named evidence; e2e on the reproduced fixture (9
       artifacts in registry → 9 findings); CHANGELOG.

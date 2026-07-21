@@ -349,3 +349,117 @@ describe("fresh scan → doctor: the first run ends green (no self-inflicted fin
     }
   });
 });
+
+// ── Gitignore-aware discovery ───────────────────────────────────────────
+//
+// scan had its own private walker that shared the exclusion spec with the
+// analyzer but had dropped the gitignore predicate. Its comment claimed
+// discovery "never disagrees" with the analyzer; for gitignore it always did.
+// The consequence in the field: 378 gitignored build artifacts written into
+// docs/.registry.json as first-party primary_sources — and a registry entry is
+// durable, so every later run inherited them.
+//
+// Note the fixtures deliberately have NO root `src/` dir, so srcDir resolves to
+// "." and the build dir is actually inside the walk. With a root `src/` present
+// the walk never reaches a sibling `out/` and the test would pass vacuously.
+
+describe("scan discovery honors gitignore, exactly as the analyzer does", () => {
+  const git = (root: string, args: string[]) =>
+    execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@t",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@t",
+      },
+    });
+
+  const scaffold = async (root: string) => {
+    await mkdir(join(root, "app"), { recursive: true });
+    await mkdir(join(root, "out"), { recursive: true });
+    await writeFile(join(root, "app", "real.ts"), "export const a = 1;\n");
+    for (const n of [1, 2, 3]) {
+      await writeFile(join(root, "out", `gen${n}.js`), `exports.g = ${n};\n`);
+    }
+  };
+
+  const registrySources = async (root: string): Promise<string[]> => {
+    const registry = await readRegistry(join(root, "docs", ".registry.json"));
+    return Object.values(registry.features).flatMap((e) => [
+      ...e.primary_sources,
+      ...e.related_sources,
+    ]);
+  };
+
+  it("does not propose gitignored build output inside a normal git repo", async () => {
+    // The half of the defect that was never about monorepos: this is a textbook
+    // single repo with a working .gitignore, and scan swept it in anyway.
+    await scaffold(tmp);
+    git(tmp, ["init"]);
+    await writeFile(join(tmp, ".gitignore"), "out/\n");
+    git(tmp, ["add", "-A"]);
+    git(tmp, ["commit", "-m", "init"]);
+    // Precondition: git itself agrees these are ignored.
+    assert.equal(git(tmp, ["check-ignore", "out/gen1.js"]).trim(), "out/gen1.js");
+
+    await scan({ root: tmp });
+
+    const sources = await registrySources(tmp);
+    assert.ok(sources.includes("app/real.ts"), "real source is still proposed");
+    assert.deepStrictEqual(
+      sources.filter((s) => s.startsWith("out/")),
+      [],
+      "no gitignored build artifact may become a registry source",
+    );
+  });
+
+  it("still proposes, but warns, when the ignore rules cannot be determined", async () => {
+    // A non-repo root cannot be told build output from source. Refusing to scan
+    // would strand the user; scanning silently is what produced the false 100%.
+    // So it proposes and says plainly that it could not check.
+    await scaffold(tmp);
+
+    const lines: string[] = [];
+    const orig = console.log;
+    console.log = (...args: unknown[]) => lines.push(args.join(" "));
+    try {
+      await scan({ root: tmp });
+    } finally {
+      console.log = orig;
+    }
+
+    const out = lines.join("\n");
+    assert.match(out, /not a git repository/);
+    assert.match(out, /\.gitignore rules were not applied/);
+    const sources = await registrySources(tmp);
+    assert.ok(sources.includes("app/real.ts"), "scanning still happens");
+    // The other half of the contract: it really does propose the unfiltered
+    // output rather than quietly excluding it. Without this the test would keep
+    // passing if some later change started dropping these silently — which is
+    // the same class of invisible scope decision this plan exists to remove.
+    assert.ok(
+      sources.includes("out/gen1.js"),
+      "unfiltered build output IS proposed — the warning is the whole mitigation",
+    );
+    assert.match(out, /Scope: *unverified/, "the summary block names it too");
+  });
+
+  it("says nothing extra when the ignore rules were applied", async () => {
+    await scaffold(tmp);
+    git(tmp, ["init"]);
+
+    const lines: string[] = [];
+    const orig = console.log;
+    console.log = (...args: unknown[]) => lines.push(args.join(" "));
+    try {
+      await scan({ root: tmp });
+    } finally {
+      console.log = orig;
+    }
+
+    assert.doesNotMatch(lines.join("\n"), /gitignore rules were not applied/i);
+  });
+});

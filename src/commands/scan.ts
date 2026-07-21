@@ -1,11 +1,16 @@
 import { existsSync } from "node:fs";
-import { writeFile, readdir } from "node:fs/promises";
-import { join, relative, dirname } from "node:path";
+import { writeFile } from "node:fs/promises";
+import { join, dirname } from "node:path";
 import pc from "picocolors";
 import { readRegistry, writeRegistry } from "../lib/registry.js";
 import { atomicWriteFileSync } from "../lib/events.js";
 import { readJsonFileOrThrow } from "../lib/state-io.js";
-import { DEFAULT_EXCLUSION_SPEC, isSourceFile } from "../lib/analyze.js";
+import {
+  DEFAULT_EXCLUSION_SPEC,
+  discoverSourceFiles,
+  makeIgnoredPredicate,
+} from "../lib/analyze.js";
+import { listIgnoredPaths } from "../lib/git.js";
 import { ensureDir } from "../lib/scaffold.js";
 
 interface FeatureGroup {
@@ -38,9 +43,29 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
   console.log(`  Scanning ${pc.cyan(srcDir + "/")}...`);
   console.log();
 
-  // Collect source files
-  const sourceFiles = await collectSourceFiles(join(root, srcDir), root);
+  // Discovery runs through the analyzer's own walker, gitignore predicate and
+  // all — the same function, not a copy of it. scan's previous private walker
+  // shared the exclusion spec but had silently dropped the ignore predicate, so
+  // it proposed build output the coverage analyzer would never have counted.
+  // Two walkers is how they came to disagree; there is now one.
+  const ignoredListing = listIgnoredPaths(root);
+  const sourceFiles = discoverSourceFiles(
+    root,
+    srcDir,
+    DEFAULT_EXCLUSION_SPEC,
+    makeIgnoredPredicate(ignoredListing.ok ? ignoredListing.paths : []),
+  );
   console.log(`  Found ${pc.cyan(String(sourceFiles.length))} source files`);
+  // Without the ignore rules the walk cannot tell build output from source, and
+  // scan is the moment that decision becomes a durable registry entry. Say so
+  // here rather than let the user discover it as a suspiciously good score.
+  if (!ignoredListing.ok) {
+    console.log(
+      pc.cyan(
+        `  note: ${ignoredListing.reason} — .gitignore rules were not applied, so build output may be proposed below`,
+      ),
+    );
+  }
 
   // Group into features by directory structure
   const features = groupIntoFeatures(sourceFiles, srcDir);
@@ -116,6 +141,10 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
     docsCreated: created,
     skipped,
     sourceFiles: sourceFiles.length,
+    // Durable, because the registry this run wrote is durable. A console note
+    // dies with the terminal; the entries it qualified outlive it, and a later
+    // reader needs to know these sources were proposed without the ignore rules.
+    ...(ignoredListing.ok ? {} : { scopeUnverified: ignoredListing.reason }),
   };
   atomicWriteFileSync(metaPath, JSON.stringify(meta, null, 2) + "\n");
 
@@ -124,6 +153,13 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
   console.log(`    Features found:    ${features.length}`);
   console.log(`    Docs created:      ${created}`);
   console.log(`    Already documented: ${skipped}`);
+  if (!ignoredListing.ok) {
+    // Repeated here on purpose: the Summary is what a reader skims, and this
+    // qualifies every number above it.
+    console.log(
+      pc.cyan(`    Scope:             unverified — .gitignore rules were not applied`),
+    );
+  }
   console.log();
 
   if (created > 0) {
@@ -131,30 +167,6 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
     console.log(`    Open your coding agent and run ${pc.cyan("/update-docs")}`);
     console.log();
   }
-}
-
-// ── File collection ────────────────────────────────────────────────────
-
-async function collectSourceFiles(
-  dir: string,
-  root: string,
-): Promise<string[]> {
-  const files: string[] = [];
-  const entries = await readdir(dir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const fullPath = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      // Shared with the analyzer so source discovery never disagrees.
-      if (DEFAULT_EXCLUSION_SPEC.dirs.includes(entry.name)) continue;
-      files.push(...(await collectSourceFiles(fullPath, root)));
-    } else if (isSourceFile(relative(root, fullPath))) {
-      // The analyzer's ONE source spec (extensions + exclusion globs), so scan
-      // proposes exactly the files the gate will govern — never a fifth copy.
-      files.push(relative(root, fullPath));
-    }
-  }
-  return files;
 }
 
 // ── Grouping ───────────────────────────────────────────────────────────
