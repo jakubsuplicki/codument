@@ -1,6 +1,6 @@
-import { describe, it, before, after } from "node:test";
+import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -10,6 +10,8 @@ import {
   contentChangedFiles,
   fileContentChange,
   fileContentTransition,
+  warmAdaptersForRepo,
+  warmPathsForRepo,
 } from "../src/lib/fingerprint.js";
 
 function git(root: string, args: string[]): string {
@@ -143,5 +145,120 @@ describe("fileContentTransition (base ref vs working tree)", () => {
     const gone = fileContentTransition(tmp, sha, "gone.ts");
     assert.ok(gone.from);
     assert.equal(gone.to, null);
+  });
+});
+
+// ── Warm completeness ───────────────────────────────────────────────────
+//
+// The reported crash: `codument doctor` died with
+//   TreeSitterError: python grammar not loaded — the command layer must warm
+//   adapters before the sync gate path runs
+// on any registry naming a `.py` git could not see. doctor DID warm; the warm
+// set was derived from git's view (`ls-files` + `status`) while the analyzers
+// consume the REGISTRY's view. Any path in the second set but not the first
+// reached `adapterFor(p).anchors(...)` cold and took the whole command down.
+//
+// These assert the PATH SET, not the warm side effect: warming is process-wide
+// state, so a test that only checks "can it parse python now" passes trivially
+// once any earlier test in the file has warmed that grammar.
+
+describe("warmPathsForRepo unions git's view with the registry's own sources", () => {
+  let root: string;
+
+  const writeRegistry = async (primary: string[], related: string[] = []) => {
+    await mkdir(join(root, "docs", "features"), { recursive: true });
+    await writeFile(
+      join(root, "docs", ".registry.json"),
+      JSON.stringify({
+        version: 1,
+        features: {
+          app: {
+            doc: "docs/features/app.md",
+            type: "feature",
+            primary_sources: primary,
+            related_sources: related,
+            depends_on: [],
+            risk: "low",
+          },
+        },
+      }),
+    );
+  };
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-warm-"));
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("includes a registry-named source under a NON-repo root (the field repro)", async () => {
+    // No `git init`: every git listing answers ok:false, so git's view is empty
+    // and the registry is the ONLY thing that knows a .py is in play.
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(join(root, "src", "app.py"), "def hello():\n    return 1\n");
+    await writeRegistry(["src/app.py"]);
+
+    assert.ok(
+      warmPathsForRepo(root).includes("src/app.py"),
+      "a non-repo root must still warm from the registry",
+    );
+  });
+
+  it("includes a registry-named source that is gitignored inside a real repo", async () => {
+    // The second, independent trigger: a normal repo where the mapped file is
+    // gitignored, so `ls-files` never reports it. Proves this was never
+    // exclusively a non-repo bug.
+    git(root, ["init"]);
+    await mkdir(join(root, "out"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "out/\n");
+    await writeFile(join(root, "out", "gen.py"), "def gen():\n    return 1\n");
+    await writeRegistry(["out/gen.py"]);
+
+    assert.ok(warmPathsForRepo(root).includes("out/gen.py"));
+  });
+
+  it("includes related_sources, not just primary_sources", async () => {
+    await writeRegistry(["src/a.ts"], ["src/b.py"]);
+    const paths = warmPathsForRepo(root);
+    assert.ok(paths.includes("src/a.ts"));
+    assert.ok(paths.includes("src/b.py"));
+  });
+
+  it("keeps git's view too — a tracked file absent from the registry still warms", async () => {
+    // The union runs both ways: registry-only would miss unmapped files, which
+    // the gate still evaluates for unmapped-source findings.
+    git(root, ["init"]);
+    await writeFile(join(root, "tracked.py"), "def t():\n    return 1\n");
+    git(root, ["add", "-A"]);
+    git(root, ["commit", "-m", "a"]);
+    await writeRegistry([]);
+
+    assert.ok(warmPathsForRepo(root).includes("tracked.py"));
+  });
+
+  it("is deduped and sorted (a file both tracked and registered appears once)", async () => {
+    git(root, ["init"]);
+    await writeFile(join(root, "dup.py"), "def d():\n    return 1\n");
+    git(root, ["add", "-A"]);
+    git(root, ["commit", "-m", "a"]);
+    await writeRegistry(["dup.py"]);
+
+    const paths = warmPathsForRepo(root);
+    assert.equal(paths.filter((p) => p === "dup.py").length, 1);
+    assert.deepStrictEqual(paths, [...paths].sort());
+  });
+
+  it("stays advisory: no repo and no registry yields no paths and no throw", () => {
+    assert.deepStrictEqual(warmPathsForRepo(root), []);
+  });
+
+  it("stays advisory: an unparseable registry does not throw", async () => {
+    // The warm must never open a failure channel ahead of the verdict path's own
+    // guarded error — the command layer reports a corrupt registry in its own right.
+    await mkdir(join(root, "docs"), { recursive: true });
+    await writeFile(join(root, "docs", ".registry.json"), "{ not json");
+    assert.doesNotThrow(() => warmPathsForRepo(root));
+    await assert.doesNotReject(() => warmAdaptersForRepo(root));
   });
 });

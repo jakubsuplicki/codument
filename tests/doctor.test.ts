@@ -164,6 +164,67 @@ describe("codument doctor (CLI)", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  // The two field repros the test above did NOT cover: it git-inits and leaves
+  // the .py untracked, and `git status -uall` reports untracked files — so git's
+  // view happened to contain it. Both cases below hide the mapped .py from git
+  // entirely, which is what crashed `codument doctor` in the wild.
+  for (const variant of [
+    {
+      name: "under a NON-repo root (no git view at all)",
+      init: async (_dir: string) => {},
+      source: join("src", "app.py"),
+    },
+    {
+      name: "when the mapped source is gitignored inside a real repo",
+      init: async (dir: string) => {
+        execFileSync("git", ["init", "-q"], { cwd: dir });
+        const { writeFile } = await import("node:fs/promises");
+        await writeFile(join(dir, ".gitignore"), "src/\n");
+      },
+      source: join("src", "app.py"),
+    },
+  ]) {
+    it(`does not crash on a registry-mapped Python source ${variant.name}`, async () => {
+      const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
+      const { tmpdir } = await import("node:os");
+      const dir = await mkdtemp(join(tmpdir(), "codument-doctor-invisible-py-"));
+      try {
+        await variant.init(dir);
+        await mkdir(join(dir, "src"), { recursive: true });
+        await mkdir(join(dir, "docs", "features"), { recursive: true });
+        await writeFile(join(dir, variant.source), "def hello():\n    return 1\n");
+        await writeFile(
+          join(dir, "docs", "features", "app.md"),
+          "# app\n\nWhat the app promises its callers.\n",
+        );
+        await writeFile(
+          join(dir, "docs", ".registry.json"),
+          JSON.stringify({
+            features: {
+              app: {
+                doc: "docs/features/app.md",
+                type: "feature",
+                primary_sources: ["src/app.py"],
+                related_sources: [],
+                docs: [],
+                depends_on: [],
+                risk: [],
+                status: "current",
+              },
+            },
+          }),
+        );
+        // Before the warm set unioned in the registry's own sources, this exited
+        // nonzero with an unhandled TreeSitterError and produced no report at all.
+        const out = execFileSync("node", [CLI, "doctor"], { cwd: dir, encoding: "utf-8" });
+        assert.ok(out.includes("Documentation coverage"));
+        assert.doesNotMatch(out, /grammar not loaded/);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  }
 });
 
 describe("codument doctor --strict (CLI gating)", () => {

@@ -100,12 +100,14 @@ No new source files; no `map materialize` needed.
 
 ## Delivery Plan
 
-- [ ] Step 1: git seam — discriminated results for `listIgnoredPaths`/`listTrackedFiles`, both
+- [x] Step 1: git seam — discriminated results for `listIgnoredPaths`/`listTrackedFiles`, both
       call sites updated, unit tests for repo/non-repo/git-failure returning the typed reason
       (no behavior change yet beyond types).
-- [ ] Step 2: warm completeness — `warmAdaptersForRepo` unions registry sources; regression test:
+- [x] Step 2: warm completeness — `warmAdaptersForRepo` unions registry sources; regression test:
       a registry-mapped `.py` invisible to git (untracked + gitignored, and non-repo root) makes
       `doctor` complete without crash; a genuinely cold adapter still throws in the gate path.
+      Accepted cost: `watch` re-reads the registry once per data tick (it already reads it in
+      `gatherFrameData`), which stays far below the two git subprocesses the same tick spawns.
 - [ ] Step 3: honest denominator — analyze threads scope confidence; doctor human note + additive
       `--json` scope field; golden tests for repo (unchanged), non-repo (note + field), git-failure.
 - [ ] Step 4: one discovery path — scan routes through `discoverSourceFiles` with the ignore

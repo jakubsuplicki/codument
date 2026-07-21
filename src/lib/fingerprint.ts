@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { type Acknowledgment, isFileGrainAck } from "./acknowledgment.js";
 import { getWorkingTreeChanges, listTrackedFiles } from "./git.js";
+import { allSources, readRegistrySync } from "./registry.js";
 import { csharpAdapter } from "./csharp-adapter.js";
 import { goAdapter } from "./go-adapter.js";
 import { jvmAdapter } from "./jvm-adapter.js";
@@ -200,23 +201,57 @@ export async function warmAdaptersForPaths(paths: Iterable<string>): Promise<voi
   }
 }
 
-/** Warm the adapters a repo's content plausibly needs: tracked files plus
- *  working-tree changes (so a just-added, untracked file counts). Cheap for a
- *  repo that needs nothing — one `git ls-files` and no WASM. The listing is
- *  ADVISORY: an undeterminable or broken git read here degrades to "nothing
- *  extra to warm" so the warm never opens a failure channel ahead of the verdict
- *  path's own guarded GateError (which the same broken git raises moments later,
- *  in the right place); a genuinely needed-but-cold adapter still fails loud
- *  downstream. */
-export async function warmAdaptersForRepo(root: string): Promise<void> {
-  let paths: string[];
+/** Warm the adapters a repo's content plausibly needs. Cheap for a repo that
+ *  needs nothing — one `git ls-files`, one registry read, and no WASM.
+ *
+ *  The warm set is the union of git's view (tracked files plus working-tree
+ *  changes, so a just-added untracked file counts) and THE REGISTRY'S OWN
+ *  SOURCES. Both halves are load-bearing, because neither is a superset of the
+ *  other and the analyzers consume the registry's view, not git's:
+ *
+ *   - git-only misses every registry-named file git cannot see — a source inside
+ *     a nested member repo (`ls-files` reports the gitlink, not its contents), a
+ *     gitignored-but-mapped file, or anything at all under a non-repo root
+ *     (where the listing is `ok: false`). Each of those reached a synchronous
+ *     `adapterFor(path).anchors(...)` cold and crashed the whole command.
+ *   - registry-only misses files not yet mapped, which the gate still evaluates
+ *     for unmapped-source findings.
+ *
+ *  The INVARIANT this maintains: the warm set covers every path a consumer may
+ *  hand to an adapter. Listing failures stay ADVISORY (a broken git or an absent
+ *  registry contributes nothing rather than raising here) so the warm never opens
+ *  a failure channel ahead of the verdict path's own guarded GateError; a
+ *  genuinely needed-but-cold adapter still fails loud downstream, which is the
+ *  signal that this union has a hole.
+ *
+ *  The set is computed by an exported, side-effect-free `warmPathsForRepo` so the
+ *  invariant is directly assertable: warming is global, process-wide state, so a
+ *  test that observes only the side effect passes trivially once any earlier test
+ *  has warmed the same grammar. */
+export function warmPathsForRepo(root: string): string[] {
+  const paths: string[] = [];
   try {
     const tracked = listTrackedFiles(root);
-    paths = [...(tracked.ok ? tracked.paths : []), ...getWorkingTreeChanges(root)];
+    if (tracked.ok) paths.push(...tracked.paths);
+    paths.push(...getWorkingTreeChanges(root));
   } catch {
-    return;
+    // Advisory: fall through to the registry half rather than warming nothing.
   }
-  await warmAdaptersForPaths(paths);
+  try {
+    const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+    for (const entry of Object.values(registry.features)) {
+      paths.push(...allSources(entry));
+    }
+  } catch {
+    // An absent or unparseable registry contributes nothing to the warm set
+    // rather than raising here: the warm is advisory and must never become the
+    // first thing to fail, preempting the command's own error handling.
+  }
+  return [...new Set(paths)].sort();
+}
+
+export async function warmAdaptersForRepo(root: string): Promise<void> {
+  await warmAdaptersForPaths(warmPathsForRepo(root));
 }
 
 /** Warm every warmable adapter — for callers that walk HISTORY (audit), where
