@@ -401,3 +401,48 @@ describe("nonDirectoryAncestor", () => {
     );
   });
 });
+
+describe("an invalid project setting is rendered, not crashed", () => {
+  // The commands that read project metadata include the ones a user reaches for
+  // to FIX a bad file. A raw stack trace from `update` is a dead end, so the
+  // CLI boundary must own this error the way it owns a corrupt state file.
+  const writeMetaRaw = async (exclude: unknown): Promise<void> => {
+    await writeFile(
+      join(tmp, ".codument-meta.json"),
+      JSON.stringify({
+        version: PKG_VERSION,
+        initialized: "2026-07-21",
+        project: { srcDir: "src" },
+        exclude,
+      }),
+      "utf-8",
+    );
+  };
+
+  it("names the offending value and the file, and exits non-zero", async () => {
+    await writeMetaRaw({ dirs: ["build/out"] });
+    const result = runCli("update", "--dry-run");
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stdout, /invalid exclude\.dirs/);
+    assert.match(result.stdout, /"build\/out" is a path/);
+    assert.match(result.stdout, /\.codument-meta\.json/);
+    assert.match(result.stdout, /Correct the value in/);
+    // The failure mode this pins: a raw Node stack reaching the user.
+    assert.ok(!/\n\s+at .*:\d+:\d+/.test(result.stdout), "a stack trace leaked to the user");
+    assert.ok(!/ConfigValueError:/.test(result.stdout), "the raw error name leaked");
+  });
+
+  it("does the same for an unknown key rather than ignoring it", async () => {
+    await writeMetaRaw({ dir: ["out"] });
+    const result = runCli("update", "--dry-run");
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stdout, /unknown key "dir"/);
+  });
+
+  it("leaves a valid exclude block alone", async () => {
+    await writeMetaRaw({ dirs: ["out"], globs: ["**/*.gen.ts"] });
+    const result = runCli("update", "--dry-run");
+    assert.notEqual(result.exitCode, 1);
+    assert.ok(!result.stdout.includes("invalid exclude"));
+  });
+});

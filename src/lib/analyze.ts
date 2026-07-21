@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { readMeta, type ExcludeConfig } from "./codemod.js";
 import { adapterFor, isPreciseFile } from "./fingerprint.js";
 import { listIgnoredPaths } from "./git.js";
 import { analyzeProseAltitude } from "./prose-altitude.js";
@@ -82,6 +83,56 @@ export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
   ],
   extensions: [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".py", ".pyi", ".go", ".rs", ".cs", ".java", ".kt", ".kts", ".vue", ".svelte", ".astro"],
 };
+
+/**
+ * The spec a command should actually run with: the built-in defaults widened by
+ * the project's own `exclude` block. Additive by construction — config can only
+ * add to `dirs`/`globs`, never remove a default and never touch `extensions`
+ * (the extension list is the language matrix's truth, so config cannot make
+ * codument claim support it does not have).
+ *
+ * Async because it rides `readMeta`; call it once at a command's entry point and
+ * pass the result down. The pure helpers keep their default parameter, so
+ * library callers and tests are unaffected.
+ */
+export async function resolveExclusionSpec(root: string): Promise<ExclusionSpec> {
+  return (await resolveScope(root)).spec;
+}
+
+/**
+ * The resolved spec together with the additions that produced it, from a single
+ * read — a caller that both applies the spec and reports what the project
+ * declared (doctor prints the line and emits the JSON field in one run) would
+ * otherwise parse and validate the same file twice.
+ */
+export async function resolveScope(
+  root: string,
+): Promise<{ spec: ExclusionSpec; configured: ExcludeConfig | null }> {
+  const configured = (await readMeta(root))?.exclude;
+  const dirs = configured?.dirs ?? [];
+  const globs = configured?.globs ?? [];
+  // Every returned array is freshly built, never the default's own. Handing back
+  // a shared array would let one caller's in-place edit rewrite the spec for the
+  // rest of the process — a determinism hole that no test could localize.
+  const union = (base: string[], extra: string[]): string[] =>
+    extra.length > 0 ? [...new Set([...base, ...extra])].sort() : [...base];
+  return {
+    spec: {
+      dirs: union(DEFAULT_EXCLUSION_SPEC.dirs, dirs),
+      globs: union(DEFAULT_EXCLUSION_SPEC.globs, globs),
+      // Config can never widen the extension list: that list is the language
+      // matrix's truth, and letting a project add to it would let codument claim
+      // support for a language it has no adapter for.
+      extensions: [...DEFAULT_EXCLUSION_SPEC.extensions],
+    },
+    configured: dirs.length + globs.length > 0 ? { dirs, globs } : null,
+  };
+}
+
+/** The configured additions actually in effect, for surfacing to the user. */
+export async function configuredExclusions(root: string): Promise<ExcludeConfig | null> {
+  return (await resolveScope(root)).configured;
+}
 
 // Exported so the Feature Map router (feature-map.ts) matches globs with the
 // exact same semantics the exclusion spec uses — one globber, no drift.

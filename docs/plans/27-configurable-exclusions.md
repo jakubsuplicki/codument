@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 27: configurable exclusions — an `exclude` block in `.codument-meta.json`

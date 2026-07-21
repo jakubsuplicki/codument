@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { atomicWriteFileSync } from "./events.js";
-import { StateFileError } from "./state-io.js";
+import { ConfigValueError, StateFileError } from "./state-io.js";
 
 export interface FileHash {
   path: string;
@@ -15,6 +15,19 @@ export interface CharterMeta {
   seriousness: "demo" | "serious";
   /** ISO date the charter was established. */
   established: string;
+}
+
+/**
+ * The user-maintained half of the coverage denominator: project-specific dirs
+ * and globs that are legitimately not documentation targets (a `tsc` outDir, a
+ * deploy tree, generated-but-committed files). Additive to the built-in spec —
+ * it can only widen what is excluded, never re-include a built-in exclusion.
+ */
+export interface ExcludeConfig {
+  /** Directory names excluded anywhere in a path. Bare names, never paths. */
+  dirs?: string[];
+  /** Glob patterns matched against the root-relative path. */
+  globs?: string[];
 }
 
 export interface MetaFile {
@@ -30,6 +43,72 @@ export interface MetaFile {
    * Absent until a charter is established.
    */
   charter?: CharterMeta;
+  /** Project-specific additions to the exclusion spec. Absent = defaults only. */
+  exclude?: ExcludeConfig;
+}
+
+const EXCLUDE_KEYS = new Set(["dirs", "globs"]);
+
+function describe(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "an array";
+  return typeof value === "string" ? JSON.stringify(value) : typeof value;
+}
+
+/**
+ * Reject an `exclude` block that would not mean what its author intended.
+ *
+ * Every check here is a case where silence would be worse than failure: an
+ * unknown key, a path where a bare dir name belongs, or an empty string (which
+ * matches nothing, or everything, depending on where it lands) all read as a
+ * working exclusion while excluding nothing.
+ */
+export function validateExclude(value: unknown, path: string): ExcludeConfig {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new ConfigValueError(path, "exclude", `expected an object, got ${describe(value)}`);
+  }
+  for (const key of Object.keys(value)) {
+    if (!EXCLUDE_KEYS.has(key)) {
+      throw new ConfigValueError(
+        path,
+        "exclude",
+        `unknown key ${JSON.stringify(key)} (expected ${[...EXCLUDE_KEYS].join(" or ")})`,
+      );
+    }
+  }
+  const config = value as Record<string, unknown>;
+  for (const key of EXCLUDE_KEYS) {
+    const list = config[key];
+    if (list === undefined) continue;
+    if (!Array.isArray(list)) {
+      throw new ConfigValueError(
+        path,
+        `exclude.${key}`,
+        `expected an array of strings, got ${describe(list)}`,
+      );
+    }
+    for (const item of list) {
+      if (typeof item !== "string") {
+        throw new ConfigValueError(
+          path,
+          `exclude.${key}`,
+          `expected a string, got ${describe(item)}`,
+        );
+      }
+      if (item.trim() === "") {
+        throw new ConfigValueError(path, `exclude.${key}`, "an entry is empty");
+      }
+      if (key === "dirs" && (item.includes("/") || item.includes("\\"))) {
+        throw new ConfigValueError(
+          path,
+          "exclude.dirs",
+          `${JSON.stringify(item)} is a path — dirs takes bare directory names ` +
+            `matched at any depth; use exclude.globs for a path pattern`,
+        );
+      }
+    }
+  }
+  return config as ExcludeConfig;
 }
 
 export type MergeResult =
@@ -44,13 +123,19 @@ export function hashContent(content: string): string {
 export async function readMeta(root: string): Promise<MetaFile | null> {
   const metaPath = join(root, ".codument-meta.json");
   if (!existsSync(metaPath)) return null;
+  let parsed: MetaFile;
   try {
-    return JSON.parse(await readFile(metaPath, "utf-8"));
+    parsed = JSON.parse(await readFile(metaPath, "utf-8"));
   } catch (err) {
     // Fail loud: a corrupt meta must not read as "absent" and let a re-init,
     // adopt, or update overwrite the fileHashes/charter it carries.
     throw new StateFileError(metaPath, "project metadata", err);
   }
+  // Validated on read, not at the point of use, so a malformed exclusion is
+  // rejected by whichever command the user runs next rather than only by the
+  // ones that happen to consult the spec.
+  if (parsed?.exclude !== undefined) validateExclude(parsed.exclude, metaPath);
+  return parsed;
 }
 
 export async function writeMeta(

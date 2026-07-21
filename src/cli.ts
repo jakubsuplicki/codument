@@ -20,7 +20,7 @@ import { stepsCommand } from "./commands/steps.js";
 import { update } from "./commands/update.js";
 import { watch } from "./commands/watch.js";
 import { RegistryError } from "./lib/registry.js";
-import { StateFileError } from "./lib/state-io.js";
+import { ConfigValueError, StateFileError } from "./lib/state-io.js";
 import { GateError } from "./lib/two-ref.js";
 import { version } from "./lib/version.js";
 
@@ -390,6 +390,16 @@ program.parseAsync().catch((err) => {
         `    Fix or restore ${err.path} — codument will not overwrite a state file it could not first read.`,
       ),
     );
+    process.exitCode = 1;
+    return;
+  }
+  // A config file that parsed but carries an invalid value. Rendered here rather
+  // than left to crash, because the commands that read project metadata include
+  // the ones a user would reach for to FIX the file — a raw stack trace from
+  // `codument update` is a dead end where a named value and a file path is not.
+  if (err instanceof ConfigValueError) {
+    console.log(pc.red(`  ✗ ${err.message}`));
+    console.log(pc.dim(`    Correct the value in ${err.path}, then re-run.`));
     process.exitCode = 1;
     return;
   }

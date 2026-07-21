@@ -13,6 +13,8 @@ import {
   isExcluded,
   isSourceFile,
   rollupScore,
+  resolveExclusionSpec,
+  configuredExclusions,
   DEFAULT_EXCLUSION_SPEC,
   type CoverageRatio,
   type LintFinding,
@@ -808,5 +810,151 @@ describe("generated-leakage consults git's ignore set, not only the static spec"
       [],
     );
     assert.equal(result.scope.gitIgnore, "unavailable");
+  });
+});
+
+describe("resolveExclusionSpec widens the defaults, never narrows them", () => {
+  let root: string;
+
+  const writeMetaWith = async (exclude?: unknown): Promise<void> => {
+    await writeFile(
+      join(root, ".codument-meta.json"),
+      JSON.stringify({
+        version: "0.9.0",
+        initialized: "2026-07-21",
+        project: { srcDir: "src" },
+        ...(exclude === undefined ? {} : { exclude }),
+      }),
+      "utf-8",
+    );
+  };
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-exclude-"));
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("returns the default spec itself when no meta file exists", async () => {
+    assert.deepEqual(await resolveExclusionSpec(root), DEFAULT_EXCLUSION_SPEC);
+  });
+
+  it("returns the default spec when the meta declares no exclude block", async () => {
+    await writeMetaWith(undefined);
+    assert.deepEqual(await resolveExclusionSpec(root), DEFAULT_EXCLUSION_SPEC);
+  });
+
+  it("adds configured dirs to the defaults without dropping any", async () => {
+    await writeMetaWith({ dirs: ["out", "public-preprod"] });
+    const spec = await resolveExclusionSpec(root);
+    assert.ok(spec.dirs.includes("out"));
+    assert.ok(spec.dirs.includes("public-preprod"));
+    for (const preset of DEFAULT_EXCLUSION_SPEC.dirs) {
+      assert.ok(spec.dirs.includes(preset), `default dir ${preset} was dropped`);
+    }
+  });
+
+  it("adds configured globs to the defaults without dropping any", async () => {
+    await writeMetaWith({ globs: ["**/*.gen.ts"] });
+    const spec = await resolveExclusionSpec(root);
+    assert.ok(spec.globs.includes("**/*.gen.ts"));
+    for (const preset of DEFAULT_EXCLUSION_SPEC.globs) {
+      assert.ok(spec.globs.includes(preset), `default glob ${preset} was dropped`);
+    }
+  });
+
+  it("never lets config touch the extension list (the language matrix's truth)", async () => {
+    await writeMetaWith({ dirs: ["out"], globs: ["**/*.gen.ts"] });
+    const spec = await resolveExclusionSpec(root);
+    assert.deepEqual(spec.extensions, DEFAULT_EXCLUSION_SPEC.extensions);
+  });
+
+  it("dedupes a configured entry that repeats a default", async () => {
+    await writeMetaWith({ dirs: ["dist", "out"] });
+    const spec = await resolveExclusionSpec(root);
+    assert.equal(spec.dirs.filter((d) => d === "dist").length, 1);
+  });
+
+  it("does not mutate the shared default spec across calls", async () => {
+    const before = [...DEFAULT_EXCLUSION_SPEC.dirs];
+    await writeMetaWith({ dirs: ["out"] });
+    await resolveExclusionSpec(root);
+    assert.deepEqual(DEFAULT_EXCLUSION_SPEC.dirs, before);
+    assert.ok(!DEFAULT_EXCLUSION_SPEC.dirs.includes("out"));
+  });
+
+  // A returned array that IS the default's array turns any caller's in-place
+  // edit into a process-wide spec rewrite. Every branch must hand back a copy,
+  // including the ones that add nothing — those are the common paths.
+  it("never returns an array the default spec also holds", async () => {
+    const assertUnaliased = (spec: typeof DEFAULT_EXCLUSION_SPEC, label: string): void => {
+      assert.notEqual(spec.dirs, DEFAULT_EXCLUSION_SPEC.dirs, `${label}: dirs aliased`);
+      assert.notEqual(spec.globs, DEFAULT_EXCLUSION_SPEC.globs, `${label}: globs aliased`);
+      assert.notEqual(
+        spec.extensions,
+        DEFAULT_EXCLUSION_SPEC.extensions,
+        `${label}: extensions aliased`,
+      );
+    };
+    assertUnaliased(await resolveExclusionSpec(root), "no meta file");
+    await writeMetaWith(undefined);
+    assertUnaliased(await resolveExclusionSpec(root), "no exclude block");
+    await writeMetaWith({});
+    assertUnaliased(await resolveExclusionSpec(root), "empty block");
+    await writeMetaWith({ dirs: [], globs: [] });
+    assertUnaliased(await resolveExclusionSpec(root), "empty lists");
+    await writeMetaWith({ globs: ["**/*.gen.ts"] });
+    assertUnaliased(await resolveExclusionSpec(root), "globs only");
+  });
+
+  it("survives a caller mutating the spec it was handed", async () => {
+    await writeMetaWith({ globs: ["**/*.gen.ts"] });
+    const first = await resolveExclusionSpec(root);
+    first.dirs.push("mutated-by-caller");
+    const second = await resolveExclusionSpec(root);
+    assert.ok(!second.dirs.includes("mutated-by-caller"));
+    assert.ok(!DEFAULT_EXCLUSION_SPEC.dirs.includes("mutated-by-caller"));
+  });
+
+  it("accepts a non-ASCII dir name and a glob carrying separators", async () => {
+    await writeMetaWith({ dirs: ["ausgabe-\u00fcber"], globs: ["packages/*/dist/**"] });
+    const spec = await resolveExclusionSpec(root);
+    assert.equal(isExcluded("src/ausgabe-\u00fcber/x.ts", spec), true);
+    assert.equal(isExcluded("packages/api/dist/bundle.js", spec), true);
+    assert.equal(isExcluded("packages/api/src/bundle.js", spec), false);
+  });
+
+  it("makes a configured dir actually exclude, end to end", async () => {
+    await writeMetaWith({ dirs: ["out"] });
+    const spec = await resolveExclusionSpec(root);
+    assert.equal(isExcluded("out/bundle.js", spec), true);
+    assert.equal(isSourceFile("out/bundle.js", spec), false);
+    // ...and it was NOT excluded before the config existed.
+    assert.equal(isExcluded("out/bundle.js", DEFAULT_EXCLUSION_SPEC), false);
+  });
+
+  it("makes a configured glob actually exclude, end to end", async () => {
+    await writeMetaWith({ globs: ["**/*.gen.ts"] });
+    const spec = await resolveExclusionSpec(root);
+    assert.equal(isSourceFile("src/api.gen.ts", spec), false);
+    assert.equal(isSourceFile("src/api.ts", spec), true);
+  });
+
+  it("propagates the validation error rather than falling back to defaults", async () => {
+    await writeMetaWith({ dirs: ["build/out"] });
+    await assert.rejects(() => resolveExclusionSpec(root), /is a path/);
+  });
+
+  it("reports the configured additions, and null when there are none", async () => {
+    await writeMetaWith(undefined);
+    assert.equal(await configuredExclusions(root), null);
+    await writeMetaWith({});
+    assert.equal(await configuredExclusions(root), null);
+    await writeMetaWith({ dirs: [], globs: [] });
+    assert.equal(await configuredExclusions(root), null);
+    await writeMetaWith({ dirs: ["out"] });
+    assert.deepEqual(await configuredExclusions(root), { dirs: ["out"], globs: [] });
   });
 });

@@ -19,6 +19,23 @@ export class StateFileError extends Error {
   }
 }
 
+// The sibling of StateFileError for a file that parses but says something
+// invalid. Separated because the two failures need different user actions: an
+// unparseable file is corrupt, while an invalid value is a typo the user can see
+// and fix — so this message names the offending value rather than the file alone.
+// Silently ignoring an invalid value is the failure mode this class exists to
+// prevent: a typo'd exclusion that no-ops looks exactly like a correct one.
+export class ConfigValueError extends Error {
+  constructor(
+    readonly path: string,
+    readonly field: string,
+    readonly problem: string,
+  ) {
+    super(`${path}: invalid ${field} — ${problem}`);
+    this.name = "ConfigValueError";
+  }
+}
+
 // Missing file → undefined (a valid "not present yet" state). Present-but-
 // unparseable → StateFileError. `kind` names the file for the user's diagnostic
 // (e.g. "settings", "project metadata").
