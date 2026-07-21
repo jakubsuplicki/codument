@@ -547,7 +547,7 @@ The finding's *type* tells you which lever to pull:
 | **bloated-doc** | a doc is too long, has an oversized section, or carries a never-compacted `[x]` completed-log | `/update-docs` — **compact** it: drop the done log (it lives in git history), split big sections, keep the durable decisions. Not a rewrite. |
 | **missing-doc** | a registered feature has no doc | `/update-docs` — write it from the template |
 | **unmapped-source** | a real source file has no owning feature | add it to a feature's `primary_sources` in `docs/.registry.json` (or `codument scan` to propose mappings) |
-| **generated-leakage** | a file matching an exclusion rule (build/generated/test/data, e.g. `dist/**`, `*.seed.json`) is listed as a source | de-list it — it is not tracked source. If the heuristic misfired on genuinely authored content, adjust the exclusion instead of forcing docs onto it |
+| **generated-leakage** | a file matching an exclusion rule (build/generated/test/data, e.g. `dist/**`, `*.seed.json`), or one your repository git-ignores, is listed as a source | de-list it — it is not tracked source. If the heuristic misfired on genuinely authored content, that content belongs in the registry and the rule that caught it is the thing to narrow |
 | **empty-depends-on** | a mature, *isolated* entry declares no dependencies — nothing depends on it and it depends on nothing (a foundation that other entries depend on is exempt: it legitimately depends on nothing) | add its real `depends_on` edges, or set `depends_on_confirmed: true` on the entry after reviewing that a true leaf really has none (fresh `needs-review` scaffolds are exempt until reviewed) |
 | **dangling-depends-on** | a `depends_on` slug names no registry entry — review's impact fan-out and the dependency score silently lose that edge | register the missing entry, or fix the slug if it is a typo |
 | **link-rot** | a doc's intra-repo link or `[[wikilink]]` points at a file that does not exist | fix the link target, or remove the link if the page is gone for good |
@@ -583,6 +583,35 @@ npx codument update --agents codex,claude   # override stored profiles
 ---
 
 ## Reference
+
+<details>
+<summary><b>Scoping what counts as documentable (build output, deploy trees, generated files)</b></summary>
+
+Codument's denominator is "source files that should have a documented owner" — so anything in it that is *not* authored source drags your coverage down, gets proposed into your registry by `scan`, and shows up in `review` as unmapped change. The built-in exclusions cover the conventions (`dist/`, `build/`, `node_modules/`, `coverage/`, each language's test conventions, declaration artifacts), and everything your repository git-ignores is subtracted on top of them.
+
+What that cannot reach is the part only your project knows: a `tsc` `outDir` named something else, a deploy tree, generated-but-committed files, vendored code. Declare those in `.codument-meta.json`:
+
+```json
+{
+  "exclude": {
+    "dirs": ["out", "public-preprod"],
+    "globs": ["**/*.gen.ts", "vendor/**"]
+  }
+}
+```
+
+- **`dirs`** are bare directory names, matched at any depth. A path like `"build/out"` is rejected — use `globs` for that.
+- **`globs`** are matched against the repository-relative path (`*` and `**` supported).
+- Both keys are optional and **additive**: they widen the built-in exclusions, never replace or re-open them. There is deliberately no way to *remove* a built-in exclusion, so no project can quietly re-admit its test files into a coverage number.
+- The file extensions codument treats as source are **not** configurable — that list is the language matrix, and letting a project extend it would let codument claim support for a language it has no adapter for.
+
+Every surface honors the same declaration: `doctor`'s denominator, `review`'s verdict, `scan` discovery, `audit`, and the editor nudge hook. `doctor` and `scan` print what is in effect (`scope: also excluding 2 dir(s): out, public-preprod`), and `doctor --json` carries it as `scope.configuredExclusions`.
+
+A typo is an error, not a silent no-op: an unknown key, a non-string entry, an empty entry, or a path in `dirs` fails the command by name. Declaring an excluded path that some registry entry still lists as a source keeps firing `generated-leakage`, so an exclusion can silence the gate only visibly.
+
+There is no `--exclude` flag on purpose. Scope is a repository artifact your reviewers see in the diff, not an invocation choice — a flag would let two runs of the same commit disagree about what was measured.
+
+</details>
 
 <details>
 <summary><b>Proof benchmarks</b></summary>

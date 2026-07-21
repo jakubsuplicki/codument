@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 27: configurable exclusions — an `exclude` block in `.codument-meta.json`
@@ -107,7 +107,7 @@ and unknown-scope note are where this config gets discovered and consumed).
 - [x] Step 3: adopt preservation — carry-forward rebuild + round-trip test (exclude block and an
       unknown key both survive `codument adopt`); `update` preservation pinned by test (already
       safe, now guaranteed).
-- [ ] Step 4: visibility + docs — doctor line + additive `--json` field, scan summary, the Plan 26
+- [x] Step 4: visibility + docs — doctor line + additive `--json` field, scan summary, the Plan 26
       note's call-to-action, README ~550 corrected to the real shape, registry-health.md (the
       denominator is DEFAULT ∪ config — cites ADR-002's "maintained artifact" consequence),
       commands.md, CHANGELOG.

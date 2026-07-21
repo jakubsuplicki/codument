@@ -43,6 +43,42 @@ remains pre-1.0.
   output however broad the pattern matching it.
 
 ### Added
+- Projects can declare their own exclusions in `.codument-meta.json`. The
+  exclusion spec was a fully-plumbed parameter with exactly one value that ever
+  existed, so build output landing somewhere unguessable (a `tsc` `outDir` of
+  `out/`, a deploy tree, generated-but-committed files) could not be scoped out
+  at all — and the "just edit the file" workaround was actively deleted by the
+  next `codument adopt`. That left two wrong states and no third: a coverage
+  score inflated by build artifacts, or hundreds of spurious `unmapped-source`
+  findings from de-listing them by hand.
+
+  ```json
+  { "exclude": { "dirs": ["out", "public-preprod"], "globs": ["**/*.gen.ts"] } }
+  ```
+
+  Both keys are optional and **additive** — they widen the built-in spec and can
+  never remove a built-in exclusion, so no project can quietly re-admit its test
+  files into a coverage number. `dirs` takes bare directory names matched at any
+  depth; a path there is rejected in favor of `globs`. The extension list stays
+  unconfigurable: it is the language matrix's truth, and extending it would let
+  codument claim support it does not have. There is no `--exclude` flag on
+  purpose — scope is a repository artifact a reviewer sees in the diff, not an
+  invocation choice that would let two runs of one commit disagree.
+
+  Every consumer reads the same resolution: coverage, the lint net, the
+  change-control gate, history audit, `scan` discovery, language detection, and
+  the editor nudge. Declaring nothing is byte-identical to having no declaration.
+  `doctor` and `scan` print what is in effect, and `doctor --json` carries
+  `scope.configuredExclusions` **additively** (`version` unchanged).
+
+  A malformed declaration fails by name rather than silently no-opping — a typo
+  that quietly excludes nothing is indistinguishable from a working setting, and
+  is the failure class this exists to close. An unreadable metadata file is a
+  different failure and gets a different answer: it degrades to the built-in
+  spec and *says so* on the same scope verdict the git half uses, because a file
+  that does not parse says nothing about whether a declaration exists. `scan` is
+  the exception that refuses outright, since the registry entries it writes are
+  durable.
 - `doctor` discloses when coverage was scored over a scope it could not verify.
   When the ignore rules cannot be determined, the denominator silently widened to
   the static exclusion spec alone and admitted build output as first-party
@@ -57,6 +93,16 @@ remains pre-1.0.
   because the registry a scan writes outlives the note that qualified it.
 
 ### Changed
+- `adopt` (and `update`) preserve every `.codument-meta.json` key they do not
+  own. `adopt` rebuilt the file from a literal, so anything not on its keep-list
+  was deleted with no message — which is why hand-editing the file was never a
+  workable answer to a project-specific exclusion. The existing file is now
+  carried forward and only the keys `adopt` owns are overwritten, so the next
+  setting added to the metadata survives without anyone extending a list.
+- `watch` names a failure that cannot recover instead of freezing on a stale
+  frame. Its per-tick catch was written for a transient git failure; a state or
+  config file the user just broke never self-heals, so the monitor would have
+  rendered an aging frame indefinitely with no explanation.
 - Git path enumerations (`listIgnoredPaths`, `listTrackedFiles`) report either an
   answer or a reason they have none, instead of returning an empty list for both.
   Internal API; no CLI surface changes. This is ADR-003's rule — "the gate could

@@ -798,7 +798,7 @@ describe("generated-leakage consults git's ignore set, not only the static spec"
     );
     assert.equal(leaks.length, 1);
     assert.equal(leaks[0].file, "app/thing.test.ts");
-    assert.match(leaks[0].message, /matches an exclusion rule/);
+    assert.match(leaks[0].message, /matches a built-in exclusion rule/);
   });
 
   it("cannot flag git-ignored leakage when the ignore rules are undeterminable", () => {
@@ -952,6 +952,56 @@ describe("resolveExclusionSpec widens the defaults, never narrows them", () => {
   // the user having said a wrong thing — it must not be scored past. A file that
   // does not parse says nothing about whether a declaration exists, so degrading
   // is honest as long as it is reported: unknown is not empty.
+  // A project's own declaration and a built-in heuristic call for different
+  // responses, so the evidence has to say which one fired: "you declared this"
+  // versus "codument's guess may be wrong about your file".
+  it("names the project's own rule when a declared path is registered", async () => {
+    await mkdir(join(root, "out"), { recursive: true });
+    await mkdir(join(root, "docs", "features"), { recursive: true });
+    await writeFile(join(root, "out", "gen.js"), "exports.g = 1;\n");
+    await writeFile(join(root, "docs", "features", "app.md"), "# app\n");
+    await writeFile(
+      join(root, "docs", ".registry.json"),
+      JSON.stringify({
+        features: {
+          app: {
+            doc: "docs/features/app.md",
+            type: "feature",
+            primary_sources: ["out/gen.js"],
+            related_sources: [],
+            docs: [],
+            depends_on: [],
+            risk: [],
+            status: "current",
+          },
+        },
+      }),
+    );
+    const registry = await readRegistry(join(root, "docs", ".registry.json"));
+    const declared = { dirs: ["out"] };
+    const withDeclaration = analyze({
+      root,
+      registry,
+      exclusion: { ...DEFAULT_EXCLUSION_SPEC, dirs: [...DEFAULT_EXCLUSION_SPEC.dirs, "out"] },
+      declaredExclusions: declared,
+    }).lint.filter((f) => f.id === "generated-leakage");
+    assert.equal(withDeclaration.length, 1, "an exclusion silences the gate only visibly");
+    assert.match(withDeclaration[0].message, /declared out-of-scope/);
+    assert.match(withDeclaration[0].message, /dirs: out/);
+
+    // A built-in rule keeps its own wording, so the two are distinguishable.
+    await writeFile(join(root, "out", "gen.js"), "exports.g = 1;\n");
+    const builtIn = analyze({
+      root,
+      registry,
+      exclusion: { ...DEFAULT_EXCLUSION_SPEC, dirs: [...DEFAULT_EXCLUSION_SPEC.dirs, "out"] },
+      declaredExclusions: null,
+    }).lint.filter((f) => f.id === "generated-leakage");
+    assert.equal(builtIn.length, 1);
+    assert.match(builtIn[0].message, /built-in exclusion rule/);
+    assert.doesNotMatch(builtIn[0].message, /declared/);
+  });
+
   it("degrades and reports when the metadata cannot be read at all", async () => {
     await writeFile(join(root, ".codument-meta.json"), "{ not json", "utf-8");
     const scope = resolveScopeSync(root);

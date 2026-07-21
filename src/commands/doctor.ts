@@ -157,6 +157,7 @@ export function buildReport(
     bloat,
     exclusion: declaredScope.spec,
     declaredScopeUnreadable: declaredScope.unreadable,
+    declaredExclusions: declaredScope.configured,
     highFanoutThreshold: opts.highFanoutThreshold,
   });
   const all = registryExists
@@ -324,6 +325,22 @@ function printHuman(report: DoctorReport, strictFail = false): void {
       pc.cyan(
         `  note: ${report.scope.reason} — .gitignore rules were not applied, so this scope may include build output`,
       ),
+    );
+  }
+  // A denominator narrowed by a project decision is not the same denominator as
+  // the defaults, so the number never appears without what shaped it — otherwise
+  // two repositories' scores look comparable when their scopes are not.
+  const configured = report.scope.configuredExclusions;
+  if (configured) {
+    const parts: string[] = [];
+    if (configured.dirs?.length) {
+      parts.push(`${configured.dirs.length} dir(s): ${configured.dirs.join(", ")}`);
+    }
+    if (configured.globs?.length) {
+      parts.push(`${configured.globs.length} glob(s): ${configured.globs.join(", ")}`);
+    }
+    console.log(
+      pc.cyan(`  scope: also excluding ${parts.join(" · ")} — .codument-meta.json`),
     );
   }
   // The second way a scope can be unverified: the project may have declared

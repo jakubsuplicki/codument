@@ -81,6 +81,20 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
         `  note: ${ignoredListing.reason} — .gitignore rules were not applied, so build output may be proposed below`,
       ),
     );
+    // The note's call to action. Without ignore rules, declaring the tree is the
+    // only remaining way to keep it out of a registry this run is about to write.
+    console.log(
+      pc.dim(
+        '        build output swept in? declare it: "exclude": { "dirs": ["out"] } in .codument-meta.json',
+      ),
+    );
+  }
+  const declared = resolveScopeSync(root).configured;
+  if (declared) {
+    const parts: string[] = [];
+    if (declared.dirs?.length) parts.push(`dirs: ${declared.dirs.join(", ")}`);
+    if (declared.globs?.length) parts.push(`globs: ${declared.globs.join(", ")}`);
+    console.log(pc.cyan(`  scope: also excluding ${parts.join(" · ")} — .codument-meta.json`));
   }
 
   // Group into features by directory structure

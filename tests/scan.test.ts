@@ -541,6 +541,21 @@ describe("scan honors the project's own declared exclusions", () => {
     assert.ok(!existsSync(join(tmp, "docs", "features")), "no doc scaffolds either");
   });
 
+  it("names the declared exclusions in its summary", async () => {
+    await scaffold(tmp, { dirs: ["out"] });
+    const lines: string[] = [];
+    const original = console.log;
+    console.log = (...args: unknown[]) => void lines.push(args.join(" "));
+    try {
+      await scan({ root: tmp });
+    } finally {
+      console.log = original;
+    }
+    const out = lines.join("\n");
+    assert.match(out, /also excluding/);
+    assert.match(out, /dirs: out/);
+  });
+
   it("declaring nothing leaves discovery byte-identical to no config at all", async () => {
     await scaffold(tmp);
     await scan({ root: tmp });

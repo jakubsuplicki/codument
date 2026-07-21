@@ -367,6 +367,8 @@ export interface AnalyzeInput {
    *  `scope` rather than being inferred here — the resolution happens at the
    *  entry point, and only the entry point knows whether it was complete. */
   declaredScopeUnreadable?: string;
+  /** The project's declared additions, for reporting alongside the score. */
+  declaredExclusions?: ExcludeConfig | null;
   /** Distinct-entry count at which a mapped file is flagged high-fanout. */
   highFanoutThreshold?: number;
   /** Doc-bloat thresholds; defaults to DEFAULT_BLOAT_THRESHOLDS. */
@@ -394,6 +396,10 @@ export interface ScopeConfidence {
    *  unverified, reported the same way as the first: never inferred as "nothing
    *  was declared". */
   declaredScope?: string;
+  /** The project's own exclusion additions, when it declared any. A denominator
+   *  narrowed by a project decision is reported alongside the score, because a
+   *  reader comparing two repositories' numbers is comparing two scopes. */
+  configuredExclusions?: ExcludeConfig;
 }
 
 export interface AnalysisResult {
@@ -456,6 +462,7 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     registry,
     exclusion = DEFAULT_EXCLUSION_SPEC,
     declaredScopeUnreadable,
+    declaredExclusions,
     highFanoutThreshold = 3,
     bloat = DEFAULT_BLOAT_THRESHOLDS,
   } = input;
@@ -516,6 +523,7 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     bloat,
     dependedUpon,
     isIgnored,
+    declaredExclusions ?? null,
   );
 
   return {
@@ -529,6 +537,7 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
       ...(declaredScopeUnreadable === undefined
         ? {}
         : { declaredScope: declaredScopeUnreadable }),
+      ...(declaredExclusions ? { configuredExclusions: declaredExclusions } : {}),
     },
   };
 }
@@ -600,6 +609,16 @@ function computeCoverage(
   return rollupScore(ratios);
 }
 
+/** Which of the project's own declared rules covers a path, if any. */
+function declaredRuleFor(relPath: string, declared: ExcludeConfig | null): string | null {
+  if (!declared) return null;
+  const posix = toPosix(relPath);
+  const dir = declared.dirs?.find((d) => posix.split("/").includes(d));
+  if (dir) return `dirs: ${dir}`;
+  const glob = declared.globs?.find((g) => globToRegExp(g).test(posix));
+  return glob ? `globs: ${glob}` : null;
+}
+
 function computeLint(
   root: string,
   entries: [string, RegistryEntry][],
@@ -610,6 +629,7 @@ function computeLint(
   bloat: BloatThresholds,
   dependedUpon: Set<string>,
   isIgnored: (relPosixPath: string) => boolean,
+  declared: ExcludeConfig | null,
 ): LintFinding[] {
   const findings: LintFinding[] = [];
   const entryKeys = new Set(entries.map(([key]) => key));
@@ -654,7 +674,14 @@ function computeLint(
           severity: "warn",
           feature: key,
           file: source,
-          message: `${key}: out-of-scope file listed as source — matches an exclusion rule (build/generated/test/data, e.g. *.seed.json): ${source}`,
+          // Name WHICH rule fired. A project's own declaration and a built-in
+          // heuristic call for different responses — one is "you declared this,
+          // un-map it or narrow your declaration", the other is "codument's
+          // guess may be wrong about your file" — and the generic wording sent
+          // both to the same dead end.
+          message: declaredRuleFor(source, declared)
+            ? `${key}: declared out-of-scope file listed as source — the project's own \`exclude\` (${declaredRuleFor(source, declared)}) covers it, so it cannot be documented source too: ${source}`
+            : `${key}: out-of-scope file listed as source — matches a built-in exclusion rule (build/generated/test/data, e.g. *.seed.json): ${source}`,
         });
       }
     }

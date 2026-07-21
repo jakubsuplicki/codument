@@ -639,6 +639,37 @@ describe("doctor scores against the project's declared scope", () => {
     assert.match(String(json.scope.declaredScope), /is unreadable/);
   });
 
+  // A denominator narrowed by a project decision is not the defaults' denominator.
+  // Two repositories' scores are only comparable if both scopes are visible.
+  it("names the declared exclusions beside the score, in both surfaces", async () => {
+    await scaffold({ dirs: ["out"], globs: ["**/*.gen.ts"] });
+    const report = buildReport(root);
+    assert.deepEqual(report.scope.configuredExclusions, {
+      dirs: ["out"],
+      globs: ["**/*.gen.ts"],
+    });
+
+    const out = execFileSync("node", [CLI, "doctor"], { cwd: root, encoding: "utf-8" });
+    assert.match(out, /scope: also excluding/);
+    assert.match(out, /1 dir\(s\): out/);
+    assert.match(out, /1 glob\(s\): \*\*\/\*\.gen\.ts/);
+    assert.match(out, /\.codument-meta\.json/);
+
+    const json = JSON.parse(
+      execFileSync("node", [CLI, "doctor", "--json"], { cwd: root, encoding: "utf-8" }),
+    );
+    assert.deepEqual(json.scope.configuredExclusions.dirs, ["out"]);
+  });
+
+  it("says nothing about a scope nobody narrowed", async () => {
+    await scaffold();
+    assert.equal(buildReport(root).scope.configuredExclusions, undefined);
+    const out = execFileSync("node", [CLI, "doctor"], { cwd: root, encoding: "utf-8" });
+    assert.doesNotMatch(out, /also excluding/);
+    await scaffold({});
+    assert.equal(buildReport(root).scope.configuredExclusions, undefined);
+  });
+
   it("says nothing about the declaration when it read fine", async () => {
     await scaffold({ dirs: ["out"] });
     assert.equal(buildReport(root).scope.declaredScope, undefined);
