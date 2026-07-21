@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
 import { allSources, readRegistrySync, RegistryError } from "../lib/registry.js";
-import { isSourceFile } from "../lib/analyze.js";
+import { isSourceFile, resolveScopeSync, DEFAULT_EXCLUSION_SPEC } from "../lib/analyze.js";
 
 // This hook runs after Write/Edit tool use.
 // It checks if a source file was modified and reminds the developer that
@@ -59,9 +59,21 @@ const registryPath = join(root, "docs", ".registry.json");
 const relPath = relative(root, filePath);
 
 // Only care about files the gate itself governs — the ONE shared spec from the
-// analyzer, so the live nudge and the verdict can never disagree about what a
-// source is (a module-flavored config nudges; a .d.ts or test file does not).
-if (!isSourceFile(relPath)) process.exit(0);
+// analyzer, project-declared exclusions included, so the live nudge and the
+// verdict can never disagree about what a source is (a module-flavored config
+// nudges; a .d.ts, test file, or declared build tree does not).
+//
+// Fail safe, like the registry read below: this hook is advisory and fires on
+// every edit, so an unreadable or invalid config degrades to the built-in spec
+// rather than erroring on each keystroke. The loud "fix your config" belongs to
+// the commands the user runs deliberately.
+let exclusion = DEFAULT_EXCLUSION_SPEC;
+try {
+  exclusion = resolveScopeSync(root).spec;
+} catch {
+  // Advisory: keep nudging with the defaults.
+}
+if (!isSourceFile(relPath, exclusion)) process.exit(0);
 
 if (!existsSync(registryPath)) process.exit(0);
 

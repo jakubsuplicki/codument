@@ -10,7 +10,9 @@ import { summarizeImpact } from "../lib/impact-ledger.js";
 import { summarizeTokens } from "../lib/token-report.js";
 import { loadRates, type RateTable } from "../lib/token-cost.js";
 import { pumpFeed } from "../lib/claude-feed.js";
+import { resolveScopeSync } from "../lib/analyze.js";
 import { readRegistrySync } from "../lib/registry.js";
+import { ConfigValueError, StateFileError } from "../lib/state-io.js";
 import {
   classifyVerdict,
   costProvenance,
@@ -524,8 +526,12 @@ function gatherFrameData(root: string): FrameData {
   // analyzer and the activity tape, so a refresh spawns one `git status` tree
   // scan instead of two.
   const changedFiles = getWorkingTreeChanges(root);
-  const review = buildReview(root, changedFiles);
-  const coverage = buildReport(root);
+  // One scope read per tick, shared by both surfaces this frame renders.
+  const scope = resolveScopeSync(root);
+  const review = buildReview(root, changedFiles, "HEAD", undefined, {
+    exclusion: scope.spec,
+  });
+  const coverage = buildReport(root, { scope });
   const events = readRecentEvents(root, EVENT_WINDOW);
   const { activity, mood } = gatherActivity(root, review, changedFiles);
   const rates = loadRates(root);
@@ -584,6 +590,9 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
   if (feedOn) pumpFeed(root);
   let cache = gatherFrameData(root);
   let tick = 0;
+  // Non-null while a permanent failure is keeping `cache` from refreshing, so
+  // the frame on screen can say it is no longer live instead of just aging.
+  let staleReason: string | null = null;
 
   // Repaint only when the rendered bytes actually change. The animation tick fires
   // many times a second, but on an idle tree most frames are byte-identical (the
@@ -605,9 +614,16 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
         sinceTs: startedAt,
       },
     );
-    if (frame === lastFrame) return;
-    lastFrame = frame;
-    process.stdout.write(CLEAR + frame + "\n");
+    // A frame that stopped refreshing must not look like a frame that is simply
+    // calm. Appended rather than folded into renderFrame so the rendered bytes
+    // still change when the reason appears or clears.
+    const shown =
+      staleReason === null
+        ? frame
+        : `${frame}\n  ${pc.red("✗")} monitor is showing a stale frame: ${staleReason}`;
+    if (shown === lastFrame) return;
+    lastFrame = shown;
+    process.stdout.write(CLEAR + shown + "\n");
   };
   paint();
 
@@ -631,9 +647,19 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
         // not throw into the catch below forever.
         await warmAdaptersForRepo(root);
         cache = gatherFrameData(root);
-      } catch {
+        staleReason = null;
+      } catch (err) {
         // A transient git failure mid-session must not crash the monitor: keep
         // rendering the last good frame until a later tick recovers.
+        //
+        // A config the user just broke is NOT transient — it never self-heals,
+        // so swallowing it would freeze the monitor on a stale frame with no
+        // explanation. Name it instead, and keep rendering: the frame the user
+        // is looking at is no longer live, and only the monitor can say so.
+        staleReason =
+          err instanceof ConfigValueError || err instanceof StateFileError
+            ? err.message
+            : null;
       }
     })();
   }, dataMs);

@@ -313,3 +313,79 @@ describe("the installed hook COMMAND is guarded (a nudge must never break the ed
     }
   });
 });
+
+describe("the editor nudge honors the project's declared exclusions", () => {
+  const withMeta = async (root: string, exclude: unknown): Promise<void> => {
+    await writeFile(
+      join(root, ".codument-meta.json"),
+      JSON.stringify({
+        version: "0.9.0",
+        initialized: "2026-07-21",
+        project: { srcDir: "." },
+        exclude,
+      }),
+      "utf-8",
+    );
+  };
+
+  // Both files are MAPPED, so the nudge fires on each until something excludes
+  // it — this pins that a declaration overrides the registry's own contents, the
+  // same way the built-in spec does.
+  const scaffold = async (): Promise<string> => {
+    const root = await createProject();
+    const registry: Registry = {
+      features: {
+        app: {
+          doc: "docs/features/app.md",
+          type: "feature",
+          primary_sources: ["src/feature.ts", "out/gen.ts"],
+          depends_on: [],
+          last_updated: "2026-07-21",
+          status: "current",
+        },
+      },
+    };
+    await writeFile(join(root, "docs", ".registry.json"), JSON.stringify(registry, null, 2) + "\n");
+    await mkdir(join(root, "out"), { recursive: true });
+    await writeFile(join(root, "out", "gen.ts"), "export const g = 1;\n");
+    return root;
+  };
+
+  it("stays silent on a file inside a declared build tree", async () => {
+    const root = await scaffold();
+    try {
+      // Precondition: undeclared, the nudge fires.
+      assert.ok(runHook(root, join(root, "out", "gen.ts")).includes("docs/features/app.md"));
+      await withMeta(root, { dirs: ["out"] });
+      assert.equal(runHook(root, join(root, "out", "gen.ts")).trim(), "");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("still nudges on a real source when a declaration exists", async () => {
+    const root = await scaffold();
+    try {
+      await withMeta(root, { dirs: ["out"] });
+      assert.ok(runHook(root, join(root, "src", "feature.ts")).includes("docs/features/app.md"));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // The hook fires on every edit, so it degrades rather than erroring on each
+  // keystroke — the same fail-safe stance it takes on an unreadable registry.
+  it("degrades to the built-in spec rather than crashing on a broken config", async () => {
+    for (const bad of ["{ not json", '{"version":"0.9.0","exclude":{"dirs":["a/b"]}}']) {
+      const root = await scaffold();
+      try {
+        await writeFile(join(root, ".codument-meta.json"), bad, "utf-8");
+        // No throw (execFileSync raises on a non-zero exit), and the nudge still
+        // does its job using the defaults.
+        assert.ok(runHook(root, join(root, "src", "feature.ts")).includes("docs/features/app.md"));
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    }
+  });
+});

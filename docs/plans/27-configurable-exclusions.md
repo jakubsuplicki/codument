@@ -38,6 +38,9 @@ legitimate — and there is no way to declare them. Verified against source:
 ## Scope
 
 - `src/lib/codemod.ts` (`MetaFile.exclude?` + semantic validation)
+- `src/lib/state-io.ts` + `src/cli.ts` (the invalid-value error class and its rendering at the
+  dispatch boundary — added in step 1 after review: the commands that read project settings include
+  the ones a user would reach for to repair the file, so this error cannot end in a stack trace)
 - `src/lib/analyze.ts` (`resolveExclusionSpec(root)` loader beside the default; merge)
 - Thread sites: `src/commands/doctor.ts` (analyze input), `src/commands/review.ts` (:249, :752 and
   the `computeChangeState` input), `src/lib/history-audit.ts` (its `computeChangeState` input),
@@ -45,6 +48,9 @@ legitimate — and there is no way to declare them. Verified against source:
   `src/hooks/check-docs.ts` (:64)
 - `src/commands/adopt.ts` (carry ALL existing meta keys forward; only overwrite the ones adopt owns)
 - `src/commands/doctor.ts` + `src/commands/scan.ts` (surface active custom exclusions)
+- `src/commands/watch.ts` + `src/index.ts` (added in step 2 after review: the monitor shares one
+  scope read per tick and names a non-transient failure instead of freezing on a stale frame; the
+  package barrel exports the resolver so a programmatic consumer is not left on the defaults)
 - `tests/codemod.test.ts`, `tests/analyze.test.ts`, `tests/adopt.test.ts`, `tests/scan.test.ts`,
   `tests/doctor.test.ts`, `tests/review.test.ts`
 - `README.md` (~550: document the real shape), `docs/features/registry-health.md`,
@@ -90,11 +96,11 @@ and unknown-scope note are where this config gets discovered and consumed).
 
 ## Delivery Plan
 
-- [ ] Step 1: meta + loader — `MetaFile.exclude?`, semantic validation with fail-loud errors,
+- [x] Step 1: meta + loader — `MetaFile.exclude?`, semantic validation with fail-loud errors,
       `resolveExclusionSpec(root)` with merge semantics; unit tests (absent block → identical
       default spec by deep-equal; merged; every malformed shape throws with the offending value
       named).
-- [ ] Step 2: threading — every Scope site receives the resolved spec (doctor/review/history-audit/
+- [x] Step 2: threading — every Scope site receives the resolved spec (doctor/review/history-audit/
       scan/detect/check-docs); e2e: with `exclude.dirs: ["out"]`, `scan` no longer proposes
       `out/**`, `doctor` drops it from the denominator, `review` drops it from other-changed noise,
       the check-docs hook stops firing on it; goldens for a repo with no config are byte-identical.

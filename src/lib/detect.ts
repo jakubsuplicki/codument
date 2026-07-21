@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { DEFAULT_EXCLUSION_SPEC } from "./analyze.js";
+import { resolveScopeSync } from "./analyze.js";
 
 export interface ProjectInfo {
   language: "typescript" | "javascript";
@@ -11,7 +11,7 @@ export interface ProjectInfo {
 }
 
 export async function detectProject(root: string): Promise<ProjectInfo> {
-  const hasTs = await hasTypeScriptProject(root);
+  const hasTs = await hasTypeScriptProject(root, new Set(resolveScopeSync(root).spec.dirs));
   const hasSrc = existsSync(join(root, "src"));
 
   const srcDir = hasSrc ? "src" : ".";
@@ -55,21 +55,23 @@ export async function detectProject(root: string): Promise<ProjectInfo> {
   return { language: hasTs ? "typescript" : "javascript", srcDir, sourceGlobs, framework };
 }
 
-// Shared with the analyzer so source discovery never disagrees across commands.
-const IGNORED_DIRS = new Set(DEFAULT_EXCLUSION_SPEC.dirs);
+// Shared with the analyzer so source discovery never disagrees across commands —
+// including the project's own declared exclusions, so a build tree the project
+// named cannot be what detection reads a language or framework off.
 
-async function hasTypeScriptProject(root: string): Promise<boolean> {
+async function hasTypeScriptProject(root: string, ignoredDirs: Set<string>): Promise<boolean> {
   if (existsSync(join(root, "tsconfig.json"))) {
     return true;
   }
 
-  return hasNestedTypeScript(root, 0, 4);
+  return hasNestedTypeScript(root, 0, 4, ignoredDirs);
 }
 
 async function hasNestedTypeScript(
   dir: string,
   depth: number,
   maxDepth: number,
+  ignoredDirs: Set<string>,
 ): Promise<boolean> {
   if (depth > maxDepth) {
     return false;
@@ -93,8 +95,8 @@ async function hasNestedTypeScript(
       continue;
     }
 
-    if (entry.isDirectory() && !IGNORED_DIRS.has(entry.name)) {
-      if (await hasNestedTypeScript(join(dir, entry.name), depth + 1, maxDepth)) {
+    if (entry.isDirectory() && !ignoredDirs.has(entry.name)) {
+      if (await hasNestedTypeScript(join(dir, entry.name), depth + 1, maxDepth, ignoredDirs)) {
         return true;
       }
     }

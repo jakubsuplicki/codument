@@ -523,3 +523,141 @@ describe("doctor discloses an unverified scope", () => {
     assert.deepStrictEqual(buildReport(repo), buildReport(repo));
   });
 });
+
+describe("doctor scores against the project's declared scope", () => {
+  let root: string;
+
+  // A documented source plus a build tree the project will declare. With nothing
+  // declared the build tree is denominator; declaring it must remove it from BOTH
+  // halves of the ratio, never just hide it from the display.
+  const scaffold = async (exclude?: unknown) => {
+    await mkdir(join(root, "docs", "features"), { recursive: true });
+    await mkdir(join(root, "app"), { recursive: true });
+    await mkdir(join(root, "out"), { recursive: true });
+    await writeFile(join(root, "app", "real.ts"), "export const a = 1;\n");
+    await writeFile(join(root, "out", "gen.js"), "exports.g = 1;\n");
+    await writeFile(join(root, "out", "gen2.js"), "exports.g = 2;\n");
+    await writeFile(
+      join(root, "docs", "features", "app.md"),
+      "---\ntitle: App\nstatus: current\ntype: feature\n---\n\n## In plain terms\n\nThe app.\n",
+    );
+    await writeFile(
+      join(root, "docs", ".registry.json"),
+      JSON.stringify({
+        features: {
+          app: {
+            doc: "docs/features/app.md",
+            type: "feature",
+            primary_sources: ["app/real.ts"],
+            related_sources: [],
+            docs: [],
+            depends_on: [],
+            risk: [],
+            status: "current",
+          },
+        },
+      }),
+    );
+    if (exclude !== undefined) {
+      await writeFile(
+        join(root, ".codument-meta.json"),
+        JSON.stringify({
+          version: "0.9.0",
+          initialized: "2026-07-21",
+          project: { srcDir: "." },
+          exclude,
+        }),
+        "utf-8",
+      );
+    }
+  };
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-doctor-exclude-"));
+    execFileSync("git", ["init", "-q"], { cwd: root });
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("counts an undeclared build tree against coverage (the bug)", async () => {
+    await scaffold();
+    const report = buildReport(root);
+    assert.equal(report.inScopeSourceCount, 3, "app/real.ts + 2 build artifacts");
+    const ownership = report.coverage.ratios.find((r) => r.id === "ownership");
+    assert.equal(ownership?.denominator, 3, "build output inflates the denominator");
+    assert.equal(ownership?.numerator, 1);
+  });
+
+  it("drops it from the denominator once the project declares it", async () => {
+    await scaffold({ dirs: ["out"] });
+    const report = buildReport(root);
+    assert.equal(report.inScopeSourceCount, 1, "only the real source remains");
+    const ownership = report.coverage.ratios.find((r) => r.id === "ownership");
+    assert.equal(ownership?.denominator, 1);
+    assert.equal(ownership?.numerator, 1);
+    assert.equal(ownership?.ratio, 1);
+  });
+
+  it("declaring nothing leaves the report identical to no config at all", async () => {
+    await scaffold();
+    const without = buildReport(root);
+    await writeFile(
+      join(root, ".codument-meta.json"),
+      JSON.stringify({
+        version: "0.9.0",
+        initialized: "2026-07-21",
+        project: { srcDir: "." },
+        exclude: {},
+      }),
+      "utf-8",
+    );
+    const withEmpty = buildReport(root);
+    assert.deepEqual(withEmpty.coverage, without.coverage);
+    assert.deepEqual(withEmpty.lint, without.lint);
+    assert.equal(withEmpty.inScopeSourceCount, without.inScopeSourceCount);
+  });
+
+  // The other half of the honesty contract: an unreadable declaration does not
+  // stop doctor (a score is not durable the way a registry entry is), but the
+  // number must never be published as if the scope were verified.
+  it("discloses that the declaration could not be read, in both surfaces", async () => {
+    await scaffold();
+    await writeFile(join(root, ".codument-meta.json"), "{ not json", "utf-8");
+
+    const report = buildReport(root);
+    assert.match(String(report.scope.declaredScope), /is unreadable/);
+    // The git half is independent and stays applied — two distinct signals.
+    assert.equal(report.scope.gitIgnore, "applied");
+
+    const out = execFileSync("node", [CLI, "doctor"], { cwd: root, encoding: "utf-8" });
+    assert.match(out, /wider than the project declared/);
+
+    const json = JSON.parse(
+      execFileSync("node", [CLI, "doctor", "--json"], { cwd: root, encoding: "utf-8" }),
+    );
+    assert.match(String(json.scope.declaredScope), /is unreadable/);
+  });
+
+  it("says nothing about the declaration when it read fine", async () => {
+    await scaffold({ dirs: ["out"] });
+    assert.equal(buildReport(root).scope.declaredScope, undefined);
+    const out = execFileSync("node", [CLI, "doctor"], { cwd: root, encoding: "utf-8" });
+    assert.doesNotMatch(out, /wider than the project declared/);
+  });
+
+  it("fails loud through the CLI rather than scoring on an invalid declaration", async () => {
+    await scaffold({ dirs: ["out/nested"] });
+    let stdout = "";
+    let code = 0;
+    try {
+      stdout = execFileSync("node", [CLI, "doctor"], { cwd: root, encoding: "utf-8" });
+    } catch (err) {
+      stdout = (err as { stdout: string }).stdout;
+      code = (err as { status: number }).status;
+    }
+    assert.equal(code, 1, "an invalid scope declaration must not produce a score");
+    assert.match(stdout, /invalid exclude\.dirs/);
+    assert.doesNotMatch(stdout, /Documentation coverage/);
+  });
+});

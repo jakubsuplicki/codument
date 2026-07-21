@@ -41,6 +41,10 @@ audit that could not run exits non-zero, because "could not look" must never rea
 
 ## Invariants & boundaries
 
+- The range is scoped by the same resolution the live gate uses — built-in exclusions widened by
+  the project's own declaration — so a historical verdict and a working-tree verdict cannot disagree
+  about which files were ever in scope. *(boundary — the resolution's contract lives in
+  [[registry-health]])*
 - Drift is resolved per symbol, exactly as the live gate resolves it: a moved symbol whose owning
   doc changed in the same range is not reported; the same move with the doc untouched is. *(tests:
   `history-audit.test.ts` "reports a moved symbol whose owning doc did not change in the range" /

@@ -6,9 +6,9 @@ import { readRegistry, writeRegistry } from "../lib/registry.js";
 import { atomicWriteFileSync } from "../lib/events.js";
 import { readJsonFileOrThrow } from "../lib/state-io.js";
 import {
-  DEFAULT_EXCLUSION_SPEC,
   discoverSourceFiles,
   makeIgnoredPredicate,
+  resolveScopeSync,
 } from "../lib/analyze.js";
 import { listIgnoredPaths } from "../lib/git.js";
 import { ensureDir } from "../lib/scaffold.js";
@@ -49,10 +49,26 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
   // it proposed build output the coverage analyzer would never have counted.
   // Two walkers is how they came to disagree; there is now one.
   const ignoredListing = listIgnoredPaths(root);
+  // A registry entry is durable, so scan is the one consumer that cannot degrade
+  // past an unreadable declaration: the writes below outlive the run, and a build
+  // tree swept into `primary_sources` because the declaration could not be read
+  // is a wrong answer with no expiry. Refuse before anything is written, rather
+  // than write first and discover the unreadable file on the telemetry pass.
+  const { spec: exclusion, unreadable } = resolveScopeSync(root);
+  if (unreadable) {
+    console.log(pc.red(`  ✗ ${unreadable}`));
+    console.log(
+      pc.dim(
+        "    scan writes durable registry entries, so it will not propose a scope it could not read. Repair or remove .codument-meta.json, then re-run.",
+      ),
+    );
+    process.exitCode = 1;
+    return;
+  }
   const sourceFiles = discoverSourceFiles(
     root,
     srcDir,
-    DEFAULT_EXCLUSION_SPEC,
+    exclusion,
     makeIgnoredPredicate(ignoredListing.ok ? ignoredListing.paths : []),
   );
   console.log(`  Found ${pc.cyan(String(sourceFiles.length))} source files`);
@@ -130,8 +146,10 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
   console.log();
   console.log(`  ${pc.green("✓")} Updated docs/.registry.json`);
 
-  // Track scan results in .codument-meta.json. Fail loud on a corrupt meta
-  // rather than dropping the fields it already carries.
+  // Track scan results in .codument-meta.json. Readable by construction: the
+  // scope resolution above refused the run if this file could not be parsed, so
+  // this read cannot be the first place a corrupt meta is discovered — which is
+  // what previously let the registry writes above land before the failure.
   const metaPath = join(root, ".codument-meta.json");
   const meta =
     readJsonFileOrThrow<Record<string, unknown>>(metaPath, "project metadata") ?? {};

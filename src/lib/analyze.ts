@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { readMeta, type ExcludeConfig } from "./codemod.js";
+import { readMetaSync, type ExcludeConfig } from "./codemod.js";
 import { adapterFor, isPreciseFile } from "./fingerprint.js";
 import { listIgnoredPaths } from "./git.js";
 import { analyzeProseAltitude } from "./prose-altitude.js";
@@ -10,6 +10,7 @@ import {
   type Registry,
   type RegistryEntry,
 } from "./registry.js";
+import { StateFileError } from "./state-io.js";
 import { TreeSitterError } from "./tree-sitter.js";
 import { MODULE_ANCHOR_NAME } from "./ts-adapter.js";
 
@@ -91,9 +92,9 @@ export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
  * (the extension list is the language matrix's truth, so config cannot make
  * codument claim support it does not have).
  *
- * Async because it rides `readMeta`; call it once at a command's entry point and
- * pass the result down. The pure helpers keep their default parameter, so
- * library callers and tests are unaffected.
+ * Call it once at a command's entry point and pass the result down; the pure
+ * helpers keep their default parameter, so library callers and tests that do not
+ * care about project config are unaffected.
  */
 export async function resolveExclusionSpec(root: string): Promise<ExclusionSpec> {
   return (await resolveScope(root)).spec;
@@ -105,10 +106,37 @@ export async function resolveExclusionSpec(root: string): Promise<ExclusionSpec>
  * declared (doctor prints the line and emits the JSON field in one run) would
  * otherwise parse and validate the same file twice.
  */
-export async function resolveScope(
-  root: string,
-): Promise<{ spec: ExclusionSpec; configured: ExcludeConfig | null }> {
-  const configured = (await readMeta(root))?.exclude;
+export interface ResolvedScope {
+  spec: ExclusionSpec;
+  /** The additions the project declared, or null when it declared none. */
+  configured: ExcludeConfig | null;
+  /** Set when the metadata could not be read at all, so a declaration may exist
+   *  and be missing from `spec`. Absent means the answer is complete. */
+  unreadable?: string;
+}
+
+export async function resolveScope(root: string): Promise<ResolvedScope> {
+  return resolveScopeSync(root);
+}
+
+/** The same resolution for callers that cannot await (the editor nudge hook). */
+export function resolveScopeSync(root: string): ResolvedScope {
+  let configured: ExcludeConfig | undefined;
+  let unreadable: string | undefined;
+  try {
+    configured = readMetaSync(root)?.exclude;
+  } catch (err) {
+    // Two different failures, two different answers. A file that PARSES but
+    // declares something invalid is the user having said a wrong thing: it
+    // propagates, because quietly scoring over the defaults would score over a
+    // scope they explicitly narrowed. A file that does not parse at all says
+    // nothing about whether a declaration exists, so it degrades to the defaults
+    // and reports that it could not tell — the same unknown-is-not-empty rule
+    // the git scope layer follows, and it keeps an advisory surface from
+    // crashing on a file it only needed to peek at.
+    if (!(err instanceof StateFileError)) throw err;
+    unreadable = `${err.path} is unreadable, so a declared scope could not be read`;
+  }
   const dirs = configured?.dirs ?? [];
   const globs = configured?.globs ?? [];
   // Every returned array is freshly built, never the default's own. Handing back
@@ -126,6 +154,7 @@ export async function resolveScope(
       extensions: [...DEFAULT_EXCLUSION_SPEC.extensions],
     },
     configured: dirs.length + globs.length > 0 ? { dirs, globs } : null,
+    ...(unreadable === undefined ? {} : { unreadable }),
   };
 }
 
@@ -333,6 +362,11 @@ export interface AnalyzeInput {
   /** Defaults to "src" when present, else ".". */
   srcDir?: string;
   exclusion?: ExclusionSpec;
+  /** Set by the caller when the project's declaration could not be read, so
+   *  `exclusion` may be narrower than the project asked for. Travels out on
+   *  `scope` rather than being inferred here — the resolution happens at the
+   *  entry point, and only the entry point knows whether it was complete. */
+  declaredScopeUnreadable?: string;
   /** Distinct-entry count at which a mapped file is flagged high-fanout. */
   highFanoutThreshold?: number;
   /** Doc-bloat thresholds; defaults to DEFAULT_BLOAT_THRESHOLDS. */
@@ -355,6 +389,11 @@ export interface ScopeConfidence {
   gitIgnore: "applied" | "unavailable";
   /** Why the ignore rules could not be determined; absent when applied. */
   reason?: string;
+  /** Set when the project's own declaration could not be read, so the scope may
+   *  be wider than the project asked for. The second way a scored scope can be
+   *  unverified, reported the same way as the first: never inferred as "nothing
+   *  was declared". */
+  declaredScope?: string;
 }
 
 export interface AnalysisResult {
@@ -416,6 +455,7 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     root,
     registry,
     exclusion = DEFAULT_EXCLUSION_SPEC,
+    declaredScopeUnreadable,
     highFanoutThreshold = 3,
     bloat = DEFAULT_BLOAT_THRESHOLDS,
   } = input;
@@ -482,9 +522,14 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     coverage,
     lint,
     inScopeSourceCount: inScopeFiles.length,
-    scope: ignoredListing.ok
-      ? { gitIgnore: "applied" }
-      : { gitIgnore: "unavailable", reason: ignoredListing.reason },
+    scope: {
+      ...(ignoredListing.ok
+        ? { gitIgnore: "applied" as const }
+        : { gitIgnore: "unavailable" as const, reason: ignoredListing.reason }),
+      ...(declaredScopeUnreadable === undefined
+        ? {}
+        : { declaredScope: declaredScopeUnreadable }),
+    },
   };
 }
 

@@ -28,6 +28,10 @@ export {
   isSourceFile,
   rollupScore,
   DEFAULT_EXCLUSION_SPEC,
+  resolveExclusionSpec,
+  resolveScope,
+  resolveScopeSync,
+  configuredExclusions,
   DEFAULT_BLOAT_THRESHOLDS,
 } from "./lib/analyze.js";
 export { renderCoverageBadge } from "./lib/badge.js";
@@ -201,6 +205,7 @@ export type {
   CoverageRatioId,
   CoverageReport,
   ExclusionSpec,
+  ResolvedScope,
   LintFinding,
   LintFindingId,
 } from "./lib/analyze.js";

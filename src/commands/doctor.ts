@@ -15,6 +15,8 @@ import {
   type CoverageRatio,
   type CoverageReport,
   type LintFinding,
+  resolveScopeSync,
+  type ResolvedScope,
   type ScopeConfidence,
 } from "../lib/analyze.js";
 import {
@@ -95,6 +97,8 @@ export function writeCoverageArtifacts(
 interface ReportOptions {
   bloat?: Partial<BloatThresholds>;
   highFanoutThreshold?: number;
+  /** A scope this caller already resolved, to keep one run to one read. */
+  scope?: ResolvedScope;
 }
 
 // Stable machine contract consumed by CI, the badge, and a future GUI.
@@ -143,10 +147,16 @@ export function buildReport(
   const registry = readRegistrySync(registryPath);
 
   const bloat: BloatThresholds = { ...DEFAULT_BLOAT_THRESHOLDS, ...opts.bloat };
+  // Resolved here by default; a caller that already resolved (watch's per-tick
+  // refresh, which also builds a review) passes its result in so one run reads
+  // the declaration once.
+  const declaredScope = opts.scope ?? resolveScopeSync(root);
   const result = analyze({
     root,
     registry,
     bloat,
+    exclusion: declaredScope.spec,
+    declaredScopeUnreadable: declaredScope.unreadable,
     highFanoutThreshold: opts.highFanoutThreshold,
   });
   const all = registryExists
@@ -313,6 +323,17 @@ function printHuman(report: DoctorReport, strictFail = false): void {
     console.log(
       pc.cyan(
         `  note: ${report.scope.reason} — .gitignore rules were not applied, so this scope may include build output`,
+      ),
+    );
+  }
+  // The second way a scope can be unverified: the project may have declared
+  // exclusions this run could not read. Same disclosure, same reason — a widened
+  // scope inflates both halves of the ratio, so the number reads better than the
+  // truth exactly when it is least earned.
+  if (report.scope.declaredScope) {
+    console.log(
+      pc.cyan(
+        `  note: ${report.scope.declaredScope}, so this scope may be wider than the project declared`,
       ),
     );
   }

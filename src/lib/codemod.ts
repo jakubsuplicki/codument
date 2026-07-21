@@ -1,9 +1,7 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { atomicWriteFileSync } from "./events.js";
-import { ConfigValueError, StateFileError } from "./state-io.js";
+import { ConfigValueError, readJsonFileOrThrow } from "./state-io.js";
 
 export interface FileHash {
   path: string;
@@ -121,16 +119,20 @@ export function hashContent(content: string): string {
 }
 
 export async function readMeta(root: string): Promise<MetaFile | null> {
+  return readMetaSync(root);
+}
+
+/**
+ * The same read for callers that cannot await — the editor nudge hook runs as a
+ * synchronous script. One implementation, so a validation rule can never apply
+ * on one path and not the other.
+ */
+export function readMetaSync(root: string): MetaFile | null {
   const metaPath = join(root, ".codument-meta.json");
-  if (!existsSync(metaPath)) return null;
-  let parsed: MetaFile;
-  try {
-    parsed = JSON.parse(await readFile(metaPath, "utf-8"));
-  } catch (err) {
-    // Fail loud: a corrupt meta must not read as "absent" and let a re-init,
-    // adopt, or update overwrite the fileHashes/charter it carries.
-    throw new StateFileError(metaPath, "project metadata", err);
-  }
+  // Fail loud: a corrupt meta must not read as "absent" and let a re-init,
+  // adopt, or update overwrite the fileHashes/charter it carries.
+  const parsed = readJsonFileOrThrow<MetaFile>(metaPath, "project metadata");
+  if (parsed === undefined) return null;
   // Validated on read, not at the point of use, so a malformed exclusion is
   // rejected by whichever command the user runs next rather than only by the
   // ones that happen to consult the spec.

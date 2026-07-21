@@ -463,3 +463,97 @@ describe("scan discovery honors gitignore, exactly as the analyzer does", () => 
     assert.doesNotMatch(lines.join("\n"), /gitignore rules were not applied/i);
   });
 });
+
+describe("scan honors the project's own declared exclusions", () => {
+  // The field case: build output that git TRACKS (or a repo with no git at all),
+  // so gitignore cannot help. The project declares it; every consumer must agree.
+  const scaffold = async (root: string, exclude?: unknown) => {
+    await mkdir(join(root, "app"), { recursive: true });
+    await mkdir(join(root, "out"), { recursive: true });
+    await mkdir(join(root, "public-preprod"), { recursive: true });
+    await writeFile(join(root, "app", "real.ts"), "export const a = 1;\n");
+    await writeFile(join(root, "out", "gen.js"), "exports.g = 1;\n");
+    await writeFile(join(root, "public-preprod", "app.js"), "exports.p = 1;\n");
+    if (exclude !== undefined) {
+      await writeFile(
+        join(root, ".codument-meta.json"),
+        JSON.stringify({
+          version: "0.9.0",
+          initialized: "2026-07-21",
+          project: { srcDir: "." },
+          exclude,
+        }),
+        "utf-8",
+      );
+    }
+  };
+
+  const registrySources = async (root: string): Promise<string[]> => {
+    const registry = await readRegistry(join(root, "docs", ".registry.json"));
+    return Object.values(registry.features).flatMap((e) => [
+      ...e.primary_sources,
+      ...e.related_sources,
+    ]);
+  };
+
+  it("sweeps a declared build tree in when nothing is declared (the bug)", async () => {
+    await scaffold(tmp);
+    await scan({ root: tmp });
+    const sources = await registrySources(tmp);
+    assert.ok(sources.includes("out/gen.js"), "precondition: undeclared output IS swept in");
+    assert.ok(sources.includes("public-preprod/app.js"));
+  });
+
+  it("proposes neither once the project declares them", async () => {
+    await scaffold(tmp, { dirs: ["out", "public-preprod"] });
+    await scan({ root: tmp });
+    const sources = await registrySources(tmp);
+    assert.ok(sources.includes("app/real.ts"), "real source is still proposed");
+    assert.ok(!sources.some((s) => s.startsWith("out/")), `swept in: ${sources.join(", ")}`);
+    assert.ok(!sources.some((s) => s.startsWith("public-preprod/")));
+  });
+
+  it("honors a declared glob as well as a declared dir", async () => {
+    await scaffold(tmp, { globs: ["**/*.gen.ts"] });
+    await writeFile(join(tmp, "app", "api.gen.ts"), "export const g = 1;\n");
+    await scan({ root: tmp });
+    const sources = await registrySources(tmp);
+    assert.ok(sources.includes("app/real.ts"));
+    assert.ok(!sources.includes("app/api.gen.ts"));
+  });
+
+  // The failure this pins: scan used to resolve scope, degrade past an
+  // unreadable declaration, WRITE the registry, and only then hit an unrelated
+  // second read of the same file and exit 1 — leaving durable build-output
+  // entries behind a trailing error a truncated CI log would never show.
+  it("writes nothing when the declaration cannot be read", async () => {
+    await scaffold(tmp);
+    await writeFile(join(tmp, ".codument-meta.json"), "{ not json", "utf-8");
+
+    await scan({ root: tmp });
+
+    assert.equal(process.exitCode, 1, "the run must fail");
+    process.exitCode = 0;
+    assert.ok(
+      !existsSync(join(tmp, "docs", ".registry.json")),
+      "no registry may be written from a scope that could not be read",
+    );
+    assert.ok(!existsSync(join(tmp, "docs", "features")), "no doc scaffolds either");
+  });
+
+  it("declaring nothing leaves discovery byte-identical to no config at all", async () => {
+    await scaffold(tmp);
+    await scan({ root: tmp });
+    const without = (await registrySources(tmp)).sort();
+
+    const other = await mkdtemp(join(tmpdir(), "codument-scan-empty-"));
+    try {
+      await scaffold(other, {});
+      await scan({ root: other });
+      const withEmpty = (await registrySources(other)).sort();
+      assert.deepEqual(withEmpty, without);
+    } finally {
+      await rm(other, { recursive: true, force: true });
+    }
+  });
+});

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import pc from "picocolors";
 import { ackCovers, isFileGrainAck, normalizeIdentity, readAcks } from "../lib/acknowledgment.js";
-import { DEFAULT_EXCLUSION_SPEC, isExcluded } from "../lib/analyze.js";
+import { isExcluded, resolveScopeSync, type ExclusionSpec } from "../lib/analyze.js";
 import {
   type ApprovedPlan,
   type ChangeState,
@@ -213,9 +213,15 @@ export function buildReview(
   changedFiles?: string[],
   baseRef = "HEAD",
   deletedFiles?: string[],
-  opts: { requireIndependentAck?: boolean } = {},
+  opts: { requireIndependentAck?: boolean; exclusion?: ExclusionSpec } = {},
 ): ReviewReport {
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+  // The project's own exclusions. Resolved here by default rather than required
+  // from every caller, because a caller who forgot to pass the spec would
+  // silently fall back to the defaults — the exact divergence this config exists
+  // to end. A caller that already resolved (the `review` command, `watch`'s
+  // per-tick refresh) passes its result in so one run reads the file once.
+  const exclusion = opts.exclusion ?? resolveScopeSync(root).spec;
   // Callers that already computed the working-tree changes (e.g. `watch`, which
   // also needs them for its activity tape) can pass them in to avoid a second
   // `git status` tree scan per refresh; default to computing them here.
@@ -246,7 +252,7 @@ export function buildReview(
   // never the reviewed change, and both leak untracked into the change set, so they must
   // not read as "dirty". Pure: `git status` and `git log` are repo state, no ambient identity.
   const inScopeSource = [...new Set([...changes, ...deletions])].filter(
-    (f) => !f.startsWith(".codument/") && !isExcluded(f, DEFAULT_EXCLUSION_SPEC),
+    (f) => !f.startsWith(".codument/") && !isExcluded(f, exclusion),
   );
   const uncommitted = new Set([...getWorkingTreeChanges(root), ...getWorkingTreeDeletions(root)]);
   const uncommittedInScope = inScopeSource.some((f) => uncommitted.has(f));
@@ -282,6 +288,7 @@ export function buildReview(
   const state = computeChangeState({
     registry,
     changedFiles: changes,
+    exclusion,
     planScope: plan?.scope,
     anchorChanges: filtered,
     // The ORIGINAL (pre-ack-filter) movement set: concept umbrellas wake off
@@ -364,6 +371,9 @@ export function buildReview(
 
 export async function review(options: ReviewOptions = {}): Promise<void> {
   const root = options.root ?? process.cwd();
+  // The same resolution buildReview performs, for the gate paths that scope a
+  // real-change set outside the report itself.
+  const { spec: exclusion } = resolveScopeSync(root);
 
   // Output-format guard: SARIF is the only non-default format, and it cannot combine
   // with --json (two machine shapes, one stdout). A usage error is human text + exit 1,
@@ -435,7 +445,10 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // The gate path below is synchronous; adapters that parse through a WASM
     // grammar load it here or fail loud when reached cold.
     await warmAdaptersForRepo(root);
-    const reviewOpts = { requireIndependentAck: options.requireIndependentAck === true };
+    const reviewOpts = {
+      requireIndependentAck: options.requireIndependentAck === true,
+      exclusion,
+    };
     if (options.base) {
       // Diff the working tree against the merge-base with `options.base` (the
       // branch's drift since it diverged). Resolve that base once so anchors and
@@ -534,7 +547,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       process.exitCode = 1;
       return;
     }
-    const { set: realChangeSet } = computeRealChange(report, report.deletions);
+    const { set: realChangeSet } = computeRealChange(report, report.deletions, exclusion);
     const resolveTest = (ref: string) => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS);
     const fp = gatherReviewFingerprint(
       root,
@@ -633,7 +646,11 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       confirmUnavailable =
         'confirm step could not run: no local tsx (the default runner resolves local-only, never the network) — pass --test-command "<your runner> {file}"';
     }
-    const { set: realChangeSet, realDeletions } = computeRealChange(report, report.deletions);
+    const { set: realChangeSet, realDeletions } = computeRealChange(
+      report,
+      report.deletions,
+      exclusion,
+    );
     // A covering review binds both the reviewed sources AND the tests its findings
     // name; resolveTest locates a finding's test exactly as the runner does, so a
     // tampered or deleted test moves the fingerprint and reopens the gate.
@@ -746,10 +763,11 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
 function computeRealChange(
   report: ReviewReport,
   deletions: string[],
+  exclusion: ExclusionSpec,
 ): { set: string[]; realDeletions: string[] } {
   const isDocPath = (p: string) => p.startsWith("docs/") && p.endsWith(".md");
   const realDeletions = deletions.filter(
-    (d) => !isDocPath(d) && !isExcluded(d, DEFAULT_EXCLUSION_SPEC),
+    (d) => !isDocPath(d) && !isExcluded(d, exclusion),
   );
   const set = [
     ...new Set([...report.state.changedSources, ...report.state.otherChanged, ...realDeletions]),

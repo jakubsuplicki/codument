@@ -16,6 +16,7 @@ import {
   type AnchorChangeKind,
 } from "./fingerprint.js";
 
+import { resolveScopeSync } from "./analyze.js";
 import { computeChangeState, type OwnershipLint } from "./change-state.js";
 import {
   parseRegistryOrThrow,
@@ -231,6 +232,7 @@ export function auditRange(root: string, base: string, head: string): HistoryAud
   const state = computeChangeState({
     registry,
     changedFiles,
+    exclusion: resolveScopeSync(root).spec,
     anchorChanges,
     // No acks are resolved for a historical range (see the module note), so the
     // pre-filter movement set the concept umbrellas wake off is just "every

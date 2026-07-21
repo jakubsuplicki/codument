@@ -1679,3 +1679,65 @@ describe("jvm controller arc", () => {
     execFileSync("node", [CLI, "review", "--strict"], { cwd: tmp, encoding: "utf-8", env });
   });
 });
+
+describe("review scopes the gate to the project's declared exclusions", () => {
+  it("stops treating a declared build tree as an unmapped source change", async () => {
+    await scaffold({
+      "out/bundle.js": "exports.b = 1;\n",
+      "out/vendor.js": "exports.v = 2;\n",
+    });
+
+    // Precondition: undeclared, the build output lands in the gate's change set
+    // as unmapped source — noise a scan would then propose into the registry.
+    const before = buildReview(tmp);
+    assert.ok(
+      before.state.unmapped.some((f) => f.startsWith("out/")),
+      `expected out/ in unmapped: ${before.state.unmapped.join(", ")}`,
+    );
+
+    await scaffold({
+      ".codument-meta.json": JSON.stringify({
+        version: "0.9.0",
+        initialized: "2026-07-21",
+        project: { srcDir: "src" },
+        exclude: { dirs: ["out"] },
+      }),
+    });
+
+    const after = buildReview(tmp);
+    assert.ok(
+      !after.state.unmapped.some((f) => f.startsWith("out/")),
+      `still flagged: ${after.state.unmapped.join(", ")}`,
+    );
+  });
+
+  it("still flags a real unmapped source when a declaration exists", async () => {
+    await scaffold({
+      "src/lib/cache.ts": "export const cache = {};\n",
+      ".codument-meta.json": JSON.stringify({
+        version: "0.9.0",
+        initialized: "2026-07-21",
+        project: { srcDir: "src" },
+        exclude: { dirs: ["out"] },
+      }),
+    });
+    const report = buildReview(tmp);
+    assert.ok(report.state.unmapped.includes("src/lib/cache.ts"));
+  });
+
+  it("declaring nothing leaves the verdict identical to no config at all", async () => {
+    await scaffold({ "src/auth/login.ts": "export const login = () => true;\n" });
+    const without = buildReview(tmp);
+    await scaffold({
+      ".codument-meta.json": JSON.stringify({
+        version: "0.9.0",
+        initialized: "2026-07-21",
+        project: { srcDir: "src" },
+        exclude: {},
+      }),
+    });
+    const withEmpty = buildReview(tmp);
+    assert.deepEqual(withEmpty.state.staleDocs, without.state.staleDocs);
+    assert.deepEqual(withEmpty.state.changedSources, without.state.changedSources);
+  });
+});

@@ -14,6 +14,7 @@ import {
   isSourceFile,
   rollupScore,
   resolveExclusionSpec,
+  resolveScopeSync,
   configuredExclusions,
   DEFAULT_EXCLUSION_SPEC,
   type CoverageRatio,
@@ -945,6 +946,31 @@ describe("resolveExclusionSpec widens the defaults, never narrows them", () => {
   it("propagates the validation error rather than falling back to defaults", async () => {
     await writeMetaWith({ dirs: ["build/out"] });
     await assert.rejects(() => resolveExclusionSpec(root), /is a path/);
+  });
+
+  // Two failures, two answers. A file that PARSES but declares something wrong is
+  // the user having said a wrong thing — it must not be scored past. A file that
+  // does not parse says nothing about whether a declaration exists, so degrading
+  // is honest as long as it is reported: unknown is not empty.
+  it("degrades and reports when the metadata cannot be read at all", async () => {
+    await writeFile(join(root, ".codument-meta.json"), "{ not json", "utf-8");
+    const scope = resolveScopeSync(root);
+    assert.deepEqual(scope.spec.dirs, DEFAULT_EXCLUSION_SPEC.dirs);
+    assert.equal(scope.configured, null);
+    assert.match(String(scope.unreadable), /is unreadable/);
+    assert.match(String(scope.unreadable), /declared scope could not be read/);
+  });
+
+  it("says nothing about readability when the metadata is fine", async () => {
+    await writeMetaWith({ dirs: ["out"] });
+    assert.equal(resolveScopeSync(root).unreadable, undefined);
+    await writeMetaWith(undefined);
+    assert.equal(resolveScopeSync(root).unreadable, undefined);
+  });
+
+  it("refuses rather than degrades when a declaration itself is invalid", async () => {
+    await writeMetaWith({ dirs: ["build/out"] });
+    assert.throws(() => resolveScopeSync(root), /is a path/);
   });
 
   it("reports the configured additions, and null when there are none", async () => {
