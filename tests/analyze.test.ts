@@ -148,10 +148,12 @@ describe("gitignore-aware scope (temp repo)", () => {
       assert.ok(raw.includes("vendored/sdk.ts"));
 
       // listIgnoredPaths collapses the wholly-ignored dirs to single entries.
-      assert.deepStrictEqual(listIgnoredPaths(tmp), ["lib", "vendored"]);
+      const listing = listIgnoredPaths(tmp);
+      assert.equal(listing.ok, true);
+      assert.deepStrictEqual(listing.ok && listing.paths, ["lib", "vendored"]);
 
       // Git-aware discovery drops them, leaving only hand-written source.
-      const ignored = makeIgnoredPredicate(listIgnoredPaths(tmp));
+      const ignored = makeIgnoredPredicate(listing.ok ? listing.paths : []);
       const scoped = discoverSourceFiles(tmp, ".", DEFAULT_EXCLUSION_SPEC, ignored);
       assert.deepStrictEqual(scoped, ["src/app.ts"]);
 

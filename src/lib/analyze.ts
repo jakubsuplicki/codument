@@ -356,9 +356,17 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
   );
 
   // Git-ignored trees (generated/build/vendored output) are never hand-maintained
-  // source, so they must not inflate the coverage denominator. Non-git roots get a
-  // no-op predicate and fall back to the static exclusion spec alone.
-  const isIgnored = makeIgnoredPredicate(listIgnoredPaths(root));
+  // source, so they must not inflate the coverage denominator. When git cannot
+  // determine the ignore set at all, the denominator falls back to the static
+  // exclusion spec alone — a strictly wider scope that may count build output as
+  // undocumented source. The fallback is now a deliberate choice made here rather
+  // than an empty list arriving indistinguishable from "nothing is ignored"; it is
+  // not yet disclosed on any surface, which is what makes the reported coverage
+  // number still overconfident under a non-repo root.
+  const ignoredListing = listIgnoredPaths(root);
+  const isIgnored = makeIgnoredPredicate(
+    ignoredListing.ok ? ignoredListing.paths : [],
+  );
   const inScopeFiles = discoverSourceFiles(root, srcDir, exclusion, isIgnored);
 
   // Map every source path to the entries that claim it (for ownership + fanout).

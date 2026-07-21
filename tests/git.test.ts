@@ -6,7 +6,13 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { assertRootIsRepoToplevel, getWorkingTreeChanges } from "../src/lib/git.js";
+import {
+  assertRootIsRepoToplevel,
+  getWorkingTreeChanges,
+  listIgnoredPaths,
+  listTrackedFiles,
+  NOT_A_REPO,
+} from "../src/lib/git.js";
 import { GateError } from "../src/lib/two-ref.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -84,6 +90,49 @@ describe("git change-listing fails closed", () => {
     assert.equal(status, 1, "fails closed");
     assert.match(stdout, /gate could not run/);
     assert.doesNotMatch(stdout, /Working tree clean/);
+  });
+});
+
+describe("path listings distinguish 'could not determine' from 'determined: none'", () => {
+  // The conflation this pins out of existence: before typing these results, a
+  // non-repo root and a repo that genuinely ignores nothing both answered `[]`.
+  // The first produced a coverage denominator full of build output reported as
+  // 100% covered; the second is a correct empty answer. They are now different
+  // values, and no caller can read one as the other by accident.
+
+  it("listIgnoredPaths reports ok:false with a reason outside a repo", () => {
+    const listing = listIgnoredPaths(tmp);
+    assert.equal(listing.ok, false);
+    assert.equal(listing.ok === false && listing.reason, NOT_A_REPO);
+  });
+
+  it("listTrackedFiles reports ok:false with a reason outside a repo", () => {
+    const listing = listTrackedFiles(tmp);
+    assert.equal(listing.ok, false);
+    assert.equal(listing.ok === false && listing.reason, NOT_A_REPO);
+  });
+
+  it("a repo that ignores nothing reports ok:true with an empty list", () => {
+    // The other side of the distinction: an empty answer is still an ANSWER.
+    execFileSync("git", ["init"], { cwd: tmp, stdio: "ignore" });
+    const listing = listIgnoredPaths(tmp);
+    assert.equal(listing.ok, true);
+    assert.deepStrictEqual(listing.ok && listing.paths, []);
+  });
+
+  it("both listings report ok:false naming the git failure when git is broken", () => {
+    // isGitRepo passes (the fake answers --is-inside-work-tree) but the listing
+    // subcommand fails: an unreadable repo must not read as a clean empty scope.
+    const orig = process.env.PATH;
+    process.env.PATH = `${fakeBin}:${orig ?? ""}`;
+    try {
+      for (const listing of [listIgnoredPaths(tmp), listTrackedFiles(tmp)]) {
+        assert.equal(listing.ok, false);
+        assert.match(listing.ok === false ? listing.reason : "", /^git failed: /);
+      }
+    } finally {
+      process.env.PATH = orig;
+    }
   });
 });
 

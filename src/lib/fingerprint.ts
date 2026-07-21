@@ -203,14 +203,16 @@ export async function warmAdaptersForPaths(paths: Iterable<string>): Promise<voi
 /** Warm the adapters a repo's content plausibly needs: tracked files plus
  *  working-tree changes (so a just-added, untracked file counts). Cheap for a
  *  repo that needs nothing — one `git ls-files` and no WASM. The listing is
- *  ADVISORY: a broken git read here degrades to "nothing extra to warm" so the
- *  warm never opens a failure channel ahead of the verdict path's own guarded
- *  GateError (which the same broken git raises moments later, in the right
- *  place); a genuinely needed-but-cold adapter still fails loud downstream. */
+ *  ADVISORY: an undeterminable or broken git read here degrades to "nothing
+ *  extra to warm" so the warm never opens a failure channel ahead of the verdict
+ *  path's own guarded GateError (which the same broken git raises moments later,
+ *  in the right place); a genuinely needed-but-cold adapter still fails loud
+ *  downstream. */
 export async function warmAdaptersForRepo(root: string): Promise<void> {
   let paths: string[];
   try {
-    paths = [...listTrackedFiles(root), ...getWorkingTreeChanges(root)];
+    const tracked = listTrackedFiles(root);
+    paths = [...(tracked.ok ? tracked.paths : []), ...getWorkingTreeChanges(root)];
   } catch {
     return;
   }

@@ -187,16 +187,34 @@ function sortPaths(paths: Iterable<string>): string[] {
 }
 
 /**
+ * The result of asking git to enumerate a set of paths.
+ *
+ * `ok: false` means "could not determine", which is NOT the same answer as an
+ * empty `paths` list ("determined; there are none"). Collapsing the two is how a
+ * non-repo root silently became "nothing is ignored" and published a coverage
+ * denominator full of build output — the conflation ADR-003 forbids by name
+ * ("'the gate could not run' is distinguishable from 'the gate ran and passed'").
+ * Callers that legitimately degrade must do so explicitly, at their own seam.
+ */
+export type GitPathListing =
+  | { ok: true; paths: string[] }
+  | { ok: false; reason: string };
+
+/** The reason string for a root git cannot read as a repository. */
+export const NOT_A_REPO = "not a git repository";
+
+/**
  * Paths git ignores, repo-relative and POSIX. Wholly-ignored directories are
  * collapsed to a single entry (e.g. `node_modules`, `.nuxt`) via `--directory`
  * instead of listing every file, so this stays cheap even on large trees.
- * Returns an empty array when `git` is unavailable or the directory is not a repo.
  *
  * Used to keep generated/build/vendored files (which are gitignored by
  * convention and never hand-maintained) out of the documentation-coverage scope.
+ * A non-repo root or a broken `git` yields `ok: false` — the caller decides what
+ * an undeterminable ignore set means for its own surface.
  */
-export function listIgnoredPaths(root: string): string[] {
-  if (!isGitRepo(root)) return [];
+export function listIgnoredPaths(root: string): GitPathListing {
+  if (!isGitRepo(root)) return { ok: false, reason: NOT_A_REPO };
   let out: string;
   try {
     out = git(root, [
@@ -207,8 +225,8 @@ export function listIgnoredPaths(root: string): string[] {
       "--directory",
       "-z",
     ]);
-  } catch {
-    return [];
+  } catch (err) {
+    return { ok: false, reason: `git failed: ${(err as Error).message}` };
   }
   const paths = new Set<string>();
   for (const entry of out.split("\0")) {
@@ -216,24 +234,29 @@ export function listIgnoredPaths(root: string): string[] {
     // `--directory` appends a trailing slash to collapsed dirs; normalise it off.
     paths.add(entry.replace(/\/$/, ""));
   }
-  return sortPaths(paths);
+  return { ok: true, paths: sortPaths(paths) };
 }
 
 /**
  * Every tracked path at HEAD, repo-relative and POSIX. The adapter warm-up's
  * cheap "does this repo plausibly contain language X" probe — read-only, no
- * verdict input. Empty outside a repo or on a broken read (the warm decision
- * degrades to "nothing extra to warm"; the gate path itself stays fail-loud —
- * a cold adapter raises rather than coarsens).
+ * verdict input. `ok: false` outside a repo or on a broken read; the warm caller
+ * unions this with the registry's own sources precisely because git's view is
+ * not authoritative over what the analyzers will parse (a nested member repo's
+ * files, and untracked-but-mapped files, are invisible here). The gate path
+ * itself stays fail-loud — a cold adapter raises rather than coarsens.
  */
-export function listTrackedFiles(root: string): string[] {
-  if (!isGitRepo(root)) return [];
+export function listTrackedFiles(root: string): GitPathListing {
+  if (!isGitRepo(root)) return { ok: false, reason: NOT_A_REPO };
   try {
-    return git(root, ["ls-files", "-z"])
-      .split("\0")
-      .filter((p) => p.length > 0);
-  } catch {
-    return [];
+    return {
+      ok: true,
+      paths: git(root, ["ls-files", "-z"])
+        .split("\0")
+        .filter((p) => p.length > 0),
+    };
+  } catch (err) {
+    return { ok: false, reason: `git failed: ${(err as Error).message}` };
   }
 }
 
