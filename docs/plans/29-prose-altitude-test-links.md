@@ -18,6 +18,12 @@ against source:
 4. Net effect, observed in the field: a doc linking all five of its invariant-enforcing tests is
    flagged, while a doc linking none would score clean — the note inverts the exact incentive the
    standard exists to create.
+5. **The sharpest evidence, from a second field pass: the finding count went 1 → 3 across a single
+   documentation-improvement pass, and every newly-flagged path was a test file.** The count did not
+   rise because the docs got worse. It rose because they got better — invariants gained the test
+   links the standard demands. A metric that climbs as a project complies with the standard is not
+   a weak heuristic, it is a backwards one, and it will train agents and humans alike to strip test
+   links to quiet `doctor`.
 
 ## Why
 

@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 26: honest scope resolution — typed unknown, complete warm, one discovery path

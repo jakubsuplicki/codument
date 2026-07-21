@@ -97,10 +97,15 @@ not a missing warm call) plus one worse defect the report missed: a **false gree
 
 | Plan | Theme | Fixes |
 | --- | --- | --- |
-| [26](26-honest-scope-resolution.md) | Honest scope: typed unknown, complete warm, one discovery path | doctor crash (root cause); scan's gitignore blindness; unknown-read-as-empty false 100%; generated-leakage lint net |
+| [26](26-honest-scope-resolution.md) ✅ **shipped** | Honest scope: typed unknown, complete warm, one discovery path | doctor crash (root cause); scan's gitignore blindness; unknown-read-as-empty false 100%; generated-leakage lint net |
 | [27](27-configurable-exclusions.md) | `exclude` block in `.codument-meta.json` | no escape hatch for `out/`, `public-preprod/`; adopt deleting hand-added meta keys; README's phantom affordance |
 | [28](28-nested-repo-workspace.md) | Nested-repo workspaces: aggregate git truth across members | the gate false-green (worst defect); nested `.gitignore` aggregation; submodule blindness; workspace-honest refusals |
 | [29](29-prose-altitude-test-links.md) | Prose-altitude calibration | `path-enumeration` penalizing the standard's required invariant→test links; per-mention over-counting |
 
 Run 26 → 27 → 28 (26's typed seam and unified discovery are load-bearing for both; 27 is where the
 user-facing workaround lands; 28 is the deep topology fix). 29 is independent — run it anytime.
+
+**26 shipped 2026-07-21** (`8994eb3`, `7477465`, `44b6ba7`, `48e8d95`, `13cc2ce`): the doctor crash
+and the false-coverage inversion are both closed, and `scan` honors `.gitignore` in every repo. The
+field monorepo still needs 27 (to declare `out/` and `public-preprod/`) and 28 (to see into the
+member repos at all) — 26 makes those gaps loud rather than silent.
