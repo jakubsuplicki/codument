@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 23: JVM adapter — Java + Kotlin, where enterprise agent adoption actually is
