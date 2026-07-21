@@ -161,3 +161,67 @@ describe("adopt command", () => {
     assert.ok(!existsSync(join(tmp, ".agents")));
   });
 });
+
+describe("adopt carries the project's own metadata forward", () => {
+  // adopt used to rebuild the file from a literal, so anything not on its
+  // keep-list vanished with no message. A hand-authored exclusion survived
+  // exactly until the next `codument adopt` — which is why "just edit the file"
+  // was never a workable answer to an unguessable build directory.
+  const writeExisting = async (extra: Record<string, unknown>): Promise<void> => {
+    await writeFile(
+      join(tmp, ".codument-meta.json"),
+      JSON.stringify({
+        version: "0.8.0",
+        initialized: "2026-04-20",
+        agents: ["claude"],
+        project: { language: "typescript", srcDir: "src" },
+        ...extra,
+      }),
+      "utf-8",
+    );
+  };
+
+  const readMetaFile = async (): Promise<Record<string, unknown>> =>
+    JSON.parse(await readFile(join(tmp, ".codument-meta.json"), "utf-8"));
+
+  it("round-trips a declared exclusion block", async () => {
+    await writeExisting({ exclude: { dirs: ["out"], globs: ["**/*.gen.ts"] } });
+    runAdopt("--agents", "claude");
+    assert.deepEqual((await readMetaFile()).exclude, {
+      dirs: ["out"],
+      globs: ["**/*.gen.ts"],
+    });
+  });
+
+  // The root fix, not the symptom: the next key added to the metadata must
+  // survive adopt without anyone remembering to extend a keep-list.
+  it("round-trips a key it has never heard of", async () => {
+    await writeExisting({ somethingFuture: { nested: [1, 2, 3] } });
+    runAdopt("--agents", "claude");
+    assert.deepEqual((await readMetaFile()).somethingFuture, { nested: [1, 2, 3] });
+  });
+
+  it("still overwrites the keys adopt owns", async () => {
+    const pkgVersion = JSON.parse(
+      await readFile(join(__dirname, "..", "package.json"), "utf-8"),
+    ).version;
+    await writeExisting({ exclude: { dirs: ["out"] } });
+    runAdopt("--agents", "claude");
+    const meta = await readMetaFile();
+    assert.equal(meta.version, pkgVersion, "version is adopt's to set");
+    assert.equal(meta.initialized, "2026-04-20", "the original date is preserved");
+    assert.deepEqual(meta.agents, ["claude"]);
+  });
+
+  it("preserves the same keys through `update`", async () => {
+    await writeExisting({ exclude: { dirs: ["out"] }, somethingFuture: 42 });
+    execFileSync("node", [CLI, "update", "--agents", "claude"], {
+      cwd: tmp,
+      encoding: "utf-8",
+      timeout: 10000,
+    });
+    const meta = await readMetaFile();
+    assert.deepEqual(meta.exclude, { dirs: ["out"] });
+    assert.equal(meta.somethingFuture, 42);
+  });
+});

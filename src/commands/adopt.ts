@@ -60,14 +60,18 @@ export async function adopt(options: AdoptOptions): Promise<void> {
   printRegistryResult(registryResult, dryRun);
 
   const today = new Date().toISOString().split("T")[0];
+  // Carry the existing file forward and overwrite only the keys adopt owns.
+  // The inverse — rebuilding from a literal and re-listing what to keep — is a
+  // whitelist that silently deletes anything not on it, which made a
+  // hand-authored setting disappear on the next adopt with no message. Keeping
+  // the spread first means the NEXT key added to the metadata survives adopt
+  // without anyone remembering to add it here.
   const meta: MetaFile = {
+    ...existingMeta,
     version: pkgVersion,
     initialized: existingMeta?.initialized ?? today,
     agents: agentIds,
     project: { ...project },
-    lastScan: existingMeta?.lastScan,
-    fileHashes: existingMeta?.fileHashes,
-    charter: existingMeta?.charter,
   };
 
   if (!dryRun) {

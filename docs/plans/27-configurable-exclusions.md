@@ -104,7 +104,7 @@ and unknown-scope note are where this config gets discovered and consumed).
       scan/detect/check-docs); e2e: with `exclude.dirs: ["out"]`, `scan` no longer proposes
       `out/**`, `doctor` drops it from the denominator, `review` drops it from other-changed noise,
       the check-docs hook stops firing on it; goldens for a repo with no config are byte-identical.
-- [ ] Step 3: adopt preservation — carry-forward rebuild + round-trip test (exclude block and an
+- [x] Step 3: adopt preservation — carry-forward rebuild + round-trip test (exclude block and an
       unknown key both survive `codument adopt`); `update` preservation pinned by test (already
       safe, now guaranteed).
 - [ ] Step 4: visibility + docs — doctor line + additive `--json` field, scan summary, the Plan 26
