@@ -1,7 +1,13 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import ts from "typescript";
+import { GateError, type GateErrorKind } from "./gate-error.js";
+import { resolveWorkspace, repoFor } from "./git.js";
 import { type GrammarManifestEntry, grammarManifest } from "./tree-sitter.js";
+
+// Re-exported so every existing importer keeps its import path; the type now
+// lives in a leaf module both this and the git seam can depend on.
+export { GateError, type GateErrorKind };
 
 // Two-ref determinism plumbing for the freshness gate. Everything here is a pure
 // function of repo state at two refs — no wall clock enters any result. This
@@ -73,26 +79,6 @@ export function byteNormalize(content: string): string {
   return s.replace(/\r\n?/g, "\n");
 }
 
-export type GateErrorKind =
-  | "bad-ref"
-  | "unreachable-base"
-  | "ambiguous-base"
-  | "git-failed"
-  | "wrong-root";
-
-// A gate-level failure that must fail CLOSED (red, blocking) — the gate could not
-// run, which is distinct from "ran and passed." Branch protection requires the
-// latter, so this is never swallowed into a green verdict.
-export class GateError extends Error {
-  constructor(
-    message: string,
-    readonly kind: GateErrorKind,
-  ) {
-    super(message);
-    this.name = "GateError";
-  }
-}
-
 // True when `ref` resolves to a real object in this repo. A shallow clone whose
 // history does not reach the base reports false here, which the gate treats as
 // fail-closed rather than fail-open.
@@ -111,6 +97,24 @@ export function refReachable(root: string, ref: string): boolean {
   }
 }
 
+// Route a (ref, path) read to the member repository that owns the path, with the
+// path rewritten relative to that member. In a plain single repo this returns
+// (root, path) unchanged. In a workspace, `HEAD` names *that member's* HEAD —
+// which is the whole point: an edit inside a member is diffed against the
+// member's own history, not against a root sha that does not exist there. A ref
+// that is a concrete sha only ever reaches here in single-repo mode, because
+// ref-ranged review across a workspace is refused before this point (a single
+// sha cannot name a state of several repositories).
+function routeRead(root: string, path: string): { repoRoot: string; relPath: string } {
+  const workspace = resolveWorkspace(root);
+  if (!workspace.isWorkspace) return { repoRoot: root, relPath: path };
+  const owner = repoFor(workspace, path);
+  // A path no member owns (a loose file under a non-repo workspace root) has no
+  // ref to be read at; leaving it as-is lets the read fail loud rather than be
+  // silently attributed to some member.
+  return owner ? { repoRoot: owner.member.root, relPath: owner.relPath } : { repoRoot: root, relPath: path };
+}
+
 // True when `path` exists at `ref`, with honest failure semantics: an absent
 // path is git's clean "no" (exit 0, empty ls-tree output), while a broken git
 // invocation or unresolvable ref THROWS — a caller can never read "could not
@@ -118,8 +122,9 @@ export function refReachable(root: string, ref: string): boolean {
 // `git show` catch conflates absence with failure), so a caller whose FALLBACK
 // on absence is more permissive than its failure path must check here first.
 export function blobExistsAtRef(root: string, ref: string, path: string): boolean {
+  const { repoRoot, relPath } = routeRead(root, path);
   try {
-    return git(root, ["ls-tree", ref, "--", path]).trim().length > 0;
+    return git(repoRoot, ["ls-tree", ref, "--", relPath]).trim().length > 0;
   } catch (err) {
     throw new GateError(
       `git ls-tree ${ref} -- ${path} failed: ${(err as Error).message}`,
@@ -137,11 +142,12 @@ export function readBlobAtRef(
   ref: string,
   path: string,
 ): string | null {
-  if (!refReachable(root, ref)) {
+  const { repoRoot, relPath } = routeRead(root, path);
+  if (!refReachable(repoRoot, ref)) {
     throw new GateError(`ref not reachable: ${ref}`, "bad-ref");
   }
   try {
-    return byteNormalize(git(root, ["show", `${ref}:${path}`]));
+    return byteNormalize(git(repoRoot, ["show", `${ref}:${relPath}`]));
   } catch {
     // ref is reachable but the path is absent in it → not an error.
     return null;

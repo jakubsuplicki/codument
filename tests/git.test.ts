@@ -12,6 +12,9 @@ import {
   listIgnoredPaths,
   listTrackedFiles,
   NOT_A_REPO,
+  forgetWorkspace,
+  repoFor,
+  resolveWorkspace,
 } from "../src/lib/git.js";
 import { GateError } from "../src/lib/two-ref.js";
 
@@ -39,6 +42,9 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // The workspace shape is memoized per root for the life of a process; a suite
+  // that rebuilds fixtures at the same path must not inherit the previous shape.
+  forgetWorkspace();
   await rm(tmp, { recursive: true, force: true });
   await rm(fakeBin, { recursive: true, force: true });
 });
@@ -179,5 +185,172 @@ describe("assertRootIsRepoToplevel (real git repo)", () => {
     } finally {
       await rm(plain, { recursive: true, force: true });
     }
+  });
+});
+
+describe("workspace discovery sees the repositories nested inside a tree", () => {
+  const g = (cwd: string, args: string[]) =>
+    execFileSync("git", args, {
+      cwd,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@t",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@t",
+      },
+    });
+
+  const makeRepo = async (dir: string): Promise<void> => {
+    await mkdir(dir, { recursive: true });
+    g(dir, ["init", "-q"]);
+    await writeFile(join(dir, "seed.txt"), "seed\n");
+    g(dir, ["add", "-A"]);
+    g(dir, ["commit", "-m", "init"]);
+  };
+
+  const prefixes = (root: string): string[] => {
+    forgetWorkspace();
+    return resolveWorkspace(root).members.map((m) => m.prefix);
+  };
+
+  it("finds both members of a non-repo root (the field shape)", async () => {
+    await makeRepo(join(tmp, "applications-service"));
+    await makeRepo(join(tmp, "apply-exp"));
+    forgetWorkspace();
+    const ws = resolveWorkspace(tmp);
+    assert.deepEqual(ws.members.map((m) => m.prefix), ["applications-service", "apply-exp"]);
+    assert.equal(ws.isWorkspace, true);
+  });
+
+  it("treats a plain repository at the root as NOT a workspace", async () => {
+    await makeRepo(tmp);
+    forgetWorkspace();
+    const ws = resolveWorkspace(tmp);
+    assert.deepEqual(ws.members.map((m) => m.prefix), [""]);
+    assert.equal(
+      ws.isWorkspace,
+      false,
+      "a single-repo root must keep taking the pre-workspace path",
+    );
+  });
+
+  it("includes the root repo alongside a member embedded in it", async () => {
+    await makeRepo(tmp);
+    await makeRepo(join(tmp, "child"));
+    forgetWorkspace();
+    const ws = resolveWorkspace(tmp);
+    assert.deepEqual(ws.members.map((m) => m.prefix), ["", "child"]);
+    assert.equal(ws.isWorkspace, true);
+  });
+
+  it("finds a submodule of a super-repo (the same opacity, a different cause)", async () => {
+    const upstream = join(tmp, "upstream");
+    await makeRepo(upstream);
+    const superRepo = join(tmp, "super");
+    await makeRepo(superRepo);
+    execFileSync(
+      "git",
+      ["-c", "protocol.file.allow=always", "submodule", "add", "-q", upstream, "vendor/lib"],
+      { cwd: superRepo, stdio: "ignore", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } },
+    );
+    forgetWorkspace();
+    const ws = resolveWorkspace(superRepo);
+    assert.ok(ws.members.some((m) => m.prefix === "vendor/lib"), prefixes(superRepo).join(","));
+    assert.equal(ws.isWorkspace, true);
+  });
+
+  it("names an uninitialized gitlink instead of inventing its contents", async () => {
+    await makeRepo(tmp);
+    await mkdir(join(tmp, "vendor"), { recursive: true });
+    // A gitlink whose work tree was never checked out: the .git file exists,
+    // the repository behind it does not.
+    await writeFile(join(tmp, "vendor", ".git"), "gitdir: ../.git/modules/vendor\n");
+    forgetWorkspace();
+    const ws = resolveWorkspace(tmp);
+    assert.deepEqual(ws.uninitialized, ["vendor"]);
+    assert.ok(!ws.members.some((m) => m.prefix === "vendor"), "never a member");
+  });
+
+  it("does not descend into excluded directories", async () => {
+    await makeRepo(join(tmp, "node_modules", "some-dep"));
+    await makeRepo(join(tmp, "real"));
+    forgetWorkspace();
+    const ws = resolveWorkspace(tmp, ["node_modules"]);
+    assert.deepEqual(ws.members.map((m) => m.prefix), ["real"]);
+  });
+
+  it("is deterministic and sorted regardless of filesystem order", async () => {
+    await makeRepo(join(tmp, "zeta"));
+    await makeRepo(join(tmp, "alpha"));
+    await makeRepo(join(tmp, "mid"));
+    assert.deepEqual(prefixes(tmp), ["alpha", "mid", "zeta"]);
+    forgetWorkspace();
+    const first = resolveWorkspace(tmp);
+    forgetWorkspace();
+    assert.deepEqual(resolveWorkspace(tmp), first);
+  });
+
+  it("finds nothing in a tree with no repositories at all", async () => {
+    await mkdir(join(tmp, "src"), { recursive: true });
+    forgetWorkspace();
+    const ws = resolveWorkspace(tmp);
+    assert.deepEqual(ws.members, []);
+    assert.equal(ws.isWorkspace, false);
+  });
+});
+
+describe("repoFor routes a workspace path to the member that owns it", () => {
+  const ws = (members: Array<[string, string]>, uninitialized: string[] = []) => ({
+    root: "/ws",
+    members: members.map(([prefix, root]) => ({ prefix, root })),
+    uninitialized,
+    isWorkspace: true,
+  });
+
+  it("routes into the owning member and rewrites the path", () => {
+    const w = ws([["applications-service", "/ws/applications-service"]]);
+    const hit = repoFor(w, "applications-service/src/app.py");
+    assert.equal(hit?.member.prefix, "applications-service");
+    assert.equal(hit?.relPath, "src/app.py");
+  });
+
+  it("prefers the deepest member, so a submodule beats its container", () => {
+    const w = ws([
+      ["", "/ws"],
+      ["vendor/lib", "/ws/vendor/lib"],
+    ]);
+    const hit = repoFor(w, "vendor/lib/src/x.ts");
+    assert.equal(hit?.member.prefix, "vendor/lib");
+    assert.equal(hit?.relPath, "src/x.ts");
+  });
+
+  it("falls back to a root repository for a path no member claims", () => {
+    const w = ws([
+      ["", "/ws"],
+      ["child", "/ws/child"],
+    ]);
+    const hit = repoFor(w, "src/top.ts");
+    assert.equal(hit?.member.prefix, "");
+    assert.equal(hit?.relPath, "src/top.ts");
+  });
+
+  it("returns null when nothing owns the path (a non-repo workspace root)", () => {
+    const w = ws([["child", "/ws/child"]]);
+    assert.equal(repoFor(w, "loose/file.ts"), null);
+  });
+
+  it("does not let a prefix match a merely similar sibling name", () => {
+    const w = ws([["app", "/ws/app"]]);
+    assert.equal(repoFor(w, "apply-exp/src/x.ts"), null, "app must not claim apply-exp");
+    assert.equal(repoFor(w, "app/src/x.ts")?.member.prefix, "app");
+  });
+
+  it("routes the member's own directory entry to the member", () => {
+    const w = ws([["child", "/ws/child"]]);
+    const hit = repoFor(w, "child");
+    assert.equal(hit?.member.prefix, "child");
+    assert.equal(hit?.relPath, "");
   });
 });

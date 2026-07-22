@@ -18,6 +18,9 @@ import {
 } from "../lib/fingerprint.js";
 import {
   assertRootIsRepoToplevel,
+  isGateableRoot,
+  resolveWorkspace,
+  workspaceBases,
   getChangeAuthors,
   getHeadSha,
   getWorkingTreeChanges,
@@ -147,6 +150,11 @@ export interface ReviewReport {
    *  against. Then NO ack clears (fail closed): commit the change and review a committed
    *  range so an independent signer can be checked. Always false without the flag. */
   independenceUnverifiable: boolean;
+  /** Present only in workspace mode (nested member repos / submodules): the member
+   *  repositories and each one's base HEAD, so a workspace verdict is reproducible
+   *  from the tuple of member heads the way a plain repo's is from one sha. Null in
+   *  the ordinary single-repo case, which is byte-identical to before. */
+  workspace: { members: string[]; bases: Array<{ prefix: string; sha: string }> } | null;
 }
 
 /** One acknowledgment adjudicating this change — the shape both the `review` card and
@@ -216,6 +224,7 @@ export function buildReview(
   opts: { requireIndependentAck?: boolean; exclusion?: ExclusionSpec } = {},
 ): ReviewReport {
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+  const ws = resolveWorkspace(root);
   // The project's own exclusions. Resolved here by default rather than required
   // from every caller, because a caller who forgot to pass the spec would
   // silently fall back to the defaults — the exact divergence this config exists
@@ -366,6 +375,9 @@ export function buildReview(
     coveringAcks,
     requireIndependentAck,
     independenceUnverifiable,
+    workspace: ws.isWorkspace
+      ? { members: ws.members.map((m) => m.prefix || "<root>"), bases: workspaceBases(ws) }
+      : null,
   };
 }
 
@@ -396,7 +408,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     return;
   }
 
-  if (!isGitRepo(root)) {
+  if (!isGateableRoot(root)) {
     // The gate could not run — no repo to diff. Under a gating flag this fails
     // closed (never a silent green), exactly like an unreachable base. Bare
     // `review` stays informational (exit 0). `--json` always emits a valid
@@ -833,6 +845,22 @@ function printHuman(report: ReviewReport): void {
 
   console.log(pc.bold("codument review"));
   console.log();
+
+  if (report.workspace) {
+    // A workspace verdict is over several repositories; name them and their base
+    // heads so the run is reproducible from the tuple, the way a plain repo's is
+    // from one sha.
+    console.log(
+      pc.cyan(
+        `  workspace: ${report.workspace.members.length} member repositories (${report.workspace.members.join(", ")}) — git scope aggregated`,
+      ),
+    );
+    for (const { prefix, sha } of report.workspace.bases) {
+      const short = sha.length >= 7 ? sha.slice(0, 12) : sha;
+      console.log(pc.dim(`    base ${prefix || "<root>"}: ${short}`));
+    }
+    console.log();
+  }
 
   if (report.changedFileCount === 0) {
     console.log(`  ${pc.green("✓")} Working tree clean — nothing to review.`);

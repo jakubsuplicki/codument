@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { buildReview, normalizeTestCommand } from "../src/commands/review.js";
 import { writeAck } from "../src/lib/acknowledgment.js";
 import { fileContentTransition } from "../src/lib/fingerprint.js";
-import { getWorkingTreeChanges } from "../src/lib/git.js";
+import { forgetWorkspace, getWorkingTreeChanges } from "../src/lib/git.js";
 import { worktreeChangesSince } from "../src/lib/two-ref.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -89,6 +89,7 @@ beforeEach(async () => {
   gitInit(tmp);
 });
 afterEach(async () => {
+  forgetWorkspace();
   await rm(tmp, { recursive: true, force: true });
 });
 
@@ -1739,5 +1740,135 @@ describe("review scopes the gate to the project's declared exclusions", () => {
     const withEmpty = buildReview(tmp);
     assert.deepEqual(withEmpty.state.staleDocs, without.state.staleDocs);
     assert.deepEqual(withEmpty.state.changedSources, without.state.changedSources);
+  });
+});
+
+describe("the gate sees changes inside a nested member repository", () => {
+  // THE regression. A monorepo whose packages are their own repos: an owned
+  // source changed inside a member surfaced to the outer repo as `M child` — a
+  // gitlink, no extension — so isSourceFile rejected it into otherChanged and
+  // the stale-doc verdict never fired while --strict exited 0. The worst thing a
+  // gate can do: answer green over a tree it could not see. The workspace layer
+  // makes the outer view the union of each member's own view.
+  const g = (cwd: string, args: string[]) =>
+    execFileSync("git", args, {
+      cwd,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@t",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@t",
+        GIT_OPTIONAL_LOCKS: "0",
+      },
+    });
+
+  const CHILD_DOC =
+    "---\ntitle: Child\nstatus: current\ntype: feature\n---\n\n## In plain terms\n\nThe child.\n";
+  const registry = (source: string) =>
+    JSON.stringify({
+      features: {
+        child: {
+          doc: "docs/features/child.md",
+          type: "feature",
+          primary_sources: [source],
+          related_sources: [],
+          docs: [],
+          depends_on: [],
+          risk: [],
+          status: "current",
+        },
+      },
+    });
+
+  let ws: string;
+  afterEach(async () => {
+    forgetWorkspace();
+    if (ws) await rm(ws, { recursive: true, force: true });
+  });
+
+  // Build the same project as a flat repo (control) and as a root-with-member
+  // (nested), so the two verdicts can be compared directly.
+  const buildNested = async (): Promise<void> => {
+    ws = await mkdtemp(join(tmpdir(), "codument-ws-"));
+    await mkdir(join(ws, "child", "src"), { recursive: true });
+    await mkdir(join(ws, "docs", "features"), { recursive: true });
+    await writeFile(join(ws, "child", "src", "app.ts"), "export function hello() {\n  return 1;\n}\n");
+    await writeFile(join(ws, "docs", "features", "child.md"), CHILD_DOC);
+    await writeFile(join(ws, "docs", ".registry.json"), registry("child/src/app.ts"));
+    g(join(ws, "child"), ["init", "-q"]);
+    g(join(ws, "child"), ["add", "-A"]);
+    g(join(ws, "child"), ["commit", "-m", "init"]);
+    g(ws, ["init", "-q"]);
+    g(ws, ["add", "-A"]);
+    g(ws, ["commit", "-m", "init"]);
+    // The contract change that must fire: an owned symbol's body moves.
+    await writeFile(join(ws, "child", "src", "app.ts"), "export function hello() {\n  return 99;\n}\n");
+    forgetWorkspace();
+  };
+
+  const buildFlat = async (): Promise<string> => {
+    const flat = await mkdtemp(join(tmpdir(), "codument-flat-"));
+    await mkdir(join(flat, "child", "src"), { recursive: true });
+    await mkdir(join(flat, "docs", "features"), { recursive: true });
+    await writeFile(join(flat, "child", "src", "app.ts"), "export function hello() {\n  return 1;\n}\n");
+    await writeFile(join(flat, "docs", "features", "child.md"), CHILD_DOC);
+    await writeFile(join(flat, "docs", ".registry.json"), registry("child/src/app.ts"));
+    g(flat, ["init", "-q"]);
+    g(flat, ["add", "-A"]);
+    g(flat, ["commit", "-m", "init"]);
+    await writeFile(join(flat, "child", "src", "app.ts"), "export function hello() {\n  return 99;\n}\n");
+    forgetWorkspace();
+    return flat;
+  };
+
+  it("flags the stale doc and drift, identically to the flat-repo control", async () => {
+    await buildNested();
+    const nested = buildReview(ws);
+    forgetWorkspace();
+    const flat = await buildFlat();
+    try {
+      const control = buildReview(flat);
+
+      // The change is a SOURCE change, not "other" — the false green is gone.
+      assert.deepEqual(nested.state.changedSources, ["child/src/app.ts"]);
+      assert.deepEqual(nested.state.otherChanged, []);
+      assert.deepEqual(
+        nested.state.staleDocs.map((d) => d.feature),
+        ["child"],
+      );
+
+      // And the grain is genuine: a modification, reported as "changed" (not the
+      // "added" it degraded to before routing HEAD to the member's own HEAD).
+      assert.deepEqual(
+        nested.drift.map((d) => `${d.symbol}:${d.kind}`),
+        control.drift.map((d) => `${d.symbol}:${d.kind}`),
+      );
+      assert.ok(nested.drift.some((d) => d.symbol === "hello" && d.kind === "changed"));
+
+      // The verdict is byte-identical to the flat control on every field a
+      // consumer reads for pass/fail.
+      assert.deepEqual(nested.state.staleDocs, control.state.staleDocs);
+      assert.deepEqual(nested.state.changedSources, control.state.changedSources);
+    } finally {
+      await rm(flat, { recursive: true, force: true });
+    }
+  });
+
+  it("names the member repositories and their bases", async () => {
+    await buildNested();
+    const report = buildReview(ws);
+    assert.ok(report.workspace, "workspace verdict carries member provenance");
+    assert.deepEqual(report.workspace?.members, ["<root>", "child"]);
+    assert.equal(report.workspace?.bases.length, 2);
+    for (const b of report.workspace!.bases) {
+      assert.match(b.sha, /^[0-9a-f]{7,}$/, `member ${b.prefix} has a real base sha`);
+    }
+  });
+
+  it("leaves a plain single repo's report unchanged (workspace is null)", () => {
+    const report = buildReview(tmp);
+    assert.equal(report.workspace, null);
   });
 });

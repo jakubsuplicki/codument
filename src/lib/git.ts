@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { realpathSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
-import { GateError } from "./two-ref.js";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
+import { DEFAULT_EXCLUSION_SPEC } from "./exclusion-spec.js";
+import { GateError } from "./gate-error.js";
 
 // Git access for the diff analyzer. Codument is positioned as git-native, so we
 // shell out to the already-required `git` CLI rather than add a dependency.
@@ -227,7 +228,7 @@ export const NOT_A_REPO = "not a git repository";
  * A non-repo root or a broken `git` yields `ok: false` — the caller decides what
  * an undeterminable ignore set means for its own surface.
  */
-export function listIgnoredPaths(root: string): GitPathListing {
+function listIgnoredPathsIn(root: string): GitPathListing {
   if (!isGitRepo(root)) return { ok: false, reason: NOT_A_REPO };
   let out: string;
   try {
@@ -260,7 +261,7 @@ export function listIgnoredPaths(root: string): GitPathListing {
  * files, and untracked-but-mapped files, are invisible here). The gate path
  * itself stays fail-loud — a cold adapter raises rather than coarsens.
  */
-export function listTrackedFiles(root: string): GitPathListing {
+function listTrackedFilesIn(root: string): GitPathListing {
   if (!isGitRepo(root)) return { ok: false, reason: NOT_A_REPO };
   try {
     return {
@@ -282,7 +283,7 @@ export function listTrackedFiles(root: string): GitPathListing {
  * ChangeStateInput.deletedFiles, where a deleted owned source wakes its owners'
  * docs. Returns an empty array when the directory is not a repo.
  */
-export function getWorkingTreeChanges(root: string): string[] {
+function getWorkingTreeChangesIn(root: string): string[] {
   if (!isGitRepo(root)) return [];
   let out: string;
   try {
@@ -311,7 +312,7 @@ export function getWorkingTreeChanges(root: string): string[] {
  * owned source's docs file-grain, and the adversarial-review gate counts a
  * deletion toward proportionality and the review fingerprint.
  */
-export function getWorkingTreeDeletions(root: string): string[] {
+function getWorkingTreeDeletionsIn(root: string): string[] {
   if (!isGitRepo(root)) return [];
   let out: string;
   try {
@@ -344,4 +345,315 @@ export function getHooksDir(root: string): string | null {
   } catch {
     return null;
   }
+}
+
+// ── Workspaces (nested member repositories) ─────────────────────────────
+//
+// A single work tree is opaque to the one containing it: `git ls-files` in an
+// outer repo reports a nested repository as a gitlink — one path, no extension,
+// no contents — and `ls-files --ignored` reports nothing inside it at all. So a
+// monorepo whose packages are their own repositories (and a super-repo with
+// submodules) presents every git helper here with a view that is missing most of
+// the tree, silently. The gate then answers over what it could see and calls it
+// an answer, which is the one failure a change-control gate must not have.
+//
+// The fix is one seam rather than per-caller patches: resolve the member repos
+// once, aggregate each member's own git answers, and prefix them back to
+// workspace-root-relative paths. Every existing helper keeps its meaning; only
+// the scope it reads over widens. A classic single repo resolves to exactly one
+// member at the root and takes the same code path it always did.
+
+export interface WorkspaceMember {
+  /** Workspace-root-relative POSIX prefix; "" for a repository at the root. */
+  prefix: string;
+  /** Absolute path of the member's work tree. */
+  root: string;
+}
+
+// Memoized because a member walk is a filesystem traversal and every git helper
+// below wants the answer. Resolving per call turned each `git status` into a
+// full tree walk — the discovery has to be cheap enough that no caller is
+// tempted to skip it and fall back to a single-repo view.
+const workspaceCache = new Map<string, Workspace>();
+
+export interface Workspace {
+  /** Absolute path of the workspace root (which may not be a repository). */
+  root: string;
+  /** Member repositories, deterministically ordered by prefix. */
+  members: WorkspaceMember[];
+  /**
+   * Prefixes of gitlinks with no work tree (an uninitialized submodule). They
+   * contribute no paths — never fabricated — and are named so a surface can say
+   * why a subtree is missing rather than reporting it as empty.
+   */
+  uninitialized: string[];
+  /**
+   * True when git truth must be aggregated: more than one member, or a single
+   * member that is not the root. A plain repository at the root is false, and
+   * takes the pre-workspace code path unchanged.
+   */
+  isWorkspace: boolean;
+}
+
+/** Whether `dir` is the top of a work tree (a `.git` dir, or a file for a
+ *  submodule or linked worktree). */
+function hasGitEntry(dir: string): boolean {
+  return existsSync(join(dir, ".git"));
+}
+
+/**
+ * Find every member repository under `root`, deterministically ordered.
+ *
+ * The walk prunes on the resolved exclusion dirs, so `node_modules` and build
+ * trees are never descended — which is what keeps this affordable enough to run
+ * once per command (and once per monitor tick). It DOES descend into a member to
+ * find members nested inside it, because the same opacity applies one level
+ * down: a submodule inside a package repo is invisible to that package repo the
+ * same way the package repo is invisible to the root.
+ */
+export function resolveWorkspace(
+  root: string,
+  excludeDirs: string[] = DEFAULT_EXCLUSION_SPEC.dirs,
+): Workspace {
+  const cached = workspaceCache.get(root);
+  if (cached) return cached;
+  const skip = new Set(excludeDirs);
+  const members: WorkspaceMember[] = [];
+  const uninitialized: string[] = [];
+  const rootIdentity = dirIdentity(root);
+
+  const walk = (dir: string, prefix: string): void => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      // Unreadable subtree: contributes nothing. Consistent with the analyzer's
+      // walker, and never fabricates members it could not see.
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || skip.has(entry.name)) continue;
+      const childPrefix = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const childDir = join(dir, entry.name);
+      if (hasGitEntry(childDir)) {
+        // A `.git` FILE with no readable work tree is an uninitialized submodule:
+        // the gitlink is there, the contents are not.
+        if (isGitRepo(childDir)) members.push({ prefix: childPrefix, root: childDir });
+        else uninitialized.push(childPrefix);
+      }
+      walk(childDir, childPrefix);
+    }
+  };
+
+  // The root is a member when it is itself a repository — but not when it is a
+  // SUBDIRECTORY of one. That case is refused elsewhere, loudly; silently
+  // treating it as a member here would launder the refusal.
+  //
+  // An unresolvable toplevel is deliberately NOT read as "subdirectory". git
+  // said we are inside a work tree, so a repository is here; a toplevel that
+  // will not resolve means git is broken, and demoting that to "no member" would
+  // make the whole aggregate answer "not a git repository" — reporting a failure
+  // as an absence, the one conflation this seam exists to prevent.
+  // (`assertRootIsRepoToplevel` still raises on this case for the commands that
+  // must not run at all.)
+  const rootIsRepo = isGitRepo(root);
+  const rootTop = rootIsRepo ? getRepoToplevel(root) : null;
+  const rootIsMember =
+    rootIsRepo && (rootTop === null || dirIdentity(rootTop) === rootIdentity);
+  if (rootIsMember) members.push({ prefix: "", root });
+  walk(root, "");
+
+  members.sort((a, b) => (a.prefix < b.prefix ? -1 : a.prefix > b.prefix ? 1 : 0));
+  uninitialized.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const workspace: Workspace = {
+    root,
+    members,
+    uninitialized,
+    isWorkspace: members.length > 1 || (members.length === 1 && members[0].prefix !== ""),
+  };
+  workspaceCache.set(root, workspace);
+  return workspace;
+}
+
+/**
+ * Forget the memoized shape of a root. A CLI invocation is short-lived and its
+ * member set cannot change under it, so the memo is normally permanent; the two
+ * callers that outlive one answer are the live monitor (a member repo could be
+ * cloned mid-session) and the test suite (which builds and rebuilds fixtures at
+ * one path).
+ */
+export function forgetWorkspace(root?: string): void {
+  if (root === undefined) workspaceCache.clear();
+  else workspaceCache.delete(root);
+}
+
+/**
+ * The member that owns a workspace-relative path, and that path rewritten
+ * relative to the member's own work tree.
+ *
+ * Longest prefix wins, so a path inside a submodule routes to the submodule
+ * rather than to the repository containing it — the same precedence the
+ * aggregation uses when it drops an outer repo's gitlink entry in favor of the
+ * member's own expansion. Null when no member owns the path (a file sitting in
+ * a non-repository workspace root).
+ */
+export function repoFor(
+  workspace: Workspace,
+  relPath: string,
+): { member: WorkspaceMember; relPath: string } | null {
+  let best: WorkspaceMember | null = null;
+  for (const member of workspace.members) {
+    if (member.prefix === "") {
+      if (best === null) best = member;
+      continue;
+    }
+    if (relPath === member.prefix || relPath.startsWith(member.prefix + "/")) {
+      if (best === null || member.prefix.length > best.prefix.length) best = member;
+    }
+  }
+  if (!best) return null;
+  const relative =
+    best.prefix === "" ? relPath : relPath.slice(best.prefix.length + 1);
+  return { member: best, relPath: relative };
+}
+
+// ── Aggregation over members ────────────────────────────────────────────
+//
+// Each helper below answers over the whole workspace by asking every member its
+// own git question and prefixing the answers back. Two rules make the result
+// honest rather than merely bigger:
+//
+//   1. A gitlink entry the OUTER repo reports for a member directory is dropped,
+//      because the member's own expansion replaces it. This is the rule that
+//      kills the false green: an edit inside a member surfaced to the outer repo
+//      as `M child` — one extension-less path — which the source-file test
+//      rejected into the "other changed" bucket, so the stale-doc verdict never
+//      fired while `--strict` exited 0. The member now reports `child/src/app.py`
+//      and the verdict sees a real source change.
+//   2. One member failing is the whole answer failing, named. A partial result
+//      presented as whole is the same conflation the typed listing exists to
+//      prevent, one level up.
+
+/** True when `relPath` is exactly a member's directory (the gitlink entry). */
+function isMemberDir(workspace: Workspace, relPath: string): boolean {
+  return workspace.members.some((m) => m.prefix !== "" && m.prefix === relPath);
+}
+
+function prefixed(prefix: string, path: string): string {
+  return prefix ? `${prefix}/${path}` : path;
+}
+
+function aggregateListing(
+  workspace: Workspace,
+  perMember: (memberRoot: string) => GitPathListing,
+): GitPathListing {
+  if (workspace.members.length === 0) return { ok: false, reason: NOT_A_REPO };
+  const paths: string[] = [];
+  for (const member of workspace.members) {
+    const result = perMember(member.root);
+    if (!result.ok) {
+      return {
+        ok: false,
+        reason:
+          member.prefix === ""
+            ? result.reason
+            : `${member.prefix}: ${result.reason}`,
+      };
+    }
+    for (const path of result.paths) {
+      const full = prefixed(member.prefix, path);
+      if (isMemberDir(workspace, full)) continue;
+      paths.push(full);
+    }
+  }
+  return { ok: true, paths: sortPaths(paths) };
+}
+
+function aggregateChanges(
+  workspace: Workspace,
+  perMember: (memberRoot: string) => string[],
+): string[] {
+  const paths: string[] = [];
+  for (const member of workspace.members) {
+    for (const path of perMember(member.root)) {
+      const full = prefixed(member.prefix, path);
+      if (isMemberDir(workspace, full)) continue;
+      paths.push(full);
+    }
+  }
+  return sortPaths(paths);
+}
+
+/**
+ * Paths git ignores, workspace-relative and POSIX — the union over every member
+ * repository, each answering with its own ignore rules. Shelling to each member's
+ * git (rather than parsing `.gitignore` files) is what keeps the semantics
+ * exactly git's: `core.excludesFile`, `.git/info/exclude`, and precedence all
+ * come along, where a reimplementation would drift.
+ *
+ * A non-repo root with no members, or a member whose git failed, yields
+ * `ok: false` — the caller decides what an undeterminable ignore set means.
+ */
+export function listIgnoredPaths(
+  root: string,
+  workspace: Workspace = resolveWorkspace(root),
+): GitPathListing {
+  return aggregateListing(workspace, listIgnoredPathsIn);
+}
+
+/** Every tracked path across the workspace. See `listIgnoredPaths` for the
+ *  aggregation rules; this one feeds the adapter warm probe. */
+export function listTrackedFiles(
+  root: string,
+  workspace: Workspace = resolveWorkspace(root),
+): GitPathListing {
+  return aggregateListing(workspace, listTrackedFilesIn);
+}
+
+/**
+ * Changed paths across the workspace (modified, added, renamed, untracked),
+ * workspace-relative POSIX, sorted and deduped. Deletions travel separately.
+ * Fails closed exactly as the single-repo read does: a `git status` that throws
+ * inside any member raises rather than reading as clean.
+ */
+export function getWorkingTreeChanges(
+  root: string,
+  workspace: Workspace = resolveWorkspace(root),
+): string[] {
+  return aggregateChanges(workspace, getWorkingTreeChangesIn);
+}
+
+/** Pure deletions across the workspace. See `getWorkingTreeChanges`. */
+export function getWorkingTreeDeletions(
+  root: string,
+  workspace: Workspace = resolveWorkspace(root),
+): string[] {
+  return aggregateChanges(workspace, getWorkingTreeDeletionsIn);
+}
+
+/**
+ * A root the gate can run over: a repository, or a workspace of member
+ * repositories under a (possibly non-repo) root. The field monorepo — no
+ * repository at the root, packages that are each their own repo — is the second
+ * case, and was previously refused as "not a git repository" despite every
+ * member being perfectly readable.
+ */
+export function isGateableRoot(root: string): boolean {
+  return isGitRepo(root) || resolveWorkspace(root).isWorkspace;
+}
+
+/**
+ * Each member's current HEAD sha, workspace-order. The reproducibility record a
+ * workspace verdict prints in place of the single base sha a plain repo prints:
+ * a workspace state is the tuple of its members' heads, so any run is
+ * reproducible from the list. A member with no commit yet contributes the empty
+ * tree, named.
+ */
+export function workspaceBases(
+  workspace: Workspace,
+): Array<{ prefix: string; sha: string }> {
+  return workspace.members.map((m) => ({
+    prefix: m.prefix,
+    sha: getHeadSha(m.root) ?? "(no commit)",
+  }));
 }

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 28: nested-repo workspaces — aggregate git truth across member repos
@@ -109,15 +109,15 @@ in the registry); no `map materialize` needed. Run after Plan 26 (rides its type
 
 ## Delivery Plan
 
-- [ ] Step 1: discovery + routing — member discovery (walk, prune, sort, cache), `repoFor`,
+- [x] Step 1: discovery + routing — member discovery (walk, prune, sort, cache), `repoFor`,
       workspace-mode predicate; unit tests over fixtures: field shape (non-repo root + 2 members),
       root repo + embedded member, submodule super-repo, single flat repo (must take the legacy
       path), uninitialized gitlink.
-- [ ] Step 2: aggregated scope — tracked/ignored/changed/deleted union with prefixing + gitlink
+- [x] Step 2: aggregated scope — tracked/ignored/changed/deleted union with prefixing + gitlink
       drop, wired through the Plan 26 typed results; goldens: member `.gitignore` honored at
       workspace root, member-failure → `{ok:false}` naming the member; doctor/scan workspace note +
       `--json` members field; the 378-artifact field scenario as e2e (scan proposes none of it).
-- [ ] Step 3: the gate — worktree-mode blob reads routed via `repoFor` (HEAD = owning member's
+- [x] Step 3: the gate — worktree-mode blob reads routed via `repoFor` (HEAD = owning member's
       HEAD); per-member base lines printed; THE regression: the false-green repro (owned member
       `.py` contract change) now yields per-symbol drift findings and `--strict` exit 1, identical
       to its flat-repo control; submodule variant of the same test.
