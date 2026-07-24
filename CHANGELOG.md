@@ -7,78 +7,14 @@ remains pre-1.0.
 
 ## [Unreleased]
 
-### Fixed
-- No directory walk skips an unreadable directory in silence any more. Source
-  discovery swallowed the permissions error and returned a shorter file list,
-  which shrinks the coverage denominator — and a smaller denominator makes the
-  percentage read *higher* than the truth, the same most-confident-where-most-wrong
-  inversion an undeterminable ignore set produced. The docs-tree walk had the same
-  hole with a worse consequence: a doc under an unreadable directory is invisible
-  to link-rot, a `warn` that gates `--strict`, so an actionable finding was
-  suppressed with no trace. The workspace member walk had it too, where a hidden
-  member repository takes its ignore rules down with it. All three now report, and
-  the results merge into one list — the question is "what could codument not
-  read?", not which internal walk tripped. `doctor` and `scan` name them,
-  `doctor --json` carries `scope.unreadableDirs` additively, and the scan record
-  keeps it because the entries outlive the console. Absent is not unreadable: a
-  directory that does not exist contributes nothing and is never disclosed.
-  **Breaking (library API):** `discoverSourceFiles` returns
-  `{ paths, unreadable }` rather than a bare array — deliberately, so a
-  programmatic consumer cannot keep reading a partial answer as a complete one.
-- `path-enumeration` no longer penalizes a doc for doing what the documentation
-  standard requires. The standard asks every invariant to link the test that enforces
-  it; the finding counted each path MENTION, and any `src/**` path including a test
-  file, so a doc's count rose as its invariants gained test links — observed in the
-  field going 1 to 3 across a single documentation-improvement pass, every newly
-  flagged path a test file. A metric that climbs as a project complies is backwards,
-  and it trains agents and humans alike to strip test links to quiet `doctor`. The
-  count is now over DISTINCT paths (three invariants pinned by one spec file are one
-  file cited three times) and exempts test-convention paths everywhere in prose. A
-  test path stays fully visible to `line-anchor` — the standard says cite the test,
-  not the line. Genuine enumeration still fires at the same threshold.
-- The prose path matcher captured multi-dot filenames only up to their first
-  extension, so `x.service.ts` and `x.service.spec.ts` were the same string: two
-  distinct files counted as one, and a test-path check could not see the `.spec.`.
-- The gate no longer returns a false green over a nested member repository. A monorepo whose
-  packages are each their own git repository (and a super-repo with submodules) is opaque to the
-  outer git: an owned source changed inside a member surfaced as `M child` — a gitlink with no
-  extension — which the source-file test rejected into "other changed", so the stale-doc verdict
-  never fired while `review --strict` exited 0. The git seam now resolves the member repositories,
-  aggregates each one's own view prefixed back to workspace-relative paths, and routes a blob read
-  to the owning member so `HEAD` means that member's HEAD. A nested verdict is byte-identical to a
-  flat-repo control; a plain single repo is unaffected.
-- `doctor` no longer crashes on a registry-mapped source whose language grammar
-  git could not reveal. The adapter warm set was derived from git's view
-  (`ls-files` plus working-tree status) while the analyzers walk the registry,
-  and git's view is not a superset of it: a nested member repository reports as
-  a single gitlink rather than its contents, a root git cannot read reports
-  nothing, and a git-ignored file is never reported at all. Any such mapped file
-  reached a synchronous parser cold and aborted the whole command with
-  `TreeSitterError: <language> grammar not loaded`. The warm set is now the union
-  of both views. Affects every bundled language, not only Python.
-- `scan` now honors `.gitignore`. Its private walker shared the exclusion spec
-  with the health analyzer but had dropped the ignore predicate, so it proposed
-  build output the analyzer would never have counted — in **any** repository, not
-  only the monorepo that surfaced it. Because a registry entry is durable, a
-  single scan of a project with an unlisted build directory (a `tsc` `outDir` of
-  `out/`, a deployed `public-preprod/`) wrote those artifacts in as first-party
-  sources and every later run inherited them. Discovery now runs through the
-  analyzer's own walker. **Behavior change:** scan proposes fewer files on repos
-  with git-ignored source-extension output; it also no longer proposes symlinked
-  source files (matching the analyzer, which never counted them), returns sorted
-  rather than traversal-ordered results. It no longer skips an unreadable
-  subdirectory silently — adopting the shared walker inherited that, and it was
-  logged as owed rather than absorbed; see the discovery entry below.
-- `generated-leakage` now fires on a git-ignored file listed as a source. The
-  predicate was computed for the coverage denominator and never passed to the
-  lint, so the one check that could have caught a registry full of build
-  artifacts reported nothing. **Upgrade note:** a registry that already maps an
-  untracked, git-ignored path will newly fail `doctor --strict`, with no code
-  change on your part. Resolve it by un-mapping the file or by tracking it — the
-  rule deliberately has no config escape hatch, since silencing leakage
-  invisibly is the failure it exists to prevent. Only *untracked* ignored files
-  are flagged, so a file you deliberately committed is never called build
-  output however broad the pattern matching it.
+## [0.10.0] - 2026-07-22
+
+Field-report release. A run on a real monorepo — no repository at the root, two
+nested member repositories — surfaced a class of defect where the scope codument
+reasoned over was not the scope it had verified, and every divergence was
+silent. The worst of them was a gate returning green over a tree it could not
+see. This release closes that class and gives the coverage denominator its
+user-maintained half.
 
 ### Added
 - Monorepos of nested repositories, and submodule super-repos, are first-class layouts. Run
@@ -139,6 +75,79 @@ remains pre-1.0.
   code. `scan` prints the same caveat and records `lastScan.scopeUnverified`,
   because the registry a scan writes outlives the note that qualified it.
 
+### Fixed
+- The gate no longer returns a false green over a nested member repository. A monorepo whose
+  packages are each their own git repository (and a super-repo with submodules) is opaque to the
+  outer git: an owned source changed inside a member surfaced as `M child` — a gitlink with no
+  extension — which the source-file test rejected into "other changed", so the stale-doc verdict
+  never fired while `review --strict` exited 0. The git seam now resolves the member repositories,
+  aggregates each one's own view prefixed back to workspace-relative paths, and routes a blob read
+  to the owning member so `HEAD` means that member's HEAD. A nested verdict is byte-identical to a
+  flat-repo control; a plain single repo is unaffected.
+- `doctor` no longer crashes on a registry-mapped source whose language grammar
+  git could not reveal. The adapter warm set was derived from git's view
+  (`ls-files` plus working-tree status) while the analyzers walk the registry,
+  and git's view is not a superset of it: a nested member repository reports as
+  a single gitlink rather than its contents, a root git cannot read reports
+  nothing, and a git-ignored file is never reported at all. Any such mapped file
+  reached a synchronous parser cold and aborted the whole command with
+  `TreeSitterError: <language> grammar not loaded`. The warm set is now the union
+  of both views. Affects every bundled language, not only Python.
+- `scan` now honors `.gitignore`. Its private walker shared the exclusion spec
+  with the health analyzer but had dropped the ignore predicate, so it proposed
+  build output the analyzer would never have counted — in **any** repository, not
+  only the monorepo that surfaced it. Because a registry entry is durable, a
+  single scan of a project with an unlisted build directory (a `tsc` `outDir` of
+  `out/`, a deployed `public-preprod/`) wrote those artifacts in as first-party
+  sources and every later run inherited them. Discovery now runs through the
+  analyzer's own walker. **Behavior change:** scan proposes fewer files on repos
+  with git-ignored source-extension output; it also no longer proposes symlinked
+  source files (matching the analyzer, which never counted them), returns sorted
+  rather than traversal-ordered results. It no longer skips an unreadable
+  subdirectory silently — adopting the shared walker inherited that, and it was
+  logged as owed rather than absorbed; see the discovery entry below.
+- `generated-leakage` now fires on a git-ignored file listed as a source. The
+  predicate was computed for the coverage denominator and never passed to the
+  lint, so the one check that could have caught a registry full of build
+  artifacts reported nothing. **Upgrade note:** a registry that already maps an
+  untracked, git-ignored path will newly fail `doctor --strict`, with no code
+  change on your part. Resolve it by un-mapping the file or by tracking it — the
+  rule deliberately has no config escape hatch, since silencing leakage
+  invisibly is the failure it exists to prevent. Only *untracked* ignored files
+  are flagged, so a file you deliberately committed is never called build
+  output however broad the pattern matching it.
+- No directory walk skips an unreadable directory in silence any more. Source
+  discovery swallowed the permissions error and returned a shorter file list,
+  which shrinks the coverage denominator — and a smaller denominator makes the
+  percentage read *higher* than the truth, the same most-confident-where-most-wrong
+  inversion an undeterminable ignore set produced. The docs-tree walk had the same
+  hole with a worse consequence: a doc under an unreadable directory is invisible
+  to link-rot, a `warn` that gates `--strict`, so an actionable finding was
+  suppressed with no trace. The workspace member walk had it too, where a hidden
+  member repository takes its ignore rules down with it. All three now report, and
+  the results merge into one list — the question is "what could codument not
+  read?", not which internal walk tripped. `doctor` and `scan` name them,
+  `doctor --json` carries `scope.unreadableDirs` additively, and the scan record
+  keeps it because the entries outlive the console. Absent is not unreadable: a
+  directory that does not exist contributes nothing and is never disclosed.
+  **Breaking (library API):** `discoverSourceFiles` returns
+  `{ paths, unreadable }` rather than a bare array — deliberately, so a
+  programmatic consumer cannot keep reading a partial answer as a complete one.
+- `path-enumeration` no longer penalizes a doc for doing what the documentation
+  standard requires. The standard asks every invariant to link the test that enforces
+  it; the finding counted each path MENTION, and any `src/**` path including a test
+  file, so a doc's count rose as its invariants gained test links — observed in the
+  field going 1 to 3 across a single documentation-improvement pass, every newly
+  flagged path a test file. A metric that climbs as a project complies is backwards,
+  and it trains agents and humans alike to strip test links to quiet `doctor`. The
+  count is now over DISTINCT paths (three invariants pinned by one spec file are one
+  file cited three times) and exempts test-convention paths everywhere in prose. A
+  test path stays fully visible to `line-anchor` — the standard says cite the test,
+  not the line. Genuine enumeration still fires at the same threshold.
+- The prose path matcher captured multi-dot filenames only up to their first
+  extension, so `x.service.ts` and `x.service.spec.ts` were the same string: two
+  distinct files counted as one, and a test-path check could not see the `.spec.`.
+
 ### Changed
 - `adopt` (and `update`) preserve every `.codument-meta.json` key they do not
   own. `adopt` rebuilt the file from a literal, so anything not on its keep-list
@@ -155,6 +164,23 @@ remains pre-1.0.
   Internal API; no CLI surface changes. This is ADR-003's rule — "the gate could
   not run" must be distinguishable from "the gate ran and passed" — applied to
   scope resolution rather than to the verdict.
+
+### Migration
+- **`discoverSourceFiles` returns `{ paths, unreadable }` instead of a bare
+  array.** Library API only; no CLI surface changes. Deliberately breaking rather
+  than additive, so a programmatic consumer cannot keep reading a partial answer
+  as a complete one. Update a call site by taking `.paths`, and read `.unreadable`
+  if you want to know the walk was incomplete.
+- **`doctor --strict` may newly fail on a registry you did not change.** A
+  registry that maps an untracked, git-ignored path now raises
+  `generated-leakage`. Resolve it by un-mapping the file or by tracking it. Only
+  *untracked* ignored files are flagged, so a file you deliberately committed is
+  never called build output however broad the pattern matching it.
+- **`scan` proposes fewer files** on repositories with git-ignored,
+  source-extension build output — it now honors `.gitignore`. If a previous scan
+  wrote such artifacts into `primary_sources`, they remain until you re-run
+  `scan` or remove them; `doctor` will name them as `generated-leakage` in the
+  meantime.
 
 ## [0.9.0] - 2026-07-12
 

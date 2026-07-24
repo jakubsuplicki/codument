@@ -1,12 +1,14 @@
 {
-  "version": "0.8.0",
+  "version": "0.10.0",
   "initialized": "2026-03-29",
   "project": {
     "language": "typescript",
     "srcDir": "src",
     "sourceGlobs": [
       "src/**/*.ts",
-      "src/**/*.tsx"
+      "src/**/*.tsx",
+      "src/**/*.mts",
+      "src/**/*.cts"
     ],
     "framework": null
   },
@@ -32,7 +34,7 @@
     ".claude/skills/review-work/SKILL.md": "4ef58117ffdf3a87",
     ".claude/skills/commit-work/SKILL.md": "c31e1fb310a58224",
     ".claude/skills/update-docs/SKILL.md": "568ab7711ded2b41",
-    ".claude/rules/documentation.md": "324a31465efb3eed",
+    ".claude/rules/documentation.md": "77dcace5e271f0cc",
     ".claude/agents/doc-writer.md": "aafdbda0721efad1",
     ".claude/agents/doc-scanner.md": "0dc3127f8fab8276",
     ".claude/agents/code-reviewer.md": "f499dcaf04d6f571",
