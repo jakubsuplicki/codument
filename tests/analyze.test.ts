@@ -15,6 +15,8 @@ import {
   rollupScore,
   resolveExclusionSpec,
   resolveScopeSync,
+  isTestPath,
+  TEST_CONVENTIONS,
   configuredExclusions,
   DEFAULT_EXCLUSION_SPEC,
   type CoverageRatio,
@@ -1032,5 +1034,87 @@ describe("resolveExclusionSpec widens the defaults, never narrows them", () => {
     assert.equal(await configuredExclusions(root), null);
     await writeMetaWith({ dirs: ["out"] });
     assert.deepEqual(await configuredExclusions(root), { dirs: ["out"], globs: [] });
+  });
+});
+
+describe("one definition of a test file, and the spec is composed from it", () => {
+  // Two surfaces ask "is this a test file": the exclusion spec (keep tests out
+  // of the coverage scope) and the prose-altitude heuristic (a cited test path
+  // is not file enumeration). A second copy is how they would drift, so the
+  // spec is built FROM the conventions — pinned structurally here.
+  it("every test convention is present in the default spec", () => {
+    for (const dir of TEST_CONVENTIONS.dirs) {
+      assert.ok(DEFAULT_EXCLUSION_SPEC.dirs.includes(dir), `spec lost test dir ${dir}`);
+    }
+    for (const glob of TEST_CONVENTIONS.globs) {
+      assert.ok(DEFAULT_EXCLUSION_SPEC.globs.includes(glob), `spec lost test glob ${glob}`);
+    }
+  });
+
+  it("does not share array identity with the spec (a mutation cannot cross over)", () => {
+    assert.notEqual(TEST_CONVENTIONS.dirs, DEFAULT_EXCLUSION_SPEC.dirs);
+    assert.notEqual(TEST_CONVENTIONS.globs, DEFAULT_EXCLUSION_SPEC.globs);
+    const beforeDirs = [...TEST_CONVENTIONS.dirs];
+    const beforeGlobs = [...TEST_CONVENTIONS.globs];
+    DEFAULT_EXCLUSION_SPEC.dirs.push("mutated-dir");
+    DEFAULT_EXCLUSION_SPEC.globs.push("mutated-glob");
+    try {
+      assert.deepEqual(TEST_CONVENTIONS.dirs, beforeDirs);
+      assert.deepEqual(TEST_CONVENTIONS.globs, beforeGlobs);
+    } finally {
+      DEFAULT_EXCLUSION_SPEC.dirs.pop();
+      DEFAULT_EXCLUSION_SPEC.globs.pop();
+    }
+  });
+
+  // Every language family's convention, through the REAL exported predicate —
+  // the prose heuristic's exemption is only as honest as this function.
+  const testPaths = [
+    "src/a.test.ts",
+    "src/a.spec.ts",
+    "src/services/applicant.service.spec.ts",
+    "src/__tests__/a.ts",
+    "src/nested/__tests__/deep/a.ts",
+    "src/test_thing.py",
+    "src/thing_test.py",
+    "src/conftest.py",
+    "src/thing_test.go",
+    "src/FooTest.java",
+    "src/FooTests.java",
+    "src/FooTestCase.java",
+    "src/FooTest.kt",
+    "src/FooSpec.kt",
+    "app/src/test/java/Foo.java",
+    "fixtures/thing.ts",
+  ];
+  for (const path of testPaths) {
+    it(`recognizes ${path}`, () => assert.equal(isTestPath(path), true));
+  }
+
+  const notTestPaths = [
+    "src/a.ts",
+    "src/services/applicant.service.ts",
+    "src/testing.ts",
+    "src/contest.py",
+    "src/latest.go",
+    "src/Foo.java",
+    "src/Tester.kt",
+    "src/fixtures/real-source.ts",
+  ];
+  for (const path of notTestPaths) {
+    it(`does not claim ${path} is a test`, () => assert.equal(isTestPath(path), false));
+  }
+
+  // An honest bound worth pinning rather than discovering: the JVM source-set
+  // glob is not language-scoped, so ANY project's literal `src/test/` directory
+  // is treated as tests. Bounded — it only widens an info-only exemption.
+  it("treats any literal src/test/ tree as tests, whatever the language", () => {
+    assert.equal(isTestPath("src/test/utils.ts"), true);
+  });
+
+  it("does not consult the project's declared exclusions (documented bound)", () => {
+    // A project's own `exclude.globs` convention is NOT honored yet; the doc
+    // says so, and this pins that the claim stays true.
+    assert.equal(isTestPath("src/a.integration.ts"), false);
   });
 });

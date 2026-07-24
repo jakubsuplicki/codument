@@ -1,5 +1,5 @@
 ---
-status: draft
+status: shipped
 ---
 
 # Plan 29: prose-altitude calibration — stop penalizing required test links
@@ -38,7 +38,10 @@ against source:
 ## Scope
 
 - `src/lib/prose-altitude.ts` (unique-path counting; test-path exemption via an injected predicate
-  — the module stays pure, no spec import)
+  — the module stays pure, no spec import; the path matcher also captures multi-dot filenames whole,
+  a latent defect the work surfaced: `x.service.ts` and `x.service.spec.ts` truncated to one string)
+- `src/lib/exclusion-spec.ts` (`TEST_CONVENTIONS` extracted as the ONE definition of "a test file",
+  with the spec composed from it rather than repeating it)
 - `src/lib/analyze.ts` (`computeProseAltitude` threads a test-path predicate derived from the
   exclusion spec's globs + `__tests__`/test dirs)
 - `tests/prose-altitude.test.ts`, `tests/analyze.test.ts`
@@ -73,11 +76,11 @@ No new source files; no `map materialize` needed. Independent — can run before
 
 ## Delivery Plan
 
-- [ ] Step 1: prose-altitude — `ProseAltitudeOptions.isTestPath?` + unique-path counting; unit
+- [x] Step 1: prose-altitude — `ProseAltitudeOptions.isTestPath?` + unique-path counting; unit
       tests: the field doc shape (5 test-path mentions, 3 of one file) yields no finding; 5 unique
       non-test paths still fires; 5 mentions of 2 non-test files does not; mixed sections count
       only the non-test residue.
-- [ ] Step 2: threading + docs — `computeProseAltitude` builds the predicate from the exclusion
+- [x] Step 2: threading + docs — `computeProseAltitude` builds the predicate from the exclusion
       spec; e2e through `doctor` on a fixture doc with invariant→test links (clean) vs a genuine
       file-list section (fires); registry-health.md contract line + CHANGELOG.
 

@@ -8,6 +8,20 @@ remains pre-1.0.
 ## [Unreleased]
 
 ### Fixed
+- `path-enumeration` no longer penalizes a doc for doing what the documentation
+  standard requires. The standard asks every invariant to link the test that enforces
+  it; the finding counted each path MENTION, and any `src/**` path including a test
+  file, so a doc's count rose as its invariants gained test links — observed in the
+  field going 1 to 3 across a single documentation-improvement pass, every newly
+  flagged path a test file. A metric that climbs as a project complies is backwards,
+  and it trains agents and humans alike to strip test links to quiet `doctor`. The
+  count is now over DISTINCT paths (three invariants pinned by one spec file are one
+  file cited three times) and exempts test-convention paths everywhere in prose. A
+  test path stays fully visible to `line-anchor` — the standard says cite the test,
+  not the line. Genuine enumeration still fires at the same threshold.
+- The prose path matcher captured multi-dot filenames only up to their first
+  extension, so `x.service.ts` and `x.service.spec.ts` were the same string: two
+  distinct files counted as one, and a test-path check could not see the `.spec.`.
 - The gate no longer returns a false green over a nested member repository. A monorepo whose
   packages are each their own git repository (and a super-repo with submodules) is opaque to the
   outer git: an owned source changed inside a member surfaced as `M child` — a gitlink with no

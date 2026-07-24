@@ -35,6 +35,22 @@ export interface ProseAltitudeInput {
 export interface ProseAltitudeOptions {
   /** Literal source paths in one prose section above which path-enumeration fires. */
   maxPathsPerSection?: number;
+  /**
+   * Whether a path is a test file, and so exempt from the path-enumeration count.
+   *
+   * The documentation standard REQUIRES each invariant to link the test that
+   * enforces it, so counting those links as a file-enumeration smell penalizes
+   * exactly the behavior the standard exists to create — a metric that climbs as
+   * a project complies is backwards, and it trains agents and humans alike to
+   * strip test links to quiet `doctor`.
+   *
+   * Injected rather than imported so this module stays pure and separately
+   * testable; the caller derives it from the one exclusion spec's test globs, so
+   * "a test file" has a single definition (and picks up a project's configured
+   * globs for free). Defaults to "nothing is a test path", which is the
+   * pre-calibration behavior.
+   */
+  isTestPath?: (relPath: string) => boolean;
 }
 
 const DEFAULT_MAX_PATHS = 4;
@@ -56,8 +72,16 @@ const NON_VERBS = new Set([
 const LINE_ANCHOR =
   /\b(?:[\w/-]+\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|json|md|mdx|ya?ml|sh|css|scss|html?|txt)|README|CHANGELOG|AGENTS|LICENSE|CONTRIBUTING):\d+\b/g;
 
-// A literal first-party source path (a `src/…` file with an extension).
-const SOURCE_PATH = /\bsrc\/[\w/-]+\.[A-Za-z]+\b/g;
+// A literal first-party source path (a `src/…` file with an extension). The
+// extension group repeats, so a multi-dot filename is captured WHOLE: truncating
+// at the first dot made `x.service.ts` and `x.service.spec.ts` the same string,
+// which both collapses two distinct files into one for counting and hides the
+// `.spec.` a test-path predicate needs to see. Extensions stay LETTERS-ONLY for
+// the same reason LINE_ANCHOR's list is an allow-list: admitting digits lets a
+// version-shaped directory (`src/migrations/v1.2.3/…`) read as a filename, so a
+// phantom path would inflate the very count this heuristic reports. No governed
+// source extension contains a digit, so nothing real is lost.
+const SOURCE_PATH = /\bsrc\/[\w/-]+(?:\.[A-Za-z]+)+\b/g;
 
 /** Strip leading markdown list/quote/emphasis/backtick markers to reach the prose. */
 function stripLeadMarkers(line: string): string {
@@ -86,6 +110,7 @@ export function analyzeProseAltitude(
   options: ProseAltitudeOptions = {},
 ): ProseAltitudeFinding[] {
   const maxPaths = options.maxPathsPerSection ?? DEFAULT_MAX_PATHS;
+  const isTestPath = options.isTestPath ?? (() => false);
   const findings: ProseAltitudeFinding[] = [];
   const exported = new Set(input.exportedSymbols);
   const lines = input.content.split("\n");
@@ -94,16 +119,18 @@ export function analyzeProseAltitude(
   let sectionTitle = "";
   let sectionHeadingLine = 0;
   let sectionIsKeyFiles = false;
-  let sectionPaths = 0;
+  // DISTINCT non-test paths, not mentions: three invariants pinned by one spec
+  // file are one file being cited three times, not a three-file enumeration.
+  const sectionPaths = new Set<string>();
   const emit = (id: ProseAltitudeId, line: number, message: string, evidence: string) =>
     findings.push({ id, feature: input.feature, doc: input.doc, line, message, evidence });
 
   const flushSection = () => {
-    if (!sectionIsKeyFiles && sectionPaths > maxPaths) {
+    if (!sectionIsKeyFiles && sectionPaths.size > maxPaths) {
       emit(
         "path-enumeration",
         sectionHeadingLine,
-        `section "${sectionTitle}" restates the file list (${sectionPaths} source paths in prose) — prose should carry the why, not enumerate files`,
+        `section "${sectionTitle}" restates the file list (${sectionPaths.size} source paths in prose) — prose should carry the why, not enumerate files`,
         sectionTitle,
       );
     }
@@ -127,7 +154,7 @@ export function analyzeProseAltitude(
       sectionTitle = heading;
       sectionHeadingLine = lineNo;
       sectionIsKeyFiles = /key files/i.test(heading);
-      sectionPaths = 0;
+      sectionPaths.clear();
       continue;
     }
 
@@ -160,9 +187,13 @@ export function analyzeProseAltitude(
       continue;
     }
 
-    // path-enumeration: accumulate source paths per prose section.
-    const paths = raw.match(SOURCE_PATH);
-    if (paths) sectionPaths += paths.length;
+    // path-enumeration: accumulate DISTINCT non-test source paths per section. A
+    // test path is a legitimate citation anywhere in prose (the standard asks for
+    // it), so it is exempt everywhere rather than only inside the invariants
+    // section — a section-scoped exemption would just invite heading games.
+    for (const path of raw.match(SOURCE_PATH) ?? []) {
+      if (!isTestPath(path)) sectionPaths.add(path);
+    }
 
     // symbol-mirror: a prose line opening with an exported identifier + a verb.
     if (exported.size > 0) {

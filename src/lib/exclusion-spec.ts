@@ -19,33 +19,22 @@ export interface ExclusionSpec {
   extensions: string[];
 }
 
-export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
-  dirs: [
-    ".agents",
-    ".claude",
-    ".codument",
-    ".git",
-    ".next",
-    ".nuxt",
-    ".output",
-    ".venv",
-    ".wxt",
-    "__pycache__",
-    "__tests__",
-    "build",
-    "coverage",
-    "dist",
-    "node_modules",
-    "venv",
-  ],
+/**
+ * Every language's "this file is a test" convention, in one place.
+ *
+ * Split out of the exclusion spec below rather than duplicated beside it,
+ * because two surfaces need this exact question answered and a second copy is
+ * how they would drift: the spec excludes tests from the coverage scope, and the
+ * prose-altitude heuristic exempts a cited test path from the file-enumeration
+ * count (the doc standard REQUIRES linking each invariant to its enforcing test,
+ * so counting those links would penalize compliance). The spec is composed FROM
+ * this, so there is one definition, not a copy.
+ */
+export const TEST_CONVENTIONS: { dirs: string[]; globs: string[] } = {
+  dirs: ["__tests__"],
   globs: [
     "**/*.test.*",
     "**/*.spec.*",
-    "**/*.d.ts",
-    "**/*.d.mts",
-    "**/*.d.cts",
-    "**/*.seed.json",
-    "**/generated/**",
     // Python test conventions — the `*.test.*` family's pytest analogs.
     "**/test_*.py",
     "**/*_test.py",
@@ -66,10 +55,52 @@ export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
     // name) so a project's real first-party source under e.g. `src/fixtures/`
     // is NOT silently dropped from governance.
     "fixtures/**",
+  ],
+};
+
+export const DEFAULT_EXCLUSION_SPEC: ExclusionSpec = {
+  dirs: [
+    ".agents",
+    ".claude",
+    ".codument",
+    ".git",
+    ".next",
+    ".nuxt",
+    ".output",
+    ".venv",
+    ".wxt",
+    "__pycache__",
+    ...TEST_CONVENTIONS.dirs,
+    "build",
+    "coverage",
+    "dist",
+    "node_modules",
+    "venv",
+  ].sort(),
+  globs: [
+    ...TEST_CONVENTIONS.globs,
+    "**/*.d.ts",
+    "**/*.d.mts",
+    "**/*.d.cts",
+    "**/*.seed.json",
+    "**/generated/**",
     "scripts/generate-*",
   ],
   extensions: [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs", ".py", ".pyi", ".go", ".rs", ".cs", ".java", ".kt", ".kts", ".vue", ".svelte", ".astro"],
 };
+
+/**
+ * True when a path follows one of the test conventions above. The single
+ * definition of "a test file" — `isExcluded`'s own matcher over the conventions,
+ * never a fifth hand-rolled regex.
+ */
+export function isTestPath(relPath: string): boolean {
+  return isExcluded(relPath, {
+    dirs: TEST_CONVENTIONS.dirs,
+    globs: TEST_CONVENTIONS.globs,
+    extensions: [],
+  });
+}
 
 // Exported so the Feature Map router (feature-map.ts) matches globs with the
 // exact same semantics the exclusion spec uses — one globber, no drift.

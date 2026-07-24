@@ -6,6 +6,7 @@ import {
   globToRegExp,
   isExcluded,
   isSourceFile,
+  isTestPath,
   toPosix,
   type ExclusionSpec,
 } from "./exclusion-spec.js";
@@ -24,9 +25,11 @@ import { MODULE_ANCHOR_NAME } from "./ts-adapter.js";
 
 export {
   DEFAULT_EXCLUSION_SPEC,
+  TEST_CONVENTIONS,
   globToRegExp,
   isExcluded,
   isSourceFile,
+  isTestPath,
   toPosix,
   type ExclusionSpec,
 } from "./exclusion-spec.js";
@@ -970,7 +973,14 @@ function computeProseAltitude(root: string, entries: [string, RegistryEntry][]):
       continue;
     }
     const exportedSymbols = exportedSymbolsOf(root, entry.primary_sources);
-    for (const f of analyzeProseAltitude({ feature: key, doc, content, exportedSymbols })) {
+    // A cited test path is exempt from the enumeration count everywhere in prose,
+    // not just inside the invariants section: a test citation is legitimate
+    // wherever it appears, and a section-scoped exemption would only invite
+    // heading games. The predicate is the spec's own test conventions.
+    for (const f of analyzeProseAltitude(
+      { feature: key, doc, content, exportedSymbols },
+      { isTestPath },
+    )) {
       findings.push({
         id: f.id,
         severity: "info",

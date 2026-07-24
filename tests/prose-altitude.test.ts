@@ -256,4 +256,183 @@ describe("prose-altitude: doctor wiring (Notes channel, never a --strict fail)",
       "clean prose yields no altitude note",
     );
   });
+
+  // The calibration, end-to-end through the real command: a doc that does what
+  // the standard demands (every invariant pinned to its enforcing test) scores
+  // clean, while a genuine file-list section still fires at the same threshold.
+  const writeDoc = async (body: string[]) =>
+    await writeFile(
+      join(tmp, "docs", "features", "auth.md"),
+      ["# auth", "## In plain terms", "The auth feature signs a user in.", ...body].join("\n"),
+    );
+
+  const pathEnumerationNotes = () =>
+    doctorJson().json.lint.notes.filter((n: { id: string }) => n.id === "path-enumeration");
+
+  it("a doc pinning five invariants to five tests is clean through doctor", async () => {
+    await writeDoc([
+      "## Invariants & boundaries",
+      "- A session cannot outlive its token. *(test: src/auth/session.spec.ts)*",
+      "- A replayed nonce is refused. *(test: src/auth/nonce.spec.ts)*",
+      "- A logout revokes every device. *(test: src/auth/logout.spec.ts)*",
+      "- A rotated key keeps live sessions. *(test: src/auth/rotate.spec.ts)*",
+      "- A locked account cannot sign in. *(test: src/auth/__tests__/lock.test.ts)*",
+      "## Key files",
+      "- `src/auth/login.ts` — the sign-in entry point that issues the session.",
+    ]);
+    assert.deepEqual(pathEnumerationNotes(), [], "compliance must not be penalized");
+  });
+
+  it("a genuine file-list section still fires at the same threshold", async () => {
+    await writeDoc([
+      "## Design approach",
+      "It wires src/auth/a.ts, src/auth/b.ts, src/auth/c.ts, src/auth/d.ts and src/auth/e.ts.",
+      "## Key files",
+      "- `src/auth/login.ts` — the sign-in entry point that issues the session.",
+    ]);
+    const notes = pathEnumerationNotes();
+    assert.equal(notes.length, 1, "genuine enumeration still fires");
+    assert.match(notes[0].message, /restates the file list \(5 source paths/);
+  });
+
+  it("counts one file cited many times once", async () => {
+    await writeDoc([
+      "## Design approach",
+      "src/auth/login.ts validates, then src/auth/login.ts issues, then src/auth/login.ts logs.",
+      "It also touches src/auth/a.ts, src/auth/b.ts, src/auth/c.ts and src/auth/d.ts.",
+      "## Key files",
+      "- `src/auth/login.ts` — the sign-in entry point that issues the session.",
+    ]);
+    // 7 mentions, 5 distinct — over the threshold on distinct files, and the
+    // message reports the deduped count so the number matches what fired.
+    const notes = pathEnumerationNotes();
+    assert.equal(notes.length, 1);
+    assert.match(notes[0].message, /\(5 source paths/);
+  });
+});
+
+describe("prose-altitude: path-enumeration counts distinct non-test paths", () => {
+  // The standard REQUIRES each invariant to link its enforcing test. Counting
+  // those links as an enumeration smell makes the metric climb as a project
+  // complies — backwards, and it trains everyone to strip test links to quiet
+  // doctor. The predicate mirrors the exclusion spec's test globs.
+  const isTestPath = (p: string) =>
+    /(^|\/)__tests__\//.test(p) || /\.(test|spec)\.[A-Za-z]+$/.test(p);
+  const withTests = (content: string) =>
+    analyzeProseAltitude({ ...base, content }, { isTestPath }).map((f) => f.id);
+
+  // The field shape: five mentions of three test files. DEDUP alone clears this
+  // one (three distinct paths is under the threshold) — the per-mention count was
+  // what made three invariants pinned by one spec file read as three files.
+  it("the field shape — five test-link mentions across three files — is clean", () => {
+    const content = [
+      "## Invariants & boundaries",
+      "- A registry read fails loud. *(test: src/services/applicant.service.spec.ts)*",
+      "- A partial write is refused. *(test: src/services/applicant.service.spec.ts)*",
+      "- An expired draft is purged. *(test: src/services/applicant.service.spec.ts)*",
+      "- Submission is idempotent. *(test: src/services/__tests__/submit.test.ts)*",
+      "- A rejected form keeps its answers. *(test: src/forms/form.spec.ts)*",
+    ].join("\n");
+    assert.deepEqual(withTests(content), []);
+    assert.deepEqual(ids(content), [], "dedup alone clears the three-file case");
+  });
+
+  // The EXEMPTION's own job, isolated: a doc whose invariants are each pinned by
+  // a DIFFERENT test — five distinct test files, over the threshold. This is the
+  // doc the standard asks for, and without the exemption it is penalized for it.
+  it("a doc pinning five invariants to five different tests is clean", () => {
+    const content = [
+      "## Invariants & boundaries",
+      "- One. *(test: src/a.spec.ts)*",
+      "- Two. *(test: src/b.spec.ts)*",
+      "- Three. *(test: src/c.spec.ts)*",
+      "- Four. *(test: src/d.spec.ts)*",
+      "- Five. *(test: src/e.spec.ts)*",
+    ].join("\n");
+    assert.deepEqual(withTests(content), []);
+    // Precondition: WITHOUT the exemption this exact doc fires — the backwards
+    // metric, penalizing the doc for doing what the standard requires.
+    assert.deepEqual(ids(content), ["path-enumeration"]);
+  });
+
+  it("distinguishes a source file from its own spec (no dedup collision)", () => {
+    // Both truncated to `src/x.service` before the path regex captured whole
+    // multi-dot names, so two distinct files counted as one.
+    const content = [
+      "## Design approach",
+      "src/x.service.ts, src/y.service.ts, src/z.service.ts, src/w.service.ts, src/v.service.ts",
+    ].join("\n");
+    assert.deepEqual(withTests(content), ["path-enumeration"], "five distinct services");
+    // Three source/spec pairs: six mentions (over the old per-mention threshold)
+    // but three distinct non-test files. Under the pre-fix truncation each pair
+    // collapsed to one string, so this could not have discriminated with two.
+    const withSpecs = [
+      "## Design approach",
+      "src/x.service.ts, src/y.service.ts and src/z.service.ts.",
+      "Tested by src/x.service.spec.ts, src/y.service.spec.ts and src/z.service.spec.ts.",
+    ].join("\n");
+    assert.deepEqual(withTests(withSpecs), [], "three sources + their three specs");
+    // And the sources alone, one more added, DO fire — so the clean result above
+    // is the specs being exempt, not the section being too small to trip.
+    const sourcesOnly = [
+      "## Design approach",
+      "src/x.service.ts, src/y.service.ts, src/z.service.ts, src/w.service.ts and src/v.service.ts.",
+    ].join("\n");
+    assert.deepEqual(withTests(sourcesOnly), ["path-enumeration"]);
+  });
+
+  it("still fires on five distinct non-test source paths", () => {
+    const content = [
+      "## Design approach",
+      "It wires src/a.ts, src/b.ts, src/c.ts, src/d.ts, and src/e.ts together.",
+    ].join("\n");
+    assert.deepEqual(withTests(content), ["path-enumeration"]);
+  });
+
+  it("does not fire on many mentions of only two non-test files", () => {
+    const content = [
+      "## Design approach",
+      "src/a.ts calls src/b.ts.",
+      "Then src/a.ts retries, and src/b.ts logs.",
+      "Finally src/a.ts commits while src/b.ts flushes.",
+    ].join("\n");
+    // Six mentions, two files: a discussion, not a file list.
+    assert.deepEqual(withTests(content), []);
+  });
+
+  it("counts only the non-test residue in a mixed section", () => {
+    const content = [
+      "## Invariants & boundaries",
+      "- One. *(test: src/a.spec.ts)* *(test: src/b.spec.ts)* *(test: src/c.spec.ts)*",
+      "- It reads src/one.ts, src/two.ts, src/three.ts and src/four.ts.",
+    ].join("\n");
+    // Four non-test paths is at the threshold, not over it — the three test
+    // citations must not push it over.
+    assert.deepEqual(withTests(content), []);
+    const overThreshold = [content, "- Also src/five.ts. *(test: src/d.spec.ts)*"].join("\n");
+    assert.deepEqual(withTests(overThreshold), ["path-enumeration"]);
+  });
+
+  it("reports the deduped count in its message, not the mention count", () => {
+    const content = [
+      "## Design approach",
+      "src/a.ts src/a.ts src/b.ts src/c.ts src/d.ts src/e.ts src/f.ts",
+    ].join("\n");
+    const f = analyzeProseAltitude({ ...base, content }, { isTestPath });
+    assert.equal(f.length, 1);
+    assert.match(f[0].message, /\(6 source paths in prose\)/, "7 mentions, 6 distinct files");
+  });
+
+  it("dedupes even without a test predicate (the counting fix stands alone)", () => {
+    const content = [
+      "## Design approach",
+      "src/a.ts and src/a.ts and src/a.ts and src/a.ts and src/a.ts and src/a.ts",
+    ].join("\n");
+    assert.deepEqual(ids(content), []);
+  });
+
+  it("keeps a test path visible to line-anchor when written with :NNN", () => {
+    // Exempt from the COUNT, never from the rot-prone line anchor.
+    assert.deepEqual(withTests("## Invariants\n- See src/a.spec.ts:42."), ["line-anchor"]);
+  });
 });
