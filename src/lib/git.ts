@@ -388,6 +388,12 @@ export interface Workspace {
    */
   uninitialized: string[];
   /**
+   * Workspace-relative prefixes the member walk could not read. A member
+   * repository could be hiding under any of them, so the member list is a floor
+   * rather than the count whenever this is non-empty.
+   */
+  unreadable: string[];
+  /**
    * True when git truth must be aggregated: more than one member, or a single
    * member that is not the root. A plain repository at the root is false, and
    * takes the pre-workspace code path unchanged.
@@ -420,15 +426,22 @@ export function resolveWorkspace(
   const skip = new Set(excludeDirs);
   const members: WorkspaceMember[] = [];
   const uninitialized: string[] = [];
+  const unreadable: string[] = [];
   const rootIdentity = dirIdentity(root);
 
   const walk = (dir: string, prefix: string): void => {
     let entries;
     try {
       entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      // Unreadable subtree: contributes nothing. Consistent with the analyzer's
-      // walker, and never fabricates members it could not see.
+    } catch (err) {
+      // Absent is not unreadable (a directory that vanished mid-walk).
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      // Unreadable subtree: it contributes no members — never fabricated — but
+      // it is REPORTED, exactly as the analyzer's walker reports one. A member
+      // repository can hide under a directory the process cannot open, and its
+      // absence would otherwise present a short member list as the whole
+      // workspace, taking the aggregated ignore rules down with it.
+      unreadable.push(prefix || ".");
       return;
     }
     for (const entry of entries) {
@@ -469,6 +482,7 @@ export function resolveWorkspace(
     root,
     members,
     uninitialized,
+    unreadable: [...new Set(unreadable)].sort(),
     isWorkspace: members.length > 1 || (members.length === 1 && members[0].prefix !== ""),
   };
   workspaceCache.set(root, workspace);

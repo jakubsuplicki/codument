@@ -114,30 +114,59 @@ export async function configuredExclusions(root: string): Promise<ExcludeConfig 
 
 // ── Source discovery ────────────────────────────────────────────────────
 
+/** What a discovery walk found, and what it could not look inside. */
+export interface SourceDiscovery {
+  /** In-scope source files, sorted root-relative POSIX paths. */
+  paths: string[];
+  /**
+   * Directories the walk could not read (permissions, a broken mount), sorted
+   * root-relative POSIX. Non-empty means `paths` is a floor, not the answer:
+   * whatever lives under these is missing from it.
+   */
+  unreadable: string[];
+}
+
 /**
- * List in-scope source files under `srcDir`, returned as sorted root-relative
- * POSIX paths. Excluded dirs are skipped during the walk; excluded files are
- * filtered out, so the result is the coverage denominator's file set.
+ * List in-scope source files under `srcDir`. Excluded dirs are skipped during
+ * the walk; excluded files are filtered out, so `paths` is the coverage
+ * denominator's file set.
  *
  * `isIgnored` lets the caller prune paths git ignores (generated/build/vendored
  * trees) without this function depending on git — `analyze` wires in the repo's
  * real gitignore set; direct callers default to a no-op for pure filesystem scope.
+ *
+ * An unreadable directory is REPORTED, never silently skipped. Skipping it
+ * shrinks the denominator, and a smaller denominator makes coverage read
+ * *higher* than the truth — the same most-confident-where-most-wrong inversion
+ * an undeterminable ignore set produced. It rides the return value rather than a
+ * callback on purpose: a caller can drop a field it can see in the type, but it
+ * cannot forget to pass one, which is how the ignore predicate went missing from
+ * the lint for so long.
  */
 export function discoverSourceFiles(
   root: string,
   srcDir: string,
   spec: ExclusionSpec = DEFAULT_EXCLUSION_SPEC,
   isIgnored: (relPosixPath: string) => boolean = () => false,
-): string[] {
+): SourceDiscovery {
   const base = join(root, srcDir);
-  if (!existsSync(base)) return [];
+  if (!existsSync(base)) return { paths: [], unreadable: [] };
 
   const found: string[] = [];
+  const unreadable: string[] = [];
   const walk = (dir: string): void => {
     let entries;
     try {
       entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
+    } catch (err) {
+      // Absent is not unreadable. A directory that vanished mid-walk contributes
+      // nothing and is not a disclosure; only a directory that EXISTS and cannot
+      // be opened means the answer is a floor. Conflating them would fire on
+      // every ordinary race and drown the signal.
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      // Name it as root-relative POSIX, like every other path this layer
+      // reports. `.` when the walk root itself is what could not be read.
+      unreadable.push(toPosix(relative(root, dir)) || ".");
       return;
     }
     for (const entry of entries) {
@@ -155,7 +184,10 @@ export function discoverSourceFiles(
     }
   };
   walk(base);
-  return [...new Set(found)].sort();
+  return {
+    paths: [...new Set(found)].sort(),
+    unreadable: [...new Set(unreadable)].sort(),
+  };
 }
 
 /**
@@ -299,6 +331,10 @@ export interface ScopeConfidence {
    *  the score is read as an aggregate over several repositories rather than one.
    *  Absent for a plain single repository. */
   members?: string[];
+  /** Directories the discovery walk could not read, so the denominator is a
+   *  floor rather than the count. A shrunken denominator makes coverage read
+   *  HIGHER than the truth, so this is disclosed rather than absorbed. */
+  unreadableDirs?: string[];
 }
 
 export interface AnalysisResult {
@@ -383,7 +419,8 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
   const isIgnored = makeIgnoredPredicate(
     ignoredListing.ok ? ignoredListing.paths : [],
   );
-  const inScopeFiles = discoverSourceFiles(root, srcDir, exclusion, isIgnored);
+  const discovery = discoverSourceFiles(root, srcDir, exclusion, isIgnored);
+  const inScopeFiles = discovery.paths;
 
   // Map every source path to the entries that claim it (for ownership + fanout).
   const fileToFeatures = new Map<string, string[]>();
@@ -412,7 +449,7 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     exclusion,
     dependedUpon,
   );
-  const lint = computeLint(
+  const lintResult = computeLint(
     root,
     entries,
     inScopeFiles,
@@ -424,6 +461,13 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     isIgnored,
     declaredExclusions ?? null,
   );
+  const lint = lintResult.findings;
+  // One field for the user's question ("what could codument not read?"), whether
+  // the source walk or the docs walk hit it — they do not care which of our
+  // internal walks failed, only that the answer is a floor.
+  const unreadableDirs = [
+    ...new Set([...discovery.unreadable, ...lintResult.unreadable]),
+  ].sort();
 
   return {
     coverage,
@@ -437,6 +481,7 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
         ? {}
         : { declaredScope: declaredScopeUnreadable }),
       ...(declaredExclusions ? { configuredExclusions: declaredExclusions } : {}),
+      ...(unreadableDirs.length > 0 ? { unreadableDirs } : {}),
     },
   };
 }
@@ -529,7 +574,7 @@ function computeLint(
   dependedUpon: Set<string>,
   isIgnored: (relPosixPath: string) => boolean,
   declared: ExcludeConfig | null,
-): LintFinding[] {
+): { findings: LintFinding[]; unreadable: string[] } {
   const findings: LintFinding[] = [];
   const entryKeys = new Set(entries.map(([key]) => key));
 
@@ -757,8 +802,13 @@ function computeLint(
   // prose-altitude smells (info-only): a registered doc restating code mechanism.
   findings.push(...computeProseAltitude(root, entries));
 
+  // One walk of the docs tree, shared by link-rot and the orphan check below —
+  // they asked the same question twice — and it reports the directories it could
+  // not read rather than letting them shrink either check in silence.
+  const docs = listMarkdownDocs(root);
+
   // dangling intra-repo links across the whole docs/ knowledge base
-  findings.push(...computeLinkRot(root));
+  findings.push(...computeLinkRot(root, docs.paths));
 
   // orphan docs: a feature/concept page no registry entry points at. Staleness
   // is keyed on the registry, so the gate structurally cannot cover an unowned
@@ -770,7 +820,7 @@ function computeLint(
     ownedDocs.add(entry.doc);
     for (const doc of entry.docs) ownedDocs.add(doc);
   }
-  for (const docRel of listMarkdownDocs(root)) {
+  for (const docRel of docs.paths) {
     if (!/^docs\/(features|concepts)\//.test(docRel)) continue;
     if (!ownedDocs.has(docRel)) {
       findings.push({
@@ -782,7 +832,7 @@ function computeLint(
     }
   }
 
-  return sortFindings(findings);
+  return { findings: sortFindings(findings), unreadable: docs.unreadable };
 }
 
 /** Text under `## <heading>` up to the next `## ` (or EOF), with HTML comments
@@ -801,13 +851,23 @@ function sectionBody(content: string, heading: string): string | null {
 }
 
 /** Every `.md` file under `docs/`, sorted, repo-relative. */
-function listMarkdownDocs(root: string): string[] {
+function listMarkdownDocs(root: string): SourceDiscovery {
   const out: string[] = [];
+  const unreadable: string[] = [];
   const walk = (rel: string): void => {
     let entries: import("node:fs").Dirent[];
     try {
       entries = readdirSync(join(root, rel), { withFileTypes: true });
-    } catch {
+    } catch (err) {
+      // Absent is not unreadable — a project with no `docs/` tree at all is the
+      // common case, not a disclosure.
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      // Otherwise: same rule as source discovery, a directory that cannot be
+      // read is REPORTED. Swallowing it here is worse than shrinking a ratio — a
+      // doc under it is invisible to link-rot (a `warn` that gates `--strict`)
+      // and to the orphan check, so an actionable finding would be suppressed
+      // with no trace.
+      unreadable.push(rel);
       return;
     }
     for (const e of [...entries].sort((a, b) => (a.name < b.name ? -1 : 1))) {
@@ -817,7 +877,10 @@ function listMarkdownDocs(root: string): string[] {
     }
   };
   walk("docs");
-  return out;
+  return {
+    paths: out,
+    unreadable: [...new Set(unreadable)].sort(),
+  };
 }
 
 /** Drop fenced and inline code so example links in prose never false-fire. */
@@ -838,9 +901,9 @@ function resolveDocLink(target: string, docDir: string): string | null {
 
 /** Flag intra-repo links (markdown + `[[wikilink]]`) whose target does not
  *  exist on disk. Deterministic, file-existence only; anchors are not resolved. */
-function computeLinkRot(root: string): LintFinding[] {
+function computeLinkRot(root: string, docPaths: string[]): LintFinding[] {
   const findings: LintFinding[] = [];
-  for (const docRel of listMarkdownDocs(root)) {
+  for (const docRel of docPaths) {
     let content: string;
     try {
       content = readFileSync(join(root, docRel), "utf8");

@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, rm, mkdir, writeFile, chmod } from "node:fs/promises";
-import { realpathSync } from "node:fs";
+import { readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -298,6 +298,50 @@ describe("workspace discovery sees the repositories nested inside a tree", () =>
     const ws = resolveWorkspace(tmp);
     assert.deepEqual(ws.members, []);
     assert.equal(ws.isWorkspace, false);
+  });
+
+  // The third walker. A member repository can hide under a directory the process
+  // cannot open, and a short member list presented as the whole workspace takes
+  // the aggregated ignore rules down with it.
+  it("reports a subtree it could not read instead of dropping it silently", async () => {
+    const probe = await mkdtemp(join(tmpdir(), "codument-perm-probe-"));
+    let enforced = true;
+    try {
+      await chmod(probe, 0o000);
+      readdirSync(probe);
+      enforced = false;
+    } catch {
+      /* permission bits are enforced */
+    } finally {
+      await chmod(probe, 0o755).catch(() => {});
+      await rm(probe, { recursive: true, force: true });
+    }
+    if (!enforced) return;
+
+    await makeRepo(tmp);
+    const locked = join(tmp, "packages");
+    await mkdir(locked, { recursive: true });
+    await makeRepo(join(locked, "hidden-member"));
+    try {
+      await chmod(locked, 0o000);
+      forgetWorkspace();
+      const ws = resolveWorkspace(tmp);
+      assert.deepEqual(ws.unreadable, ["packages"], "the subtree is NAMED");
+      assert.ok(
+        !ws.members.some((m) => m.prefix.startsWith("packages")),
+        "and contributes no fabricated member",
+      );
+    } finally {
+      await chmod(locked, 0o755).catch(() => {});
+      forgetWorkspace();
+    }
+  });
+
+  it("reports nothing unreadable in an ordinary tree", async () => {
+    await makeRepo(tmp);
+    await makeRepo(join(tmp, "child"));
+    forgetWorkspace();
+    assert.deepEqual(resolveWorkspace(tmp).unreadable, []);
   });
 
   it("drops a not-yet-added member gitlink even with git's trailing slash", async () => {

@@ -1,8 +1,8 @@
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, mkdir, writeFile, cp } from "node:fs/promises";
-import { readFileSync, realpathSync } from "node:fs";
+import { mkdtemp, rm, mkdir, writeFile, cp, chmod } from "node:fs/promises";
+import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -690,5 +690,64 @@ describe("doctor scores against the project's declared scope", () => {
     assert.equal(code, 1, "an invalid scope declaration must not produce a score");
     assert.match(stdout, /invalid exclude\.dirs/);
     assert.doesNotMatch(stdout, /Documentation coverage/);
+  });
+});
+
+describe("doctor discloses a directory it could not read", () => {
+  let root: string;
+  let locked: string;
+
+  const canLock = async (): Promise<boolean> => {
+    const probe = await mkdtemp(join(tmpdir(), "codument-perm-probe-"));
+    try {
+      await chmod(probe, 0o000);
+      readdirSync(probe);
+      return false;
+    } catch {
+      return true;
+    } finally {
+      await chmod(probe, 0o755).catch(() => {});
+      await rm(probe, { recursive: true, force: true });
+    }
+  };
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-doctor-unreadable-"));
+    await mkdir(join(root, "src", "open"), { recursive: true });
+    await mkdir(join(root, "docs"), { recursive: true });
+    await writeFile(join(root, "src", "open", "a.ts"), "export const a = 1;\n");
+    await writeFile(join(root, "docs", ".registry.json"), JSON.stringify({ features: {} }));
+    locked = join(root, "src", "locked");
+    await mkdir(locked, { recursive: true });
+    await writeFile(join(locked, "hidden.ts"), "export const h = 1;\n");
+  });
+  afterEach(async () => {
+    await chmod(locked, 0o755).catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("prints the note and carries it additively in --json", async (t) => {
+    if (!(await canLock())) return t.skip("permission bits not enforced here (root?)");
+    await chmod(locked, 0o000);
+
+    const out = execFileSync("node", [CLI, "doctor"], { cwd: root, encoding: "utf-8" });
+    assert.match(out, /1 directory could not be read/);
+    assert.match(out, /a floor, not the count/);
+    assert.match(out, /src\/locked/);
+
+    const json = JSON.parse(
+      execFileSync("node", [CLI, "doctor", "--json"], { cwd: root, encoding: "utf-8" }),
+    );
+    assert.deepEqual(json.scope.unreadableDirs, ["src/locked"]);
+    assert.equal(json.version, 1, "additive: the contract version is unchanged");
+  });
+
+  it("says nothing when every directory is readable", () => {
+    const out = execFileSync("node", [CLI, "doctor"], { cwd: root, encoding: "utf-8" });
+    assert.doesNotMatch(out, /could not be read/);
+    const json = JSON.parse(
+      execFileSync("node", [CLI, "doctor", "--json"], { cwd: root, encoding: "utf-8" }),
+    );
+    assert.equal(json.scope.unreadableDirs, undefined);
   });
 });

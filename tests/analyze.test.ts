@@ -2,9 +2,9 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, chmod } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
   analyze,
@@ -115,8 +115,9 @@ describe("exclusion spec", () => {
 
 describe("discoverSourceFiles", () => {
   it("lists in-scope source files and excludes the generated dir", () => {
-    const files = discoverSourceFiles(FIXTURE, "src");
-    assert.deepStrictEqual(files, [
+    const { paths, unreadable } = discoverSourceFiles(FIXTURE, "src");
+    assert.deepStrictEqual(unreadable, [], "a readable tree reports nothing unreadable");
+    assert.deepStrictEqual(paths, [
       "src/auth/login.ts",
       "src/auth/session.ts",
       "src/lib/db.ts",
@@ -149,7 +150,7 @@ describe("gitignore-aware scope (temp repo)", () => {
       run(["config", "user.name", "T"]);
 
       // A pure filesystem walk (no predicate) still sees the build/vendor files.
-      const raw = discoverSourceFiles(tmp, ".");
+      const raw = discoverSourceFiles(tmp, ".").paths;
       assert.ok(raw.includes("lib/compiled.js"));
       assert.ok(raw.includes("vendored/sdk.ts"));
 
@@ -160,7 +161,7 @@ describe("gitignore-aware scope (temp repo)", () => {
 
       // Git-aware discovery drops them, leaving only hand-written source.
       const ignored = makeIgnoredPredicate(listing.ok ? listing.paths : []);
-      const scoped = discoverSourceFiles(tmp, ".", DEFAULT_EXCLUSION_SPEC, ignored);
+      const scoped = discoverSourceFiles(tmp, ".", DEFAULT_EXCLUSION_SPEC, ignored).paths;
       assert.deepStrictEqual(scoped, ["src/app.ts"]);
 
       // analyze() wires this in: only the one real file is in-scope and unowned.
@@ -1116,5 +1117,149 @@ describe("one definition of a test file, and the spec is composed from it", () =
     // A project's own `exclude.globs` convention is NOT honored yet; the doc
     // says so, and this pins that the claim stays true.
     assert.equal(isTestPath("src/a.integration.ts"), false);
+  });
+});
+
+describe("an unreadable directory is reported, never silently skipped", () => {
+  // The loudness regression adopting the shared walker inherited: the walk
+  // swallowed a permissions error and returned a SHORTER file list, which shrinks
+  // the coverage denominator — and a smaller denominator makes the percentage read
+  // HIGHER than the truth. Same most-confident-where-most-wrong inversion as an
+  // undeterminable ignore set, arriving by a different route.
+  let root: string;
+  let locked: string;
+
+  // chmod is meaningless as root and on filesystems that ignore permission bits;
+  // probe rather than assume, so this never fails for the wrong reason.
+  const canLockADirectory = async (): Promise<boolean> => {
+    const probe = await mkdtemp(join(tmpdir(), "codument-perm-probe-"));
+    try {
+      await chmod(probe, 0o000);
+      readdirSync(probe);
+      return false; // read succeeded despite 000 — cannot simulate the failure
+    } catch {
+      return true;
+    } finally {
+      await chmod(probe, 0o755).catch(() => {});
+      await rm(probe, { recursive: true, force: true });
+    }
+  };
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-unreadable-"));
+    await mkdir(join(root, "src", "open"), { recursive: true });
+    await writeFile(join(root, "src", "open", "a.ts"), "export const a = 1;\n");
+    locked = join(root, "src", "locked");
+    await mkdir(locked, { recursive: true });
+    await writeFile(join(locked, "hidden.ts"), "export const h = 1;\n");
+  });
+
+  afterEach(async () => {
+    await chmod(locked, 0o755).catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("names the directory it could not read, and still returns what it could", async (t) => {
+    if (!(await canLockADirectory())) return t.skip("permission bits not enforced here (root?)");
+    await chmod(locked, 0o000);
+    const { paths, unreadable } = discoverSourceFiles(root, "src");
+    assert.deepStrictEqual(paths, ["src/open/a.ts"], "the readable half is still returned");
+    assert.deepStrictEqual(unreadable, ["src/locked"], "and the unreadable half is NAMED");
+  });
+
+  it("surfaces it on the scope verdict, so the score is not published bare", async (t) => {
+    if (!(await canLockADirectory())) return t.skip("permission bits not enforced here (root?)");
+    await chmod(locked, 0o000);
+    const result = analyze({ root, registry: { features: {} }, srcDir: "src" });
+    assert.deepStrictEqual(result.scope.unreadableDirs, ["src/locked"]);
+    // The denominator really did shrink — which is exactly why it is disclosed.
+    assert.equal(result.inScopeSourceCount, 1);
+  });
+
+  it("says nothing when every directory is readable", () => {
+    const result = analyze({ root, registry: { features: {} }, srcDir: "src" });
+    assert.equal(result.scope.unreadableDirs, undefined);
+    assert.equal(result.inScopeSourceCount, 2, "both files are in scope when readable");
+  });
+
+  it("names the srcDir itself when that is what could not be read", async (t) => {
+    if (!(await canLockADirectory())) return t.skip("permission bits not enforced here (root?)");
+    const solo = await mkdtemp(join(tmpdir(), "codument-unreadable-root-"));
+    const base = join(solo, "src");
+    await mkdir(base, { recursive: true });
+    await writeFile(join(base, "a.ts"), "export const a = 1;\n");
+    try {
+      await chmod(base, 0o000);
+      const { paths, unreadable } = discoverSourceFiles(solo, "src");
+      assert.deepStrictEqual(paths, []);
+      assert.deepStrictEqual(unreadable, ["src"]);
+    } finally {
+      await chmod(base, 0o755).catch(() => {});
+      await rm(solo, { recursive: true, force: true });
+    }
+  });
+
+  // The `|| "."` branch: reachable only when the walk root IS the project root,
+  // i.e. a flat layout with no `src/` (the default srcDir fallback) whose root
+  // cannot be read. relative(root, root) is "" and must not report an empty path.
+  it("names the project root as '.' when the walk root is the root itself", async (t) => {
+    if (!(await canLockADirectory())) return t.skip("permission bits not enforced here (root?)");
+    const flat = await mkdtemp(join(tmpdir(), "codument-unreadable-flat-"));
+    try {
+      await writeFile(join(flat, "a.ts"), "export const a = 1;\n");
+      await chmod(flat, 0o000);
+      const { paths, unreadable } = discoverSourceFiles(flat, ".");
+      assert.deepStrictEqual(paths, []);
+      assert.deepStrictEqual(unreadable, ["."], "never an empty-string path");
+    } finally {
+      await chmod(flat, 0o755).catch(() => {});
+      await rm(flat, { recursive: true, force: true });
+    }
+  });
+
+  // The sibling walker the first fix left behind: the docs tree. Worse than a
+  // shrunken ratio — a doc under an unreadable directory is invisible to
+  // link-rot, which is a `warn` that gates --strict, so an actionable finding
+  // would be suppressed without a trace.
+  it("reports an unreadable docs subdirectory, which link-rot would otherwise miss", async (t) => {
+    if (!(await canLockADirectory())) return t.skip("permission bits not enforced here (root?)");
+    const lockedDocs = join(root, "docs", "private");
+    await mkdir(lockedDocs, { recursive: true });
+    await writeFile(join(lockedDocs, "note.md"), "[gone](../nowhere.md)\n");
+    try {
+      await chmod(lockedDocs, 0o000);
+      const result = analyze({ root, registry: { features: {} }, srcDir: "src" });
+      assert.ok(
+        result.scope.unreadableDirs?.includes("docs/private"),
+        `docs tree failure must be disclosed: ${JSON.stringify(result.scope.unreadableDirs)}`,
+      );
+    } finally {
+      await chmod(lockedDocs, 0o755).catch(() => {});
+    }
+  });
+
+  // Absent is not unreadable. Conflating them fires on every project without a
+  // docs/ tree and on every ordinary mid-walk race, which would drown the signal
+  // the disclosure exists to carry.
+  it("says nothing about a directory that simply does not exist", () => {
+    const result = analyze({ root, registry: { features: {} }, srcDir: "src" });
+    assert.equal(result.scope.unreadableDirs, undefined, "no docs/ tree is not a failure");
+    // And a srcDir that does not exist yields an empty walk, not a disclosure.
+    const absent = discoverSourceFiles(root, "no-such-dir");
+    assert.deepStrictEqual(absent, { paths: [], unreadable: [] });
+  });
+
+  it("merges the source walk and the docs walk into one sorted list", async (t) => {
+    if (!(await canLockADirectory())) return t.skip("permission bits not enforced here (root?)");
+    const lockedDocs = join(root, "docs", "private");
+    await mkdir(lockedDocs, { recursive: true });
+    try {
+      await chmod(locked, 0o000);
+      await chmod(lockedDocs, 0o000);
+      const result = analyze({ root, registry: { features: {} }, srcDir: "src" });
+      assert.deepStrictEqual(result.scope.unreadableDirs, ["docs/private", "src/locked"]);
+    } finally {
+      await chmod(lockedDocs, 0o755).catch(() => {});
+    }
   });
 });

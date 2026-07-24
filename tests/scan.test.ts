@@ -1,8 +1,8 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, writeFile, mkdir, readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { mkdtemp, rm, writeFile, mkdir, readFile, chmod } from "node:fs/promises";
+import { existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -569,6 +569,57 @@ describe("scan honors the project's own declared exclusions", () => {
       assert.deepEqual(withEmpty, without);
     } finally {
       await rm(other, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("scan discloses a directory it could not read", () => {
+  const canLock = async (): Promise<boolean> => {
+    const probe = await mkdtemp(join(tmpdir(), "codument-perm-probe-"));
+    try {
+      await chmod(probe, 0o000);
+      readdirSync(probe);
+      return false;
+    } catch {
+      return true;
+    } finally {
+      await chmod(probe, 0o755).catch(() => {});
+      await rm(probe, { recursive: true, force: true });
+    }
+  };
+
+  it("notes it, still proposes what it could, and records it durably", async (t) => {
+    if (!(await canLock())) return t.skip("permission bits not enforced here (root?)");
+    await mkdir(join(tmp, "app"), { recursive: true });
+    await writeFile(join(tmp, "app", "real.ts"), "export const a = 1;\n");
+    const locked = join(tmp, "locked");
+    await mkdir(locked, { recursive: true });
+    await writeFile(join(locked, "hidden.ts"), "export const h = 1;\n");
+
+    const lines: string[] = [];
+    const original = console.log;
+    try {
+      await chmod(locked, 0o000);
+      console.log = (...args: unknown[]) => void lines.push(args.join(" "));
+      try {
+        await scan({ root: tmp });
+      } finally {
+        console.log = original;
+      }
+      const out = lines.join("\n");
+      assert.match(out, /1 directory could not be read/);
+      assert.match(out, /locked/);
+
+      // A note, not a refusal: the readable half is still proposed.
+      const registry = await readRegistry(join(tmp, "docs", ".registry.json"));
+      const sources = Object.values(registry.features).flatMap((e) => e.primary_sources);
+      assert.ok(sources.includes("app/real.ts"));
+
+      // Durable, because the entries this run wrote outlive the console note.
+      const meta = JSON.parse(await readFile(join(tmp, ".codument-meta.json"), "utf-8"));
+      assert.deepEqual(meta.lastScan.unreadableDirs, ["locked"]);
+    } finally {
+      await chmod(locked, 0o755).catch(() => {});
     }
   });
 });

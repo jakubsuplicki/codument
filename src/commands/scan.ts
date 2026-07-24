@@ -73,12 +73,13 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const sourceFiles = discoverSourceFiles(
+  const discovery = discoverSourceFiles(
     root,
     srcDir,
     exclusion,
     makeIgnoredPredicate(ignoredListing.ok ? ignoredListing.paths : []),
   );
+  const sourceFiles = discovery.paths;
   console.log(`  Found ${pc.cyan(String(sourceFiles.length))} source files`);
   // Without the ignore rules the walk cannot tell build output from source, and
   // scan is the moment that decision becomes a durable registry entry. Say so
@@ -94,6 +95,19 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
     console.log(
       pc.dim(
         '        build output swept in? declare it: "exclude": { "dirs": ["out"] } in .codument-meta.json',
+      ),
+    );
+  }
+  // A directory the walk could not read omits whatever is under it, so the
+  // proposal below is a floor rather than the mapping. A NOTE, not the refusal
+  // an unreadable declaration gets: that one risks writing WRONG entries with no
+  // expiry, while this one only omits — a later run picks them up, and a
+  // permanently unreadable tree (a root-owned mount) would otherwise make scan
+  // unusable rather than merely incomplete.
+  if (discovery.unreadable.length > 0) {
+    console.log(
+      pc.cyan(
+        `  note: ${discovery.unreadable.length} ${discovery.unreadable.length === 1 ? "directory" : "directories"} could not be read, so sources under ${discovery.unreadable.length === 1 ? "it are" : "them are"} not proposed: ${discovery.unreadable.join(", ")}`,
       ),
     );
   }
@@ -185,6 +199,11 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
     // dies with the terminal; the entries it qualified outlive it, and a later
     // reader needs to know these sources were proposed without the ignore rules.
     ...(ignoredListing.ok ? {} : { scopeUnverified: ignoredListing.reason }),
+    // Durable for the same reason: the entries this run wrote were proposed over
+    // a tree it could not fully read, and a later reader needs to know that.
+    ...(discovery.unreadable.length > 0
+      ? { unreadableDirs: discovery.unreadable }
+      : {}),
   };
   atomicWriteFileSync(metaPath, JSON.stringify(meta, null, 2) + "\n");
 

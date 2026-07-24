@@ -178,9 +178,18 @@ export function buildReport(
   // members so the number is read as an aggregate, not one repo's. Resolved here
   // rather than in the pure analyzer, which must not touch git.
   const ws = resolveWorkspace(root);
-  const scope: ScopeConfidence = ws.isWorkspace
-    ? { ...result.scope, members: ws.members.map((m) => m.prefix || "<root>") }
-    : result.scope;
+  // The member walk is a third tree that can fail to open, and a member repo
+  // hiding under an unreadable directory takes its ignore rules with it. Merge
+  // into the one field, so the user reads a single "could not read" list rather
+  // than learning which of our internal walks tripped.
+  const unreadableDirs = [
+    ...new Set([...(result.scope.unreadableDirs ?? []), ...ws.unreadable]),
+  ].sort();
+  const scope: ScopeConfidence = {
+    ...result.scope,
+    ...(ws.isWorkspace ? { members: ws.members.map((m) => m.prefix || "<root>") } : {}),
+    ...(unreadableDirs.length > 0 ? { unreadableDirs } : {}),
+  };
 
   return {
     version: 1,
@@ -358,6 +367,17 @@ function printHuman(report: DoctorReport, strictFail = false): void {
     }
     console.log(
       pc.cyan(`  scope: also excluding ${parts.join(" · ")} — .codument-meta.json`),
+    );
+  }
+  // The third way: a directory the walk could not read. Its files are missing
+  // from the denominator, and a smaller denominator makes the percentage read
+  // HIGHER than the truth — the same inversion as an undeterminable ignore set,
+  // arriving by a different route.
+  if (report.scope.unreadableDirs) {
+    console.log(
+      pc.cyan(
+        `  note: ${report.scope.unreadableDirs.length} ${report.scope.unreadableDirs.length === 1 ? "directory" : "directories"} could not be read, so this scope is a floor, not the count: ${report.scope.unreadableDirs.join(", ")}`,
+      ),
     );
   }
   // The second way a scope can be unverified: the project may have declared

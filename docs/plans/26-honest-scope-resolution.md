@@ -119,7 +119,9 @@ No new source files; no `map materialize` needed.
       been counted), and results are sorted and deduped rather than in traversal order. A third is
       inherited and NOT an improvement: an unreadable subdirectory is now silently skipped where
       scan used to crash. It is pre-existing shared behavior, out of this plan's scope, and is
-      logged here as owed rather than silently absorbed.
+      logged here as owed rather than silently absorbed. **Paid off 2026-07-22**: discovery reports
+      what it could not read, and both surfaces disclose it — the same unknown-is-not-empty rule
+      this plan established, applied to the filesystem half of the scope.
       Scope uncertainty is also persisted to `lastScan.scopeUnverified`, because the registry the
       run writes outlives the console note that qualified it.
 - [x] Step 5: lint net — `computeLint` receives `isIgnored`; `generated-leakage` fires on a

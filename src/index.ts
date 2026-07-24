@@ -206,6 +206,7 @@ export type {
   CoverageReport,
   ExclusionSpec,
   ResolvedScope,
+  SourceDiscovery,
   LintFinding,
   LintFindingId,
 } from "./lib/analyze.js";

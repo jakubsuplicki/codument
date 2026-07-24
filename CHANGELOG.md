@@ -8,6 +8,23 @@ remains pre-1.0.
 ## [Unreleased]
 
 ### Fixed
+- No directory walk skips an unreadable directory in silence any more. Source
+  discovery swallowed the permissions error and returned a shorter file list,
+  which shrinks the coverage denominator — and a smaller denominator makes the
+  percentage read *higher* than the truth, the same most-confident-where-most-wrong
+  inversion an undeterminable ignore set produced. The docs-tree walk had the same
+  hole with a worse consequence: a doc under an unreadable directory is invisible
+  to link-rot, a `warn` that gates `--strict`, so an actionable finding was
+  suppressed with no trace. The workspace member walk had it too, where a hidden
+  member repository takes its ignore rules down with it. All three now report, and
+  the results merge into one list — the question is "what could codument not
+  read?", not which internal walk tripped. `doctor` and `scan` name them,
+  `doctor --json` carries `scope.unreadableDirs` additively, and the scan record
+  keeps it because the entries outlive the console. Absent is not unreadable: a
+  directory that does not exist contributes nothing and is never disclosed.
+  **Breaking (library API):** `discoverSourceFiles` returns
+  `{ paths, unreadable }` rather than a bare array — deliberately, so a
+  programmatic consumer cannot keep reading a partial answer as a complete one.
 - `path-enumeration` no longer penalizes a doc for doing what the documentation
   standard requires. The standard asks every invariant to link the test that enforces
   it; the finding counted each path MENTION, and any `src/**` path including a test
@@ -49,10 +66,9 @@ remains pre-1.0.
   analyzer's own walker. **Behavior change:** scan proposes fewer files on repos
   with git-ignored source-extension output; it also no longer proposes symlinked
   source files (matching the analyzer, which never counted them), returns sorted
-  rather than traversal-ordered results, and now skips an unreadable
-  subdirectory silently where it previously crashed. That last one is inherited
-  from the shared walker and is a regression in loudness, not an improvement;
-  it is owed a fix rather than left unsaid.
+  rather than traversal-ordered results. It no longer skips an unreadable
+  subdirectory silently — adopting the shared walker inherited that, and it was
+  logged as owed rather than absorbed; see the discovery entry below.
 - `generated-leakage` now fires on a git-ignored file listed as a source. The
   predicate was computed for the coverage denominator and never passed to the
   lint, so the one check that could have caught a registry full of build
