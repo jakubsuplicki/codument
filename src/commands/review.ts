@@ -462,6 +462,18 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       exclusion,
     };
     if (options.base) {
+      // A single ref cannot name a state of several repositories, so ref-ranged
+      // review is refused in a workspace rather than answered with a guess (a
+      // per-member ref map, or diffing gitlink shas, would put a guess on the
+      // verdict path — ADR-016). The worktree gate above still works across
+      // members; CI enforcement for a nested-member monorepo is doctor plus the
+      // worktree gate, not the two-ref PR gate. Fail closed, named.
+      if (resolveWorkspace(root).isWorkspace) {
+        throw new GateError(
+          `--base cannot review a workspace of member repositories: a single ref names one repository, not the tuple of member heads a workspace state is. Run ref-ranged review inside the member repository whose history you mean.`,
+          "wrong-topology",
+        );
+      }
       // Diff the working tree against the merge-base with `options.base` (the
       // branch's drift since it diverged). Resolve that base once so anchors and
       // the changed-file set answer the same question.
@@ -497,7 +509,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       if (options.json) {
         console.log(
           JSON.stringify(
-            { version: 2, gate: "unavailable", reason: err.message, isGitRepo: true },
+            { version: 2, gate: "unavailable", reason: err.message, kind: err.kind, isGitRepo: true },
             null,
             2,
           ),

@@ -4,7 +4,12 @@ import pc from "picocolors";
 import { buildReview, type ReviewReport } from "./review.js";
 import { buildReport, type DoctorReport } from "./doctor.js";
 import { warmAdaptersForRepo } from "../lib/fingerprint.js";
-import { assertRootIsRepoToplevel, isGitRepo, getWorkingTreeChanges } from "../lib/git.js";
+import {
+  assertRootIsRepoToplevel,
+  forgetWorkspace,
+  getWorkingTreeChanges,
+  isGitRepo,
+} from "../lib/git.js";
 import { readRecentEvents, type CodumentEvent } from "../lib/events.js";
 import { summarizeImpact } from "../lib/impact-ledger.js";
 import { summarizeTokens } from "../lib/token-report.js";
@@ -522,6 +527,12 @@ interface FrameData {
 const EVENT_WINDOW = 1_000_000;
 
 function gatherFrameData(root: string): FrameData {
+  // The workspace shape is memoized per root, but watch outlives one answer: a
+  // member repo can be cloned or `git init`'d into the tree mid-session, and a
+  // frozen member set would leave its edits invisible for the rest of the run.
+  // Re-resolve each tick — the walk is pruned by the exclusion dirs and is
+  // strictly cheaper than the `git status` tree scan this tick already runs.
+  forgetWorkspace(root);
   // Compute the working-tree changes once and share them with both the review
   // analyzer and the activity tape, so a refresh spawns one `git status` tree
   // scan instead of two.

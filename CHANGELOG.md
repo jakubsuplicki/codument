@@ -8,6 +8,14 @@ remains pre-1.0.
 ## [Unreleased]
 
 ### Fixed
+- The gate no longer returns a false green over a nested member repository. A monorepo whose
+  packages are each their own git repository (and a super-repo with submodules) is opaque to the
+  outer git: an owned source changed inside a member surfaced as `M child` — a gitlink with no
+  extension — which the source-file test rejected into "other changed", so the stale-doc verdict
+  never fired while `review --strict` exited 0. The git seam now resolves the member repositories,
+  aggregates each one's own view prefixed back to workspace-relative paths, and routes a blob read
+  to the owning member so `HEAD` means that member's HEAD. A nested verdict is byte-identical to a
+  flat-repo control; a plain single repo is unaffected.
 - `doctor` no longer crashes on a registry-mapped source whose language grammar
   git could not reveal. The adapter warm set was derived from git's view
   (`ls-files` plus working-tree status) while the analyzers walk the registry,
@@ -43,6 +51,15 @@ remains pre-1.0.
   output however broad the pattern matching it.
 
 ### Added
+- Monorepos of nested repositories, and submodule super-repos, are first-class layouts. Run
+  codument at the workspace root — the directory containing the member repositories, which need not
+  be a repository itself — and every git-backed surface (coverage, the gate, `scan`, warm) reasons
+  over the aggregated union of the members' own git views. `review` prints each member's base HEAD,
+  so a workspace verdict is reproducible from the tuple of member heads the way a single repo's is
+  from one sha. What a single ref cannot honestly name across several repositories is refused rather
+  than guessed: `review --base` (and the CI workflow `hooks install --ci` scaffolds around it), `audit <range>`, and `hooks install` at a workspace root
+  fail with a `wrong-topology` diagnostic pointing at the member to run inside. For a nested-member
+  monorepo, CI enforcement is `doctor` plus the worktree gate, not the two-ref PR gate. See ADR-016.
 - Projects can declare their own exclusions in `.codument-meta.json`. The
   exclusion spec was a fully-plumbed parameter with exactly one value that ever
   existed, so build output landing somewhere unguessable (a `tsc` `outDir` of

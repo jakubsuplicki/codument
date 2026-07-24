@@ -299,6 +299,26 @@ describe("workspace discovery sees the repositories nested inside a tree", () =>
     assert.deepEqual(ws.members, []);
     assert.equal(ws.isWorkspace, false);
   });
+
+  it("drops a not-yet-added member gitlink even with git's trailing slash", async () => {
+    // Before the outer repo `git add`s the embedded repo, `git status` reports
+    // it as `?? child/` WITH a trailing slash. The gitlink drop must normalize
+    // that off, or the extension-less placeholder leaks into the change set.
+    await makeRepo(tmp);
+    await makeRepo(join(tmp, "child"));
+    // A change inside the member, and the member itself not yet added to root.
+    await writeFile(join(tmp, "child", "seed.txt"), "changed\n");
+    forgetWorkspace();
+    const changes = getWorkingTreeChanges(tmp);
+    assert.ok(
+      !changes.includes("child") && !changes.includes("child/"),
+      `gitlink placeholder leaked: ${changes.join(", ")}`,
+    );
+    assert.ok(
+      changes.includes("child/seed.txt"),
+      `member's own change should be present: ${changes.join(", ")}`,
+    );
+  });
 });
 
 describe("repoFor routes a workspace path to the member that owns it", () => {

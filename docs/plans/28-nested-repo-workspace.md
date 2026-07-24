@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 28: nested-repo workspaces — aggregate git truth across member repos
@@ -42,6 +42,9 @@ failure codument can have: **a false green from the gate**. All verified live ag
 - `src/lib/fingerprint.ts` + `src/lib/two-ref.ts` (worktree-mode blob reads routed to the owning
   member; ref-ranged guard)
 - `src/commands/review.ts` (workspace-aware entry; ref-ranged refusal message; per-member base line)
+- `src/commands/ack.ts` (added in step 4 after review: `--base` ack refused, the one ref-ranged
+  entry point the drafted sweep missed — it resolved an outer-repo sha no member knows, so a symbol
+  that genuinely moved read as "nothing to ack" and exited 1 with a misleading message)
 - `src/commands/doctor.ts`, `src/commands/scan.ts` (workspace note: "N member repositories —
   ignore rules aggregated"), `src/commands/watch.ts` (rides the seam), `src/commands/audit.ts` +
   `src/commands/report.ts` (workspace refusal/notes), `src/lib/git-hooks.ts` (workspace refusal)
@@ -121,10 +124,10 @@ in the registry); no `map materialize` needed. Run after Plan 26 (rides its type
       HEAD); per-member base lines printed; THE regression: the false-green repro (owned member
       `.py` contract change) now yields per-symbol drift findings and `--strict` exit 1, identical
       to its flat-repo control; submodule variant of the same test.
-- [ ] Step 4: honest refusals — ref-ranged (`--base`/`--ci`) GateError("wrong-topology") in
+- [x] Step 4: honest refusals — ref-ranged (`--base`/`--ci`) GateError("wrong-topology") in
       workspace mode with the run-inside-the-member pointer (SARIF/`--json` discriminants
       included), `audit` refusal, `hooks install` refusal; tests pin exit codes and shapes.
-- [ ] Step 5: docs — ADR-016 (aggregate-and-prefix; worktree-gate-only; ref-ranged refused;
+- [x] Step 5: docs — ADR-016 (aggregate-and-prefix; worktree-gate-only; ref-ranged refused;
       enforcement consequence), change-control-gate.md invariants (+ test pointers), commands.md,
       lib.md, README monorepo section, CHANGELOG.
 

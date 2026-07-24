@@ -1,7 +1,7 @@
 import pc from "picocolors";
 import { warmAllAdapters } from "../lib/fingerprint.js";
 import { auditRange, type AuditEntry, type HistoryAudit } from "../lib/history-audit.js";
-import { assertRootIsRepoToplevel, isGitRepo } from "../lib/git.js";
+import { assertRootIsRepoToplevel, isGitRepo, resolveWorkspace } from "../lib/git.js";
 import { GateError } from "../lib/two-ref.js";
 
 // `codument audit <base>..<head>` — retroactive drift audit over committed
@@ -110,6 +110,16 @@ export async function auditCommand(range: string, options: AuditCliOptions = {})
     // GateError (wrong root, unreachable ref, broken git read) surfaces red at
     // the CLI boundary; under --json it stays machine-readable here.
     assertRootIsRepoToplevel(root);
+    // History is per-repository: a ref range names one repository's commits, and
+    // a workspace has several with independent histories. Refuse rather than
+    // audit one member's range as if it were the whole (ADR-016) — run audit
+    // inside the member whose history you mean.
+    if (resolveWorkspace(root).isWorkspace) {
+      throw new GateError(
+        `audit cannot range over a workspace of member repositories: a ref range names one repository's history. Run it inside the member repository you mean.`,
+        "wrong-topology",
+      );
+    }
     audit = auditRange(root, parsed.base, parsed.head);
   } catch (err) {
     if (err instanceof GateError && options.json) {

@@ -614,6 +614,35 @@ There is no `--exclude` flag on purpose. Scope is a repository artifact your rev
 </details>
 
 <details>
+<summary><b>Monorepos of nested repositories (and submodules)</b></summary>
+
+Codument sees a workspace, not just one git work tree. If your repository contains other git
+repositories — packages that are each their own repo, or git submodules — an outer `git` reports
+each of them as a single opaque gitlink and cannot see inside. Run codument at the workspace root
+(the directory that *contains* the member repositories; it need not be a repository itself) and it
+resolves the members, aggregates each one's own git view, and reasons over the union:
+
+```text
+codument review
+
+  workspace: 2 member repositories (applications-service, apply-exp) — git scope aggregated
+    base applications-service: 1495d24aa8df
+    base apply-exp: 49dcd6b05913
+```
+
+The worktree gate resolves per-symbol drift across members, diffing an owned source inside a member
+against that member's own HEAD, and prints each member's base so any run is reproducible. A plain
+single repository is unaffected — it takes the exact path it always did.
+
+What a single ref cannot honestly name across several repositories, codument refuses rather than
+guesses: ref-ranged review (`review --base`, and the CI workflow a `hooks install --ci` scaffolds around it), a history `audit` range, and a `hooks install` at the
+workspace root each fail with a `wrong-topology` diagnostic that points you at the member repository
+to run them inside. For a nested-member monorepo, CI enforcement is `doctor` plus the worktree gate,
+not the two-ref PR gate. See [ADR-016](docs/architecture/decisions/016-nested-repo-workspace-aggregation.md).
+
+</details>
+
+<details>
 <summary><b>Proof benchmarks</b></summary>
 
 Codument ships self-contained proof benchmarks. They do not call an AI model, require telemetry, or judge work subjectively.

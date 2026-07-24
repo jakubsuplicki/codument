@@ -292,6 +292,10 @@ export interface ScopeConfidence {
    *  narrowed by a project decision is reported alongside the score, because a
    *  reader comparing two repositories' numbers is comparing two scopes. */
   configuredExclusions?: ExcludeConfig;
+  /** Member-repository prefixes when the root is a workspace of nested repos, so
+   *  the score is read as an aggregate over several repositories rather than one.
+   *  Absent for a plain single repository. */
+  members?: string[];
 }
 
 export interface AnalysisResult {

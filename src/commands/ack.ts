@@ -20,7 +20,7 @@ import {
   isSignatureMove,
   warmAdaptersForRepo,
 } from "../lib/fingerprint.js";
-import { getGitAuthor } from "../lib/git.js";
+import { getGitAuthor, resolveWorkspace } from "../lib/git.js";
 import { resolveOwner } from "../lib/ownership.js";
 import { type Registry, readRegistrySync } from "../lib/registry.js";
 import { emitAck, emitAckRemove } from "../lib/review-events.js";
@@ -94,6 +94,19 @@ export async function ackCommand(anchor: string | undefined, options: AckCliOpti
   }
   if (options.remove !== undefined) {
     removeAck(root, options.remove);
+    return;
+  }
+
+  // A `--base` ack ranges against one ref, which cannot name a workspace of
+  // member repositories: the outer repo's merge-base sha is not a ref any member
+  // knows, so a symbol that genuinely moved would read as "nothing to ack" (the
+  // routed member read fails, the finding is silently omitted). Refuse by name,
+  // the same wrong-topology stance review/audit/hooks take, before resolveBase.
+  // A worktree-grain ack (no `--base`) routes HEAD per member and works fine.
+  if (options.base && resolveWorkspace(root).isWorkspace) {
+    fail(
+      "--base cannot ack against a workspace of member repositories: a single ref names one repository, not the tuple of member heads. Run the ack inside the member repository whose history you mean.",
+    );
     return;
   }
 

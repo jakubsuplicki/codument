@@ -3,7 +3,7 @@ import { join } from "node:path";
 import pc from "picocolors";
 import { atomicWriteFileSync } from "../lib/events.js";
 import { LANGUAGE_MATRIX, warmAdaptersForRepo } from "../lib/fingerprint.js";
-import { assertRootIsRepoToplevel } from "../lib/git.js";
+import { assertRootIsRepoToplevel, resolveWorkspace } from "../lib/git.js";
 import { GateError } from "../lib/two-ref.js";
 import { versionSkewNotice } from "../lib/version.js";
 import { readRegistrySync } from "../lib/registry.js";
@@ -174,12 +174,20 @@ export function buildReport(
     byId[finding.id] = (byId[finding.id] ?? 0) + 1;
   }
 
+  // A workspace aggregates several repositories' scopes into one score; name the
+  // members so the number is read as an aggregate, not one repo's. Resolved here
+  // rather than in the pure analyzer, which must not touch git.
+  const ws = resolveWorkspace(root);
+  const scope: ScopeConfidence = ws.isWorkspace
+    ? { ...result.scope, members: ws.members.map((m) => m.prefix || "<root>") }
+    : result.scope;
+
   return {
     version: 1,
     registryExists,
     inScopeSourceCount: result.inScopeSourceCount,
     coverage: result.coverage,
-    scope: result.scope,
+    scope,
     lint: { count: findings.length, byId, findings, notes },
   };
 }
@@ -305,6 +313,15 @@ function printHuman(report: DoctorReport, strictFail = false): void {
 
   console.log(pc.bold("codument doctor"));
   console.log();
+
+  if (report.scope.members) {
+    console.log(
+      pc.cyan(
+        `  workspace: ${report.scope.members.length} member repositories (${report.scope.members.join(", ")}) — git scope aggregated`,
+      ),
+    );
+    console.log();
+  }
 
   const headline =
     coverage.percent === null ? pc.dim("N/A") : pc.bold(`${coverage.percent}%`);

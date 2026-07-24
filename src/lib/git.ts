@@ -534,9 +534,13 @@ export function repoFor(
 //      presented as whole is the same conflation the typed listing exists to
 //      prevent, one level up.
 
-/** True when `relPath` is exactly a member's directory (the gitlink entry). */
+/** True when `relPath` is exactly a member's directory (the gitlink entry).
+ *  `git status` reports an as-yet-unadded embedded repo as `child/` with a
+ *  trailing slash, so normalize it off before the compare or the placeholder
+ *  leaks past the drop the aggregation exists to perform. */
 function isMemberDir(workspace: Workspace, relPath: string): boolean {
-  return workspace.members.some((m) => m.prefix !== "" && m.prefix === relPath);
+  const bare = relPath.replace(/\/$/, "");
+  return workspace.members.some((m) => m.prefix !== "" && m.prefix === bare);
 }
 
 function prefixed(prefix: string, path: string): string {

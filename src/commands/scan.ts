@@ -10,7 +10,7 @@ import {
   makeIgnoredPredicate,
   resolveScopeSync,
 } from "../lib/analyze.js";
-import { listIgnoredPaths } from "../lib/git.js";
+import { listIgnoredPaths, resolveWorkspace } from "../lib/git.js";
 import { ensureDir } from "../lib/scaffold.js";
 
 interface FeatureGroup {
@@ -41,6 +41,14 @@ export async function scan(options: ScanOptions = {}): Promise<void> {
 
   const srcDir = existsSync(join(root, "src")) ? "src" : ".";
   console.log(`  Scanning ${pc.cyan(srcDir + "/")}...`);
+  const workspace = resolveWorkspace(root);
+  if (workspace.isWorkspace) {
+    console.log(
+      pc.cyan(
+        `  workspace: ${workspace.members.length} member repositories (${workspace.members.map((m) => m.prefix || "<root>").join(", ")}) — git scope aggregated`,
+      ),
+    );
+  }
   console.log();
 
   // Discovery runs through the analyzer's own walker, gitignore predicate and

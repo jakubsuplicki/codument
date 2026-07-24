@@ -6,7 +6,7 @@ import {
   installHook,
   uninstallHook,
 } from "../lib/git-hooks.js";
-import { assertRootIsRepoToplevel } from "../lib/git.js";
+import { assertRootIsRepoToplevel, resolveWorkspace } from "../lib/git.js";
 
 // The command surface over the pre-commit arm (src/lib/git-hooks.ts). All three
 // verbs are read-plan-write over ONE managed block; every failure path prints
@@ -40,6 +40,15 @@ export function hooksInstall(options: HooksOptions = {}): void {
   const root = options.root ?? process.cwd();
   try {
     assertRootIsRepoToplevel(root);
+    // A workspace-root hook would run the aggregate gate on every member's
+    // commit, blocking member A's commit on member B's unrelated staleness.
+    // Member-scoped review is its own design (ADR-016); refuse here rather than
+    // install a hook that gates the wrong thing.
+    if (resolveWorkspace(root).isWorkspace) {
+      throw new HookError(
+        `${root} is a workspace of member repositories: a hook here would block each member's commit on the other members' staleness. Install the pre-commit gate inside the member repository you want gated.`,
+      );
+    }
     const { action, hookPath } = installHook(root);
     const verb = {
       created: "created",

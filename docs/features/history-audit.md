@@ -41,6 +41,7 @@ audit that could not run exits non-zero, because "could not look" must never rea
 
 ## Invariants & boundaries
 
+- A history range is per-repository, so `audit` refuses a workspace of member repositories: a ref range names one repository's commits, and a workspace has several with independent histories. It fails closed (`wrong-topology`) naming the member to run inside, rather than auditing one member's range as if it were the whole. *(test: `workspace-refusals.test.ts` "refuses a history audit range")*
 - The range is scoped by the same resolution the live gate uses — built-in exclusions widened by
   the project's own declaration — so a historical verdict and a working-tree verdict cannot disagree
   about which files were ever in scope. *(boundary — the resolution's contract lives in

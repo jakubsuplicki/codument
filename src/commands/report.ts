@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { platform } from "node:os";
 import pc from "picocolors";
 import { warmAdaptersForRepo } from "../lib/fingerprint.js";
-import { assertRootIsRepoToplevel, isGitRepo } from "../lib/git.js";
+import { assertRootIsRepoToplevel, isGateableRoot } from "../lib/git.js";
 import { GateError } from "../lib/two-ref.js";
 import { buildReview, type CoveringAck } from "./review.js";
 import { buildReport } from "./doctor.js";
@@ -116,7 +116,10 @@ export async function report(options: ReportOptions = {}): Promise<void> {
   // than persisting or emitting a green report. Under --json the refusal is the same
   // discriminated `gate: "unavailable"` shape the other --json surfaces use, so a
   // consumer never reads an absent verdict as a pass.
-  if (!isGitRepo(root)) {
+  // A workspace of member repositories is a valid root here (the report is
+  // doctor-derived, and doctor aggregates member scope transparently) — only a
+  // root that is neither a repository nor a workspace has nothing to report on.
+  if (!isGateableRoot(root)) {
     const reason = "not a git repository";
     if (options.json) {
       console.log(JSON.stringify({ version: 1, gate: "unavailable", reason }, null, 2));
