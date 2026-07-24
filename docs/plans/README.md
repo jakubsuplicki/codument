@@ -102,10 +102,16 @@ not a missing warm call) plus one worse defect the report missed: a **false gree
 | [28](28-nested-repo-workspace.md) | Nested-repo workspaces: aggregate git truth across members | the gate false-green (worst defect); nested `.gitignore` aggregation; submodule blindness; workspace-honest refusals |
 | [29](29-prose-altitude-test-links.md) | Prose-altitude calibration | `path-enumeration` penalizing the standard's required invariant→test links; per-mention over-counting |
 
-Run 26 → 27 → 28 (26's typed seam and unified discovery are load-bearing for both; 27 is where the
-user-facing workaround lands; 28 is the deep topology fix). 29 is independent — run it anytime.
+**All four shipped.** 26 (`8994eb3`, `7477465`, `44b6ba7`, `48e8d95`, `13cc2ce`) closed the doctor
+crash and the false-coverage inversion, and made `scan` honor `.gitignore` in every repo. 27
+(`3882cbe`, `d62c878`, `09c68eb`, `b26773e`) gave the denominator its user-maintained half: an
+`exclude` block every consumer reads, validated fail-loud, surfaced beside the score, and preserved
+across `adopt`. 28 (`b3ced2a`, `b9bd188`) made a workspace of member repositories one aggregated git
+view and killed the gate's false green, refusing by name what a single ref cannot span (ADR-016).
+29 (`0e51945`) stopped `path-enumeration` climbing as a project complies with the doc standard.
 
-**26 shipped 2026-07-21** (`8994eb3`, `7477465`, `44b6ba7`, `48e8d95`, `13cc2ce`): the doctor crash
-and the false-coverage inversion are both closed, and `scan` honors `.gitignore` in every repo. The
-field monorepo still needs 27 (to declare `out/` and `public-preprod/`) and 28 (to see into the
-member repos at all) — 26 makes those gaps loud rather than silent.
+Verified end-to-end on the field shape (no root repo, two member repos, one build tree gitignored
+and one tracked): the aggregated ignore rules drop the gitignored tree by themselves, the declared
+block drops the tracked one, coverage goes from 34 swept files to the 4 real sources with 100% now
+earned, and a contract change inside a member repo exits `review --strict` at 1 where it silently
+passed before.
