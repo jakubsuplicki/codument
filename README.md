@@ -101,6 +101,8 @@ TypeScript (`.ts`/`.tsx`, module flavors `.mts`/`.cts` included) resolves **per 
 
 </details>
 
+
+**Repo layouts.** A single repository, or a monorepo whose packages are each their own git repository — submodule super-repos included. Point codument at the directory containing them and it aggregates each member's own git view; what a single ref cannot honestly name across several repositories it refuses rather than guesses. Details in [Monorepos of nested repositories](#reference).
 ## Try it in 30 seconds
 
 One command runs a click-through showcase on a throwaway sample repo: your docs today, an AI makes a sweeping change, then exactly what that change broke that you'd otherwise merge blind, opened as an HTML report. Press Enter to advance each scene (or add `--auto`).
@@ -267,7 +269,7 @@ npx codument doctor --strict   # exit 1 on findings, to gate a CI step
 ```
 
 <details>
-<summary>Coverage / lint / notes channels, and all four flags</summary>
+<summary>Coverage / lint / notes / scope channels, and every flag</summary>
 
 ```bash
 npx codument doctor
@@ -280,9 +282,13 @@ It reports separate channels, never blended into one number:
 
 - **Coverage (scored):** ownership (in-scope source files with a documented owner), dependency (mature entries declaring `depends_on`), and risk (declared high-risk areas with a durable doc). The headline score is the equal-weight average of the ratios that apply; a ratio with no denominator is excluded, never counted as 0% or 100%. Freshness/drift is deliberately *not* scored here — staleness is the change-control gate's job (`codument review`), and a coverage ratio for it lands only once it can be re-sourced from that same signal instead of a second, disagreeing definition.
 - **Lint (warnings):** missing/leaked sources, missing docs, empty or dangling `depends_on` edges, unmapped sources, dead intra-repo doc links, and bloated docs (whole-doc size, oversized sections, never-compacted completed-step logs — tunable with `--max-doc-lines`, `--max-section-lines`, `--max-completed-log`). These are *findings* — a clean registry has zero.
-- **Notes (informational):** high-fanout files (a file mapped across many features), thin docs (a doc claimed done with no narrated orientation layer), and orphan doc pages (a feature/concept page no registry entry owns, which the staleness gate therefore cannot cover). Awareness-only — they never count toward "clean", because acting on them blindly degrades the registry (see the findings table below).
+- **Notes (informational):** high-fanout files (a file mapped across many features), thin docs (a doc claimed done with no narrated orientation layer), orphan doc pages (a feature/concept page no registry entry owns, which the staleness gate therefore cannot cover), and three prose-altitude smells that read a doc against the documentation standard — `symbol-mirror` (prose restating an exported identifier and a verb), `line-anchor` (a `path.ext:NNN` reference, which rots on every edit), and `path-enumeration` (a section restating the file list; test citations are exempt, because the standard *asks* you to link each invariant to its enforcing test). Awareness-only — they never count toward "clean", because acting on them blindly degrades the registry (see the findings table below).
+
+- **Scope (disclosure):** a coverage number is only as good as the scope it was computed over, so the scope travels with it. `doctor` prints a note beside the headline whenever it could not fully verify what it measured — `.gitignore` rules it could not determine, a declared `exclude` block it could not read, a directory it could not open — and names the exclusions a project *did* declare. `--json` carries all of it additively under `scope` (`gitIgnore`, `reason`, `declaredScope`, `configuredExclusions`, `members`, `unreadableDirs`); `version` is unchanged, so a consumer that ignores the field reads exactly what it read before. It is disclosure, never a finding: it moves neither the lint count nor the exit code. This matters because a scope that silently *shrinks* makes the percentage read **better** than the truth — most confident exactly where it is most wrong.
 
 `doctor` is warning-only by default: neither findings nor notes change the exit code. Add `--strict` to make findings exit 1 (notes still never do), so a CI step can block a merge until they are cleared.
+
+`--verify-invariants` is a separate, opt-in mode: it parses each doc's `## Invariants & boundaries` test pointers and *runs* those tests, so "this doc's invariants are enforced" becomes a checkable claim rather than a decoration. It touches your environment (it shells out to your test runner, overridable with `--test-command`), which is why it is off by default; its results fold into the `--strict` exit and appear in `--json` only when the mode is on.
 
 </details>
 
@@ -295,6 +301,8 @@ npx codument review
 npx codument review --json          # machine-readable
 npx codument review --base main     # branch drift since the merge-base with <ref>, not just uncommitted
 ```
+
+In a workspace of nested member repositories it names the members and each one's base HEAD, and resolves drift across them — see [Monorepos of nested repositories](#reference) below for the topology rules and what it refuses there.
 
 <details>
 <summary>Every review flag, per-symbol drift, and SARIF output for CI</summary>
@@ -360,7 +368,7 @@ codument hooks uninstall        # remove the managed block; your own hook lines 
 
 The pre-commit hook is a **managed block**: markers delimit the only region codument ever touches, an existing shell hook is appended to (never rewritten), a non-shell hook is refused with the one line to add manually, and `core.hooksPath`/worktree setups are honored by asking git. A red gate blocks the commit and names both escapes — `git commit --no-verify` or `CODUMENT_SKIP_GATE=1 git commit` — so skipping is a stated act, never a slip. If the codument binary is missing (a wiped `node_modules`), the hook warns loudly and lets the commit pass rather than bricking every commit. Honest limit: the gate evaluates the **working tree**, not the staged bytes, so with partial staging it is a speed bump, not a proof of the commit's contents.
 
-The local hook can always be skipped; the **CI check is the authority**. The scaffolded workflow runs the same strict gate against the PR's merge base — make it a *required* status check in branch protection and a red gate becomes a merge blocker. The workflow file is yours to evolve: it refreshes on reinstall only while its managed marker is present, and codument refuses to touch it once you delete the marker. `init --hooks` installs the pre-commit arm during project setup.
+The local hook can always be skipped; the **CI check is the authority**. The scaffolded workflow runs the same strict gate against the PR's merge base — make it a *required* status check in branch protection and a red gate becomes a merge blocker. The workflow file is yours to evolve: it refreshes on reinstall only while its managed marker is present, and codument refuses to touch it once you delete the marker. `init --hooks` installs the pre-commit arm during project setup. At a workspace root containing member repositories the install is refused: one hook there would block each member's commit on the other members' staleness, so install it inside the member repository you want gated.
 
 ### `codument ack` — clear a change that owes no doc change
 
@@ -380,7 +388,7 @@ npx codument ack src/foo.ts::bar --base main --signer alice   # match review --b
 
 - **Per-symbol ack (`<path>::<symbol>`)** is the agent-judge resolution that a **moved** symbol was a contract-neutral refactor owing no doc change. It is bound to the exact `from → to` fingerprint transition, so it **auto-invalidates the next time the anchor moves** — no ride-forever exemption. The gate verifies the ack's **form** only (it exists, is attributed with non-empty fields, and names the exact moved fingerprint), **never its semantic truth** — code/doc equivalence is undecidable, so honesty rests on the visible ack-rate and the durable audit trail, not a truth check.
 - **File-grain ack (bare `<path>`, per ADR 012)** vouches that a changed source file's **current content** owes no doc change. It clears only **additive** (added/removed-symbol), **concept-umbrella**, and **coarse/non-TS** staleness, bound to the file's content fingerprint (auto-invalidating on the next change). It **never masks a moved symbol**: a `changed` (moved) owned symbol still wakes its feature, so a real contract change is never laundered. It **counts as an ack** — a distinct `file-acked` line on the no-doc-change-owed side, never as a doc update — so over-acking stays visible and the friction rate is not deflated. A parse-unevaluable file **cannot** be file-acked into freshness (the fail-loud stance holds).
-- **Flags:** `--reason <text>` names the contract that stayed constant; `--base <ref>` resolves the move against the merge-base with `<ref>` (match the ref `review --base` used); `--signer <id>` sets attribution (defaults to the git author; an independent signer is what strict-mode independence checks); `--list` / `--remove <handle>` manage recorded acks; `--root <dir>` sets the project root.
+- **Flags:** `--reason <text>` names the contract that stayed constant; `--base <ref>` resolves the move against the merge-base with `<ref>` (match the ref `review --base` used; like `review --base` it is refused in a workspace of member repositories, where one ref cannot name several histories); `--signer <id>` sets attribution (defaults to the git author; an independent signer is what strict-mode independence checks); `--list` / `--remove <handle>` manage recorded acks; `--root <dir>` sets the project root.
 
 *Honest limit:* the additive-owes-no-doc judgment (like the per-symbol ack's semantic claim) is **prose-enforced, not test-backed** — the gate checks the ack's form and fingerprint, never whether the human was right that no doc was owed.
 
@@ -395,7 +403,7 @@ npx codument audit v0.7.0..v0.8.0 --json   # version-tagged; byte-identical for 
 
 - Same analyzer, same semantics as `review` — per-symbol staleness, deletions first-class (a rename's old path included), the registry-entry-removal dodge closed, parse-broken files surfaced instead of trusted. The range is diffed from the merge-base, so merged-in commits are not misattributed.
 - Acknowledgments don't apply retroactively — an ack adjudicates the live working tree, not an arbitrary historical range — so the audit reports raw drift.
-- **Informational by contract:** findings never change the exit code; `--json` carries `driftedCount` so you can threshold it yourself. Only an audit that *could not run* (bad range, unreachable ref, broken git) exits non-zero — "could not look" never reads as "no drift".
+- **Informational by contract:** findings never change the exit code; `--json` carries `driftedCount` so you can threshold it yourself. Only an audit that *could not run* (bad range, unreachable ref, broken git, or a workspace of member repositories whose histories a single range cannot name) exits non-zero — "could not look" never reads as "no drift".
 
 </details>
 
@@ -605,7 +613,12 @@ What that cannot reach is the part only your project knows: a `tsc` `outDir` nam
 - Both keys are optional and **additive**: they widen the built-in exclusions, never replace or re-open them. There is deliberately no way to *remove* a built-in exclusion, so no project can quietly re-admit its test files into a coverage number.
 - The file extensions codument treats as source are **not** configurable — that list is the language matrix, and letting a project extend it would let codument claim support for a language it has no adapter for.
 
-Every surface honors the same declaration: `doctor`'s denominator, `review`'s verdict, `scan` discovery, `audit`, and the editor nudge hook. `doctor` and `scan` print what is in effect (`scope: also excluding 2 dir(s): out, public-preprod`), and `doctor --json` carries it as `scope.configuredExclusions`.
+Every surface honors the same declaration: `doctor`'s denominator, `review`'s verdict, `scan` discovery, `audit`, and the editor nudge hook. `doctor` and `scan` both print what is in effect, and `doctor --json` carries it as `scope.configuredExclusions`:
+
+```text
+doctor:  scope: also excluding 2 dir(s): out, public-preprod — .codument-meta.json
+scan:    scope: also excluding dirs: out, public-preprod — .codument-meta.json
+```
 
 A typo is an error, not a silent no-op: an unknown key, a non-string entry, an empty entry, or a path in `dirs` fails the command by name. Declaring an excluded path that some registry entry still lists as a source keeps firing `generated-leakage`, so an exclusion can silence the gate only visibly.
 
@@ -794,6 +807,7 @@ Thanks to Matt Pocock's [mattpocock/skills](https://github.com/mattpocock/skills
 - Node.js >= 18
 - An AI coding agent that can read repo instructions and markdown skills
 - A supported-language codebase for the staleness gate (see [Works with your stack](#works-with-your-stack)). Other file types are surfaced via registration, not judged.
+- Git. A single repository, or a **monorepo whose packages are their own repositories** (and submodule super-repos) — run codument at the directory containing them, which need not itself be a repository. See [Monorepos of nested repositories](#reference).
 
 ## License
 
