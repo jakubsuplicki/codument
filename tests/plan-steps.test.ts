@@ -336,6 +336,40 @@ describe("parseDeliveryPlan across multiple plan sections", () => {
     assert.ok(parseDeliveryPlan(MULTI_PLAN).length > 0);
   });
 
+  it("reads a checklist filed under a subheading that does not itself match", () => {
+    // The shape two real field docs use: the steps live under `### As-built` or
+    // `### Plan delivery steps`, neither of which matches /delivery plan/. Ending
+    // the section at ANY heading dropped them and reported no checklist at all,
+    // hiding the `- [ ]` step from plan discovery.
+    const steps = parseDeliveryPlan(
+      "## Delivery Plan\n\n### As-built (Steps 1-2)\n\nprose\n\n- [x] Step 1: shipped\n- [ ] Step 2: pending\n",
+    );
+    assert.deepEqual(
+      steps.map((s) => [s.n, s.text, s.done]),
+      [
+        [1, "Step 1: shipped", true],
+        [2, "Step 2: pending", false],
+      ],
+    );
+    assert.equal(activeStep(steps)?.text, "Step 2: pending");
+  });
+
+  it("still ends a section at a sibling heading, not just a shallower one", () => {
+    // Depth is what scopes a section: `### Open questions` under `### Delivery
+    // Plan` is a sibling, so its checkbox stays out of the checklist.
+    const steps = parseDeliveryPlan(
+      "## Plan\n\n### Delivery Plan\n- [ ] real-step\n\n### Open questions\n- [ ] not-a-step\n",
+    );
+    assert.deepEqual(steps.map((s) => s.text), ["real-step"]);
+  });
+
+  it("runs ordinals continuously across a section's subheadings", () => {
+    const steps = parseDeliveryPlan(
+      "## Delivery Plan\n- [x] one\n\n### Continued\n- [ ] two\n- [ ] three\n",
+    );
+    assert.deepEqual(steps.map((s) => s.n), [1, 2, 3]);
+  });
+
   it("falls back to the last section once every plan is complete", () => {
     const allDone = MULTI_PLAN.replace("- [ ] Step 2: The real active step", "- [x] Step 2: The real active step")
       .replace("- [ ] Step 3: Later", "- [x] Step 3: Later");

@@ -45,21 +45,33 @@ export interface ActivePlan {
 const HEADING = /^(#{1,6})\s+(.*\S)\s*$/;
 const CHECKBOX = /^\s*[-*]\s+\[([ xX])\]\s+(.*\S)\s*$/;
 
-/** Collect checkbox items for EVERY heading whose text matches `match`, each
- *  section ending at the next heading. One entry per matching section, in
- *  document order; sections with no checkboxes are dropped. Step ordinals
- *  restart per section, since each section is its own checklist. */
+/** Collect checkbox items for EVERY heading whose text matches `match`. A
+ *  section runs to the next heading at the SAME OR SHALLOWER level, so deeper
+ *  subheadings belong to it — a plan routinely files its checklist under one
+ *  (`## Delivery plan — …` → `### Plan delivery steps`), and ending the section
+ *  at any heading at all made those plans read as having no checklist. One
+ *  entry per matching section, in document order; sections with no checkboxes
+ *  are dropped. Step ordinals restart per section, since each section is its
+ *  own checklist, and run continuously across its subheadings. */
 function sectionSteps(lines: string[], match: RegExp): PlanStep[][] {
   const sections: PlanStep[][] = [];
   let current: PlanStep[] | null = null;
+  let level = 0;
   let n = 0;
 
   for (const line of lines) {
     const h = HEADING.exec(line);
     if (h) {
-      if (current?.length) sections.push(current);
-      current = match.test(h[2]) ? [] : null;
-      n = 0;
+      const depth = h[1].length;
+      if (current && depth <= level) {
+        if (current.length) sections.push(current);
+        current = null;
+      }
+      if (!current && match.test(h[2])) {
+        current = [];
+        level = depth;
+        n = 0;
+      }
       continue;
     }
     if (!current) continue;
@@ -79,10 +91,11 @@ function sectionSteps(lines: string[], match: RegExp): PlanStep[][] {
  *
  *  A long-lived doc accumulates dated `## Delivery plan — … (YYYY-MM-DD)`
  *  sections, and the shipped ones are all `- [x]`. Taking the first match made
- *  every command read a completed plan (or, when a shipped section's heading was
- *  immediately followed by a subheading, zero steps) and report the whole doc as
- *  having no checklist — while `findActivePlans` was meanwhile selecting docs on
- *  "has an unchecked step". Same predicate here, so the two agree. */
+ *  every command read a plan that shipped weeks ago, and — since `findActivePlans`
+ *  selects docs on this same parse having an unchecked step — made a doc whose
+ *  current effort is genuinely unfinished vanish from plan discovery entirely.
+ *  Choosing on "has unfinished work" is what keeps one doc and a directory of
+ *  docs from ever disagreeing about which plan is active. */
 function activeSection(sections: PlanStep[][]): PlanStep[] {
   return (
     sections.find((steps) => steps.some((step) => !step.done)) ??
