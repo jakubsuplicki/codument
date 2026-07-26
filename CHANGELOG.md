@@ -7,6 +7,35 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-26
+
+A long-lived feature doc does not hold one plan. It accumulates a dated
+`## Delivery plan — … (YYYY-MM-DD)` section per shipped effort, and every parser
+that read those docs took the first match — so the tool acted on a plan that had
+shipped weeks earlier, or reported no checklist at all. Both failures were
+silent, and the second is the worse one: a plan with genuinely unfinished work
+simply vanished from discovery.
+
+### Fixed
+- `codument steps` reads the plan section the work is actually in — the first
+  with an unchecked step, falling back to the last once every plan is complete.
+  This is the same "has unfinished work" predicate plan discovery already used
+  to select docs, so a single doc and a directory of docs can no longer disagree
+  about which plan is active.
+- A plan section is now scoped by heading depth: it runs to the next heading at
+  the same or a shallower level. Ending it at any heading at all meant a plan
+  that files its checklist under a subheading — `### As-built`, `### Plan
+  delivery steps` — read as having no checklist, which hid its unfinished steps
+  from `findActivePlans` entirely. A sibling section's checkboxes still never
+  count, and step ordinals run continuously across a section's subheadings.
+  Checked against 179 real plan and feature docs across four projects: 177 parse
+  identically, 2 recover a checklist that was previously invisible, none change
+  otherwise.
+- `codument map` routes against the newest `feature-map` block rather than the
+  first. Routing a newly landed file against a shipped effort's map reported a
+  file the current plan genuinely declares as unmapped, which the routing rule
+  treats as a hard stop.
+
 ## [0.10.0] - 2026-07-22
 
 Field-report release. A run on a real monorepo — no repository at the root, two
