@@ -52,6 +52,15 @@ export interface RouteResult {
 
 const FENCE_OPEN = /^\s*```feature-map\s*$/;
 const FENCE_CLOSE = /^\s*```\s*$/;
+
+/** Index of the last ```feature-map``` fence, or 0 when there is none (so the
+ *  caller's scan starts at the top and finds nothing, same as before). */
+function lastFeatureMapFenceIndex(lines: string[]): number {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (FENCE_OPEN.test(lines[i])) return i;
+  }
+  return 0;
+}
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SECONDARY = /\[secondary:\s*([^\]]*)\]\s*$/i;
 const FEATURE_MAP_HEADING = /^#{1,6}\s+.*feature\s+map\b/i;
@@ -89,14 +98,20 @@ export function parseFeatureMap(markdown: string): FeatureMap {
   const errors: FeatureMapError[] = [];
   const seenExact = new Set<string>();
 
+  // Read the LAST block, not the first. A long-lived doc accumulates a Feature
+  // Map per dated delivery plan, and the current step's map is the newest one;
+  // taking the first made `map materialize` route against a shipped plan and
+  // report a genuinely-declared new file as unmapped.
+  const start = lastFeatureMapFenceIndex(lines);
+
   let inBlock = false;
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = start; i < lines.length; i++) {
     const line = lines[i];
     if (!inBlock) {
       if (FENCE_OPEN.test(line)) inBlock = true;
       continue;
     }
-    if (FENCE_CLOSE.test(line)) break; // first block only
+    if (FENCE_CLOSE.test(line)) break; // one block only
 
     const raw = line.trim();
     if (raw === "") continue;

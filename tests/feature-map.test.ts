@@ -133,3 +133,45 @@ describe("hasFeatureMapHeading", () => {
     assert.equal(hasFeatureMapHeading("# Plan\n\n## Steps\n- [ ] do a thing\n"), false);
   });
 });
+
+// Same accumulation problem as the delivery-plan checklist: a doc carrying one
+// Feature Map per dated plan must route against the CURRENT step's map, not a
+// shipped one. Taking the first block made a genuinely-declared new file report
+// as unmapped, which the routing rule treats as a hard stop.
+const MULTI_MAP = `
+## Delivery plan — shipped effort (2026-07-14)
+
+\`\`\`feature-map
+src/old-thing.ts | legacy | feature | shipped last month
+\`\`\`
+
+## Delivery plan — current effort (2026-07-26)
+
+\`\`\`feature-map
+src/budget.ts | timing | feature | timeout chain + wall-clock budget
+\`\`\`
+`;
+
+describe("parseFeatureMap across multiple map blocks", () => {
+  it("routes against the newest block, not the first", () => {
+    const map = parseFeatureMap(MULTI_MAP);
+    assert.deepEqual(
+      map.rows.map((r: FeatureMapRow) => r.pathOrGlob),
+      ["src/budget.ts"],
+    );
+    assert.equal(map.errors.length, 0);
+  });
+
+  it("resolves a path the newest block declares", () => {
+    const map = parseFeatureMap(MULTI_MAP);
+    assert.equal(routeFile(map.rows, "src/budget.ts").feature, "timing");
+  });
+
+  it("still reads a single-block doc unchanged", () => {
+    assert.ok(parseFeatureMap(PLINKO).rows.length > 0);
+  });
+
+  it("reports no rows when the doc has no block at all", () => {
+    assert.deepEqual(parseFeatureMap("# Just prose\n\nNo map here.").rows, []);
+  });
+});

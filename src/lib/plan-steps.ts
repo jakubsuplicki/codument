@@ -45,36 +45,59 @@ export interface ActivePlan {
 const HEADING = /^(#{1,6})\s+(.*\S)\s*$/;
 const CHECKBOX = /^\s*[-*]\s+\[([ xX])\]\s+(.*\S)\s*$/;
 
-/** Collect checkbox items under the first heading whose text matches `match`,
- *  stopping at the next heading. Returns [] when no such section exists. */
-function sectionSteps(lines: string[], match: RegExp): PlanStep[] {
-  let inSection = false;
+/** Collect checkbox items for EVERY heading whose text matches `match`, each
+ *  section ending at the next heading. One entry per matching section, in
+ *  document order; sections with no checkboxes are dropped. Step ordinals
+ *  restart per section, since each section is its own checklist. */
+function sectionSteps(lines: string[], match: RegExp): PlanStep[][] {
+  const sections: PlanStep[][] = [];
+  let current: PlanStep[] | null = null;
   let n = 0;
-  const steps: PlanStep[] = [];
+
   for (const line of lines) {
     const h = HEADING.exec(line);
     if (h) {
-      if (inSection) break; // next heading ends our section
-      if (match.test(h[2])) inSection = true;
+      if (current?.length) sections.push(current);
+      current = match.test(h[2]) ? [] : null;
+      n = 0;
       continue;
     }
-    if (!inSection) continue;
+    if (!current) continue;
     const c = CHECKBOX.exec(line);
     if (c) {
       n += 1;
-      steps.push({ n, text: c[2], done: c[1].toLowerCase() === "x" });
+      current.push({ n, text: c[2], done: c[1].toLowerCase() === "x" });
     }
   }
-  return steps;
+  if (current?.length) sections.push(current);
+
+  return sections;
 }
 
-/** The plan's checklist: the `Delivery Plan` section if present, else
+/** The section a `work-step` run should act on: the first with unfinished work,
+ *  else the last one.
+ *
+ *  A long-lived doc accumulates dated `## Delivery plan — … (YYYY-MM-DD)`
+ *  sections, and the shipped ones are all `- [x]`. Taking the first match made
+ *  every command read a completed plan (or, when a shipped section's heading was
+ *  immediately followed by a subheading, zero steps) and report the whole doc as
+ *  having no checklist — while `findActivePlans` was meanwhile selecting docs on
+ *  "has an unchecked step". Same predicate here, so the two agree. */
+function activeSection(sections: PlanStep[][]): PlanStep[] {
+  return (
+    sections.find((steps) => steps.some((step) => !step.done)) ??
+    sections[sections.length - 1] ??
+    []
+  );
+}
+
+/** The plan's checklist: the active `Delivery Plan` section if present, else
  *  `Definition of Done`. Checkboxes outside the chosen section are ignored. */
 export function parseDeliveryPlan(markdown: string): PlanStep[] {
   const lines = markdown.split(/\r?\n/);
-  const delivery = sectionSteps(lines, /\bdelivery plan\b/i);
+  const delivery = activeSection(sectionSteps(lines, /\bdelivery plan\b/i));
   if (delivery.length) return delivery;
-  return sectionSteps(lines, /\bdefinition of done\b/i);
+  return activeSection(sectionSteps(lines, /\bdefinition of done\b/i));
 }
 
 /** First unchecked step, or null when the plan is complete/empty. */

@@ -290,3 +290,62 @@ describe("watch tape integration", () => {
     assert.match(frame, /▶ Step 3: Wire/); // the step label
   });
 });
+
+// A long-lived feature doc accumulates one dated `## Delivery plan — …` section
+// per shipped effort. Taking the first match made every command act on a
+// completed plan, or report no checklist at all when the shipped section opened
+// with a subheading — while findActivePlans was selecting docs on the opposite
+// predicate ("has an unchecked step").
+const MULTI_PLAN = `---
+status: approved
+---
+
+# Extraction
+
+## Delivery plan — shipped effort (2026-06-18)
+
+### Problem
+
+Something that shipped.
+
+### Delivery plan
+
+- [x] Step 1: Old work
+- [x] Step 2: More old work
+
+## Delivery plan — current effort (2026-07-26)
+
+- [x] Step 1: Done already
+- [ ] Step 2: The real active step
+- [ ] Step 3: Later
+`;
+
+describe("parseDeliveryPlan across multiple plan sections", () => {
+  it("acts on the section with unfinished work, not the first one", () => {
+    const steps = parseDeliveryPlan(MULTI_PLAN);
+    assert.deepEqual(
+      steps.map((s) => s.text),
+      ["Step 1: Done already", "Step 2: The real active step", "Step 3: Later"],
+    );
+    assert.equal(activeStep(steps)?.text, "Step 2: The real active step");
+  });
+
+  it("is not defeated by a shipped section that opens with a subheading", () => {
+    // The first `## Delivery plan — …` heading here is immediately followed by
+    // `### Problem`, which previously yielded zero steps for the whole document.
+    assert.ok(parseDeliveryPlan(MULTI_PLAN).length > 0);
+  });
+
+  it("falls back to the last section once every plan is complete", () => {
+    const allDone = MULTI_PLAN.replace("- [ ] Step 2: The real active step", "- [x] Step 2: The real active step")
+      .replace("- [ ] Step 3: Later", "- [x] Step 3: Later");
+    const steps = parseDeliveryPlan(allDone);
+    assert.equal(steps.length, 3);
+    assert.equal(activeStep(steps), null);
+  });
+
+  it("still reads a single-section plan unchanged", () => {
+    const steps = parseDeliveryPlan(PLAN);
+    assert.ok(steps.length > 0);
+  });
+});
