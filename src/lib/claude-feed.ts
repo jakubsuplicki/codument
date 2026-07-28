@@ -291,12 +291,19 @@ export function normalizeModelId(model: string): string {
   if (typeof model !== "string") return model;
   // Drop a context-variant suffix like the `[1m]` on `claude-opus-4-8[1m]` —
   // same model, same price — and an optional dated snapshot suffix.
-  const base = model.trim().replace(/\[[^\]]*\]$/, "");
+  // The dated suffix is stripped up front rather than as an optional tail on
+  // each pattern below: once a family can be single-segment, an inline
+  // `(?:-\d{6,8})?` lets the two-segment minor-version group swallow the date
+  // instead (`claude-opus-5-20260101` -> `opus-5.20260101`).
+  const base = model
+    .trim()
+    .replace(/\[[^\]]*\]$/, "")
+    .replace(/-\d{6,8}$/, "");
   // Two-segment families: claude-opus-4-8 -> opus-4.8
-  const versioned = /^claude-(opus|sonnet|haiku)-(\d+)-(\d+)(?:-\d{6,8})?$/.exec(base);
+  const versioned = /^claude-(opus|sonnet|haiku)-(\d+)-(\d+)$/.exec(base);
   if (versioned) return `${versioned[1]}-${versioned[2]}.${versioned[3]}`;
-  // Single-segment families: claude-fable-5 -> fable-5
-  const single = /^claude-(fable|mythos)-(\d+)(?:-\d{6,8})?$/.exec(base);
+  // Single-segment families: claude-fable-5 -> fable-5, claude-opus-5 -> opus-5
+  const single = /^claude-(fable|mythos|opus|sonnet)-(\d+)$/.exec(base);
   if (single) return `${single[1]}-${single[2]}`;
   return model;
 }

@@ -2,7 +2,7 @@
 title: Token cost tracking
 status: current
 type: feature
-last_reviewed: 2026-06-29
+last_reviewed: 2026-07-28
 ---
 
 # Token cost tracking
@@ -42,7 +42,9 @@ The pipeline is producers, a pricing layer, a reducer, and two views, all riding
 - The feed tailer is idempotent across restarts and follows every concurrent session, not just the newest, so concurrent windows are fully counted. *(tests: `claude-feed.test.ts` pumpFeed "emits once, resumes without double-emitting, and picks up appended lines" + "pumps every concurrent session, not just the newest")*
 - Backfill ingests a never-watched session and is idempotent by turn id, adding nothing on a re-run; reset rebuilds feed-sourced events at the current normalization while preserving manual emits and review notes, and never drops feed events whose transcript is gone. *(tests: `claude-feed.test.ts` backfillFeed "ingests a never-watched session and is idempotent by uuid"; resetFeed "preserves manual emit and review events while rebuilding feed events" + "preserves feed events whose transcript is gone — never silently loses cost data")*
 - A zero-usage transcript turn (e.g. a synthetic CLI notice) produces no token event, so it cannot inflate the event count or pollute the unpriced-model signal. *(test: `claude-feed.test.ts` recordToEvents "skips the token event for a zero-usage turn (e.g. a <synthetic> CLI notice)")*
-- Claude transcript model ids are canonicalized to rate-table keys, including a stripped context-variant suffix, while an unrecognized id is left untouched so the exact-match typo-safety is preserved. *(tests: `claude-feed.test.ts` normalizeModelId "canonicalizes Claude transcript ids to rate-table keys (and prices them)" + "strips a context-variant suffix like [1m] so the 1M model still prices" + "leaves unrecognized ids untouched (exact-match/typo-safety preserved)")*
+- Claude transcript model ids are canonicalized to rate-table keys, whether the family carries a two-part version or a single one, while an unrecognized id is left untouched so the exact-match typo-safety is preserved. *(tests: `claude-feed.test.ts` normalizeModelId "canonicalizes Claude transcript ids to rate-table keys (and prices them)" + "canonicalizes single-segment families (Fable/Mythos) and prices them" + "canonicalizes single-segment Opus/Sonnet (Opus 5, Sonnet 5) and prices them" + "leaves unrecognized ids untouched (exact-match/typo-safety preserved)")*
+- A context-variant suffix and a dated snapshot are both stripped before the version is read, so neither changes which model an id resolves to — and a date can never be mistaken for a version component. *(tests: `claude-feed.test.ts` normalizeModelId "strips a context-variant suffix like [1m] so the 1M model still prices" + "strips a dated suffix without the minor-version group swallowing it")*
+- A built-in rate is a model's standard published rate, never a promotional or introductory one: a rate that lapses on a date nobody is tracking would silently turn the estimate into an under-report. *(test: `token-cost.test.ts` MODEL_RATES "has the known models with the documented per-bucket rates")*
 
 ## Decisions
 

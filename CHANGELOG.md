@@ -7,6 +7,19 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+### Fixed
+- Opus 5 and Sonnet 5 are priced from the built-in rate table. Both families
+  moved to a single-segment model id (`claude-opus-5`), a shape the transcript
+  normalizer only recognized for Fable and Mythos, so a current-generation
+  session was counted in tokens and then left unpriced. The dated-snapshot
+  suffix is now stripped before the version is read, so a date can no longer be
+  absorbed as a minor version (`claude-opus-5-20260101` resolves to `opus-5`,
+  not `opus-5.20260101`). Sonnet 5 carries its standard rate, not the
+  introductory one that lapses 2026-08-31 — an estimate that silently starts
+  under-reporting on an untracked date is worse than one that is briefly
+  conservative. Events captured before this fix keep the model id they were
+  ingested under; `codument feed --reset` re-prices them.
+
 ## [0.11.0] - 2026-07-26
 
 A long-lived feature doc does not hold one plan. It accumulates a dated

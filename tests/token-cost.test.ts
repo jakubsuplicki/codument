@@ -33,8 +33,23 @@ describe("MODEL_RATES", () => {
       "mythos-5",
       "opus-4.7",
       "opus-4.8",
+      "opus-5",
       "sonnet-4.6",
+      "sonnet-5",
     ]);
+    assert.deepEqual(MODEL_RATES["opus-5"], {
+      input: 5,
+      output: 25,
+      cacheRead: 0.5,
+      cacheCreate: 6.25,
+    });
+    // Standard rate, not the introductory rate lapsing 2026-08-31.
+    assert.deepEqual(MODEL_RATES["sonnet-5"], {
+      input: 3,
+      output: 15,
+      cacheRead: 0.3,
+      cacheCreate: 3.75,
+    });
     assert.deepEqual(MODEL_RATES["opus-4.8"], {
       input: 5,
       output: 25,

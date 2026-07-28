@@ -54,12 +54,17 @@ export interface CostBreakdown {
 }
 
 // cacheRead = input * 0.1 (stored as the exact literal so it equals input/10),
-// cacheCreate = input * 1.25, output = input * 5. Rates current as of 2026-06.
+// cacheCreate = input * 1.25, output = input * 5. Rates current as of 2026-07.
 export const MODEL_RATES: Record<string, ModelRate> = {
   "fable-5": { input: 10, output: 50, cacheRead: 1, cacheCreate: 12.5 },
   "mythos-5": { input: 10, output: 50, cacheRead: 1, cacheCreate: 12.5 },
+  "opus-5": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
   "opus-4.8": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
   "opus-4.7": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
+  // Sonnet 5 is priced at its standard rate, not the introductory rate that
+  // lapses 2026-08-31 — an estimate that silently starts under-reporting on a
+  // date nobody is tracking is worse than one that is briefly conservative.
+  "sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 },
   "sonnet-4.6": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 },
   "haiku-4.5": { input: 1, output: 5, cacheRead: 0.1, cacheCreate: 1.25 },
 };

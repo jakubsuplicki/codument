@@ -100,6 +100,28 @@ describe("normalizeModelId", () => {
       false,
     );
   });
+  it("canonicalizes single-segment Opus/Sonnet (Opus 5, Sonnet 5) and prices them", () => {
+    assert.equal(normalizeModelId("claude-opus-5"), "opus-5");
+    assert.equal(normalizeModelId("claude-sonnet-5"), "sonnet-5");
+    assert.equal(normalizeModelId("claude-opus-5[1m]"), "opus-5");
+    assert.equal(
+      costOf({ input: 1_000_000, output: 1_000_000, cacheRead: 0, cacheCreate: 0 }, normalizeModelId("claude-opus-5")).unpriced,
+      false,
+    );
+    assert.equal(
+      costOf({ input: 1_000_000, output: 1_000_000, cacheRead: 0, cacheCreate: 0 }, normalizeModelId("claude-sonnet-5")).unpriced,
+      false,
+    );
+  });
+  it("strips a dated suffix without the minor-version group swallowing it", () => {
+    // The two-segment pattern must not read the date as a minor version once
+    // single-segment Opus/Sonnet ids exist.
+    assert.equal(normalizeModelId("claude-opus-5-20260101"), "opus-5");
+    assert.equal(normalizeModelId("claude-sonnet-5-20260101"), "sonnet-5");
+    // ...and the two-segment families still canonicalize as before.
+    assert.equal(normalizeModelId("claude-sonnet-4-5-20250929"), "sonnet-4.5");
+    assert.equal(normalizeModelId("claude-haiku-4-5-20251001"), "haiku-4.5");
+  });
   it("leaves unrecognized ids untouched (exact-match/typo-safety preserved)", () => {
     assert.equal(normalizeModelId("opus-4.8"), "opus-4.8"); // already canonical
     assert.equal(normalizeModelId("gpt-9-ultra"), "gpt-9-ultra");
