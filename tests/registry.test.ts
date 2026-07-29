@@ -13,8 +13,11 @@ import {
   writeRegistry,
   updateRegistryEntry,
   RegistryError,
+  ExcludedSourceError,
 } from "../src/lib/registry.js";
 import type { Registry, RegistryEntry } from "../src/lib/registry.js";
+import { DEFAULT_EXCLUSION_SPEC } from "../src/lib/exclusion-spec.js";
+import type { ExclusionSpec } from "../src/lib/exclusion-spec.js";
 
 let tmp: string;
 
@@ -284,6 +287,137 @@ describe("updateRegistryEntry", () => {
     const onDisk = JSON.parse(await readFile(path, "utf-8"));
     assert.ok(onDisk.features.scan);
     assert.equal(onDisk.features.scan.status, "needs-review");
+  });
+});
+
+// The authoring guard. The exclusion spec governs every read path but no write
+// path, so the loop could author an entry its own lint rejects. Authoring is
+// strict; reading stays tolerant, or `doctor` could never report the entry it
+// exists to report.
+describe("updateRegistryEntry refuses an excluded source", () => {
+  it("refuses a test file newly added to primary_sources", async () => {
+    const path = join(tmp, "registry.json");
+    await writeRegistry(path, { features: {} });
+
+    assert.throws(
+      () =>
+        updateRegistryEntry(path, "money", {
+          doc: "docs/features/money.md",
+          type: "feature",
+          primary_sources: ["src/money.ts", "src/money.test.js"],
+        }),
+      (err: unknown) => err instanceof ExcludedSourceError && err.path === "src/money.test.js",
+    );
+  });
+
+  it("refuses a test file newly added to related_sources", async () => {
+    const path = join(tmp, "registry.json");
+    await writeRegistry(path, { features: {} });
+
+    assert.throws(
+      () => updateRegistryEntry(path, "money", { related_sources: ["tests/money.test.ts"] }),
+      (err: unknown) => err instanceof ExcludedSourceError,
+    );
+  });
+
+  it("refuses a path only the project's declared spec covers", async () => {
+    const path = join(tmp, "registry.json");
+    await writeRegistry(path, { features: {} });
+    const declared: ExclusionSpec = {
+      ...DEFAULT_EXCLUSION_SPEC,
+      dirs: [...DEFAULT_EXCLUSION_SPEC.dirs, "public-preprod"],
+    };
+
+    assert.throws(
+      () =>
+        updateRegistryEntry(path, "site", { primary_sources: ["public-preprod/app.ts"] }, declared),
+      (err: unknown) => err instanceof ExcludedSourceError,
+    );
+    // ...and the same path is fine under the built-in spec, so the refusal
+    // really came from the project's own declaration.
+    assert.ok(updateRegistryEntry(path, "site", { primary_sources: ["public-preprod/app.ts"] }));
+  });
+
+  it("accepts an ordinary source", async () => {
+    const path = join(tmp, "registry.json");
+    await writeRegistry(path, { features: {} });
+
+    const result = updateRegistryEntry(path, "auth", { primary_sources: ["src/auth.ts"] });
+    assert.deepStrictEqual(result.features.auth.primary_sources, ["src/auth.ts"]);
+  });
+
+  // The read-modify-write trap: `map materialize` passes the merged array, so a
+  // blanket check would make a legacy-bad entry impossible to extend or repair.
+  // Only a NEWLY introduced excluded path is refused.
+  it("still lets a legacy entry that already names a test file be extended", async () => {
+    const path = join(tmp, "registry.json");
+    await writeRegistry(path, {
+      features: {
+        money: entry({
+          doc: "docs/features/money.md",
+          primary_sources: ["src/money.ts", "src/money.test.js"],
+        }),
+      },
+    });
+
+    const result = updateRegistryEntry(path, "money", {
+      primary_sources: ["src/money.ts", "src/money.test.js", "src/rounding.ts"],
+    });
+    assert.ok(result.features.money.primary_sources.includes("src/rounding.ts"));
+  });
+
+  it("lets a legacy entry be repaired by dropping the test file", async () => {
+    const path = join(tmp, "registry.json");
+    await writeRegistry(path, {
+      features: {
+        money: entry({ primary_sources: ["src/money.ts", "src/money.test.js"] }),
+      },
+    });
+
+    const result = updateRegistryEntry(path, "money", { primary_sources: ["src/money.ts"] });
+    assert.deepStrictEqual(result.features.money.primary_sources, ["src/money.ts"]);
+  });
+
+  // Both halves of the plan's decision: authoring refuses, reading tolerates.
+  it("still loads an existing registry that names a test file, so doctor can lint it", async () => {
+    const path = join(tmp, "registry.json");
+    await writeRegistry(path, {
+      features: { money: entry({ primary_sources: ["src/money.ts", "src/money.test.js"] }) },
+    });
+
+    const loaded = await readRegistry(path);
+    assert.ok(loaded.features.money.primary_sources.includes("src/money.test.js"));
+  });
+
+  it("leaves writeRegistry tolerant, so adopt can canonicalize a legacy registry", async () => {
+    const path = join(tmp, "registry.json");
+    await writeRegistry(path, {
+      features: { money: entry({ primary_sources: ["src/money.test.js"] }) },
+    });
+
+    const onDisk = JSON.parse(await readFile(path, "utf-8"));
+    assert.deepStrictEqual(onDisk.features.money.primary_sources, ["src/money.test.js"]);
+  });
+
+  // ADVERSARIAL REVIEW FINDING (confirmed): the guard's own comparisons run
+  // `toPosix`, which only splits on the OS-native `path.sep`. On a POSIX host
+  // (mac/Linux — the common dev/CI environment) that makes `toPosix` a no-op
+  // for backslash-separated strings, so a `dirs`-excluded path spelled with
+  // backslashes slips past `isExcluded`'s segment check entirely, even though
+  // the semantically identical forward-slash path is correctly refused. This
+  // is exactly the case Step 2 exists to close ("no legitimate case ... and no
+  // guard against writing one") and it stays open for this spelling.
+  it("refuses a dirs-excluded path even when spelled with backslash separators", async () => {
+    const path = join(tmp, "registry.json");
+    await writeRegistry(path, { features: {} });
+
+    assert.throws(
+      () =>
+        updateRegistryEntry(path, "vendor", {
+          primary_sources: ["node_modules\\evil-package\\index.ts"],
+        }),
+      (err: unknown) => err instanceof ExcludedSourceError,
+    );
   });
 });
 

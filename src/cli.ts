@@ -19,7 +19,7 @@ import { scan } from "./commands/scan.js";
 import { stepsCommand } from "./commands/steps.js";
 import { update } from "./commands/update.js";
 import { watch } from "./commands/watch.js";
-import { RegistryError } from "./lib/registry.js";
+import { ExcludedSourceError, RegistryError } from "./lib/registry.js";
 import { ConfigValueError, StateFileError } from "./lib/state-io.js";
 import { GateError } from "./lib/two-ref.js";
 import { version } from "./lib/version.js";
@@ -400,6 +400,14 @@ program.parseAsync().catch((err) => {
   if (err instanceof ConfigValueError) {
     console.log(pc.red(`  ✗ ${err.message}`));
     console.log(pc.dim(`    Correct the value in ${err.path}, then re-run.`));
+    process.exitCode = 1;
+    return;
+  }
+  // An entry that tried to name an out-of-scope source. Rendered here because
+  // the refusal is a routine authoring outcome, not a crash: the user needs the
+  // path and the reason, and a raw stack trace teaches nothing about the rule.
+  if (err instanceof ExcludedSourceError) {
+    console.log(pc.red(`  ✗ ${err.message}`));
     process.exitCode = 1;
     return;
   }

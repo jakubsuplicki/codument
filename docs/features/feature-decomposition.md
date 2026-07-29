@@ -27,6 +27,7 @@ The path is forward-only: make new work decompose correctly rather than auto-hea
 - Routing is deterministic: an exact path beats the longest-literal-prefix glob, and an overlapping tie is a surfaced parse error, not a silent pick. *(test: `feature-map.test.ts` precedence + overlap)*
 - A doc may carry more than one Map block, because a long-lived feature doc accumulates one per shipped effort. The newest block is the one routed against — an older, shipped Map must never make a file the current plan genuinely declared read as unmapped, since that reads as lumping and hard-stops the loop. *(test: `feature-map.test.ts` `parseFeatureMap across multiple map blocks`)*
 - A materialized entry is born non-empty (its plain-terms layer is seeded from the Map's responsibility) and starts at review-needed status, so it does not trip maturity lints before its scaffold is filled. *(test: `map.test.ts` writer seeds the doc and sets the status)*
+- Routing refuses a source the exclusion spec covers, and refuses it before anything reaches disk: the registry entry is authored first, so a refused file leaves behind neither an entry nor a stray scaffold for a feature that never came to exist. A Map row pointing at a test or generated file therefore cannot smuggle one into the registry — the routing path is not an exemption from the scope contract. *(test: `map.test.ts` "does not leave an orphaned doc scaffold when materializing a brand-new feature's excluded first file")*
 
 ## Decisions
 

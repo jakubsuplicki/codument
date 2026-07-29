@@ -83,6 +83,29 @@ describe("materializeFile", () => {
     assert.deepEqual(Object.keys(reg.features), []);
     assert.equal(existsSync(join(root, "docs", "features", "unknown.md")), false);
   });
+
+  // ADVERSARIAL REVIEW FINDING (confirmed): registry.ts's new authoring guard
+  // (Step 2) can now make `updateRegistryEntry` throw for a brand-new feature
+  // key. `materializeFile`'s "create" branch writes the doc scaffold to disk
+  // BEFORE calling `updateRegistryEntry` and has no rollback, so a refused
+  // first-time file leaves an orphaned, unregistered doc scaffold behind — a
+  // new-feature doc with no registry entry, and no clean way to detect it was
+  // never actually adopted. This is a genuine sibling-caller regression: the
+  // guard change in registry.ts fixed the write seam but exposed an unguarded
+  // ordering bug in this existing (unchanged) caller.
+  it("does not leave an orphaned doc scaffold when materializing a brand-new feature's excluded first file", () => {
+    const excludedRows = parseFeatureMap(
+      "```feature-map\nsrc/thing.test.js | thing | feature | r\n```\n",
+    ).rows;
+
+    assert.throws(() => materializeFile(root, excludedRows, "src/thing.test.js"));
+
+    // Refused entries should leave no trace: no registry entry (true today)
+    // AND no stray scaffold doc for a feature that doesn't exist (false today).
+    const reg = readRegistrySync(join(root, "docs", ".registry.json"));
+    assert.deepEqual(Object.keys(reg.features), []);
+    assert.equal(existsSync(join(root, "docs", "features", "thing.md")), false);
+  });
 });
 
 describe("shapeWarnings", () => {

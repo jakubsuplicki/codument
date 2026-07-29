@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { atomicWriteFileSync } from "./events.js";
+import { DEFAULT_EXCLUSION_SPEC, isExcluded } from "./exclusion-spec.js";
+import type { ExclusionSpec } from "./exclusion-spec.js";
 
 // The registry entry is THE model the analyzers read. It splits ownership into
 // owned (`primary_sources`) versus impacted (`related_sources`), adds durable
@@ -111,6 +113,7 @@ export function updateRegistryEntry(
   registryPath: string,
   key: string,
   entry: Partial<RegistryEntry>,
+  spec: ExclusionSpec = DEFAULT_EXCLUSION_SPEC,
 ): Registry {
   let registry: Registry = { features: {} };
   if (existsSync(registryPath)) {
@@ -119,9 +122,59 @@ export function updateRegistryEntry(
     registry = parseRegistryOrThrow(readFileSync(registryPath, "utf-8"), registryPath);
   }
   const existing = registry.features[key];
+  assertNoExcludedSource(key, existing, entry, spec);
   registry.features[key] = ensureEntryDefaults(key, { ...existing, ...entry });
   atomicWriteFileSync(registryPath, JSON.stringify(registry, null, 2) + "\n");
   return registry;
+}
+
+/**
+ * An entry tried to name a source the exclusion spec covers. The spec filters
+ * these paths out of every analysis, so an entry naming one documents nothing
+ * while appearing to document something — and no read path can undo that.
+ */
+export class ExcludedSourceError extends Error {
+  constructor(
+    readonly key: string,
+    readonly path: string,
+    readonly field: "primary_sources" | "related_sources",
+  ) {
+    super(
+      `${key}: "${path}" is out of documented scope, so it cannot be listed in ${field}. ` +
+        `Generated, build, and test files are excluded from every analysis — an entry naming ` +
+        `one documents nothing. To point a doc at the test that enforces an invariant, link it ` +
+        `in that invariant's prose instead.`,
+    );
+    this.name = "ExcludedSourceError";
+  }
+}
+
+// Authoring is strict where reading is tolerant. Only a path this write
+// INTRODUCES is refused: `map materialize` passes the merged source array, so
+// checking every element would make an entry that already names a test file
+// impossible to extend — or to repair — and would turn the lint that reports it
+// into a dead end.
+function assertNoExcludedSource(
+  key: string,
+  existing: RegistryEntry | undefined,
+  incoming: Partial<RegistryEntry>,
+  spec: ExclusionSpec,
+): void {
+  for (const field of ["primary_sources", "related_sources"] as const) {
+    const proposed = incoming[field];
+    if (!proposed) continue;
+    const already = new Set((existing?.[field] ?? []).map(normalizeRelPath));
+    for (const source of proposed) {
+      // Check the path as it will be STORED, not as it was typed. The entry is
+      // normalized on the way in, so a guard reading the raw string can be
+      // walked past with a separator or prefix the normalizer would have
+      // rewritten — and the excluded path lands in the registry anyway.
+      const stored = normalizeRelPath(source);
+      if (!already.has(stored) && isExcluded(stored, spec)) {
+        throw new ExcludedSourceError(key, source, field);
+      }
+    }
+  }
 }
 
 // The read path validates/defaults/sorts registry entries and preserves the

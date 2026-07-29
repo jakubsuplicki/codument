@@ -131,17 +131,21 @@ export function materializeFile(root: string, rows: FeatureMapRow[], file: strin
   const existing = readRegistrySync(registryPath).features[key];
   let status: MaterializeStatus;
   if (!existing) {
-    const absDoc = join(root, docPath);
-    if (!existsSync(absDoc)) {
-      ensureDir(dirname(absDoc));
-      writeFileSync(absDoc, scaffoldDoc(key, row, file, today));
-    }
+    // Register BEFORE scaffolding. The entry write validates the source against
+    // the exclusion spec and refuses an out-of-scope path; writing the doc first
+    // would strand an unregistered scaffold on disk for a feature that never
+    // came into existence.
     updateRegistryEntry(registryPath, key, {
       doc: docPath,
       type: row.type,
       primary_sources: [file],
       status: "needs-review",
     });
+    const absDoc = join(root, docPath);
+    if (!existsSync(absDoc)) {
+      ensureDir(dirname(absDoc));
+      writeFileSync(absDoc, scaffoldDoc(key, row, file, today));
+    }
     status = "created";
   } else if (existing.primary_sources.includes(file)) {
     status = "noop";

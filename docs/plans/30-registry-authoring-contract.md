@@ -112,7 +112,7 @@ Status: draft, awaiting approval before source edits.
       registry-entry template say that generated, build, and test files are never `primary_sources`,
       and that an invariant links its enforcing test in prose instead. Verify a scaffolded project
       carries the updated text.
-- [ ] Step 2: Guard the write seam in `registry.ts` against a source the resolved exclusion spec
+- [x] Step 2: Guard the write seam in `registry.ts` against a source the resolved exclusion spec
       covers, leaving the read path tolerant. Pin both halves: authoring refuses, and an existing
       bad registry still loads so `doctor` can lint it.
 - [ ] Step 3: `codument map materialize` refuses an excluded path, naming which rule fired
