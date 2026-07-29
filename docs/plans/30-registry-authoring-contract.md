@@ -125,7 +125,7 @@ Status: approved 2026-07-29 — end-to-end coverage settled as a self-contained 
       could derive — a floor the user extends, never the feature's dependency set.
 - [x] Step 6: Update `registry-health.md` and `feature-decomposition.md` at intent altitude and add
       the CHANGELOG entry.
-- [ ] Step 7: A self-contained fixture under `tests/` walks the guarded path end to end on one
+- [x] Step 7: A self-contained fixture under `tests/` walks the guarded path end to end on one
       registry — an excluded test file refused at authoring time, and a two-hop import chain whose
       edges derive — with no reference to any project outside this repo.
 
