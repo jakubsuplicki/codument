@@ -9,7 +9,8 @@ import {
   type FeatureMapRow,
 } from "../lib/feature-map.js";
 import { findActivePlans } from "../lib/plan-steps.js";
-import { readRegistrySync, updateRegistryEntry } from "../lib/registry.js";
+import { readRegistrySync, updateRegistryEntry, ExcludedSourceError } from "../lib/registry.js";
+import { resolveScopeSync, declaredRuleFor } from "../lib/analyze.js";
 import { gatherPlanGrounding } from "../lib/plan-grounding.js";
 import { ensureDir } from "../lib/scaffold.js";
 
@@ -128,6 +129,25 @@ export function materializeFile(root: string, rows: FeatureMapRow[], file: strin
   const docDir = row.type === "feature" ? "features" : "concepts";
   const docPath = `docs/${docDir}/${key}.md`;
 
+  // Resolve the project's scope ONCE for this materialize. Without it the
+  // authoring guard would see only the built-in defaults, leaving a path the
+  // project itself declared out of scope quietly authorable through routing.
+  const scope = resolveScopeSync(root);
+  const register = (entryKey: string, patch: Parameters<typeof updateRegistryEntry>[2]): void => {
+    try {
+      updateRegistryEntry(registryPath, entryKey, patch, scope.spec);
+    } catch (err) {
+      // Name which rule fired. The guard cannot: it is handed a resolved spec
+      // and never sees whether a default or the project's own declaration put
+      // the path there — and the two call for different responses.
+      if (err instanceof ExcludedSourceError && !err.rule) {
+        const rule = declaredRuleFor(err.path, scope.configured);
+        if (rule) throw new ExcludedSourceError(err.key, err.path, err.field, rule);
+      }
+      throw err;
+    }
+  };
+
   const existing = readRegistrySync(registryPath).features[key];
   let status: MaterializeStatus;
   if (!existing) {
@@ -135,7 +155,7 @@ export function materializeFile(root: string, rows: FeatureMapRow[], file: strin
     // the exclusion spec and refuses an out-of-scope path; writing the doc first
     // would strand an unregistered scaffold on disk for a feature that never
     // came into existence.
-    updateRegistryEntry(registryPath, key, {
+    register(key, {
       doc: docPath,
       type: row.type,
       primary_sources: [file],
@@ -150,7 +170,7 @@ export function materializeFile(root: string, rows: FeatureMapRow[], file: strin
   } else if (existing.primary_sources.includes(file)) {
     status = "noop";
   } else {
-    updateRegistryEntry(registryPath, key, {
+    register(key, {
       primary_sources: [...existing.primary_sources, file],
     });
     status = "updated";
@@ -164,7 +184,7 @@ export function materializeFile(root: string, rows: FeatureMapRow[], file: strin
       !secEntry.related_sources.includes(file) &&
       !secEntry.primary_sources.includes(file)
     ) {
-      updateRegistryEntry(registryPath, sec, {
+      register(sec, {
         related_sources: [...secEntry.related_sources, file],
       });
       secondaryUpdated.push(sec);

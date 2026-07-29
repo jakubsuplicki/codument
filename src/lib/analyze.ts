@@ -554,7 +554,7 @@ function computeCoverage(
 }
 
 /** Which of the project's own declared rules covers a path, if any. */
-function declaredRuleFor(relPath: string, declared: ExcludeConfig | null): string | null {
+export function declaredRuleFor(relPath: string, declared: ExcludeConfig | null): string | null {
   if (!declared) return null;
   const posix = toPosix(relPath);
   const dir = declared.dirs?.find((d) => posix.split("/").includes(d));

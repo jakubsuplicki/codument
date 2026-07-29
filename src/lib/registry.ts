@@ -138,12 +138,24 @@ export class ExcludedSourceError extends Error {
     readonly key: string,
     readonly path: string,
     readonly field: "primary_sources" | "related_sources",
+    /**
+     * The project's own `exclude` rule covering this path, when one does — the
+     * same wording split the lint draws. A declaration and a built-in heuristic
+     * call for different responses ("un-map it, or narrow what you declared"
+     * versus "codument's guess may be wrong about your file"), and one generic
+     * refusal sends both to the same dead end. Null ⇒ a built-in rule fired.
+     */
+    readonly rule: string | null = null,
   ) {
     super(
-      `${key}: "${path}" is out of documented scope, so it cannot be listed in ${field}. ` +
-        `Generated, build, and test files are excluded from every analysis — an entry naming ` +
-        `one documents nothing. To point a doc at the test that enforces an invariant, link it ` +
-        `in that invariant's prose instead.`,
+      rule
+        ? `${key}: "${path}" cannot be listed in ${field} — the project's own \`exclude\` ` +
+            `(${rule}) covers it, so it cannot be documented source too. Un-map it, or narrow ` +
+            `the declaration.`
+        : `${key}: "${path}" cannot be listed in ${field} — it matches a built-in exclusion ` +
+            `rule (build/generated/test/data), so it is filtered out of every analysis and an ` +
+            `entry naming it documents nothing. To point a doc at the test that enforces an ` +
+            `invariant, link it in that invariant's prose instead.`,
     );
     this.name = "ExcludedSourceError";
   }
@@ -171,7 +183,11 @@ function assertNoExcludedSource(
       // rewritten — and the excluded path lands in the registry anyway.
       const stored = normalizeRelPath(source);
       if (!already.has(stored) && isExcluded(stored, spec)) {
-        throw new ExcludedSourceError(key, source, field);
+        // Carry the STORED path, not the typed one. It is the path that was
+        // actually tested, so a consumer that re-matches it — to name which rule
+        // fired — reaches the same verdict instead of quietly disagreeing with
+        // the guard that already refused it.
+        throw new ExcludedSourceError(key, stored, field);
       }
     }
   }

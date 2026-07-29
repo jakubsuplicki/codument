@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseFeatureMap } from "../src/lib/feature-map.js";
 import { materializeFile, shapeWarnings } from "../src/commands/map.js";
-import { readRegistrySync } from "../src/lib/registry.js";
+import { readRegistrySync, ExcludedSourceError } from "../src/lib/registry.js";
 
 const MAP_MD = `
 \`\`\`feature-map
@@ -105,6 +105,127 @@ describe("materializeFile", () => {
     const reg = readRegistrySync(join(root, "docs", ".registry.json"));
     assert.deepEqual(Object.keys(reg.features), []);
     assert.equal(existsSync(join(root, "docs", "features", "thing.md")), false);
+  });
+});
+
+// Naming WHICH rule fired. A project's own declaration and a built-in heuristic
+// call for different responses — "un-map it or narrow your declaration" versus
+// "codument's guess may be wrong about your file" — and one generic refusal
+// sends both to the same dead end.
+describe("materializeFile names the rule that refused a path", () => {
+  let root: string;
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-map-rule-"));
+    await mkdir(join(root, "docs", "features"), { recursive: true });
+    await writeFile(join(root, "docs", ".registry.json"), JSON.stringify({ features: {} }, null, 2));
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const excludedRows = parseFeatureMap(
+    "```feature-map\nsrc/thing.test.js | thing | feature | r\nout/bundle.ts | bundled | feature | r\n```\n",
+  ).rows;
+
+  it("cites the built-in rule when no project declaration covers the path", () => {
+    assert.throws(
+      () => materializeFile(root, excludedRows, "src/thing.test.js"),
+      (err: unknown) =>
+        err instanceof ExcludedSourceError &&
+        err.rule === null &&
+        /built-in/.test(err.message),
+    );
+  });
+
+  it("cites the project's own exclude rule when its declaration is what covers the path", async () => {
+    await writeFile(
+      join(root, ".codument-meta.json"),
+      JSON.stringify({ exclude: { dirs: ["out"] } }, null, 2),
+    );
+
+    assert.throws(
+      () => materializeFile(root, excludedRows, "out/bundle.ts"),
+      (err: unknown) =>
+        err instanceof ExcludedSourceError &&
+        err.rule === "dirs: out" &&
+        /project's own/.test(err.message),
+    );
+  });
+
+  // The functional half: before this, materialize passed no spec, so ONLY the
+  // built-in defaults reached the authoring guard and a project's own declared
+  // exclusions were silently authorable.
+  it("enforces a project declaration the built-in spec would have allowed", async () => {
+    const declaredRows = parseFeatureMap(
+      "```feature-map\npublic-preprod/app.ts | site | feature | r\n```\n",
+    ).rows;
+
+    // Without the declaration the path is ordinary source and materializes fine.
+    assert.equal(materializeFile(root, declaredRows, "public-preprod/app.ts").status, "created");
+
+    await rm(join(root, "docs", ".registry.json"));
+    await writeFile(join(root, "docs", ".registry.json"), JSON.stringify({ features: {} }, null, 2));
+    await writeFile(
+      join(root, ".codument-meta.json"),
+      JSON.stringify({ exclude: { dirs: ["public-preprod"] } }, null, 2),
+    );
+
+    assert.throws(
+      () => materializeFile(root, declaredRows, "public-preprod/app.ts"),
+      (err: unknown) => err instanceof ExcludedSourceError,
+    );
+  });
+
+  // ADVERSARIAL REVIEW FINDING (confirmed, Step 3): `register()` in map.ts
+  // enriches a refusal by calling `declaredRuleFor(err.path, scope.configured)`
+  // — but `err.path` is the RAW, as-typed source string `assertNoExcludedSource`
+  // was given (registry.ts throws with `source`, not the normalized `stored`
+  // path it actually tested exclusion against). `declaredRuleFor` normalizes
+  // only via `toPosix` (separator swap), never `normalizeRelPath` (which also
+  // strips a leading "./"), so a source whose text carries a leading "./" —
+  // a plausible Feature Map authoring style, and legal input to the exported,
+  // directly-tested `materializeFile` — is genuinely excluded by the project's
+  // OWN declared glob (confirmed: `isExcluded` matches on the normalized form),
+  // yet `declaredRuleFor`'s glob regex is anchored (`^pattern$`) and does not
+  // match the unnormalized "./..." string, so it returns null and the refusal
+  // is misattributed to "a built-in exclusion rule" — an actively false claim
+  // that sends the user down the wrong remediation path ("codument's guess may
+  // be wrong about your file" instead of "un-map it, or narrow the
+  // declaration"). This is worse than naming neither rule: it names the wrong
+  // one. Root cause: `register()` (map.ts) hands the unnormalized `err.path`
+  // to `declaredRuleFor` instead of the normalized form the exclusion check
+  // itself used.
+  it("does not misattribute a project-declared glob exclusion as built-in when the source path carries a leading './'", () => {
+    // Both the Map row and the materialized file carry the same leading "./"
+    // (either an authoring convention in the plan doc, or a caller of the
+    // exported materializeFile() that does not pre-normalize like the CLI's
+    // toRepoRel() does) so exact-path routing still resolves to a real row.
+    const dotSlashRows = parseFeatureMap(
+      "```feature-map\n./public-preprod/app.ts | site | feature | r\n```\n",
+    ).rows;
+
+    return writeFile(
+      join(root, ".codument-meta.json"),
+      JSON.stringify({ exclude: { globs: ["public-preprod/**"] } }, null, 2),
+    ).then(() => {
+      assert.throws(
+        () => materializeFile(root, dotSlashRows, "./public-preprod/app.ts"),
+        (err: unknown) => {
+          assert.ok(err instanceof ExcludedSourceError, `expected ExcludedSourceError, got ${err}`);
+          // The project's own declared glob is genuinely what covers this path;
+          // the refusal must say so, not blame a generic built-in heuristic.
+          assert.equal(
+            (err as ExcludedSourceError).rule,
+            "globs: public-preprod/**",
+            `expected attribution to the project's own declared glob, got rule=${
+              (err as ExcludedSourceError).rule
+            } message=${(err as ExcludedSourceError).message}`,
+          );
+          assert.ok(/project's own/.test((err as ExcludedSourceError).message));
+          return true;
+        },
+      );
+    });
   });
 });
 

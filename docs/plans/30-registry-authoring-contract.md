@@ -115,7 +115,7 @@ Status: draft, awaiting approval before source edits.
 - [x] Step 2: Guard the write seam in `registry.ts` against a source the resolved exclusion spec
       covers, leaving the read path tolerant. Pin both halves: authoring refuses, and an existing
       bad registry still loads so `doctor` can lint it.
-- [ ] Step 3: `codument map materialize` refuses an excluded path, naming which rule fired
+- [x] Step 3: `codument map materialize` refuses an excluded path, naming which rule fired
       (built-in heuristic vs the project's own declaration), reusing `declaredRuleFor`'s wording
       split so the two call for the responses they already call for elsewhere.
 - [ ] Step 4: Derive first-party dependency edges from the import graph — registry entries plus
