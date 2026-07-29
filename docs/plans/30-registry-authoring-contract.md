@@ -108,7 +108,7 @@ No new source files, so no `map materialize` needed. Independent of plans 26–2
 
 Status: draft, awaiting approval before source edits.
 
-- [ ] Step 1: State the contract where entries are authored — `rules/documentation.md` and its
+- [x] Step 1: State the contract where entries are authored — `rules/documentation.md` and its
       registry-entry template say that generated, build, and test files are never `primary_sources`,
       and that an invariant links its enforcing test in prose instead. Verify a scaffolded project
       carries the updated text.
