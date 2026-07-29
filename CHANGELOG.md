@@ -7,7 +7,44 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+A tool whose own loop authors what its own lint rejects teaches the user that
+the lint is noise. A throwaway project built end to end by an agent following
+codument's scaffolded loop produced a registry `doctor` rejected on seven
+counts — every finding correct. The exclusion spec governed every path that
+*reads* the registry and none that *writes* one, and `empty-depends-on` asked
+for a graph the import layer could already resolve.
+
+### Added
+- `empty-depends-on` names the edges codument can derive from the entry's
+  imports instead of sending you to find them by hand. They ride the existing
+  finding — same id, same severity, same firing conditions — so nothing about
+  the exit code moves and an entry with nothing derivable keeps its original
+  wording and gains no JSON key at all. The edges are stated as a **floor**,
+  never as the entry's dependencies: import resolution sees only the coupling
+  expressible as an import, so runtime wiring or a shared data shape produces a
+  real edge with no import to read. Nothing is written to the registry.
+
 ### Fixed
+- Authoring a registry entry now refuses a generated, build, or test file
+  instead of accepting one and letting `doctor` report it afterwards. The
+  exclusion contract was already settled and additive-only — there is no case
+  where a test file belongs in an entry — but nothing on the write path
+  enforced it. Reading stays deliberately tolerant, so `doctor` can still
+  report a registry that is already wrong, and only a *newly introduced* path
+  is refused, so an entry that already names a test file can still be extended
+  or repaired.
+- `codument map materialize` refuses an out-of-scope path and names the rule
+  that fired. A project's own `exclude` declaration and a built-in heuristic
+  call for opposite responses — "un-map it, or narrow what you declared" is not
+  "codument's guess may be wrong about your file" — and one generic refusal
+  sent both to the same dead end. Routing also resolves the project's declared
+  scope rather than only the built-in defaults, closing a gap where a path the
+  project itself put out of scope stayed authorable on the one path that writes.
+- A refused `map materialize` no longer strands a scaffold doc for a feature
+  that never came to exist: the entry is authored before anything reaches disk.
+- The authoring rule shipped to every project (`rules/documentation.md`) states
+  the scope contract at the point where entries are hand-authored, and points
+  invariant-to-test links at doc prose, which needs no registry mapping.
 - Opus 5 and Sonnet 5 are priced from the built-in rate table. Both families
   moved to a single-segment model id (`claude-opus-5`), a shape the transcript
   normalizer only recognized for Fable and Mythos, so a current-generation
