@@ -106,7 +106,7 @@ No new source files, so no `map materialize` needed. Independent of plans 26–2
 
 ## Delivery Plan — registry authoring contract (2026-07-28, rev. 2026-07-29)
 
-Status: draft, awaiting approval before source edits.
+Status: approved 2026-07-29 — end-to-end coverage settled as a self-contained fixture (Step 7).
 
 - [x] Step 1: State the contract where entries are authored — `rules/documentation.md` and its
       registry-entry template say that generated, build, and test files are never `primary_sources`,
@@ -118,7 +118,7 @@ Status: draft, awaiting approval before source edits.
 - [x] Step 3: `codument map materialize` refuses an excluded path, naming which rule fired
       (built-in heuristic vs the project's own declaration), reusing `declaredRuleFor`'s wording
       split so the two call for the responses they already call for elsewhere.
-- [ ] Step 4: Derive first-party dependency edges from the import graph — registry entries plus
+- [x] Step 4: Derive first-party dependency edges from the import graph — registry entries plus
       `importedFiles` resolved through `primary_sources` ownership — as a pure, tested function.
 - [ ] Step 5: `empty-depends-on` carries the derived edges as evidence, info-only, with no change to
       when the finding fires or to the exit code. The wording presents them as the edges codument

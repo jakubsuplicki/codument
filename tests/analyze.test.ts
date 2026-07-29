@@ -21,7 +21,9 @@ import {
   DEFAULT_EXCLUSION_SPEC,
   type CoverageRatio,
   type LintFinding,
+  deriveDependencyEdges,
 } from "../src/lib/analyze.js";
+import type { RegistryEntry } from "../src/lib/registry.js";
 import { listIgnoredPaths } from "../src/lib/git.js";
 import { readRegistry } from "../src/lib/registry.js";
 
@@ -1261,5 +1263,124 @@ describe("an unreadable directory is reported, never silently skipped", () => {
     } finally {
       await chmod(lockedDocs, 0o755).catch(() => {});
     }
+  });
+});
+
+// The dependency edges codument can derive from the import graph. A FLOOR, not
+// the dependency set: import resolution finds only what is expressible as an
+// import, so this never fabricates an edge to clear a finding.
+describe("deriveDependencyEdges", () => {
+  const src = (files: Record<string, string>) => (p: string) => files[p] ?? null;
+  const reg = (features: Record<string, string[]>): [string, RegistryEntry][] =>
+    Object.entries(features).map(([key, primary_sources]) => [
+      key,
+      {
+        doc: `docs/features/${key}.md`,
+        type: "feature",
+        primary_sources,
+        related_sources: [],
+        docs: [],
+        depends_on: [],
+        risk: [],
+        status: "current",
+      } as RegistryEntry,
+    ]);
+
+  it("derives an edge when one entry's source imports another entry's source", () => {
+    const edges = deriveDependencyEdges(
+      reg({ app: ["src/app.ts"], money: ["src/money.ts"] }),
+      src({ "src/app.ts": `import { add } from "./money.js";`, "src/money.ts": "export const add = 1;" }),
+    );
+    assert.deepStrictEqual(edges.get("app"), ["money"]);
+    assert.equal(edges.has("money"), false);
+  });
+
+  it("drops an edge to a file no entry owns, rather than inventing a target", () => {
+    const edges = deriveDependencyEdges(
+      reg({ app: ["src/app.ts"] }),
+      src({ "src/app.ts": `import "./unregistered.js";` }),
+    );
+    assert.equal(edges.size, 0);
+  });
+
+  it("drops a self-edge between two sources of the same feature", () => {
+    const edges = deriveDependencyEdges(
+      reg({ app: ["src/app.ts", "src/helper.ts"] }),
+      src({ "src/app.ts": `import "./helper.js";`, "src/helper.ts": "" }),
+    );
+    assert.equal(edges.size, 0);
+  });
+
+  it("reports every owner of a shared source, not an arbitrary first one", () => {
+    const edges = deriveDependencyEdges(
+      reg({ app: ["src/app.ts"], a: ["src/shared.ts"], b: ["src/shared.ts"] }),
+      src({ "src/app.ts": `import "./shared.js";`, "src/shared.ts": "" }),
+    );
+    assert.deepStrictEqual(edges.get("app"), ["a", "b"]);
+  });
+
+  it("skips a source it cannot read instead of throwing", () => {
+    const edges = deriveDependencyEdges(reg({ app: ["src/gone.ts"] }), src({}));
+    assert.equal(edges.size, 0);
+  });
+
+  it("is deterministic: edges come back sorted regardless of entry order", () => {
+    const files = src({
+      "src/app.ts": `import "./z.js";\nimport "./a.js";`,
+      "src/z.ts": "",
+      "src/a.ts": "",
+    });
+    const one = deriveDependencyEdges(reg({ app: ["src/app.ts"], zed: ["src/z.ts"], ay: ["src/a.ts"] }), files);
+    const two = deriveDependencyEdges(reg({ zed: ["src/z.ts"], ay: ["src/a.ts"], app: ["src/app.ts"] }), files);
+    assert.deepStrictEqual(one.get("app"), ["ay", "zed"]);
+    assert.deepStrictEqual(one.get("app"), two.get("app"));
+  });
+});
+
+// The real variant of the "fabricated edge" risk. `resolveSpecifier` guesses
+// `.ts` for an extensionless specifier and never tries an index file, so a
+// directory-style import resolves to a path that does not exist. An entry that
+// CLAIMS that path (a stale source, which `missing-source` reports separately)
+// must not collect a confident edge to a file nobody imports.
+describe("deriveDependencyEdges never invents an edge from a resolution guess", () => {
+  const entry = (primary_sources: string[]): RegistryEntry =>
+    ({
+      doc: "docs/x.md",
+      type: "feature",
+      primary_sources,
+      related_sources: [],
+      docs: [],
+      depends_on: [],
+      risk: [],
+      status: "current",
+    }) as RegistryEntry;
+
+  it("drops the edge when the guessed target does not exist, even if an entry claims it", () => {
+    const registry: [string, RegistryEntry][] = [
+      ["app", entry(["src/app.ts"])],
+      // Claims src/config.ts, which is not on disk — the guess would land here.
+      ["ghost", entry(["src/config.ts"])],
+    ];
+    const files: Record<string, string> = {
+      "src/app.ts": `import { settings } from "./config";`,
+    };
+
+    const edges = deriveDependencyEdges(registry, (p) => files[p] ?? null);
+    assert.equal(edges.size, 0, "a guess that landed on a nonexistent file is not an edge");
+  });
+
+  it("still derives the edge when the guessed target really exists", () => {
+    const registry: [string, RegistryEntry][] = [
+      ["app", entry(["src/app.ts"])],
+      ["config", entry(["src/config.ts"])],
+    ];
+    const files: Record<string, string> = {
+      "src/app.ts": `import { settings } from "./config";`,
+      "src/config.ts": `export const settings = 1;`,
+    };
+
+    assert.deepStrictEqual(deriveDependencyEdges(registry, (p) => files[p] ?? null).get("app"), [
+      "config",
+    ]);
   });
 });

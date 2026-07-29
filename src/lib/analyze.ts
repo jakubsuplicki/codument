@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { readMetaSync, type ExcludeConfig } from "./codemod.js";
+import { importedFiles } from "./import-graph.js";
 import {
   DEFAULT_EXCLUSION_SPEC,
   globToRegExp,
@@ -551,6 +552,65 @@ function computeCoverage(
   // lands, coverage scores only the repo-state axes (ownership, dependency, risk).
   const ratios = [ownership, dependency, risk];
   return rollupScore(ratios);
+}
+
+/**
+ * The dependency edges codument can derive from the import graph: for each
+ * entry, the other entries whose sources its own sources import.
+ *
+ * This is a FLOOR, never the dependency set. Import resolution finds only the
+ * coupling that happens to be expressible as an import — runtime wiring, a
+ * shared data shape, and CLI orchestration all produce real dependencies with
+ * no import between the files. Because change review fans impact along these
+ * edges, a set the user believes is complete is worse than one that still
+ * nags, so callers must present these as what codument *could derive*.
+ *
+ * An edge landing on a file no entry owns is dropped rather than reported: the
+ * `dangling-depends-on` and unmapped-source signals own that case from the
+ * other side, and naming it here would duplicate them. Self-edges are dropped.
+ *
+ * Pure given `readSource` (which returns null for an unreadable path) — no
+ * clock and no network, so `doctor` stays deterministic. Ownership is resolved
+ * to EVERY owner of a shared source, not an arbitrary first one, so the result
+ * does not depend on registry key order.
+ */
+export function deriveDependencyEdges(
+  entries: [string, RegistryEntry][],
+  readSource: (relPath: string) => string | null,
+): Map<string, string[]> {
+  const owners = new Map<string, string[]>();
+  for (const [key, entry] of entries) {
+    for (const source of entry.primary_sources) {
+      const list = owners.get(source);
+      if (list) list.push(key);
+      else owners.set(source, [key]);
+    }
+  }
+
+  const derived = new Map<string, string[]>();
+  for (const [key, entry] of entries) {
+    const deps = new Set<string>();
+    for (const source of entry.primary_sources) {
+      const content = readSource(source);
+      if (content === null) continue;
+      for (const imported of importedFiles(source, content)) {
+        // The specifier resolver is best-effort: an extensionless specifier is
+        // guessed as `.ts`, and a directory-style import (resolved in reality
+        // through an index file) is never tried. So a resolved path that does
+        // not EXIST is a guess that missed, and an entry claiming that path —
+        // a stale source the `missing-source` lint reports separately — would
+        // otherwise hand back a confident edge to a file nobody imports.
+        // Missing an edge is the floor working as designed; inventing one is
+        // the failure the floor exists to avoid.
+        if (readSource(imported) === null) continue;
+        for (const owner of owners.get(imported) ?? []) {
+          if (owner !== key) deps.add(owner);
+        }
+      }
+    }
+    if (deps.size > 0) derived.set(key, [...deps].sort());
+  }
+  return derived;
 }
 
 /** Which of the project's own declared rules covers a path, if any. */
