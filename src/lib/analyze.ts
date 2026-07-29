@@ -442,6 +442,25 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     for (const dep of entry.depends_on) dependedUpon.add(dep);
   }
 
+  // The edges the import graph can answer for, so `empty-depends-on` reports
+  // which ones rather than sending the user off to find them by hand. Cached
+  // per path: one file is commonly a source of several entries, and re-reading
+  // it per entry would make the cost quadratic in a shared foundation.
+  const sourceCache = new Map<string, string | null>();
+  const readSource = (relPath: string): string | null => {
+    const hit = sourceCache.get(relPath);
+    if (hit !== undefined) return hit;
+    let content: string | null;
+    try {
+      content = readFileSync(join(root, relPath), "utf-8");
+    } catch {
+      content = null;
+    }
+    sourceCache.set(relPath, content);
+    return content;
+  };
+  const derivedEdges = deriveDependencyEdges(entries, readSource);
+
   const coverage = computeCoverage(
     root,
     entries,
@@ -461,6 +480,7 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
     dependedUpon,
     isIgnored,
     declaredExclusions ?? null,
+    derivedEdges,
   );
   const lint = lintResult.findings;
   // One field for the user's question ("what could codument not read?"), whether
@@ -634,6 +654,7 @@ function computeLint(
   dependedUpon: Set<string>,
   isIgnored: (relPosixPath: string) => boolean,
   declared: ExcludeConfig | null,
+  derived: Map<string, string[]>,
 ): { findings: LintFinding[]; unreadable: string[] } {
   const findings: LintFinding[] = [];
   const entryKeys = new Set(entries.map(([key]) => key));
@@ -756,11 +777,25 @@ function computeLint(
       !dependedUpon.has(key) &&
       entry.depends_on_confirmed !== true
     ) {
+      // Answer the question the finding provokes ("which ones?") in place,
+      // rather than as a second finding the user has to correlate. The edges
+      // ride the SAME id and severity, so when it fires and what it costs are
+      // unchanged and soak data stays comparable.
+      const suggested = derived.get(key) ?? [];
       findings.push({
         id: "empty-depends-on",
         severity: "warn",
         feature: key,
-        message: `${key}: mature entry has empty depends_on`,
+        // Worded as what codument COULD derive, never as the entry's
+        // dependencies. Import resolution sees only the coupling expressible as
+        // an import, and a user who reads a partial set as complete stops
+        // looking — the edge that is missing then fails silently at review,
+        // which is exactly where these edges are load-bearing.
+        message:
+          suggested.length > 0
+            ? `${key}: mature entry has empty depends_on — its imports yield ${suggested.join(", ")}, a floor to extend rather than the full set (coupling with no import between the files is invisible here)`
+            : `${key}: mature entry has empty depends_on`,
+        ...(suggested.length > 0 ? { evidence: suggested } : {}),
       });
     }
 

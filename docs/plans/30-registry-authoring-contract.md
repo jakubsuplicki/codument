@@ -120,7 +120,7 @@ Status: approved 2026-07-29 — end-to-end coverage settled as a self-contained 
       split so the two call for the responses they already call for elsewhere.
 - [x] Step 4: Derive first-party dependency edges from the import graph — registry entries plus
       `importedFiles` resolved through `primary_sources` ownership — as a pure, tested function.
-- [ ] Step 5: `empty-depends-on` carries the derived edges as evidence, info-only, with no change to
+- [x] Step 5: `empty-depends-on` carries the derived edges as evidence, info-only, with no change to
       when the finding fires or to the exit code. The wording presents them as the edges codument
       could derive — a floor the user extends, never the feature's dependency set.
 - [ ] Step 6: Update `registry-health.md` and `feature-decomposition.md` at intent altitude and add

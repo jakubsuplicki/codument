@@ -1384,3 +1384,69 @@ describe("deriveDependencyEdges never invents an edge from a resolution guess", 
     ]);
   });
 });
+
+// Step 5 wiring: the finding answers its own question in place. Same id, same
+// severity, same firing conditions — only the message and evidence gain the
+// edges codument could derive.
+describe("empty-depends-on carries the derived edges as evidence", () => {
+  let root: string;
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-derive-"));
+    await mkdir(join(root, "src"), { recursive: true });
+    await mkdir(join(root, "docs", "features"), { recursive: true });
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const write = async (rel: string, body: string) => {
+    await writeFile(join(root, rel), body);
+  };
+  const doc = async (slug: string) =>
+    write(`docs/features/${slug}.md`, `# ${slug}\n\n## In plain terms\n\nreal doc.\n`);
+
+  it("names the derivable edges as a floor, without changing the finding's id or severity", async () => {
+    await write("src/app.ts", `import { add } from "./money.js";\nexport const run = () => add;\n`);
+    await write("src/money.ts", `export const add = 1;\n`);
+    await doc("app");
+    await doc("money");
+    await write(
+      "docs/.registry.json",
+      JSON.stringify({
+        features: {
+          app: { doc: "docs/features/app.md", type: "feature", primary_sources: ["src/app.ts"], related_sources: [], docs: [], depends_on: [], risk: [], status: "current" },
+          money: { doc: "docs/features/money.md", type: "feature", primary_sources: ["src/money.ts"], related_sources: [], docs: [], depends_on: [], risk: [], status: "current" },
+        },
+      }),
+    );
+
+    const registry = await readRegistry(join(root, "docs", ".registry.json"));
+    const report = analyze({ root, registry, srcDir: "src" });
+    const finding = report.lint.find((f) => f.id === "empty-depends-on" && f.feature === "app");
+    assert.ok(finding, "app still trips empty-depends-on — when it fires is unchanged");
+    assert.equal(finding.severity, "warn");
+    assert.deepStrictEqual(finding.evidence, ["money"]);
+    assert.match(finding.message, /floor/);
+    assert.match(finding.message, /money/);
+  });
+
+  it("leaves the message and shape untouched when nothing can be derived", async () => {
+    await write("src/lonely.ts", `export const x = 1;\n`);
+    await doc("lonely");
+    await write(
+      "docs/.registry.json",
+      JSON.stringify({
+        features: {
+          lonely: { doc: "docs/features/lonely.md", type: "feature", primary_sources: ["src/lonely.ts"], related_sources: [], docs: [], depends_on: [], risk: [], status: "current" },
+        },
+      }),
+    );
+
+    const registry = await readRegistry(join(root, "docs", ".registry.json"));
+    const report = analyze({ root, registry, srcDir: "src" });
+    const finding = report.lint.find((f) => f.id === "empty-depends-on");
+    assert.ok(finding);
+    assert.equal(finding.evidence, undefined, "no evidence key at all, so --json stays byte-identical");
+    assert.equal(finding.message, "lonely: mature entry has empty depends_on");
+  });
+});
