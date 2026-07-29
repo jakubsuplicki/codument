@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 30: the authoring path obeys the registry contract
