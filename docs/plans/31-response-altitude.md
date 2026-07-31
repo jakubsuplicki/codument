@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 31: response altitude — answer first, evidence on request
@@ -90,6 +90,10 @@ Grounding is narrated less, never performed less. Read the docs, check the regis
 — then state the conclusion and cite at most the one file that settles it. Buying brevity by reading
 less is the one failure this rule must never cause.
 
+Cut sentences, never words. Do not invent abbreviations (`cfg`, `impl`, `req`, `fn`) or substitute
+symbols for words (`→` for "causes"): measured against the tokenizer these save nothing while costing
+the reader a decode step. Identifiers, file paths, commands, and error strings stay verbatim always.
+
 Nothing is exempt. Where another instruction mandates a format — the plan approval summary, a review
 finding, a charter recommendation, a destructive-action confirmation, autopilot step progress — keep
 every required part and apply this rule inside it: a line each, not a paragraph each. Written docs,
@@ -98,15 +102,21 @@ code, and commit messages follow their own standards.
 
 ## Delivery Plan
 
-Status: draft, awaiting approval before source edits.
+Status: approved.
 
-- [ ] Step 1: Add `### Response altitude` to `buildManagedSection()` in `src/lib/scaffold.ts` (after
-      Implementation discipline, before Intent routing); pin the rule, the grounding clause, and the
-      precedence clause in `tests/scaffold.test.ts`. Regenerate the `AGENTS.md` / `CLAUDE.md` mirrors.
-- [ ] Step 2: Defang `grill-with-docs` in both tracked copies — cap "and why" to the one deciding
+- [x] Step 1: Capture the **before** baseline. Run `codument feed --backfill` (the ledger at
+      `.codument/events.jsonl` exists but holds no token events yet, so `codument cost` currently
+      reports none), then record median and mean output tokens per assistant turn in this plan's
+      Verification section. This must land before any contract edit — a baseline taken afterwards
+      measures nothing.
+- [ ] Step 2: Add `### Response altitude` to `buildManagedSection()` in `src/lib/scaffold.ts` (after
+      Implementation discipline, before Intent routing); pin the rule, the grounding clause, the
+      structure clause, and the no-abbreviation clause in `tests/scaffold.test.ts`. Regenerate the
+      `AGENTS.md` / `CLAUDE.md` mirrors.
+- [ ] Step 3: Defang `grill-with-docs` in both tracked copies — cap "and why" to the one deciding
       reason, turn the stress-test line into a thinking instruction, and extend "Do not dump a
       questionnaire" to cover dumping the analysis.
-- [ ] Step 3: Update `docs/features/agent-delivery-workflow.md` and `CHANGELOG.md`.
+- [ ] Step 4: Update `docs/features/agent-delivery-workflow.md` and `CHANGELOG.md`.
 
 ## Outcome
 
@@ -119,19 +129,45 @@ rule cannot be read as permission to read less. Every reply gets shorter, includ
 summary, review findings, and charter recommendations — those keep every required part and lose the
 prose around it.
 
-**What it does not do.** No test can prove replies got shorter — Step 1 pins only that the text is
-present and coherent. The evidence is dogfooding, not CI. It does not adopt caveman register, add
-levels or a toggle, drop any required part from a mandated format, or change written docs, code, or
-commit messages.
+The effect is measured, not asserted: Step 1 records output tokens per turn before the change, and the
+same ledger reports the delta after. Codument stops guessing about its own verbosity.
+
+**What it does not do.** No test proves the rule works — CI pins only that the text is present and
+coherent, and the token delta lands post-ship over real turns, not in a test run. The number is also a
+proxy: a turn that got shorter by reading less would score as a win, so it is read alongside whether
+the answers stayed right. It does not adopt caveman register, add levels or a toggle, drop any
+required part from a mandated format, or change written docs, code, or commit messages.
 
 ## Verification
 
-- `npm test` — `tests/scaffold.test.ts` pins the rule, the grounding clause, and the precedence clause.
+- `npm test` — `tests/scaffold.test.ts` pins the rule, the grounding clause, the structure clause, and
+  the no-abbreviation clause.
 - Regression guard, matching the existing style: assert the section does **not** reduce to a bare
   "keep it short" without the grounding clause, so a later trim cannot license under-reading.
 - `codument review --strict` green before each commit.
-- **Honest limit:** the real feedback loop is the next few grill turns in this repo. If they still read
-  long, the rule is too weak and needs a hard cap (an explicit line budget), not more prose.
+
+**Measured effect — the primary evidence.** Codument already captures per-turn output tokens: `feed`
+normalizes the session log into `.codument/events.jsonl` and `cost` rolls it up by feature, model, and
+step. Step 1 records the before number here; after the contract lands, re-run `codument feed` and
+`codument cost` over a comparable stretch of work and record the delta below.
+
+| | median output tokens / turn | mean | p90 | turns sampled |
+| --- | --- | --- | --- | --- |
+| Before (Step 1) | 739 | 943 | 1803 | 582 |
+| After (post-ship) | _pending_ | _pending_ | _pending_ | _pending_ |
+
+Baseline taken from `codument feed --once --backfill` over 3 captured sessions (549K output tokens
+total), counting every turn with non-zero output. Reproduce the same way after the change — the
+counting method must match or the delta is meaningless. Tool-call-only turns are included and drag
+both figures down; that is fine while it is consistent across both rows.
+
+- **Read the number honestly.** Output tokens per turn is a proxy, not the goal — a turn that got
+  shorter by skipping the reading is a regression the number would score as a win. Read it alongside
+  whether the answers stayed right. Confounds to state when recording: different task mix, different
+  session length, and the fact that this is a single-user sample.
+- **The measurement does not gate the ship.** The delta needs real turns after the change, so it is
+  recorded post-ship. If replies still read long, the rule is too weak and needs a hard cap (an
+  explicit line budget), not more prose.
 
 ## Open questions
 
