@@ -5,11 +5,21 @@ All notable changes to Codument are recorded here. The format follows
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while it
 remains pre-1.0.
 
-## [Unreleased]
+## [0.12.0] - 2026-07-31
 
-Nothing in the generated contract capped what the agent said in an ordinary
-turn. Its brevity instructions were about *docs*, or about the summary autopilot
-owes on pause and completion — none about the reply to a question. And
+Two threads land together.
+
+A tool whose own loop authors what its own lint rejects teaches the user that
+the lint is noise. A throwaway project built end to end by an agent following
+codument's scaffolded loop produced a registry `doctor` rejected on seven
+counts — every finding correct. The exclusion spec governed every path that
+*reads* the registry and none that *writes* one, and `empty-depends-on` asked
+for a graph the import layer could already resolve.
+
+The second is what the agent *says*. Nothing in the generated contract capped
+an ordinary turn: the brevity instructions were about *docs*, or about the
+summary autopilot owes on pause and completion — none about the reply to a
+question. And
 `grill-with-docs` pushed the other way, telling the agent to "include your
 recommended answer and why" and to "stress-test answers with concrete
 scenarios, failure modes, and edge cases". Read literally, that is an
@@ -19,6 +29,14 @@ rationale, a "before you answer" section, and a two-part closing question. The
 agent was not drifting; it was obeying.
 
 ### Added
+- `empty-depends-on` names the edges codument can derive from the entry's
+  imports instead of sending you to find them by hand. They ride the existing
+  finding — same id, same severity, same firing conditions — so nothing about
+  the exit code moves and an entry with nothing derivable keeps its original
+  wording and gains no JSON key at all. The edges are stated as a **floor**,
+  never as the entry's dependencies: import resolution sees only the coupling
+  expressible as an import, so runtime wiring or a shared data shape produces a
+  real edge with no import to read. Nothing is written to the registry.
 - A `### Response altitude` rule in the generated contract, between
   implementation discipline and intent routing — so the three read *do the work
   well*, *write the least code*, *say the least words*. It has two halves
@@ -45,40 +63,6 @@ agent was not drifting; it was obeying.
   table plus a rationale list plus a "before you answer" section, all to ask one
   question, is the same failure as five questions at once. It just looks more
   diligent.
-
-### Notes
-- Not adopted: a compression register (dropping articles, abbreviating,
-  substituting symbols) and an opt-in brevity mode. The defect was surface area,
-  not spelling — and a toggle still requires asking for brevity, which is the
-  friction being removed. Invented abbreviations and symbol substitutions are
-  explicitly banned by the rule: they measure as no cheaper under the tokenizer
-  while costing the reader a decode step.
-- The effect is measured rather than asserted. `feed` and `cost` already capture
-  per-turn output tokens, so the plan recorded a before baseline (582 turns,
-  median 739 output tokens, mean 943) and the delta lands post-ship. The number
-  is a proxy: a turn that got shorter by reading less would score as a win, so it
-  is read alongside whether the answers stayed right.
-
-## [0.12.0] - 2026-07-31
-
-A tool whose own loop authors what its own lint rejects teaches the user that
-the lint is noise. A throwaway project built end to end by an agent following
-codument's scaffolded loop produced a registry `doctor` rejected on seven
-counts — every finding correct. The exclusion spec governed every path that
-*reads* the registry and none that *writes* one, and `empty-depends-on` asked
-for a graph the import layer could already resolve.
-
-### Added
-- `empty-depends-on` names the edges codument can derive from the entry's
-  imports instead of sending you to find them by hand. They ride the existing
-  finding — same id, same severity, same firing conditions — so nothing about
-  the exit code moves and an entry with nothing derivable keeps its original
-  wording and gains no JSON key at all. The edges are stated as a **floor**,
-  never as the entry's dependencies: import resolution sees only the coupling
-  expressible as an import, so runtime wiring or a shared data shape produces a
-  real edge with no import to read. Nothing is written to the registry.
-
-### Fixed
 - Authoring a registry entry now refuses a generated, build, or test file
   instead of accepting one and letting `doctor` report it afterwards. The
   exclusion contract was already settled and additive-only — there is no case
@@ -110,6 +94,19 @@ for a graph the import layer could already resolve.
   under-reporting on an untracked date is worse than one that is briefly
   conservative. Events captured before this fix keep the model id they were
   ingested under; `codument feed --reset` re-prices them.
+
+### Notes
+- Not adopted: a compression register (dropping articles, abbreviating,
+  substituting symbols) and an opt-in brevity mode. The defect was surface area,
+  not spelling — and a toggle still requires asking for brevity, which is the
+  friction being removed. Invented abbreviations and symbol substitutions are
+  explicitly banned by the rule: they measure as no cheaper under the tokenizer
+  while costing the reader a decode step.
+- The effect is measured rather than asserted. `feed` and `cost` already capture
+  per-turn output tokens, so the plan recorded a before baseline (582 turns,
+  median 739 output tokens, mean 943) and the delta lands post-ship. The number
+  is a proxy: a turn that got shorter by reading less would score as a win, so it
+  is read alongside whether the answers stayed right.
 
 ## [0.11.0] - 2026-07-26
 
