@@ -5,7 +5,7 @@ All notable changes to Codument are recorded here. The format follows
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while it
 remains pre-1.0.
 
-## [Unreleased]
+## [0.12.0] - 2026-07-31
 
 A tool whose own loop authors what its own lint rejects teaches the user that
 the lint is noise. A throwaway project built end to end by an agent following
