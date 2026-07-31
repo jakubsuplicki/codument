@@ -28,12 +28,12 @@ const NUMBER_WORDS: Record<string, number> = {
   twenty: 20,
 };
 
-function unreleasedSection(changelog: string): string {
-  const start = changelog.indexOf("## [Unreleased]");
-  assert.ok(start >= 0, "CHANGELOG.md must have an [Unreleased] section");
-  const rest = changelog.slice(start + "## [Unreleased]".length);
-  const nextHeading = rest.indexOf("\n## [");
-  return nextHeading >= 0 ? rest.slice(0, nextHeading) : rest;
+// The whole changelog is in scope, not just a pending section. Two reasons: a
+// cut release legitimately leaves NO [Unreleased] heading, so requiring one
+// fails on an ordinary repo state; and a claim does not stop needing to be true
+// once it ships — released text is the permanent history this guards.
+function claimScope(changelog: string): string {
+  return changelog;
 }
 
 describe("CHANGELOG factual claims", () => {
@@ -43,7 +43,7 @@ describe("CHANGELOG factual claims", () => {
   // when a count IS asserted and the contract disagrees.
   it('any claimed "compact" occurrence count in the generated contract is accurate', () => {
     const changelog = readFileSync("CHANGELOG.md", "utf-8");
-    const section = unreleasedSection(changelog);
+    const section = claimScope(changelog);
 
     const match = /the generated contract said "compact" (\w+) times/i.exec(section);
     if (!match) return; // no count claimed — nothing to verify
