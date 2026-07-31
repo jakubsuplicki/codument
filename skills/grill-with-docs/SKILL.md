@@ -20,7 +20,7 @@ Stay in `grill-with-docs` when any meaningful boundary is still unresolved:
 - verification strategy or acceptance criteria
 - the right durable doc home for the decision
 
-If the user asks to "plan" but these decisions are still open, explain that the request needs docs-backed grilling first. Ask one sharp decision question, include your recommended answer and why, then wait for the user's decision before turning it into a plan.
+If the user asks to "plan" but these decisions are still open, say so in a line. Ask one sharp decision question, lead with your recommended answer and the one reason that decides it, then wait for the user's decision before turning it into a plan.
 
 ## Workflow
 
@@ -33,8 +33,8 @@ If the user asks to "plan" but these decisions are still open, explain that the 
    - relevant ADRs under `docs/architecture/decisions/`
 2. Inspect code when docs can answer only part of the question.
 3. Ask one sharp question at a time when a real product or architecture decision remains.
-4. Include your recommended answer and why.
-5. Stress-test answers with concrete scenarios, failure modes, and edge cases.
+4. Lead with your recommended answer and the one reason that decides it.
+5. Stress-test the answer against concrete scenarios, failure modes, and edge cases — in your head, before you write. Surface only a finding that would change the user's decision; the rest is yours to act on, not theirs to read.
 6. Update the narrowest durable doc only after decisions settle, unless the user is explicitly brainstorming without file edits.
 
 ## What To Challenge
@@ -48,7 +48,7 @@ If the user asks to "plan" but these decisions are still open, explain that the 
 
 ## Rules
 
-- Do not dump a questionnaire.
+- Do not dump a questionnaire, and do not dump the analysis either. A comparison table plus a numbered rationale plus a "before you answer" section, all to ask one question, is the same failure as five questions at once — it just looks more diligent. One recommendation, one question, then stop.
 - Do not start implementation during grilling.
 - Do not write a delivery plan while the key boundary is still unsettled.
 - Do not treat "use Codument" or "plan the work" as permission to skip grilling when product or architecture decisions remain.

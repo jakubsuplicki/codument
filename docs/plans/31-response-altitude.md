@@ -113,9 +113,12 @@ Status: approved.
       Implementation discipline, before Intent routing); pin the rule, the grounding clause, the
       structure clause, and the no-abbreviation clause in `tests/scaffold.test.ts`. Regenerate the
       `AGENTS.md` / `CLAUDE.md` mirrors.
-- [ ] Step 3: Defang `grill-with-docs` in both tracked copies — cap "and why" to the one deciding
+- [x] Step 3: Defang `grill-with-docs` in both tracked copies — cap "and why" to the one deciding
       reason, turn the stress-test line into a thinking instruction, and extend "Do not dump a
-      questionnaire" to cover dumping the analysis.
+      questionnaire" to cover dumping the analysis. **Landed a fourth edit** in the same sentence as
+      the first: "explain that the request needs docs-backed grilling first" became "say so in a
+      line". On-message but not named above; recorded here rather than left as quiet scope, since a
+      plan that tolerates unannounced edits cannot enforce the fidelity bar Step 2 leaned on.
 - [ ] Step 4: Update `docs/features/agent-delivery-workflow.md` and `CHANGELOG.md`.
 
 ## Outcome

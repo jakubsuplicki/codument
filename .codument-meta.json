@@ -20,14 +20,14 @@
     "sourceFiles": 13
   },
   "fileHashes": {
-    ".agents/skills/grill-with-docs/SKILL.md": "ec6dfe9030cbd569",
+    ".agents/skills/grill-with-docs/SKILL.md": "fc4abf58325811ad",
     ".agents/skills/plan-with-docs/SKILL.md": "a044b9937c3ee78b",
     ".agents/skills/tdd/SKILL.md": "121de0703b9f0f25",
     ".agents/skills/work-step/SKILL.md": "3020dbe1e6592717",
     ".agents/skills/review-work/SKILL.md": "4ef58117ffdf3a87",
     ".agents/skills/commit-work/SKILL.md": "c31e1fb310a58224",
     ".agents/skills/update-docs/SKILL.md": "568ab7711ded2b41",
-    ".claude/skills/grill-with-docs/SKILL.md": "ec6dfe9030cbd569",
+    ".claude/skills/grill-with-docs/SKILL.md": "fc4abf58325811ad",
     ".claude/skills/plan-with-docs/SKILL.md": "a044b9937c3ee78b",
     ".claude/skills/tdd/SKILL.md": "121de0703b9f0f25",
     ".claude/skills/work-step/SKILL.md": "3020dbe1e6592717",
