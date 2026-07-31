@@ -17,6 +17,8 @@ One neutral workflow, many agents. An agent profile maps the same delivery contr
 
 The loop is gated, not autonomous. Source edits never start before a human approves the plan; each step then passes `work-step` → `review-work` → `commit-work` in order, and review findings are the user's decision — fix, select, defer with a reason, or pause — never silently self-approved. Intent routing lives in the always-loaded instructions so the user never has to name a skill: rough ideas route to grilling, settled scope to planning, approved plans to implementation.
 
+The contract governs what the agent *says*, not only what it does. Every gate in the loop hands the user a decision, and a decision buried in the analysis that produced it is a decision the user cannot make — so response altitude joins the quality bar and implementation discipline as a third standing rule: lead with the answer, offer the evidence rather than delivering it. It is a default rather than a mode, because a toggle would still require asking for brevity, which is the friction it removes. The obvious ways to obey it are worse than ignoring it — answering faster by reading less, or shortening a mandated format by dropping one of its parts — so the rule is written with both failure modes closed, and the invariants below pin them.
+
 Compaction is a first-class checkpoint, not an afterthought. After any reviewed-and-committed step everything durable — code, docs, review state, the commit — is already on disk, so the post-commit gate always offers compact-context alongside next-step, plan-review, and pause, agent-neutrally, with a restart-note fallback for hosts without a native compaction command.
 
 Adoption of an existing project is gentle: scan and map what exists, create missing docs only where needed, and mark uncertainty instead of pretending the scan is authoritative.
@@ -28,6 +30,7 @@ Adoption of an existing project is gentle: scan and map what exists, create miss
 - The workflow executes in the agent, never in the CLI: codument installs, audits, and gates — it does not drive the coding agent.
 - Claude is the default profile when no agent files are detected; other profiles are selected explicitly or by detection. *(test: `agent-profiles.test.ts` "defaults to claude when no agent files exist")*
 - Choosing compact-context never bypasses the review-and-commit gate or starts the next step automatically. *(pinned by the `commit-work` skill assertions in `scaffold.test.ts`)*
+- The response-altitude rule never licenses reading less, and never excuses a mandated format from carrying its required parts — brevity that drops the grounding clause, or an exemption that lets a format skip a part, is the regression. *(pinned by the response-altitude assertions in `scaffold.test.ts`, which require the grounding clause inside the section and forbid an exemption phrasing)*
 
 ## Decisions
 
@@ -35,6 +38,7 @@ Adoption of an existing project is gentle: scan and map what exists, create miss
 - Claude became the default profile in 0.6.0, replacing the original Codex/generic default; both remain first-class installs.
 - Skills group around the delivery loop — `grill-with-docs`, `plan-with-docs`, `tdd`, `work-step`, `review-work`, `commit-work`, `update-docs` — not around tools or file types.
 - Working plan state stays durable enough that compaction can be offered after every reviewed-and-committed step, not only at feature completion.
+- Response altitude is a standing rule in the contract, not an opt-in mode. A brevity toggle would still require the user to ask for brevity, which is the friction it exists to remove. Rejected alongside it: a compression *register* (dropping articles, abbreviating, substituting symbols) — the failure being fixed was surface area, not spelling, and abbreviations measure as no cheaper under the tokenizer while costing the reader.
 
 ## Key files
 

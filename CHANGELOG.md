@@ -5,6 +5,60 @@ All notable changes to Codument are recorded here. The format follows
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while it
 remains pre-1.0.
 
+## [Unreleased]
+
+Nothing in the generated contract capped what the agent said in an ordinary
+turn. Its brevity instructions were about *docs*, or about the summary autopilot
+owes on pause and completion — none about the reply to a question. And
+`grill-with-docs` pushed the other way, telling the agent to "include your
+recommended answer and why" and to "stress-test answers with concrete
+scenarios, failure modes, and edge cases". Read literally, that is an
+instruction to print the analysis rather than perform it. The reply that
+prompted this answered one question with a comparison table, a numbered
+rationale, a "before you answer" section, and a two-part closing question. The
+agent was not drifting; it was obeying.
+
+### Added
+- A `### Response altitude` rule in the generated contract, between
+  implementation discipline and intent routing — so the three read *do the work
+  well*, *write the least code*, *say the least words*. It has two halves
+  because short and to-the-point are different failures: supporting detail is
+  offered rather than delivered, one answer and one question per turn; and no
+  runway — no pleasantries, no restating the question, no narrating the file
+  about to be read. The enforceable part is a deletion test: if a sentence could
+  be cut without changing what the reader now knows or does, cut it.
+- Two guards on that rule, because the obvious way to obey it is worse than
+  ignoring it. Grounding is narrated less but never performed less — brevity
+  bought by reading less is the one failure it must not cause. And nothing is
+  exempt: a mandated format (the approval summary, a review finding, a charter
+  recommendation) keeps every required part and compresses inside it, a line
+  each rather than a paragraph each. Structure is what makes those formats
+  usable; length never was.
+
+### Fixed
+- `grill-with-docs` no longer asks for the output it was blamed for. The
+  stress-test survives and only its recital stops: it runs before the agent
+  writes, and surfaces a finding only when that finding would change the user's
+  decision. The recommendation survives too — the assumption gate depends on it
+  — capped to the one reason that decides the call. The rules line now names the
+  actual failure shape, which "do not dump a questionnaire" never covered: a
+  table plus a rationale list plus a "before you answer" section, all to ask one
+  question, is the same failure as five questions at once. It just looks more
+  diligent.
+
+### Notes
+- Not adopted: a compression register (dropping articles, abbreviating,
+  substituting symbols) and an opt-in brevity mode. The defect was surface area,
+  not spelling — and a toggle still requires asking for brevity, which is the
+  friction being removed. Invented abbreviations and symbol substitutions are
+  explicitly banned by the rule: they measure as no cheaper under the tokenizer
+  while costing the reader a decode step.
+- The effect is measured rather than asserted. `feed` and `cost` already capture
+  per-turn output tokens, so the plan recorded a before baseline (582 turns,
+  median 739 output tokens, mean 943) and the delta lands post-ship. The number
+  is a proxy: a turn that got shorter by reading less would score as a win, so it
+  is read alongside whether the answers stayed right.
+
 ## [0.12.0] - 2026-07-31
 
 A tool whose own loop authors what its own lint rejects teaches the user that

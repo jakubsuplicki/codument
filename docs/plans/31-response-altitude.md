@@ -1,14 +1,16 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 31: response altitude — answer first, evidence on request
 
-Codument's contract says "compact" fifteen times. All but one govern a **doc**. Nothing caps what the
-agent says in an ordinary turn, and one shipped surface pushes the other way:
-`skills/grill-with-docs/SKILL.md` says *"Include your recommended answer and why"* then *"Stress-test
-answers with concrete scenarios, failure modes, and edge cases."* Read literally, that is an
-instruction to print the analysis rather than perform it.
+Nothing in Codument's generated contract caps what the agent says in an ordinary turn. Its brevity
+instructions govern **docs** ("keep docs compact and durable", the delivery plan that "compacts out
+when the work ships") or the summary autopilot owes on pause and completion — none the reply to a
+question. And one shipped surface pushes the other way: `skills/grill-with-docs/SKILL.md` says
+*"Include your recommended answer and why"* then *"Stress-test answers with concrete scenarios,
+failure modes, and edge cases."* Read literally, that is an instruction to print the analysis rather
+than perform it.
 
 The observed failure: a one-decision grill question answered with a comparison table, a numbered
 rationale, a "Before you answer" section, sub-bullets, and a two-part closing question. The user
@@ -71,7 +73,7 @@ No new source files, so no `map materialize` and no `feature-map` block. Indepen
 
 ## The rule (verbatim)
 
-The exact text Step 1 adds to `buildManagedSection()`. Approved as written, not as described.
+The exact text Step 2 adds to `buildManagedSection()`. Approved as written, not as described.
 
 ```markdown
 ### Response altitude
@@ -95,10 +97,13 @@ was to keep the shipped wording; the block above was then rewritten to match. Re
 diff alone cannot distinguish a re-approval from an author quietly rewriting the bar it missed, and
 this plan's own fidelity claim is only worth what its record is.
 
-The verbatim block above is *transient* — it is delivery scaffolding, not durable doc content, and it
-compacts out with the rest of the Delivery Plan on ship. `tests/scaffold.response-altitude-verbatim.test.ts`
-is bound to it and must be deleted in that same compaction; the substantive pins in
-`tests/scaffold.test.ts` are the durable coverage and survive.
+`tests/scaffold.response-altitude-verbatim.test.ts` reads the block above at runtime and pins the
+shipped contract against it, so editing the rule in `src/lib/scaffold.ts` without re-approving it here
+goes red. That binding holds as long as this file does: plans under `docs/plans/` are marked
+`status: shipped` and kept as a durable record rather than compacted out (see `docs/plans/README.md`),
+unlike a feature doc's transient `## Delivery Plan`. If this plan is ever deleted or its block
+restructured, delete that test with it — the substantive pins in `tests/scaffold.test.ts` are the
+coverage that stands alone.
 
 ## Delivery Plan
 
@@ -119,7 +124,7 @@ Status: approved.
       the first: "explain that the request needs docs-backed grilling first" became "say so in a
       line". On-message but not named above; recorded here rather than left as quiet scope, since a
       plan that tolerates unannounced edits cannot enforce the fidelity bar Step 2 leaned on.
-- [ ] Step 4: Update `docs/features/agent-delivery-workflow.md` and `CHANGELOG.md`.
+- [x] Step 4: Update `docs/features/agent-delivery-workflow.md` and `CHANGELOG.md`.
 
 ## Outcome
 
