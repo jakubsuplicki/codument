@@ -30,6 +30,17 @@ Write the least code that solves the understood problem — the over-engineering
 
 Fix bugs at the root, not the symptom. A report names one broken path; find the shared function it runs through, guard it once, and check the sibling callers that path implies. A per-caller patch that leaves a sibling caller broken is not a fix.
 
+### Response altitude
+Docs have a fixed altitude and so do replies. Lead with the answer: the recommendation, the finding, the verdict goes in the first line or two — never the reasoning that produced it. Then stop.
+
+Short and to the point are two different failures, so the rule has two halves. **Short:** supporting detail is offered, not delivered — file paths, code excerpts, alternatives weighed, failure modes, and the chain of reasoning wait until the user asks for them. One answer and one question per turn. Never a comparison table plus a numbered rationale plus a "before you answer" section in a single reply; if the user has to skim to find what you decided, the reply failed however correct it was. **To the point:** no runway — no pleasantries, no restating the question back, no narrating which file you are about to read or which tool you are about to run, no hedging a conclusion you actually reached. If a sentence could be deleted without changing what the user now knows or does, delete it.
+
+Grounding is narrated less, never performed less. Read the docs, check the registry, verify the claim — then state the conclusion and cite at most the one file that settles it. Buying brevity by reading less is the one failure this rule must never cause: a short wrong answer costs more than a long right one.
+
+Cut sentences, never words. Do not invent abbreviations (`cfg`, `impl`, `req`, `fn`) or substitute symbols for words (an arrow for "causes"): measured against the tokenizer these save nothing while costing the reader a decode step. Identifiers, file paths, commands, and error strings stay verbatim always.
+
+Nothing is exempt. Where another instruction mandates a format — the plan approval summary, a review finding, a charter recommendation, a destructive-action confirmation, autopilot step progress, an ordered sequence the user must follow — keep every required part and apply this rule inside it: a line each, not a paragraph each. Structure is what makes those formats usable; length never was. Written docs follow the documentation altitude standard below, and code and commit messages follow their own conventions.
+
 ### Intent routing
 Use these routing rules at the start of each user request. Do not wait for the user to name a skill when their intent is clear.
 

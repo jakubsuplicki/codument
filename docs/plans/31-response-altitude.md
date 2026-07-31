@@ -75,30 +75,30 @@ The exact text Step 1 adds to `buildManagedSection()`. Approved as written, not 
 
 ```markdown
 ### Response altitude
-Lead with the answer. The recommendation, the finding, the verdict goes in the first line or two —
-never the reasoning that produced it. Then stop.
+Docs have a fixed altitude and so do replies. Lead with the answer: the recommendation, the finding, the verdict goes in the first line or two — never the reasoning that produced it. Then stop.
 
-Be short and be to the point; they are different failures. Short: supporting detail is offered, not
-delivered — file paths, code excerpts, alternatives weighed, failure modes, and the chain of
-reasoning wait until the user asks. One answer and one question per turn. Never a comparison table
-plus a numbered rationale plus a "before you answer" section in a single reply. To the point: no
-runway — no pleasantries, no restating the question back, no narrating which file you are about to
-read or which tool you are about to run, no hedging a conclusion you actually reached. If a sentence
-could be deleted without changing what the user now knows or does, delete it.
+Short and to the point are two different failures, so the rule has two halves. **Short:** supporting detail is offered, not delivered — file paths, code excerpts, alternatives weighed, failure modes, and the chain of reasoning wait until the user asks for them. One answer and one question per turn. Never a comparison table plus a numbered rationale plus a "before you answer" section in a single reply; if the user has to skim to find what you decided, the reply failed however correct it was. **To the point:** no runway — no pleasantries, no restating the question back, no narrating which file you are about to read or which tool you are about to run, no hedging a conclusion you actually reached. If a sentence could be deleted without changing what the user now knows or does, delete it.
 
-Grounding is narrated less, never performed less. Read the docs, check the registry, verify the claim
-— then state the conclusion and cite at most the one file that settles it. Buying brevity by reading
-less is the one failure this rule must never cause.
+Grounding is narrated less, never performed less. Read the docs, check the registry, verify the claim — then state the conclusion and cite at most the one file that settles it. Buying brevity by reading less is the one failure this rule must never cause: a short wrong answer costs more than a long right one.
 
-Cut sentences, never words. Do not invent abbreviations (`cfg`, `impl`, `req`, `fn`) or substitute
-symbols for words (`→` for "causes"): measured against the tokenizer these save nothing while costing
-the reader a decode step. Identifiers, file paths, commands, and error strings stay verbatim always.
+Cut sentences, never words. Do not invent abbreviations (`cfg`, `impl`, `req`, `fn`) or substitute symbols for words (an arrow for "causes"): measured against the tokenizer these save nothing while costing the reader a decode step. Identifiers, file paths, commands, and error strings stay verbatim always.
 
-Nothing is exempt. Where another instruction mandates a format — the plan approval summary, a review
-finding, a charter recommendation, a destructive-action confirmation, autopilot step progress — keep
-every required part and apply this rule inside it: a line each, not a paragraph each. Written docs,
-code, and commit messages follow their own standards.
+Nothing is exempt. Where another instruction mandates a format — the plan approval summary, a review finding, a charter recommendation, a destructive-action confirmation, autopilot step progress, an ordered sequence the user must follow — keep every required part and apply this rule inside it: a line each, not a paragraph each. Structure is what makes those formats usable; length never was. Written docs follow the documentation altitude standard below, and code and commit messages follow their own conventions.
 ```
+
+**This block was re-approved, not originally approved.** An earlier revision of it was approved first;
+Step 2 then shipped wording that deviated from it — a new opener, three new closing clauses, one extra
+item in the never-exempt list, and the literal arrow replaced by prose. The adversarial review caught
+the deviation and reproduced it with a failing test. Surfaced to the user with both routes offered
+(revert the code to the approved wording, or keep the shipped wording and re-approve it), the decision
+was to keep the shipped wording; the block above was then rewritten to match. Recorded here because the
+diff alone cannot distinguish a re-approval from an author quietly rewriting the bar it missed, and
+this plan's own fidelity claim is only worth what its record is.
+
+The verbatim block above is *transient* — it is delivery scaffolding, not durable doc content, and it
+compacts out with the rest of the Delivery Plan on ship. `tests/scaffold.response-altitude-verbatim.test.ts`
+is bound to it and must be deleted in that same compaction; the substantive pins in
+`tests/scaffold.test.ts` are the durable coverage and survive.
 
 ## Delivery Plan
 
@@ -109,7 +109,7 @@ Status: approved.
       reports none), then record median and mean output tokens per assistant turn in this plan's
       Verification section. This must land before any contract edit — a baseline taken afterwards
       measures nothing.
-- [ ] Step 2: Add `### Response altitude` to `buildManagedSection()` in `src/lib/scaffold.ts` (after
+- [x] Step 2: Add `### Response altitude` to `buildManagedSection()` in `src/lib/scaffold.ts` (after
       Implementation discipline, before Intent routing); pin the rule, the grounding clause, the
       structure clause, and the no-abbreviation clause in `tests/scaffold.test.ts`. Regenerate the
       `AGENTS.md` / `CLAUDE.md` mirrors.

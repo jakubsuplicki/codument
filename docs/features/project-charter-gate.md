@@ -64,7 +64,9 @@ demo-grade grilling, and users never learn *why* a choice was made.
 - **Every recommendation teaches.** Each tech question leads with a concrete recommendation, a
   one-line plain-language *what this means*, and the **key trade-off vs. the main alternative** — so a
   non-technical person understands and chooses, and an expert skims. Never present an unresearched
-  guess as fact.
+  guess as fact. The response-altitude rule in the same generated contract governs the *length* of
+  those parts, never their presence: each is a line, and all three still ship on every tech question.
+  Teaching is what the format is for, so compressing it away would defeat the gate.
 - **Charter home:** **`docs/charter.md` + `docs/overview.md`.** The charter doc holds seriousness and
   stack rationale; a 2-line summary is mirrored into `overview.md` (which every grill already loads).
   Stack choices that are real architecture decisions also get **ADRs** under

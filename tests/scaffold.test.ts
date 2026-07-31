@@ -175,6 +175,57 @@ describe("buildManagedSection", () => {
     // regression guard: the removed last_updated mandate must never re-enter the contract
     assert.ok(!/last_updated/.test(section));
   });
+
+  it("encodes response altitude — answer first, evidence on request", () => {
+    const section = buildManagedSection();
+    assert.ok(section.includes("Response altitude"));
+    // the rule itself: answer leads, reasoning does not
+    assert.ok(section.includes("Lead with the answer"));
+    assert.ok(/never the reasoning that produced it/.test(section));
+    assert.ok(/offered, not delivered/.test(section));
+    assert.ok(section.includes("One answer and one question per turn"));
+    // the shape that prompted the rule is named, not merely implied
+    assert.ok(/comparison table plus a numbered rationale plus a "before you answer" section/.test(section));
+    // "to the point" is a distinct half — brevity alone does not satisfy it
+    assert.ok(/two different failures/.test(section));
+    assert.ok(/no restating the question back/.test(section));
+    // the deletion test is what makes the rule checkable rather than a vibe
+    assert.ok(section.includes("could be deleted without changing what the user now knows or does"));
+
+    // it sits between the two discipline sections and the routing rules whose output it governs
+    assert.ok(
+      section.indexOf("### Implementation discipline") <
+        section.indexOf("### Response altitude"),
+    );
+    assert.ok(
+      section.indexOf("### Response altitude") <
+        section.indexOf("### Intent routing"),
+    );
+  });
+
+  it("response altitude cannot be read as permission to read less", () => {
+    const section = buildManagedSection();
+    // the grounding clause is load-bearing: brevity must never be bought by skipping the reading
+    assert.ok(section.includes("narrated less, never performed less"));
+    assert.ok(/short wrong answer costs more than a long right one/.test(section));
+    // guard: the section must never collapse to a bare brevity order stripped of that clause
+    const start = section.indexOf("### Response altitude");
+    const end = section.indexOf("### Intent routing");
+    const rule = section.slice(start, end);
+    assert.ok(rule.includes("Grounding"), "brevity rule must keep its grounding clause");
+
+    // measured-zero micro-optimizations stay banned: they cost the reader and save no tokens
+    assert.ok(/Cut sentences, never words/.test(section));
+    assert.ok(/Do not invent abbreviations/.test(section));
+    assert.ok(/Identifiers, file paths, commands, and error strings stay verbatim/.test(section));
+
+    // nothing is exempt — mandated formats compress inside their structure, they are not excused
+    assert.ok(section.includes("Nothing is exempt"));
+    assert.ok(/keep every required part/.test(section));
+    assert.ok(/a line each, not a paragraph each/.test(section));
+    // regression guard: an exemption list would re-license the padding this rule removes
+    assert.ok(!/exempt from this rule/.test(rule));
+  });
 });
 
 describe("commit-work skill", () => {
