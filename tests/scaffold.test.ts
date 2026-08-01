@@ -205,6 +205,17 @@ describe("buildManagedSection", () => {
 
   it("response altitude cannot be read as permission to read less", () => {
     const section = buildManagedSection();
+    // plain language is the default register: identifiers are the agent's working
+    // material, not the reply. Shown by real outputs the user rejected as "technical
+    // outputs, not human readable" even after they were cut to 43 words — density,
+    // not length, was the other half of the complaint.
+    assert.ok(section.includes("Speak plainly"));
+    assert.ok(/name one only when they have to open it/.test(section));
+    assert.ok(/Precision belongs in the work/.test(section));
+    // regression guard: the contract must never again instruct the agent to name a
+    // file every time, which is what the superseded wording did.
+    assert.ok(!/cite at most the one file/.test(section));
+
     // the grounding clause is load-bearing: brevity must never be bought by skipping the reading
     assert.ok(section.includes("narrated less, never performed less"));
     assert.ok(/short wrong answer costs more than a long right one/.test(section));

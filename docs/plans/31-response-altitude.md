@@ -81,7 +81,9 @@ Docs have a fixed altitude and so do replies. Lead with the answer: the recommen
 
 Short and to the point are two different failures, so the rule has two halves. **Short:** supporting detail is offered, not delivered — file paths, code excerpts, alternatives weighed, failure modes, and the chain of reasoning wait until the user asks for them. One answer and one question per turn. Never a comparison table plus a numbered rationale plus a "before you answer" section in a single reply; if the user has to skim to find what you decided, the reply failed however correct it was. **To the point:** no runway — no pleasantries, no restating the question back, no narrating which file you are about to read or which tool you are about to run, no hedging a conclusion you actually reached. If a sentence could be deleted without changing what the user now knows or does, delete it.
 
-Grounding is narrated less, never performed less. Read the docs, check the registry, verify the claim — then state the conclusion and cite at most the one file that settles it. Buying brevity by reading less is the one failure this rule must never cause: a short wrong answer costs more than a long right one.
+Speak plainly. Say what is true and what to do in ordinary words. File paths, command names, symbol names, line numbers, hashes and counts are your working material, not the user's answer — name one only when they have to open it, run it, or when the identifier is itself what they asked about. "It gets filtered back out, so nothing happens" beats "the exclusion spec in `src/lib/exclusion-spec.ts` filters it from the in-scope set": the second says nothing more and charges the reader a lookup they did not ask for. Precision belongs in the work — reviews, commits, plans, docs — where someone acts on the exact name. In conversation it is usually just noise wearing a lab coat.
+
+Grounding is narrated less, never performed less. Read the docs, check the registry, verify the claim — then say the conclusion, not the trail you took to it. Buying brevity by reading less is the one failure this rule must never cause: a short wrong answer costs more than a long right one.
 
 Cut sentences, never words. Do not invent abbreviations (`cfg`, `impl`, `req`, `fn`) or substitute symbols for words (an arrow for "causes"): measured against the tokenizer these save nothing while costing the reader a decode step. Identifiers, file paths, commands, and error strings stay verbatim always.
 
@@ -231,9 +233,50 @@ answer" section. Those are different populations, and this evidence speaks only 
 that is wrong for research questions may still be right for the conversational turns it was written
 for — that is untested.
 
-**Open, and not resolved by this plan:** whether the base rule should be scoped by question kind,
-strengthened on grounding, or reverted. Deciding it needs an experiment whose questions match the
-population the rule targets.
+### Run 3 — the rule wins on the population it was written for
+
+Six quick back-and-forths ("push now or wait?", "can I put a test file in the registry, yes or no is
+fine"). The judge had to state what it would *do* from each reply before it was allowed to score, and
+scored reading cost explicitly — the earlier judges read both replies for free, which made
+thoroughness costless and guaranteed it won.
+
+| | no rule | rule |
+| --- | --- | --- |
+| words | 214 | 87 |
+| overall (1–5) | 3.17 | **4.67** |
+| correctness (1–5) | 4.0 | **4.5** |
+| reading cost (5 = cheap) | 2.83 | **5.0** |
+| judge preferred | 0 of 6 | **6 of 6** |
+
+Correctness rose. The long replies were the ones that wandered into confident false claims — asserting
+a config surface did not exist when it does, a git ref was stale when it was current, a command
+persisted nothing when it writes two files. Length bought room to be wrong.
+
+Read with runs 1–2, the rule is right for quick decisions and wrong for deep research questions. A
+scoping clause was drafted and tested (run 4): it recovered deep completeness (3.0 → 4.33) but
+regressed quick turns (overall 4.0 → 3.33), failing the ship condition set before the run. Not shipped.
+
+### The finding that mattered: register, not length
+
+Shown run 3's actual replies, the user rejected **both arms** — including the 43-word one:
+
+> "all are wrong, why does it talk about commit numbers, commands, files, places in code, this should
+> be non tech human readable answers, not technical outputs"
+
+Length was never the whole complaint. Density was the other half, and the rule had been optimising the
+half that was countable. Worse, the rule *caused* part of it: "cite at most the one file that settles
+it" instructed the agent to name a file on every reply. That clause is gone, replaced by plain
+language as the default register, with identifiers reserved for when the reader must open or run the
+thing — and explicitly retained in work output (reviews, commits, plans, docs), where someone acts on
+the exact name.
+
+This supersedes the earlier decision that the failure was "surface area, not spelling". It is both.
+Register was rejected as a *compression* device (caveman-style article-dropping), which still stands;
+plain **word choice** is a different axis and is now the default.
+
+Evidence note: this change rests on direct user judgement of real outputs, not on the judge panel. On
+this question the panel is the wrong instrument — every run showed it rewarding technical density,
+which is the thing being removed.
 
 - **Read the number honestly.** Output tokens per turn is a proxy, not the goal — a turn that got
   shorter by skipping the reading is a regression the number would score as a win. Read it alongside
