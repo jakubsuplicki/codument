@@ -162,12 +162,78 @@ step. Step 1 records the before number here; after the contract lands, re-run `c
 | | median output tokens / turn | mean | p90 | turns sampled |
 | --- | --- | --- | --- | --- |
 | Before (Step 1) | 739 | 943 | 1803 | 582 |
-| After (post-ship) | _pending_ | _pending_ | _pending_ | _pending_ |
 
 Baseline taken from `codument feed --once --backfill` over 3 captured sessions (549K output tokens
-total), counting every turn with non-zero output. Reproduce the same way after the change — the
-counting method must match or the delta is meaningless. Tool-call-only turns are included and drag
-both figures down; that is fine while it is consistent across both rows.
+total), counting every turn with non-zero output.
+
+**This observational baseline was superseded before it was ever compared against.** It pools prose
+replies with tool-call turns, which the rule does not govern and which are short for unrelated
+reasons, so no after-number computed the same way could isolate the rule's effect. It is kept as a
+record, not as evidence. The controlled experiment below replaces it.
+
+### Controlled A/B (the real evidence)
+
+Four open decision questions about this repo, each answered twice by independent agents — identical
+prompt and model, the only difference being whether the rule was in context. A blind judge then scored
+each pair on substance alone, with arm order counterbalanced so no judge could learn which arm was
+which.
+
+| | no rule | rule | delta |
+| --- | --- | --- | --- |
+| words | 777 | 161 | **−79%** |
+| structural blocks (paragraphs + bullets + rows + headings) | 21 | 5 | **−76%** |
+| correctness (1–5) | 4.25 | 4.25 | flat |
+| usefulness (1–5) | 4.5 | 3.5 | **−1.0** |
+| judge preferred | 3 of 4 | 1 of 4 | |
+
+**The cut is real and it did not make answers wrong** — correctness held exactly, which is the
+grounding clause doing its job. **But usefulness fell a full point**, and judges preferred the
+un-ruled answer three times in four. The judges' reasons were specific and not about length: the
+ruled answers dropped a shipped plan's non-goal that had already re-adjudicated the exact question,
+the blast radius of the proposed change, and the empirical precedent from a prior plan.
+
+The diagnosis was that the rule said supporting detail is "offered, not delivered" but never required
+the *offering* — so detail was held silently and the reader never learned it existed. A clause was
+written to close that ("offered means *named*: when you hold something back, say in a clause what it
+is") and re-measured on the same four questions.
+
+### Run 2 — the fix failed, and was reverted
+
+| | no rule | rule + clause | delta |
+| --- | --- | --- | --- |
+| words | 671 | 199 | −70% |
+| structural blocks | 16 | 5 | −69% |
+| correctness (1–5) | 4.75 | 3.75 | **−1.0** |
+| usefulness (1–5) | 5.0 | 3.5 | **−1.5** |
+| offering (1–5, new) | 4.75 | 3.75 | **−1.0** |
+| judge preferred | 4 of 4 | 0 of 4 | |
+
+Worse on every axis, including the one the clause targeted — offering scored *lower* in the ruled arm.
+And correctness fell, which run 1 had held flat: the ruled answers invented a `writeRegistryEntry`
+symbol that does not exist, and asserted `doctor --verify-invariants` runs by default when it is
+opt-in. A judge marked the second decision-relevant, since anyone acting on it would believe they had
+enforcement they did not. That is the grounding failure this rule was explicitly written to prevent.
+The clause was reverted; it was never committed.
+
+### What both runs actually establish, and what they do not
+
+**Established:** the rule cuts length hard (−79%, −70%) and, on questions of this kind, costs
+usefulness. Eight judges across two runs preferred the un-ruled answer 7 times of 8.
+
+**Not established, and the reason to be careful:** the control arm moved 4.5 → 5.0 on usefulness
+between runs *on an identical prompt*, so n=4 run-to-run variance is on the order of the effect being
+measured. No single delta here is individually significant.
+
+**The experiment tested the wrong population.** All four questions are deep multi-file research
+questions where thoroughness is the correct answer. The complaint that motivated this plan was a grill
+turn that asked *one* decision question and buried it in a table, a rationale list, and a "before you
+answer" section. Those are different populations, and this evidence speaks only to the first. A rule
+that is wrong for research questions may still be right for the conversational turns it was written
+for — that is untested.
+
+**Open, and not resolved by this plan:** whether the base rule should be scoped by question kind,
+strengthened on grounding, or reverted. Deciding it needs an experiment whose questions match the
+population the rule targets.
 
 - **Read the number honestly.** Output tokens per turn is a proxy, not the goal — a turn that got
   shorter by skipping the reading is a regression the number would score as a win. Read it alongside
