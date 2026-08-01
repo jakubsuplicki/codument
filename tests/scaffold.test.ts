@@ -205,6 +205,13 @@ describe("buildManagedSection", () => {
 
   it("response altitude cannot be read as permission to read less", () => {
     const section = buildManagedSection();
+    // a decision handed to the user must arrive decidable — the recommendation, the
+    // deciding reason, and what changes on yes. Bare closing questions were the most
+    // frequent complaint: "often i'm being asked to make decision but recommendation
+    // is not included around question".
+    assert.ok(/carries your recommendation, or it is not ready to ask/.test(section));
+    assert.ok(/what changes if they agree/.test(section));
+
     // plain language is the default register: identifiers are the agent's working
     // material, not the reply. Shown by real outputs the user rejected as "technical
     // outputs, not human readable" even after they were cut to 43 words — density,
