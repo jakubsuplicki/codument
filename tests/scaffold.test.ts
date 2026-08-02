@@ -176,107 +176,63 @@ describe("buildManagedSection", () => {
     assert.ok(!/last_updated/.test(section));
   });
 
-  it("encodes response altitude — answer first, evidence on request", () => {
+  it("encodes response altitude — answer first, one shape, plain words", () => {
     const section = buildManagedSection();
     assert.ok(section.includes("Response altitude"));
-    // the rule itself: answer leads, reasoning does not
     assert.ok(section.includes("Lead with the answer"));
-    assert.ok(/never the reasoning that produced it/.test(section));
-    assert.ok(/offered, not delivered/.test(section));
-    assert.ok(section.includes("One answer and one question per turn"));
-    // the shape that prompted the rule is named, not merely implied
-    assert.ok(/comparison table plus a numbered rationale plus a "before you answer" section/.test(section));
-    // "to the point" is a distinct half — brevity alone does not satisfy it
-    assert.ok(/two different failures/.test(section));
-    assert.ok(/no restating the question back/.test(section));
-    // the deletion test is what makes the rule checkable rather than a vibe
-    assert.ok(section.includes("could be deleted without changing what the user now knows or does"));
+    assert.ok(/The reasoning that produced it is not the answer/.test(section));
 
-    // it sits between the two discipline sections and the routing rules whose output it governs
+    // One fixed order carries the structure — chosen over bold lead-ins and headings.
+    assert.ok(/Same shape every time/.test(section));
+    assert.ok(/no headings, no bold labels, no table/.test(section));
+    assert.ok(/takes no shape at all/.test(section));
+    assert.ok(/number it, one line each/.test(section));
+
+    // Answer-and-stop. Across four rounds of live output every false claim landed in
+    // volunteered extra material, never in the direct answer — so the noise and the
+    // errors are one habit, not two.
+    assert.ok(/Answer what was asked and nothing more/.test(section));
+    assert.ok(/where the false claims live/.test(section));
+    assert.ok(/Say the result, not the method/.test(section));
+
+    // it sits between the two discipline sections and the routing rules it governs
     assert.ok(
       section.indexOf("### Implementation discipline") <
         section.indexOf("### Response altitude"),
     );
     assert.ok(
-      section.indexOf("### Response altitude") <
-        section.indexOf("### Intent routing"),
+      section.indexOf("### Response altitude") < section.indexOf("### Intent routing"),
     );
   });
 
   it("response altitude cannot be read as permission to read less", () => {
     const section = buildManagedSection();
-    // a decision handed to the user must arrive decidable — the recommendation, the
-    // deciding reason, and what changes on yes. Bare closing questions were the most
-    // frequent complaint: "often i'm being asked to make decision but recommendation
-    // is not included around question".
-    assert.ok(/must stand on its own and carry your recommendation/.test(section));
-    assert.ok(/without scrolling up/.test(section));
-    assert.ok(/what changes if they agree/.test(section));
-
-    // plain language is the default register: identifiers are the agent's working
-    // material, not the reply. Shown by real outputs the user rejected as "technical
-    // outputs, not human readable" even after they were cut to 43 words — density,
-    // not length, was the other half of the complaint.
-    assert.ok(/help them decide, not to report what you did/.test(section));
-    // Answer-and-stop. Across four rounds of live output every false claim landed
-    // in volunteered extra material, never in the direct answer — the answer got
-    // checked and the aside did not. So the noise and the errors are one habit.
-    // "Just keep going until it's done" is an instruction to work, not a cue to
-    // narrate. A mid-run investigation write-up costs the reader the interruption
-    // they were avoiding by saying continue.
-    // One fixed order, chosen by the user over bold lead-ins and over headings:
-    // a predictable order is what makes a small block scannable; decoration is weight.
-    // A countable ceiling, because every judgment-shaped version failed. Measured:
-    // the slot-shaped clauses (fixed shape, numbered list, recommendation) all held
-    // in live output; the ones asking the agent to judge "enough" all slid back.
-    assert.ok(/Four sentences, plus a list where there is one/.test(section));
-    assert.ok(/Count them before sending/.test(section));
-    assert.ok(/you will find your own worth keeping/.test(section));
-    assert.ok(/Use the same shape every time/.test(section));
-    assert.ok(/no headings, no bold labels, no table/.test(section));
-    assert.ok(/takes no shape at all/.test(section));
-    assert.ok(/Told to continue, continue/.test(section));
-    assert.ok(/genuinely irreversible/.test(section));
-    assert.ok(/Answer what was asked, then stop/.test(section));
-    assert.ok(/where the false claims turn up/.test(section));
-    // Rank, do not enumerate. A status report that lists every open item with its
-    // own explanation buries the one that matters and reads as indecision.
-    assert.ok(/Reporting is not listing/.test(section));
-    assert.ok(/Rank, never enumerate/.test(section));
-    // A finding is the result, not the investigation. Explaining how it was reached
-    // was the single biggest block of unwanted text in real completion reports.
-    assert.ok(/Say the result, not the method/.test(section));
-    assert.ok(/Show your working only when/.test(section));
-    // Ordered work left is a numbered list; prose hides the ranking it claims to carry.
-    assert.ok(/write it as a numbered list/.test(section));
-    // a runnable command is useful; bookkeeping is not. That distinction is the
-    // user's, and it is sharper than the "plain language" wording it replaced.
-    assert.ok(/A command they can run is useful/.test(section));
-    assert.ok(/commit hashes, test counts, file counts/.test(section));
-    assert.ok(/belongs in the work/.test(section));
-    // regression guard: the contract must never again instruct the agent to name a
-    // file every time, which is what the original wording did.
-    assert.ok(!/cite at most the one file/.test(section));
-
-    // the grounding clause is load-bearing: brevity must never be bought by skipping the reading
+    // load-bearing: brevity must never be bought by skipping the reading
     assert.ok(section.includes("narrated less, never performed less"));
     assert.ok(/short wrong answer costs more than a long right one/.test(section));
-    // guard: the section must never collapse to a bare brevity order stripped of that clause
-    const start = section.indexOf("### Response altitude");
-    const end = section.indexOf("### Intent routing");
-    const rule = section.slice(start, end);
+
+    const rule = section.slice(
+      section.indexOf("### Response altitude"),
+      section.indexOf("### Intent routing"),
+    );
     assert.ok(rule.includes("Grounding"), "brevity rule must keep its grounding clause");
 
-    // measured-zero micro-optimizations stay banned: they cost the reader and save no tokens
-    assert.ok(/Cut sentences, never words/.test(section));
-    assert.ok(/Do not invent abbreviations/.test(section));
-    assert.ok(/Identifiers, file paths, commands, and error strings stay verbatim/.test(section));
+    // a runnable command is useful; bookkeeping is not — the user's own distinction,
+    // sharper than the "plain language" wording it replaced
+    assert.ok(/A command they can run is useful/.test(section));
+    assert.ok(/commit hashes, test counts, file counts/.test(section));
+    // regression guard: never again instruct the agent to name a file every time
+    assert.ok(!/cite at most the one file/.test(rule));
 
-    // nothing is exempt — mandated formats compress inside their structure, they are not excused
-    assert.ok(section.includes("Nothing is exempt"));
-    assert.ok(/keep every required part/.test(section));
+    // a decision handed over must arrive decidable, and stand alone
+    assert.ok(/carries your recommendation and stands on its own/.test(section));
+    assert.ok(/what changes if they agree/.test(section));
+    // "keep going" is an instruction to work, not a cue to narrate
+    assert.ok(/Told to continue, continue/.test(section));
+
+    // mandated formats compress inside their structure; they are not excused from it
+    assert.ok(/keep every part it requires/.test(section));
     assert.ok(/a line each, not a paragraph each/.test(section));
-    // regression guard: an exemption list would re-license the padding this rule removes
     assert.ok(!/exempt from this rule/.test(rule));
   });
 });
