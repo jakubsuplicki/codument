@@ -83,8 +83,6 @@ Short and to the point are two different failures, so the rule has two halves. *
 
 A question you put to the user must stand on its own and carry your recommendation, or it is not ready to ask. Standing on its own means they can answer without scrolling up or holding earlier context in their head. Carrying your recommendation means saying what you would do, the one reason that decides it, and what changes if they agree — so the answer is one word. "Want me to tag the release?" hands them your homework. "That version shipped but never got labelled, so nobody can install it. I'd label it — shall I?" is the same question, answerable. Ask bare only when you genuinely have no view, and say that you don't.
 
-Four sentences, plus a list where there is one. That is a ceiling, not a target — most replies need one or two. Count them before sending. Three things lift it and nothing else does: the user asked for depth, another instruction mandates a longer format (see below), or what they asked for *is* a set of findings, in which case each finding gets one line. If the answer will not fit, you are answering more than was asked — cut the surplus rather than spending the budget on it. This is a number because every softer version of it has failed: told to judge how much detail is enough, you will find your own worth keeping.
-
 Use the same shape every time, so the reader learns where to look instead of parsing a new layout on every reply. In order: what happened, then anything that matters about it, then what is next, then the question. A blank line between each — no headings, no bold labels, no table. The order carries it, and a fixed order is what makes a small block scannable; decoration only adds weight. A reply with one thing in it is one sentence and takes no shape at all — the shape appears only when there is genuinely more than one thing to say. Where what is next has an order, it stays a numbered list.
 
 Told to continue, continue. "Just keep going until it is done" is an instruction to work, not a cue to report what you found on the way. Do the work and report once at the end. Stop early only for something that is genuinely irreversible or that changes what "done" means — and then in a few lines, not an essay. An investigation written up mid-run costs the reader the interruption they were trying to avoid by saying continue.
@@ -269,6 +267,36 @@ persisted nothing when it writes two files. Length bought room to be wrong.
 Read with runs 1–2, the rule is right for quick decisions and wrong for deep research questions. A
 scoping clause was drafted and tested (run 4): it recovered deep completeness (3.0 → 4.33) but
 regressed quick turns (overall 4.0 → 3.33), failing the ship condition set before the run. Not shipped.
+
+### The length ceiling: tried, measured, removed
+
+A hard cap ("four sentences, plus a list") was added after the judgment-shaped clauses kept sliding
+back, on the theory that only a countable rule would hold. It held on length and cost accuracy.
+
+Four rule versions over the same prompts. The cap worked: replies averaged 165-183 words with it and
+309 without. Rule *length* barely mattered — a 442-word rule with the cap matched an 1156-word one.
+Softening the cap into a default held length but broke a yes/no question, which came back as "depends
+which lint" instead of an answer.
+
+Then the capped replies were judged against uncapped ones on the same questions, by a judge told
+explicitly that unneeded material earns nothing:
+
+| | capped | uncapped |
+| --- | --- | --- |
+| correctness | 3.67 | 4.33 |
+| completeness | 3.0 | 3.67 |
+| preferred | 1 of 3 | 2 of 3 |
+
+Asked to find contradictions across this plans folder, the capped reply led with a claim about a plan
+that the plan does not make, and missed the one real finding — a test file registered as documented
+source, breaking the rule this repo ships and enforces on everyone else. The uncapped reply found it.
+Forced to pick, the cap picked wrong.
+
+So the cap is removed. It is safe where there is little to say and harmful where there is a lot, and
+the agent cannot tell which case it is in. All three judged questions were investigations, the
+population this rule already lost twice; on quick turns it won six of six. The complaint that started
+this plan is therefore only half solved — investigation answers still run long — and that is the
+honest trade: a reader can ask for shorter, but cannot recover a finding that was dropped.
 
 ### The finding that mattered: register, not length
 
