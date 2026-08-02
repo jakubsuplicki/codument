@@ -221,12 +221,23 @@ describe("buildManagedSection", () => {
     // Answer-and-stop. Across four rounds of live output every false claim landed
     // in volunteered extra material, never in the direct answer — the answer got
     // checked and the aside did not. So the noise and the errors are one habit.
+    // "Just keep going until it's done" is an instruction to work, not a cue to
+    // narrate. A mid-run investigation write-up costs the reader the interruption
+    // they were avoiding by saying continue.
+    assert.ok(/Told to continue, continue/.test(section));
+    assert.ok(/genuinely irreversible/.test(section));
     assert.ok(/Answer what was asked, then stop/.test(section));
     assert.ok(/where the false claims turn up/.test(section));
     // Rank, do not enumerate. A status report that lists every open item with its
     // own explanation buries the one that matters and reads as indecision.
     assert.ok(/Reporting is not listing/.test(section));
     assert.ok(/Rank, never enumerate/.test(section));
+    // A finding is the result, not the investigation. Explaining how it was reached
+    // was the single biggest block of unwanted text in real completion reports.
+    assert.ok(/Say the result, not the method/.test(section));
+    assert.ok(/Show your working only when/.test(section));
+    // Ordered work left is a numbered list; prose hides the ranking it claims to carry.
+    assert.ok(/write it as a numbered list/.test(section));
     // a runnable command is useful; bookkeeping is not. That distinction is the
     // user's, and it is sharper than the "plain language" wording it replaced.
     assert.ok(/A command they can run is useful/.test(section));
