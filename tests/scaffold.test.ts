@@ -224,6 +224,11 @@ describe("buildManagedSection", () => {
     // "Just keep going until it's done" is an instruction to work, not a cue to
     // narrate. A mid-run investigation write-up costs the reader the interruption
     // they were avoiding by saying continue.
+    // One fixed order, chosen by the user over bold lead-ins and over headings:
+    // a predictable order is what makes a small block scannable; decoration is weight.
+    assert.ok(/Use the same shape every time/.test(section));
+    assert.ok(/no headings, no bold labels, no table/.test(section));
+    assert.ok(/takes no shape at all/.test(section));
     assert.ok(/Told to continue, continue/.test(section));
     assert.ok(/genuinely irreversible/.test(section));
     assert.ok(/Answer what was asked, then stop/.test(section));
