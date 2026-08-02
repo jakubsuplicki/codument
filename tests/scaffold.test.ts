@@ -218,6 +218,15 @@ describe("buildManagedSection", () => {
     // outputs, not human readable" even after they were cut to 43 words — density,
     // not length, was the other half of the complaint.
     assert.ok(/help them decide, not to report what you did/.test(section));
+    // Answer-and-stop. Across four rounds of live output every false claim landed
+    // in volunteered extra material, never in the direct answer — the answer got
+    // checked and the aside did not. So the noise and the errors are one habit.
+    assert.ok(/Answer what was asked, then stop/.test(section));
+    assert.ok(/where the false claims turn up/.test(section));
+    // Rank, do not enumerate. A status report that lists every open item with its
+    // own explanation buries the one that matters and reads as indecision.
+    assert.ok(/Reporting is not listing/.test(section));
+    assert.ok(/Rank, never enumerate/.test(section));
     // a runnable command is useful; bookkeeping is not. That distinction is the
     // user's, and it is sharper than the "plain language" wording it replaced.
     assert.ok(/A command they can run is useful/.test(section));
