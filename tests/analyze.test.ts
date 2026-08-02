@@ -103,19 +103,18 @@ describe("exclusion spec", () => {
     assert.equal(isExcluded("tests/adapter-conformance.ts"), false);
   });
 
-  // ADVERSARIAL REVIEW: the fixtures/** anchoring above is deliberate (see its
-  // comment) precisely because a NESTED `fixtures` dir can be genuine first-party
-  // source. TEST_CONVENTIONS.dirs added a bare, unanchored `"tests"` entry on the
-  // claim that — unlike `fixtures` — a directory literally named `tests` is never
-  // ambiguous "anywhere in a tree". That is false by the same argument: a testing
-  // platform, exam/assessment app, or lab-diagnostics product can have a genuine
-  // domain concept named "tests" living under its own nested directory. Unlike
-  // `fixtures/**`, the new `"tests"` dir entry is NOT root-anchored, so it swallows
-  // exactly the class of first-party source the fixtures precedent was written to
-  // protect — silently dropping it from coverage, the change-control gate, `scan`
-  // discovery, and the editor hook alike (one shared spec, one shared blind spot).
-  it("does not swallow a nested first-party `tests` directory (symmetric to the fixtures precedent)", () => {
+  // The boundary the spec actually draws: it removes what a language's own test
+  // convention NAMES, never everything that lives near tests. `tests`, `test`
+  // and `spec` are ordinary words — a lab-diagnostics, exam or assessment
+  // product has domain code by those names — so a directory alone never proves
+  // a file is a test, and one shared spec means one shared blind spot across
+  // coverage, the gate, `scan` discovery and the editor hook.
+  it("keeps a first-party module under a test-named directory in scope", () => {
     assert.equal(isExcluded("src/exams/tests/model.ts"), false);
+    assert.equal(isExcluded("src/lab/test/protocol.ts"), false);
+    assert.equal(isExcluded("src/exams/spec/rubric.ts"), false);
+    // ...while the convention-named file beside it is still a test.
+    assert.equal(isExcluded("src/exams/tests/model.test.ts"), true);
   });
 
   it("isSourceFile gates on extension and exclusion", () => {
@@ -213,63 +212,69 @@ describe("gitignore-aware scope (temp repo)", () => {
   });
 });
 
-// ADVERSARIAL REVIEW: the widened TEST_CONVENTIONS.dirs ("tests" added, unanchored)
-// was sold as coverage moving only upward — test files stop counting as
-// undocumented source. That direction only holds for an UNOWNED file dropping
-// out of the denominator. A file that is registered (owned) under a bare
-// `tests/` directory drops out of BOTH the numerator and the denominator on
-// upgrade, and removing an owned file from a ratio that is not already 100%
-// can only hold the score steady or LOWER it — never raise it. This is exactly
-// what happened to this repo's own `tests/adapter-conformance.ts`, which was a
-// registered primary_source before this change.
-describe("exclusion-spec widening can silently LOWER coverage, not just raise it", () => {
-  it("an upgrade that starts excluding an OWNED nested `tests/` file can only hold or lower the ownership ratio, never raise it", async () => {
-    const tmp = await mkdtemp(join(tmpdir(), "codument-tests-dir-coverage-"));
-    try {
-      await mkdir(join(tmp, "src"), { recursive: true });
-      await mkdir(join(tmp, "tests"), { recursive: true });
-      await writeFile(join(tmp, "src", "app.ts"), "export const a = 1;\n");
-      // Deliberately UNOWNED, so the baseline ratio is below 100% — otherwise a
-      // dropped owned file cannot show a regression (ratio floors at 1.0).
-      await writeFile(join(tmp, "src", "other.ts"), "export const b = 1;\n");
-      // A genuine, REGISTERED first-party file that merely lives under a bare
-      // `tests/` directory (e.g. a testing/exam/lab platform's own domain code,
-      // or — as in this very repo — a shared conformance-battery library).
-      await writeFile(join(tmp, "tests", "lib.ts"), "export const c = 1;\n");
-
-      const registry = {
-        features: {
-          core: {
-            doc: "docs/features/core.md",
-            type: "feature" as const,
-            primary_sources: ["src/app.ts", "tests/lib.ts"],
-            related_sources: [],
-            docs: [],
-            depends_on: [],
-            risk: [],
-            status: "current" as const,
-          },
+// Widening the built-in spec is not a one-directional improvement, and pinning
+// which direction it moves is the honest version of the claim. An UNOWNED file
+// leaving scope raises coverage (it stops counting as undocumented). An OWNED
+// one leaves numerator and denominator together, so a ratio below 100% can only
+// hold or fall — and the user learns about it from `generated-leakage`, whose
+// job is to say "un-map this", not from a number that quietly moved.
+describe("what a spec widening does to a project that already registered the file", () => {
+  async function cargoLikeProject() {
+    const tmp = await mkdtemp(join(tmpdir(), "codument-cargo-scope-"));
+    await mkdir(join(tmp, "src"), { recursive: true });
+    await mkdir(join(tmp, "tests"), { recursive: true });
+    await writeFile(join(tmp, "src", "lib.rs"), "pub fn a() {}\n");
+    // Unowned, so the baseline sits below 100% — a dropped owned file cannot
+    // show a fall against a ratio already floored at 1.0.
+    await writeFile(join(tmp, "src", "parser.rs"), "pub fn b() {}\n");
+    await writeFile(join(tmp, "tests", "api.rs"), "#[test] fn t() {}\n");
+    const registry = {
+      features: {
+        core: {
+          doc: "docs/features/core.md",
+          type: "feature" as const,
+          primary_sources: ["src/lib.rs", "tests/api.rs"],
+          related_sources: [],
+          docs: [],
+          depends_on: [],
+          risk: [],
+          status: "current" as const,
         },
-      };
+      },
+    };
+    // The spec as it stood before Cargo's trees were recognized.
+    const preUpgrade = {
+      ...DEFAULT_EXCLUSION_SPEC,
+      globs: DEFAULT_EXCLUSION_SPEC.globs.filter((g) => !g.endsWith("/**/*.rs")),
+    };
+    return { tmp, registry, preUpgrade };
+  }
 
-      // Pre-upgrade behavior: `tests` was not in the built-in dirs list.
-      const preUpgrade = {
-        ...DEFAULT_EXCLUSION_SPEC,
-        dirs: DEFAULT_EXCLUSION_SPEC.dirs.filter((d) => d !== "tests"),
-      };
-
+  it("lowers the ownership ratio rather than raising it, when the excluded file was owned", async () => {
+    const { tmp, registry, preUpgrade } = await cargoLikeProject();
+    try {
       const before = analyze({ root: tmp, registry, srcDir: ".", exclusion: preUpgrade });
       const after = analyze({ root: tmp, registry, srcDir: ".", exclusion: DEFAULT_EXCLUSION_SPEC });
-
-      const beforeOwnership = ratio(before.coverage.ratios, "ownership");
-      const afterOwnership = ratio(after.coverage.ratios, "ownership");
-
-      // Same repo state, same registry, no source change — only the built-in
-      // spec changed (an upgrade). Coverage must never silently regress here.
       assert.ok(
-        afterOwnership.ratio >= beforeOwnership.ratio,
-        `ownership ratio regressed on upgrade with no source change: ${beforeOwnership.ratio} -> ${afterOwnership.ratio}`,
+        ratio(after.coverage.ratios, "ownership").ratio <
+          ratio(before.coverage.ratios, "ownership").ratio,
+        "an owned file leaving scope must leave numerator and denominator together",
       );
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("says so out loud: the registered cargo test draws generated-leakage", async () => {
+    const { tmp, registry, preUpgrade } = await cargoLikeProject();
+    try {
+      const before = analyze({ root: tmp, registry, srcDir: ".", exclusion: preUpgrade });
+      const after = analyze({ root: tmp, registry, srcDir: ".", exclusion: DEFAULT_EXCLUSION_SPEC });
+      assert.equal(
+        hasFinding(before.lint, "generated-leakage", { file: "tests/api.rs" }),
+        false,
+      );
+      assert.equal(hasFinding(after.lint, "generated-leakage", { file: "tests/api.rs" }), true);
     } finally {
       await rm(tmp, { recursive: true, force: true });
     }
