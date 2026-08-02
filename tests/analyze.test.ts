@@ -82,6 +82,42 @@ describe("exclusion spec", () => {
     assert.equal(isExcluded("src/auth/login.ts"), false);
   });
 
+  // Cargo's law, anchored where the law applies. A crate root's `tests/` and
+  // `benches/` hold test binaries and benchmarks the way `_test.go` files do —
+  // and before this rule existed a Rust project's integration tests read as
+  // undocumented first-party source to the diff-driven gate (`review --strict`
+  // failed on them as unmapped) and to `generated-leakage`.
+  it("excludes a crate root's cargo test and benchmark trees, anchored", () => {
+    assert.equal(isExcluded("tests/api.rs"), true);
+    assert.equal(isExcluded("tests/common/mod.rs"), true);
+    assert.equal(isExcluded("benches/throughput.rs"), true);
+    // A crate's real source is never swept up, whatever it is called.
+    assert.equal(isExcluded("src/lib.rs"), false);
+    assert.equal(isExcluded("src/exams/tests/model.rs"), false);
+    // Honest bound: a cargo WORKSPACE member's tests stay governed. The matcher
+    // cannot see where a `Cargo.toml` sits, and guessing would reopen the
+    // unanchored hazard — such a workspace declares its own pattern.
+    assert.equal(isExcluded("crates/parser/tests/integration.rs"), false);
+    // The rule is Rust-scoped, not a directory-name rule: a non-`.rs` file at
+    // the same path is untouched by it.
+    assert.equal(isExcluded("tests/adapter-conformance.ts"), false);
+  });
+
+  // ADVERSARIAL REVIEW: the fixtures/** anchoring above is deliberate (see its
+  // comment) precisely because a NESTED `fixtures` dir can be genuine first-party
+  // source. TEST_CONVENTIONS.dirs added a bare, unanchored `"tests"` entry on the
+  // claim that — unlike `fixtures` — a directory literally named `tests` is never
+  // ambiguous "anywhere in a tree". That is false by the same argument: a testing
+  // platform, exam/assessment app, or lab-diagnostics product can have a genuine
+  // domain concept named "tests" living under its own nested directory. Unlike
+  // `fixtures/**`, the new `"tests"` dir entry is NOT root-anchored, so it swallows
+  // exactly the class of first-party source the fixtures precedent was written to
+  // protect — silently dropping it from coverage, the change-control gate, `scan`
+  // discovery, and the editor hook alike (one shared spec, one shared blind spot).
+  it("does not swallow a nested first-party `tests` directory (symmetric to the fixtures precedent)", () => {
+    assert.equal(isExcluded("src/exams/tests/model.ts"), false);
+  });
+
   it("isSourceFile gates on extension and exclusion", () => {
     assert.equal(isSourceFile("src/auth/login.ts"), true);
     assert.equal(isSourceFile("docs/features/auth.md"), false);
@@ -171,6 +207,69 @@ describe("gitignore-aware scope (temp repo)", () => {
       assert.equal(result.inScopeSourceCount, 1);
       const ownership = result.coverage.ratios.find((r) => r.id === "ownership");
       assert.deepStrictEqual(ownership?.detail?.unowned, ["src/app.ts"]);
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+// ADVERSARIAL REVIEW: the widened TEST_CONVENTIONS.dirs ("tests" added, unanchored)
+// was sold as coverage moving only upward — test files stop counting as
+// undocumented source. That direction only holds for an UNOWNED file dropping
+// out of the denominator. A file that is registered (owned) under a bare
+// `tests/` directory drops out of BOTH the numerator and the denominator on
+// upgrade, and removing an owned file from a ratio that is not already 100%
+// can only hold the score steady or LOWER it — never raise it. This is exactly
+// what happened to this repo's own `tests/adapter-conformance.ts`, which was a
+// registered primary_source before this change.
+describe("exclusion-spec widening can silently LOWER coverage, not just raise it", () => {
+  it("an upgrade that starts excluding an OWNED nested `tests/` file can only hold or lower the ownership ratio, never raise it", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "codument-tests-dir-coverage-"));
+    try {
+      await mkdir(join(tmp, "src"), { recursive: true });
+      await mkdir(join(tmp, "tests"), { recursive: true });
+      await writeFile(join(tmp, "src", "app.ts"), "export const a = 1;\n");
+      // Deliberately UNOWNED, so the baseline ratio is below 100% — otherwise a
+      // dropped owned file cannot show a regression (ratio floors at 1.0).
+      await writeFile(join(tmp, "src", "other.ts"), "export const b = 1;\n");
+      // A genuine, REGISTERED first-party file that merely lives under a bare
+      // `tests/` directory (e.g. a testing/exam/lab platform's own domain code,
+      // or — as in this very repo — a shared conformance-battery library).
+      await writeFile(join(tmp, "tests", "lib.ts"), "export const c = 1;\n");
+
+      const registry = {
+        features: {
+          core: {
+            doc: "docs/features/core.md",
+            type: "feature" as const,
+            primary_sources: ["src/app.ts", "tests/lib.ts"],
+            related_sources: [],
+            docs: [],
+            depends_on: [],
+            risk: [],
+            status: "current" as const,
+          },
+        },
+      };
+
+      // Pre-upgrade behavior: `tests` was not in the built-in dirs list.
+      const preUpgrade = {
+        ...DEFAULT_EXCLUSION_SPEC,
+        dirs: DEFAULT_EXCLUSION_SPEC.dirs.filter((d) => d !== "tests"),
+      };
+
+      const before = analyze({ root: tmp, registry, srcDir: ".", exclusion: preUpgrade });
+      const after = analyze({ root: tmp, registry, srcDir: ".", exclusion: DEFAULT_EXCLUSION_SPEC });
+
+      const beforeOwnership = ratio(before.coverage.ratios, "ownership");
+      const afterOwnership = ratio(after.coverage.ratios, "ownership");
+
+      // Same repo state, same registry, no source change — only the built-in
+      // spec changed (an upgrade). Coverage must never silently regress here.
+      assert.ok(
+        afterOwnership.ratio >= beforeOwnership.ratio,
+        `ownership ratio regressed on upgrade with no source change: ${beforeOwnership.ratio} -> ${afterOwnership.ratio}`,
+      );
     } finally {
       await rm(tmp, { recursive: true, force: true });
     }
@@ -1088,6 +1187,9 @@ describe("one definition of a test file, and the spec is composed from it", () =
     "src/FooTest.kt",
     "src/FooSpec.kt",
     "app/src/test/java/Foo.java",
+    "tests/integration.rs",
+    "tests/common/helpers.rs",
+    "benches/throughput.rs",
     "fixtures/thing.ts",
   ];
   for (const path of testPaths) {
@@ -1103,6 +1205,12 @@ describe("one definition of a test file, and the spec is composed from it", () =
     "src/Foo.java",
     "src/Tester.kt",
     "src/fixtures/real-source.ts",
+    // Cargo's rule is anchored at the crate root and scoped to Rust, so a
+    // module named `tests`, a workspace member's tests, and a same-path file in
+    // another language all stay first-party source.
+    "src/exams/tests/model.rs",
+    "crates/parser/tests/integration.rs",
+    "tests/adapter-conformance.ts",
   ];
   for (const path of notTestPaths) {
     it(`does not claim ${path} is a test`, () => assert.equal(isTestPath(path), false));

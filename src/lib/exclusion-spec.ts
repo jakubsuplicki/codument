@@ -51,9 +51,24 @@ export const TEST_CONVENTIONS: { dirs: string[]; globs: string[] } = {
     "**/*Tests.kt",
     "**/*Spec.kt",
     "**/src/test/**",
-    // Root-level test-fixture trees only — anchored (not a bare `fixtures` dir
-    // name) so a project's real first-party source under e.g. `src/fixtures/`
-    // is NOT silently dropped from governance.
+    // The anchored entries below share one rule: a built-in exclusion follows a
+    // language's own law, never a directory name on its own. `tests`, `benches`
+    // and `fixtures` are ordinary words a project can legitimately use for
+    // first-party source (a diagnostics or exam product's `src/exams/tests/`),
+    // so each is anchored where its convention actually applies rather than
+    // matched anywhere in a tree. Anything short of a law is the project's own
+    // additive `exclude` declaration to make.
+    //
+    // Cargo's law: `<crate-root>/tests/*.rs` are integration-test binaries and
+    // `<crate-root>/benches/*.rs` are benchmarks, as much a convention as Go's
+    // `_test.go`. Honest bound — a cargo WORKSPACE member's
+    // `crates/foo/tests/bar.rs` stays governed, because this matcher cannot see
+    // where a `Cargo.toml` sits and guessing would reopen the unanchored
+    // hazard; a workspace declares its own pattern.
+    "tests/**/*.rs",
+    "benches/**/*.rs",
+    // Root-level test-fixture trees only, so a project's real first-party
+    // source under e.g. `src/fixtures/` is NOT silently dropped from governance.
     "fixtures/**",
   ],
 };

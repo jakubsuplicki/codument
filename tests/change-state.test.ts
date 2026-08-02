@@ -599,3 +599,33 @@ describe("ungated registered changes (non-source blind spot)", () => {
     assert.equal(s.staleDocs.length, 1);
   });
 });
+
+// ADVERSARIAL REVIEW: this project's own doc contract (change-control-gate.md,
+// "A changed file the registry names as a source but no adapter gates is
+// SURFACED, never silent") says a registered-but-excluded file rides the
+// `ungatedRegistered` info surface rather than vanishing — proven above for a
+// registered `.d.ts`. `tests/adapter-conformance.ts` used to be a registered
+// primary_source of change-control-gate; this diff both widened the exclusion
+// spec to swallow it AND deleted its registry entry, rather than leaving it
+// registered to ride the very surface this file documents for exactly this
+// scenario. The result: a file the doc still narrates as defining "the ONE
+// testable meaning of precise" now produces NO signal at all when it changes.
+describe("REGRESSION: tests/adapter-conformance.ts lost ALL governance, not just gating", () => {
+  it("changing tests/adapter-conformance.ts today produces zero signal in the real project's own change-state", async () => {
+    const registry = await readRegistry(join(here, "..", "docs", ".registry.json"));
+    const s = computeChangeState({
+      registry,
+      changedFiles: ["tests/adapter-conformance.ts"],
+    });
+    const surfaced =
+      s.staleDocs.length > 0 ||
+      s.unmapped.includes("tests/adapter-conformance.ts") ||
+      s.ungatedRegistered.some((u) => u.file === "tests/adapter-conformance.ts");
+    assert.ok(
+      surfaced,
+      "tests/adapter-conformance.ts defines a load-bearing contract per the change-control-gate doc, " +
+        "but is now completely invisible to the gate: not staleDocs, not unmapped (excluded by the widened " +
+        "spec), and not ungatedRegistered (dropped from the registry instead of kept registered).",
+    );
+  });
+});
