@@ -209,18 +209,22 @@ describe("buildManagedSection", () => {
     // deciding reason, and what changes on yes. Bare closing questions were the most
     // frequent complaint: "often i'm being asked to make decision but recommendation
     // is not included around question".
-    assert.ok(/carries your recommendation, or it is not ready to ask/.test(section));
+    assert.ok(/must stand on its own and carry your recommendation/.test(section));
+    assert.ok(/without scrolling up/.test(section));
     assert.ok(/what changes if they agree/.test(section));
 
     // plain language is the default register: identifiers are the agent's working
     // material, not the reply. Shown by real outputs the user rejected as "technical
     // outputs, not human readable" even after they were cut to 43 words — density,
     // not length, was the other half of the complaint.
-    assert.ok(section.includes("Speak plainly"));
-    assert.ok(/name one only when they have to open it/.test(section));
-    assert.ok(/Precision belongs in the work/.test(section));
+    assert.ok(/help them decide, not to report what you did/.test(section));
+    // a runnable command is useful; bookkeeping is not. That distinction is the
+    // user's, and it is sharper than the "plain language" wording it replaced.
+    assert.ok(/A command they can run is useful/.test(section));
+    assert.ok(/commit hashes, test counts, file counts/.test(section));
+    assert.ok(/belongs in the work/.test(section));
     // regression guard: the contract must never again instruct the agent to name a
-    // file every time, which is what the superseded wording did.
+    // file every time, which is what the original wording did.
     assert.ok(!/cite at most the one file/.test(section));
 
     // the grounding clause is load-bearing: brevity must never be bought by skipping the reading
