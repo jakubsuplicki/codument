@@ -5,6 +5,87 @@ All notable changes to Codument are recorded here. The format follows
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while it
 remains pre-1.0.
 
+## [0.13.0] - 2026-08-02
+
+0.12.0 shipped the response-altitude rule as written. This release ships it as
+*measured* — the clauses were tried against real replies, judged blind, and the
+two that lost were taken back out. It also closes the gap that work exposed
+from the other side: a contract stated more broadly than the code that enforces
+it will be obeyed literally, and the obedience is the bug.
+
+### Changed
+- The response-altitude rule's second pass. Reading the shipped version's own
+  output found one pattern: a clause the agent can *verify it obeyed* holds,
+  and a clause asking it to judge "how much is enough" slides back, because it
+  always finds its own detail worth keeping. So the rule now fixes what it can
+  fix. Every reply uses one shape, carried by order rather than decoration —
+  what happened, what matters about it, what is next, the question, a blank
+  line between and no headings or bold labels — and an ordered set of remaining
+  work is a numbered list, because prose hides the order. Every question the
+  agent puts to the user has to stand on its own and arrive with the
+  recommendation attached, so the answer can be one word instead of homework.
+  Told to keep going until it is done, it works and reports once at the end
+  rather than narrating what it found on the way. Asked how things stand, it
+  ranks instead of cataloguing. And it says the result, not the method: what
+  was found and what it means, never the three things tried to establish it.
+- What counts as noise in a reply is now named rather than left to judgement. A
+  command the user can run is useful and is given plainly; commit hashes, test
+  counts, file counts, line numbers, paths nobody opens, and the names of
+  internal modules are the record of the work and belong in the work — reviews,
+  commits, plans, docs — where someone acts on the exact name. The grounding
+  guard tightened in the same direction: it used to permit citing "the one file
+  that settles it", which turned out to be a licence to cite a file on every
+  turn, and now asks for the conclusion rather than the trail. Reading less is
+  still the one failure the rule must never cause.
+
+### Fixed
+- Cargo's crate-root `tests/` and `benches/` trees are recognized as test
+  trees. Rust was the one supported language with no test convention in the
+  spec at all, so a crate's integration tests read as undocumented first-party
+  source: `review --strict` failed on them as unmapped changes, and a project
+  that registered them to quiet that got no `generated-leakage` telling it not
+  to. Both are anchored where Cargo's law actually holds — the crate root — so
+  a module that merely happens to sit at `src/exams/tests/` stays governed. A
+  cargo *workspace* member's `crates/*/tests/*.rs` stays governed too: the
+  matcher cannot see where a `Cargo.toml` sits, and guessing would reopen the
+  hazard, so such a workspace declares its own pattern. **On upgrade,** a
+  project that had already registered a cargo test or benchmark file sees that
+  file leave scope — which *lowers* its ownership ratio, since an owned file
+  leaves the numerator and the denominator together, and raises a new
+  `generated-leakage` warning naming it. The warning is the point: un-map the
+  file. A project with no Rust, or one that never registered those paths, gets
+  a byte-identical verdict and score.
+- The authoring surfaces no longer promise a blanket exclusion the mechanism
+  was never built to enforce. 0.12.0's rule said there is "no case where a test
+  file belongs in an entry", which reads as an instruction to un-map any
+  first-party module living under a test directory — a shared harness, a
+  contract other code must satisfy — while the write guard it shipped
+  alongside asks the narrower question the spec actually answers: does some
+  language's convention *name* this a test. That claim is superseded. Both the
+  shipped rule and `registry-health` now state the definition, and say where a
+  directory-shaped convention is anchored and why: `tests`, `test` and `spec`
+  are ordinary words, and a lab, exam or assessment product has real domain
+  code under them. A project whose test helpers escape every convention
+  declares them in its own additive `exclude`, visibly, instead of un-mapping
+  real source.
+- The skill tree shipped in the package and the one this repository dogfoods
+  can no longer drift apart unnoticed. They are the same instructions and were
+  edited by hand in two places; a test now holds them byte-identical, and
+  refuses to pass on an empty tree rather than reporting two absent sets as
+  equal.
+
+### Notes
+- Two revisions were tried, measured, and reverted. A countable ceiling on
+  reply length worked as advertised and cost accuracy: capped replies scored
+  lower on correctness and completeness, and the one that mattered led with a
+  false claim and missed the real finding. Cutting the rule in half made
+  replies *longer*. Both are recorded in the plan with the runs behind them, so
+  neither gets retried on intuition.
+- Every false claim found across those runs landed in volunteered extra
+  material, never in the direct answer — the answer got checked and the aside
+  did not. Noise and error are the same habit, which is why the rule treats
+  them as one.
+
 ## [0.12.0] - 2026-07-31
 
 Two threads land together.
@@ -65,9 +146,9 @@ agent was not drifting; it was obeying.
   diligent.
 - Authoring a registry entry now refuses a generated, build, or test file
   instead of accepting one and letting `doctor` report it afterwards. The
-  exclusion contract was already settled and additive-only — a file some
-  language's convention names a test is out of scope even when an entry names
-  it — but nothing on the write path enforced it. Reading stays deliberately tolerant, so `doctor` can still
+  exclusion contract was already settled and additive-only — there is no case
+  where a test file belongs in an entry — but nothing on the write path
+  enforced it. Reading stays deliberately tolerant, so `doctor` can still
   report a registry that is already wrong, and only a *newly introduced* path
   is refused, so an entry that already names a test file can still be extended
   or repaired.
@@ -83,31 +164,6 @@ agent was not drifting; it was obeying.
 - The authoring rule shipped to every project (`rules/documentation.md`) states
   the scope contract at the point where entries are hand-authored, and points
   invariant-to-test links at doc prose, which needs no registry mapping.
-- Cargo's crate-root `tests/` and `benches/` trees are recognized as test
-  trees. Rust was the one supported language with no test convention in the
-  spec at all, so a crate's integration tests read as undocumented first-party
-  source: `review --strict` failed on them as unmapped changes, and a project
-  that registered them to quiet that got no `generated-leakage` telling it not
-  to. Both are anchored where Cargo's law actually holds — the crate root — so
-  a module that merely happens to sit at `src/exams/tests/` stays governed. A
-  cargo *workspace* member's `crates/*/tests/*.rs` stays governed too: the
-  matcher cannot see where a `Cargo.toml` sits, and guessing would reopen the
-  hazard, so such a workspace declares its own pattern. **On upgrade,** a
-  project that had already registered a cargo test or benchmark file sees that
-  file leave scope — which *lowers* its ownership ratio, since an owned file
-  leaves the numerator and the denominator together, and raises a new
-  `generated-leakage` warning naming it. The warning is the point: un-map the
-  file. A project with no Rust, or one that never registered those paths, gets
-  a byte-identical verdict and score.
-- The authoring surfaces no longer promise a blanket exclusion the mechanism
-  was never built to enforce. "Never list a test file as a source" read as an
-  instruction to un-map any first-party module living under a test directory —
-  a shared harness, a contract other code must satisfy — while the write guard
-  asks the narrower question the spec answers: does some language's convention
-  *name* this a test. Both the shipped rule and `registry-health` now state
-  that definition, and say where a directory-shaped convention is anchored and
-  why. A project whose test helpers escape every convention declares them in
-  its own additive `exclude`, visibly, instead of un-mapping real source.
 - Opus 5 and Sonnet 5 are priced from the built-in rate table. Both families
   moved to a single-segment model id (`claude-opus-5`), a shape the transcript
   normalizer only recognized for Fable and Mythos, so a current-generation
