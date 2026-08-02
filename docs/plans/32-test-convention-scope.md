@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 32: "test file" means what a language's own convention means
@@ -102,12 +102,14 @@ plan that introduces no source files.
   where `Cargo.toml` files sit, and guessing would re-introduce the unanchored hazard. A workspace
   declares its own pattern — the same answer the docs already give for an unguessable monorepo
   layout. This is an honest bound, stated in the doc, not a silent gap.
-- **The widening moves coverage in both directions, and the changelog says so.** A Rust project that
-  never registered its integration tests sees coverage rise (they leave an undocumented denominator).
-  A project that *did* register them sees it fall, because an owned file leaves numerator and
-  denominator together and a ratio below 100% can only drop. Registered cargo tests will also start
-  drawing `generated-leakage`, which is the correct signal — un-map them. Pitching this as a
-  one-directional improvement is what made the reverted attempt look safe.
+- **The widening moves a registered project's coverage down, not up, and the changelog says so.** A
+  project that never registered its cargo tests sees no coverage change at all — `doctor`'s walk is
+  `srcDir`-scoped and those trees are siblings of `src/`, so they were never in the denominator; what
+  it gains is a `review --strict` that stops failing on them as unmapped. A project that *did*
+  register them sees the ratio fall, because an owned file leaves numerator and denominator together
+  and a ratio below 100% can only drop, and it gains a `generated-leakage` warning naming the file —
+  the correct signal, telling it to un-map. Pitching a spec widening as a one-directional improvement
+  is what made the reverted attempt look safe.
 - **The reverted attempt's regression tests are rewritten as positive invariants, not kept as
   absence checks.** A test asserting "the bad change is not present" decays into noise the moment
   someone reads it without the history; the same facts stated as "a nested first-party `tests`
@@ -116,23 +118,23 @@ plan that introduces no source files.
 
 ## Delivery Plan — test-convention scope (2026-08-02)
 
-Status: approved 2026-08-02 — benchmarks ship alongside integration tests (see Open questions).
+Status: shipped 2026-08-02. Benchmarks shipped alongside integration tests.
 
-- [ ] Step 1: Add Cargo's integration-test and benchmark trees to `TEST_CONVENTIONS.globs`,
+- [x] Step 1: Add Cargo's integration-test and benchmark trees to `TEST_CONVENTIONS.globs`,
       root-anchored, with the anchoring rationale folded into the existing `fixtures/**` comment so
       one explanation covers both. Pin all four cases: a crate-root integration test and benchmark
       excluded; a `src/**/tests/*.rs` module and a workspace member's `crates/*/tests/*.rs` still
       governed.
-- [ ] Step 2: Pin the boundary the spec actually draws, replacing the two absence-checking
+- [x] Step 2: Pin the boundary the spec actually draws, replacing the two absence-checking
       regression tests with positive invariants — a nested first-party directory named `tests` stays
       in scope, and this repo's own `tests/adapter-conformance.ts` still surfaces in change-state
       when it changes.
-- [ ] Step 3: Correct the over-broad wording at both authoring surfaces — `registry-health.md`'s
+- [x] Step 3: Correct the over-broad wording at both authoring surfaces — `registry-health.md`'s
       denominator paragraph and governed-families list, and `rules/documentation.md`'s registry-entry
       contract — so both say a file the language's test convention names, and both name the
       project's own `exclude` declaration as the route for an unconventional test helper. Verify a
       scaffolded project carries the updated text.
-- [ ] Step 4: Record the scope change in `CHANGELOG.md`, naming both directions coverage can move
+- [x] Step 4: Record the scope change in `CHANGELOG.md`, naming both directions coverage can move
       and the `generated-leakage` findings a project with registered cargo tests will newly see.
 
 ## Outcome
