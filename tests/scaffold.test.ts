@@ -226,6 +226,12 @@ describe("buildManagedSection", () => {
     // they were avoiding by saying continue.
     // One fixed order, chosen by the user over bold lead-ins and over headings:
     // a predictable order is what makes a small block scannable; decoration is weight.
+    // A countable ceiling, because every judgment-shaped version failed. Measured:
+    // the slot-shaped clauses (fixed shape, numbered list, recommendation) all held
+    // in live output; the ones asking the agent to judge "enough" all slid back.
+    assert.ok(/Four sentences, plus a list where there is one/.test(section));
+    assert.ok(/Count them before sending/.test(section));
+    assert.ok(/you will find your own worth keeping/.test(section));
     assert.ok(/Use the same shape every time/.test(section));
     assert.ok(/no headings, no bold labels, no table/.test(section));
     assert.ok(/takes no shape at all/.test(section));
