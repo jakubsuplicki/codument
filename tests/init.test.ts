@@ -128,6 +128,16 @@ describe("init command", () => {
     runInit("--agents", "claude");
 
     assert.ok(existsSync(join(tmp, ".claude", "rules", "documentation.md")));
+    // The authoring contract a scaffolded project receives has to define "a test
+    // file" as one a language's convention names. The blanket wording it
+    // replaced read as an instruction to un-map real first-party source that
+    // merely lives under a test directory.
+    const rule = await readFile(
+      join(tmp, ".claude", "rules", "documentation.md"),
+      "utf-8",
+    );
+    assert.match(rule, /a language's own convention names/);
+    assert.ok(!/no case where a test file belongs in an entry/.test(rule));
     assert.ok(
       existsSync(join(tmp, ".claude", "skills", "update-docs", "SKILL.md")),
     );
