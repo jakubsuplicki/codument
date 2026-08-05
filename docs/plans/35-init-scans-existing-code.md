@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 35: `init` scans a repo that already has code
@@ -82,14 +82,14 @@ lands on a repo that already has source and no registry, it scans as part of set
 
 ## Delivery Plan
 
-Status: approved.
+Status: shipped.
 
 - [x] **Step 1 — Scan from `init`.** Run `scan` at the end of `init` when the repo has source files
       and the registry `init` just created is empty; add `--no-scan`; report a refusal without
       failing the install; point the closing hint at `/update-docs` when a scan ran. Cover the fire
       condition, both skip conditions, `--no-scan`, and the refusal path in `tests/init.test.ts`,
       and update `docs/features/commands.md`.
-- [ ] **Step 2 — Collapse the documented path.** README Quick start and setup section back to one
+- [x] **Step 2 — Collapse the documented path.** README Quick start and setup section back to one
       command for an existing project, the `init`/`scan`/`adopt` table and the per-entry-point
       details block reworded to match, plus a `CHANGELOG.md` entry.
 

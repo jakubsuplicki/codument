@@ -132,15 +132,20 @@ tie-break bug.
 | --- | --- | --- |
 | [33](33-review-loop-cost.md) | Delta bundles, ranked dependents, discovered test runner | Fixing a finding re-attacks the whole diff (3 full rounds on step 1); 24 unranked reason-less dependents on every run, including in the adversary's own oracle; `--test-command` re-nagged every run while the real unadjudicated-findings hole stayed silent |
 
-## Loop defaults (34)
+## Defaults that were costing more than they protected (34–35)
+
+Two plans about what happens when the user says nothing. Neither changes what codument checks; both
+change what it makes you do first.
 
 | Plan | Theme | Why |
 | --- | --- | --- |
 | [34](34-autopilot-by-default.md) ✅ **shipped** | Autopilot on by default, phrase-only opt-out | Working an approved plan end to end was opt-in behind a phrase almost nobody learned, so the shipped default was the slowest loop available — three routine confirmations per step, none asking a real question. The confirmations that matter fire on their own regardless |
+| [35](35-init-scans-existing-code.md) ✅ **shipped** | `init` maps existing code in the same command | Onboarding an existing project took two commands and missing the second failed *silently*: the workflow installed, the registry stayed empty, and the gate had nothing to check — no error, just a loop owning none of your code |
 
-Shipped in `8a7558b`, `5359588`, `c02519f`, `ae171cf`. No guardrail moved: the plan-approval gate,
-the hard-pause conditions, and the step-sync gate are unchanged, and the escape is a spoken phrase
-("step by step") that holds for the session rather than a config field.
+34 shipped in `8a7558b`, `5359588`, `c02519f`, `ae171cf`; 35 in `fdc1b36` and the doc pass after it.
+No guardrail moved in either: the plan-approval gate, the hard-pause conditions, and the step-sync
+gate are unchanged, `scan` still installs nothing on its own, and both escapes are cheap — a spoken
+phrase ("step by step") that holds for the session, and `--no-scan`.
 
 Still to plan, ranked by value: shipped delivery scaffolding is never compacted out of docs (the
 standard says it should be; nothing enforces it); the Decisions layer states conclusions without

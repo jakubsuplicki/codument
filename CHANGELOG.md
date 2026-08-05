@@ -46,6 +46,24 @@ a sentence rather than a setting. Plan 34.
   of throwing, so a typo cannot break `scan`.
 
 ### Changed
+- **`init` maps an existing codebase as part of setup.** Onboarding a project
+  that already had code took two commands, and missing the second one failed
+  silently: the workflow installed, the registry stayed empty, and you got a
+  delivery loop owning none of your source — no error, just a gate with nothing
+  to check and `/update-docs` with no scaffolds to fill, discovered much later.
+  `init` now runs the discovery pass itself in the one case that needs it: the
+  repo has source **and** the registry is one this run created. An authored
+  registry is `adopt`'s territory and is never proposed over; `--no-scan`
+  declines the mapping and installs the workflow alone. Opt-out rather than
+  opt-in, because whoever forgets the second command will not pass a flag to get
+  it. `scan` is unchanged and remains a first-class command — it is the entry
+  point of the zero-commitment trial motion (`scan` then `audit`), which still
+  installs nothing. Two smaller honesty rules ride along: a scope that cannot be
+  resolved declines the mapping instead of failing the install (that refusal
+  belongs to `scan`, which states it precisely), and the closing next-step
+  follows what was actually mapped rather than whether discovery ran — a project
+  whose files all sit at the source root scans cleanly and owns nothing, and is
+  not sent to fill scaffolds nobody wrote.
 - **An approved plan now runs without waiting between steps.** Autopilot is on by
   default: approving the plan is what starts the run, and your agent implements,
   reviews, documents and commits each remaining step without asking permission to

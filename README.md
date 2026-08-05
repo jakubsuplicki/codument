@@ -47,13 +47,7 @@ npx codument init
 
 Start a fresh agent session and chat normally. Describe what you want built; your agent grills the idea against your docs, writes a plan, and stops for your approval. **Approve it once and it builds the thing** — implementing, reviewing, documenting and committing each step on its own, and telling you where it is at every step.
 
-**A project that already has code**
-
-```bash
-npm install -D codument
-npx codument init      # installs the workflow and the docs structure
-npx codument scan      # maps your existing source to the docs that own it
-```
+**A project that already has code** — same command. `init` also maps your existing source to the docs that will own it, so there's a registry and a set of scaffolds waiting.
 
 Start a fresh agent session, say **`/update-docs`** once so those docs describe the code you already have, then chat as above.
 
@@ -165,18 +159,18 @@ npm install -D codument
 Then, matching your project:
 
 ```bash
-npx codument init                     # new project: the agent workflow + docs structure
-npx codument init && npx codument scan  # existing code, no docs yet: + map it to docs
-npx codument adopt                    # existing Codument project: normalize + refresh
+npx codument init      # new or existing project: the workflow, the docs structure,
+                       # and — when there's already code — the map from source to docs
+npx codument adopt     # existing Codument project: normalize + refresh
 ```
 
-`init` is what installs the workflow, so every path starts with it. `scan` adds the second half an existing codebase needs — it reads your source and proposes which docs own which files — but it installs no workflow of its own, so it is a companion to `init`, not an alternative to it.
+On a repo that already has code and no registry yet, `init` runs the discovery pass itself, so the map and the workflow arrive together. Pass `--no-scan` to install the workflow alone. `scan` remains a command you can run directly — it is the entry point of the zero-commitment trial below, and the way to re-derive the map later — but you no longer have to remember it during setup.
 
 `init` installs the Claude profile by default (`AGENTS.md`/`CLAUDE.md`, `.claude/` skills + agents + rules, `docs/` with the registry). Pick profiles explicitly with `--agents claude`, `--agents codex`, or `--agents codex,claude`.
 
 **Start a fresh agent session after setup.** Your agent reads its Codument workflow from files this step writes: `CLAUDE.md`/`AGENTS.md`, plus the `.claude/` skills and subagents. Coding agents load these when a session starts, so one you already had open won't see them. Start a new session (or run `/clear`) and your agent picks up the delivery loop, the skills, and the `/update-docs` step below. The git pre-commit gate from `codument hooks install` is the exception: git honors it on the next commit, no restart needed.
 
-**Then have your agent write the docs.** On an existing codebase, `scan` only lays down empty scaffolds (marked `needs-review`). Tell your agent **`/update-docs`** and it reads your source to fill the registry's feature and concept docs with real content, giving `doctor` and `review` something to check against. That is the agent skill, not the `codument update` CLI in step 5 (which only re-syncs codument's own managed files on a version bump).
+**Then have your agent write the docs.** On an existing codebase, setup only lays down empty scaffolds (marked `needs-review`). Tell your agent **`/update-docs`** and it reads your source to fill the registry's feature and concept docs with real content, giving `doctor` and `review` something to check against. That is the agent skill, not the `codument update` CLI in step 5 (which only re-syncs codument's own managed files on a version bump).
 
 <details>
 <summary>What each entry point does, in full</summary>
@@ -198,16 +192,15 @@ Installs the Claude profile by default:
 
 Pick profiles explicitly with `--agents claude`, `--agents codex`, or `--agents codex,claude`. The Codex/generic profile writes `AGENTS.md` and `.agents/skills/` only — portable across any agent that reads `AGENTS.md`.
 
-### Existing code, no docs yet → `init`, then `scan`
+### Existing code, no docs yet → `init` (which scans for you)
 
 ```bash
 npx codument init
-npx codument scan
 ```
 
-`scan` groups source files into feature and concept docs, creates scaffolds, and populates `docs/.registry.json`. New entries are marked `needs-review`; run `/update-docs` (the agent) to fill them with real content.
+The discovery pass groups source files into feature and concept docs, creates scaffolds, and populates `docs/.registry.json`. New entries are marked `needs-review`; run `/update-docs` (the agent) to fill them with real content.
 
-Run it after `init`, not instead of it: `scan` deliberately installs no workflow — that is what makes it safe to run on a repo you haven't adopted (see [Try it on your own repo](#try-it-on-your-own-repo--two-commands-zero-commitment)) — so on its own it leaves you with a registry and no delivery loop.
+It fires only when the repo has source *and* the registry is one this run created — an authored registry is `adopt`'s case and is never proposed over — and `--no-scan` declines it. You can still run `npx codument scan` on its own: it installs no workflow, which is exactly what makes it safe on a repo you haven't adopted (see [Try it on your own repo](#try-it-on-your-own-repo--two-commands-zero-commitment)).
 
 ### Existing Codument project → `adopt`
 
