@@ -7,6 +7,8 @@ import {
   type ApprovedPlan,
   type ChangeState,
   computeChangeState,
+  DEPENDENT_CAP,
+  type DependentSummary,
   detectApprovedPlanScope,
   resolveFileGrainAcked,
 } from "../lib/change-state.js";
@@ -920,6 +922,30 @@ function section(title: string, lines: string[]): void {
   console.log();
 }
 
+// The dependents section, as a count plus a ranked, capped list. It used to print one
+// line per declared EDGE: on a repo with a couple of concept umbrellas a single-file
+// edit printed dozens of unranked lines, which trains the reader to skip the section
+// — and this is a section a real warning can appear in. Features depending on a
+// changed FEATURE come first; ones that only ride a concept umbrella (which wakes on
+// any file in the directory it narrates) are the weakest signal and collapse first.
+export function dependentLines(summary: DependentSummary[]): string[] {
+  if (summary.length === 0) return [];
+  const viaUmbrella = summary.filter((d) => d.viaUmbrella).length;
+  const lines = [
+    pc.dim(
+      `${summary.length} dependent feature${summary.length === 1 ? "" : "s"}` +
+        (viaUmbrella > 0 ? ` (${viaUmbrella} only via a concept umbrella)` : ""),
+    ),
+  ];
+  for (const d of summary.slice(0, DEPENDENT_CAP)) {
+    lines.push(`${pc.dim("•")} ${d.feature} (depends on ${d.dependsOn.join(", ")})`);
+  }
+  if (summary.length > DEPENDENT_CAP) {
+    lines.push(pc.dim(`… and ${summary.length - DEPENDENT_CAP} more`));
+  }
+  return lines;
+}
+
 function printHuman(report: ReviewReport): void {
   const { state, plan } = report;
 
@@ -1172,10 +1198,7 @@ function printHuman(report: ReviewReport): void {
     state.highFanout.map((f) => `${pc.yellow("⚠")} ${f.file} → ${f.features.join(", ")}`),
   );
 
-  section(
-    "Dependents that may need re-review",
-    state.dependents.map((d) => `${pc.dim("•")} ${d.feature} (depends on ${d.dependsOn})`),
-  );
+  section("Dependents that may need re-review", dependentLines(state.dependentsSummary));
 
   console.log(
     pc.dim(

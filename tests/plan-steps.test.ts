@@ -275,6 +275,7 @@ describe("watch tape integration", () => {
         outOfPlan: [],
         highFanout: [],
         dependents: [],
+        dependentsSummary: [],
         planScoped: false,
       },
     } as unknown as Parameters<typeof renderFrame>[0];

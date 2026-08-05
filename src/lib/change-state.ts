@@ -103,6 +103,28 @@ export interface DependentFeature {
   dependsOn: string;
 }
 
+/** How many dependents any surface lists by name before collapsing to a count. Past
+ *  this the list stops being read at all, and a section nobody reads is where a real
+ *  warning goes to die. Shared so the CLI and the HTML report agree. */
+export const DEPENDENT_CAP = 5;
+
+/** One dependent feature with ALL its edges collapsed onto it — the rendered view of
+ *  `dependents`, which is a pair per edge. A single `src/lib` edit on a repo with a
+ *  couple of umbrella concepts produces dozens of pairs, unranked and reason-less, and
+ *  a section that always prints dozens of lines is a section readers learn to skip.
+ *  `dependents` stays the machine contract; this is what humans and the review bundle
+ *  read. */
+export interface DependentSummary {
+  feature: string;
+  /** Every changed feature this one declares a `depends_on` edge to, sorted. */
+  dependsOn: string[];
+  /** True when EVERY edge lands on a `type: "concept"` umbrella. Depending on a
+   *  concept that narrates a whole directory is the weakest signal there is — the
+   *  umbrella wakes on any file in it — so these rank last and are the first thing
+   *  collapsed into the trailing count. */
+  viaUmbrella: boolean;
+}
+
 /** A symbol on a file shared across multiple FEATURES that ownership could not
  *  resolve to a single owner: `unassigned` (no co-owner claims it in
  *  `owned_symbols`) or `ambiguous` (two+ claim it). The gate fails loud rather
@@ -134,8 +156,13 @@ export interface ChangeState {
   highFanout: HighFanoutChange[];
   /** Changed sources owned by a risk-tagged feature. */
   riskTouches: RiskTouch[];
-  /** Features that depend on a changed feature and may need re-review. */
+  /** Features that depend on a changed feature and may need re-review. One entry per
+   *  EDGE — the machine contract (`--json`, the review bundle). Render
+   *  `dependentsSummary` instead. */
   dependents: DependentFeature[];
+  /** `dependents` collapsed to one entry per feature and ranked: real feature edges
+   *  before umbrella-only ones. The renderable view. */
+  dependentsSummary: DependentSummary[];
   /** Changed sources outside the approved plan scope (only when planScope set). */
   outOfPlan: string[];
   /** True when a plan scope was provided (so outOfPlan is meaningful). */
@@ -467,6 +494,35 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
           : 0,
   );
 
+  // The renderable view: one entry per dependent FEATURE, ranked so the weakest
+  // signal sorts last. An edge onto a concept umbrella says "this feature declares a
+  // dependency on a directory narrative", and that umbrella wakes whenever any file
+  // in it moves — which is what turns a one-file edit into a wall of dependents.
+  // `dependents` above stays one entry per edge: it is the machine contract.
+  const summaryByFeature = new Map<string, string[]>();
+  for (const d of dependents) {
+    const list = summaryByFeature.get(d.feature) ?? [];
+    list.push(d.dependsOn);
+    summaryByFeature.set(d.feature, list);
+  }
+  const dependentsSummary: DependentSummary[] = [...summaryByFeature.entries()]
+    .map(([feature, deps]) => ({
+      feature,
+      dependsOn: sortStrings(deps),
+      viaUmbrella: deps.every((dep) => entryByKey.get(dep)?.type === "concept"),
+    }))
+    .sort((a, b) =>
+      a.viaUmbrella !== b.viaUmbrella
+        ? a.viaUmbrella
+          ? 1
+          : -1
+        : a.feature < b.feature
+          ? -1
+          : a.feature > b.feature
+            ? 1
+            : 0,
+    );
+
   // out-of-plan changed sources
   let outOfPlan: string[] = [];
   const planScoped = Array.isArray(planScope);
@@ -486,6 +542,7 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     highFanout,
     riskTouches,
     dependents,
+    dependentsSummary,
     outOfPlan,
     planScoped,
     ownershipLints,

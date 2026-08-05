@@ -23,6 +23,7 @@ function mkState(p: Partial<ChangeState> = {}): ChangeState {
     highFanout: [],
     riskTouches: [],
     dependents: [],
+    dependentsSummary: [],
     outOfPlan: [],
     planScoped: false,
     ...p,

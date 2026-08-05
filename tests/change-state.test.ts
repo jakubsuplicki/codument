@@ -103,6 +103,27 @@ describe("computeChangeState (change-control fixture diff)", () => {
     assert.deepStrictEqual(deps, ["auth", "tasks"]);
   });
 
+  it("summarizes dependents one-per-feature, ranking umbrella-only edges last", async () => {
+    const s = await state();
+    // `dependents` stays one entry per EDGE — it is the machine contract.
+    assert.ok(s.dependents.length >= s.dependentsSummary.length);
+    // The summary has no duplicate features.
+    const features = s.dependentsSummary.map((d) => d.feature);
+    assert.deepStrictEqual(features, [...new Set(features)], "one entry per feature");
+    // Every edge survives the collapse — the summary hides nothing.
+    const edgeCount = s.dependentsSummary.reduce((n, d) => n + d.dependsOn.length, 0);
+    assert.equal(edgeCount, s.dependents.length);
+    // `db` is a concept in this fixture, so a dependent whose only edge is on `db`
+    // is umbrella-only and sorts after any dependent with a real feature edge.
+    const umbrellaOnly = s.dependentsSummary.filter((d) => d.viaUmbrella);
+    assert.ok(umbrellaOnly.length > 0, "the fixture has umbrella-only dependents");
+    const firstUmbrella = s.dependentsSummary.findIndex((d) => d.viaUmbrella);
+    assert.ok(
+      s.dependentsSummary.slice(firstUmbrella).every((d) => d.viaUmbrella),
+      "umbrella-only dependents are contiguous at the end",
+    );
+  });
+
   it("flags out-of-plan changes when a plan scope is provided", async () => {
     const s = await state({ planScope: PLAN_SCOPE });
     assert.equal(s.planScoped, true);

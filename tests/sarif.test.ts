@@ -34,6 +34,7 @@ const EVERY_FINDING_REPORT: ReviewReport = {
     highFanout: [],
     riskTouches: [],
     dependents: [],
+    dependentsSummary: [],
     outOfPlan: ["src/experimental/spike.ts"],
     planScoped: true,
     ownershipLints: [

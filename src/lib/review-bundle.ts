@@ -5,7 +5,7 @@ import type { ReviewFinding } from "./review-artifact.js";
 import type {
   ApprovedPlan,
   ChangeState,
-  DependentFeature,
+  DependentSummary,
   RiskTouch,
   StaleDoc,
 } from "./change-state.js";
@@ -65,8 +65,13 @@ export interface ReviewBundle {
   staleDocs: StaleDoc[];
   /** Risk-tagged features the diff touched (review these harder). */
   riskTouches: RiskTouch[];
-  /** Features downstream of a changed feature (integration may need re-checking). */
-  dependents: DependentFeature[];
+  /** Features downstream of a changed feature (integration may need re-checking),
+   *  collapsed to one entry per feature and ranked — features depending on a changed
+   *  FEATURE first, then ones riding only a concept umbrella. The bundle carries the
+   *  summary rather than the raw edge pairs on purpose: the bundle exists to hand the
+   *  adversary a bounded contract, and dozens of unranked reason-less pairs is the
+   *  opposite of bounded. */
+  dependents: DependentSummary[];
   /** Changed sources outside the approved plan scope (scope creep is a finding). */
   outOfPlan: string[];
   /** The approved plan in force, when detectable. */
@@ -189,7 +194,7 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
     features,
     staleDocs: changeState.staleDocs,
     riskTouches: changeState.riskTouches,
-    dependents: changeState.dependents,
+    dependents: changeState.dependentsSummary,
     outOfPlan: changeState.outOfPlan,
     plan,
   };

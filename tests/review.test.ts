@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildReview, normalizeTestCommand } from "../src/commands/review.js";
+import { buildReview, dependentLines, normalizeTestCommand } from "../src/commands/review.js";
 import { writeAck } from "../src/lib/acknowledgment.js";
 import { fileContentTransition } from "../src/lib/fingerprint.js";
 import { forgetWorkspace, getWorkingTreeChanges } from "../src/lib/git.js";
@@ -1030,6 +1030,43 @@ describe("deletions are first-class in the verdict", () => {
       report.state.staleDocs.some((d: { feature: string }) => d.feature === "auth"),
       "the committed deletion flags the doc against the merge-base",
     );
+  });
+});
+
+describe("dependentLines (the section that used to print one line per edge)", () => {
+  const strip = (s: string) => s.replace(/\[[0-9;]*m/g, "");
+  const dep = (feature: string, dependsOn: string[], viaUmbrella = false) => ({
+    feature,
+    dependsOn,
+    viaUmbrella,
+  });
+
+  it("renders nothing when there are no dependents", () => {
+    assert.deepEqual(dependentLines([]), []);
+  });
+
+  it("leads with a count, collapses a feature's edges onto one line, and caps the list", () => {
+    const summary = Array.from({ length: 8 }, (_, i) => dep(`f${i}`, ["a", "b"]));
+    const lines = dependentLines(summary).map(strip);
+    assert.equal(lines[0], "8 dependent features");
+    assert.match(lines[1], /^• f0 \(depends on a, b\)$/);
+    // 1 count line + 5 named + 1 trailing collapse
+    assert.equal(lines.length, 7);
+    assert.equal(lines[6], "… and 3 more");
+  });
+
+  it("names how many are umbrella-only, and never lists one before a real edge", () => {
+    const lines = dependentLines([
+      dep("real", ["feat"]),
+      dep("weak", ["lib"], true),
+    ]).map(strip);
+    assert.equal(lines[0], "2 dependent features (1 only via a concept umbrella)");
+    assert.match(lines[1], /^• real /);
+    assert.match(lines[2], /^• weak /);
+  });
+
+  it("says 'feature' not 'features' for one", () => {
+    assert.equal(strip(dependentLines([dep("a", ["b"])])[0]), "1 dependent feature");
   });
 });
 

@@ -24,6 +24,7 @@ A **review bundle** (JSON, from `codument review --bundle`) — your oracle, so 
 - `alreadyReviewed` — under `delta` scope, files an earlier round already attacked that have not moved since. **Context, never a pass.** Read them as much as you need to judge whether the delta breaks something they rely on; you are not asked to re-attack them.
 - `priorFindings` — under `delta` scope, what that earlier round raised. Check the fixes actually fix them: a fix that silences the symptom, moves the bug, or breaks a sibling caller is a fresh finding.
 - `features[]` — each touched feature's `contract` (what it promises), its `invariants` (the must-not-break list, with the test files that pin each), `testPointers` (the runnable oracle), `hasUntestedInvariant` (a soft spot — no test guards it, so weigh it harder), and `risk` tags. **This block is never scoped down**: even under a delta you get every touched feature's full contract.
+- `staleDocs`, `riskTouches`, `dependents`, `outOfPlan` — deterministic blast facts. A risk touch and an out-of-plan change are reviewed harder; scope creep is itself a finding. `dependents` is ranked: an entry with `viaUmbrella: true` only declares a dependency on a concept doc that narrates a whole directory, so it is the weakest signal in the bundle — weigh the others first.
 
 The bundle adds no new source of truth — it is a projection of the committed docs and the diff. Trust the code over the bundle's prose where they disagree, and say so.
 

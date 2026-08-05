@@ -82,6 +82,7 @@ function cs(partial: Partial<ChangeState>): ChangeState {
     highFanout: [],
     riskTouches: [],
     dependents: [],
+    dependentsSummary: [],
     outOfPlan: [],
     planScoped: false,
     ownershipLints: [],
@@ -269,6 +270,7 @@ describe("buildReviewBundle", () => {
       staleDocs: [{ feature: "a", doc: "docs/features/a.md", changedSources: ["src/a.ts"] }],
       riskTouches: [{ feature: "a", risk: ["auth"], files: ["src/a.ts"] }],
       dependents: [{ feature: "b", dependsOn: "a" }],
+      dependentsSummary: [{ feature: "b", dependsOn: ["a"], viaUmbrella: false }],
       outOfPlan: ["src/x.ts"],
       planScoped: true,
     });
@@ -283,7 +285,9 @@ describe("buildReviewBundle", () => {
     assert.deepEqual(bundle.changedSources, ["src/a.ts"]);
     assert.deepEqual(bundle.staleDocs, state.staleDocs);
     assert.deepEqual(bundle.riskTouches, state.riskTouches);
-    assert.deepEqual(bundle.dependents, state.dependents);
+    // The bundle carries the RANKED SUMMARY, not the raw edge pairs: the oracle's
+    // whole job is to be bounded, and unranked pairs are what made it unreadable.
+    assert.deepEqual(bundle.dependents, state.dependentsSummary);
     assert.deepEqual(bundle.outOfPlan, ["src/x.ts"]);
     assert.deepEqual(bundle.plan, { path: "docs/plans/p.md", scope: ["src/a.ts"] });
     // Absent delta = the pre-delta behavior, stated rather than implied.

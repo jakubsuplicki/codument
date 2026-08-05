@@ -151,6 +151,7 @@ describe("renderFrame token block", () => {
         outOfPlan: [],
         highFanout: [],
         dependents: [],
+        dependentsSummary: [],
         planScoped: false,
       },
     }) as unknown as Review;
@@ -402,6 +403,7 @@ describe("renderFrame caught section (impact ledger)", () => {
         outOfPlan: [],
         highFanout: [],
         dependents: [],
+        dependentsSummary: [],
         planScoped: false,
       },
     }) as unknown as Review;

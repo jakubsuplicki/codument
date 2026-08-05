@@ -25,6 +25,7 @@ function emptyState(): ChangeState {
     highFanout: [],
     riskTouches: [],
     dependents: [],
+    dependentsSummary: [],
     outOfPlan: [],
     planScoped: false,
   };

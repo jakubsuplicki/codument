@@ -1,4 +1,5 @@
 import type { CoveringAck, ReviewReport } from "../commands/review.js";
+import { DEPENDENT_CAP } from "./change-state.js";
 import type { ImpactLedger } from "./impact-ledger.js";
 
 // Self-contained HTML review report: inline CSS, no network, no JS (uses native
@@ -32,6 +33,12 @@ function esc(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/** The first `cap` items, with a trailing "… and N more" when there are others. */
+function capped(items: string[], cap: number): string[] {
+  if (items.length <= cap) return items;
+  return [...items.slice(0, cap), `… and ${items.length - cap} more`];
 }
 
 function chips(items: string[]): string {
@@ -106,11 +113,17 @@ export function renderReviewReportHtml(data: ReportData): string {
     },
     {
       level: "info",
-      count: s.dependents.length,
+      // The SUMMARY count, not the edge count: `dependents` holds one entry per
+      // declared edge, so two edges from one feature counted twice and inflated the
+      // headline finding total.
+      count: s.dependentsSummary.length,
       label: "Dependent features may need re-review",
-      items: dedupe(s.dependents.map((d) => d.feature)),
+      items: capped(
+        s.dependentsSummary.map((d) => d.feature),
+        DEPENDENT_CAP,
+      ),
       explain:
-        "Features can declare depends_on others. When a depended-on feature changes, its dependents are listed as possibly needing a re-check.",
+        "Features can declare depends_on others. When a depended-on feature changes, its dependents are listed as possibly needing a re-check. Ranked: features depending on a changed FEATURE come before ones that only depend on a concept umbrella, which wakes on any file in the directory it narrates.",
     },
   ];
 
@@ -209,7 +222,14 @@ export function renderReviewReportHtml(data: ReportData): string {
     ),
     detailList(
       "Dependents",
-      s.dependents.map((d) => `${d.feature} (depends on ${d.dependsOn})`),
+      capped(
+        s.dependentsSummary.map(
+          (d) =>
+            `${d.feature} (depends on ${d.dependsOn.join(", ")})` +
+            (d.viaUmbrella ? " — via a concept umbrella" : ""),
+        ),
+        DEPENDENT_CAP,
+      ),
     ),
     detailList("Docs changed without source", s.docsChangedWithoutSource),
   ]
@@ -535,9 +555,6 @@ function detailList(title: string, items: string[]): string {
   return `<h4>${esc(title)}</h4><ul>${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>`;
 }
 
-function dedupe(items: string[]): string[] {
-  return [...new Set(items)];
-}
 
 function short(path: string): string {
   const parts = path.split("/");
