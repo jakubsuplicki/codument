@@ -115,3 +115,29 @@ and one tracked): the aggregated ignore rules drop the gitignored tree by themse
 block drops the tracked one, coverage goes from 34 swept files to the 4 real sources with 100% now
 earned, and a contract change inside a member repo exits `review --strict` at 1 where it silently
 passed before.
+
+## Field defects — Peelmeal dogfood (33–)
+
+A 2026-08-05 field report from building Peelmeal under the gate, and the first one **measured**
+rather than described: three delivery steps, six adversarial runs, ~44 minutes of review wall-clock
+and ~970k subagent tokens against ~20 minutes of implementation. The gate earned its keep — two real
+bugs in step 1, a tautological test in step 2, a missing negative case in step 3 — so these plans
+reduce the *price* of the loop, not its bite. Every reported defect was verified against source
+before planning and each first-proposed fix was adversarially refuted, which changed two of them:
+the grep-the-changed-claim-across-docs idea cannot work (a doc says "hourly", the diff says
+`3600_000` — no shared token), and the wrong-plan resolution is a **discovery** bug, not a
+tie-break bug.
+
+| Plan | Theme | Finding it fixes |
+| --- | --- | --- |
+| [33](33-review-loop-cost.md) | Delta bundles, ranked dependents, discovered test runner | Fixing a finding re-attacks the whole diff (3 full rounds on step 1); 24 unranked reason-less dependents on every run, including in the adversary's own oracle; `--test-command` re-nagged every run while the real unadjudicated-findings hole stayed silent |
+
+Still to plan, ranked by value: shipped delivery scaffolding is never compacted out of docs (the
+standard says it should be; nothing enforces it); the Decisions layer states conclusions without
+naming evidence, which is how a wrong recorded decision survived two fix attempts; unmapped prose
+pages are uncoverable by the gate (`orphan-doc` is scoped to `docs/features|concepts` and lives in
+`doctor`, which `review --strict` never calls); an ADR named as an entry `doc` silently becomes a
+`type:"concept"` umbrella and demands acks about cadence it does not describe; `steps` resolves
+plans over `docs/features`+`docs/concepts` while `review` resolves them over `docs/plans`, so a plan
+visible to one is invisible to the other; `context --feature` has no lean "which doc owns this file"
+mode.
