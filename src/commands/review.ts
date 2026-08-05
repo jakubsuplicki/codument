@@ -700,6 +700,10 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // trusting the artifact's claim; its honest limit is that an empty/omitted-findings
   // review still passes (soak/audit territory), so it does not certify thoroughness.
   let reviewGate: ReviewGateResult | null = null;
+  // Files that moved since the last recorded review of this base, when that is a
+  // strict subset of the change set — the size of the re-attack the reviewer owes.
+  // Null means "no useful prior recording", i.e. the whole set.
+  let unreviewedCount: number | null = null;
   // Named condition: the DEFAULT test command resolves local-only (no network on
   // the verdict path), so a project without local tsx cannot run the confirm
   // step. Still non-blocking (the documented fail-open stance for unverifiable
@@ -742,6 +746,17 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       },
       confirmedFindings,
     );
+    // How much of the change set is actually unreviewed. Purely for the message —
+    // the verdict above is already decided. Without it the gate says "review this
+    // diff" after every one-line fix, which is what made a three-finding step cost
+    // three whole-diff attacks.
+    if (!covering) {
+      const prior = findLatestReviewForBase(root, effectiveBase);
+      if (prior?.files) {
+        const moved = reviewedDelta(prior.files, gatherReviewedFiles(root, realChangeSet));
+        if (moved.length > 0 && moved.length < realChangeSet.length) unreviewedCount = moved.length;
+      }
+    }
   }
   const reviewGateFail = !!reviewGate && !reviewGate.passed;
 
@@ -756,7 +771,11 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     const notifications: string[] = [];
     if (reviewGateFail) {
       notifications.push(
-        "adversarial review gate blocked: no current adversarial review covers this change, or it carries unresolved confirmed findings (run `codument review --require-review` for detail).",
+        "adversarial review gate blocked: no current adversarial review covers this change, or it carries unresolved confirmed findings" +
+          (unreviewedCount !== null
+            ? ` (${unreviewedCount} file${unreviewedCount === 1 ? "" : "s"} moved since the last recorded review)`
+            : "") +
+          " (run `codument review --require-review` for detail).",
       );
     }
     console.log(JSON.stringify(reviewReportToSarif(report, notifications), null, 2));
@@ -815,7 +834,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   }
 
   if (reviewGate) {
-    printReviewGate(reviewGate, confirmUnavailable);
+    printReviewGate(reviewGate, confirmUnavailable, unreviewedCount);
     if (reviewGateFail) process.exitCode = 1;
   }
 }
@@ -841,7 +860,11 @@ function computeRealChange(
 
 // Render the adversarial-review gate result. Advisory findings are surfaced even
 // when the gate passes — a judgment-call finding must never be silently swallowed.
-function printReviewGate(gate: ReviewGateResult, confirmUnavailable: string | null = null): void {
+function printReviewGate(
+  gate: ReviewGateResult,
+  confirmUnavailable: string | null = null,
+  unreviewedCount: number | null = null,
+): void {
   console.log();
   if (!gate.required) {
     console.log(pc.dim("  Adversarial review: trivial diff — none required."));
@@ -863,9 +886,14 @@ function printReviewGate(gate: ReviewGateResult, confirmUnavailable: string | nu
   } else {
     console.log(pc.red(`  ✗ --require-review: ${gate.reason}.`));
     if (!gate.covered) {
+      // Name the size of the re-attack. After fixing one finding the honest ask is
+      // "attack the file you just changed", not "attack the diff again" — and
+      // `--bundle` now scopes itself to exactly that.
       console.log(
         pc.dim(
-          "    Run a fresh adversarial review of this diff and record it under .codument/reviews/, then re-run.",
+          unreviewedCount !== null
+            ? `    ${unreviewedCount} file${unreviewedCount === 1 ? "" : "s"} moved since your last recorded review. \`codument review --bundle\` scopes the re-attack to just those (\`--full\` forces the whole diff); record it under .codument/reviews/, then re-run.`
+            : "    Run a fresh adversarial review of this diff and record it under .codument/reviews/, then re-run.",
         ),
       );
     } else {

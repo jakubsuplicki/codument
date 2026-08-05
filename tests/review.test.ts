@@ -727,6 +727,85 @@ describe("codument review (CLI)", () => {
     assert.match(after.out, /no current adversarial review/);
   });
 
+  it("--bundle scopes to what moved since the last recording; --full forces the whole set", async () => {
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => { return 3; };\n",
+      "src/lib/db.ts": "export const db = () => { return 1; };\n",
+    });
+    await writeFile(
+      join(tmp, "findings.json"),
+      JSON.stringify({
+        invariantsChecked: ["login returns a constant"],
+        findings: [
+          { citation: "src/auth/login.ts:1", detail: "returns the wrong constant", status: "advisory", failingTest: null },
+        ],
+        signer: "test",
+      }),
+    );
+
+    const readBundle = (args: string[] = []) =>
+      JSON.parse(
+        execFileSync("node", [CLI, "review", "--bundle", ...args], {
+          cwd: tmp,
+          encoding: "utf-8",
+        }),
+      );
+
+    // With no prior review the bundle is full-scoped — byte-identical to the
+    // pre-delta behavior, and it says so.
+    const first = readBundle();
+    assert.equal(first.scope, "full");
+    assert.deepEqual(first.alreadyReviewed, []);
+    assert.deepEqual(first.priorFindings, []);
+    assert.ok(first.changedSources.includes("src/auth/login.ts"));
+    assert.ok(first.changedSources.includes("src/lib/db.ts"));
+
+    execFileSync("node", [CLI, "review", "--record", "findings.json"], {
+      cwd: tmp,
+      encoding: "utf-8",
+    });
+
+    // Fix ONE file. The next bundle attacks that file alone and hands the reviewer
+    // the untouched files plus the findings the last round raised, as context.
+    await scaffold({ "src/auth/login.ts": "export const login = () => { return 4; };\n" });
+    const delta = readBundle();
+    assert.equal(delta.scope, "delta");
+    assert.deepEqual(delta.changedSources, ["src/auth/login.ts"]);
+    assert.ok(delta.alreadyReviewed.includes("src/lib/db.ts"), "untouched file is context");
+    assert.equal(delta.priorFindings.length, 1);
+    assert.match(delta.priorFindings[0].detail, /wrong constant/);
+    // The contract block is NEVER scoped: every touched feature keeps its oracle.
+    assert.deepEqual(
+      delta.features.map((f: { feature: string }) => f.feature).sort(),
+      ["auth", "db"],
+    );
+
+    // --full is the escape hatch back to a deliberate fresh attack.
+    const full = readBundle(["--full"]);
+    assert.equal(full.scope, "full");
+    assert.ok(full.changedSources.includes("src/lib/db.ts"));
+    assert.deepEqual(full.priorFindings, []);
+
+    // And the gate is unmoved by any of this: the fix voided the artifact.
+    let status = 0;
+    let out = "";
+    try {
+      out = execFileSync("node", [CLI, "review", "--require-review"], {
+        cwd: tmp,
+        encoding: "utf-8",
+      });
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      status = e.status ?? 0;
+      out = e.stdout ?? "";
+    }
+    assert.equal(status, 1, "a delta bundle does not soften the gate");
+    // …and the block names the size of the re-attack instead of demanding the diff
+    // be reviewed from scratch again.
+    assert.match(out, /1 file moved since your last recorded review/);
+    assert.doesNotMatch(out, /Run a fresh adversarial review of this diff/);
+  });
+
   it("--record rejects a malformed review (empty invariantsChecked) without writing it", async () => {
     await scaffold({ "src/auth/login.ts": "export const login = () => { return 4; };\n" });
     await writeFile(
