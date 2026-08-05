@@ -152,7 +152,7 @@ Status: approved.
       absolute. Update `docs/features/agent-delivery-workflow.md` (the "gated, not autonomous"
       paragraph, the two autopilot invariants, a new Decision) in the same step, since it is the
       owning doc for this contract.
-- [ ] **Step 2 — Invert the three loop skills.** In `skills/work-step`, `skills/review-work`, and
+- [x] **Step 2 — Invert the three loop skills.** In `skills/work-step`, `skills/review-work`, and
       `skills/commit-work`, make continue-to-the-next-gate the default branch and stop-and-offer the
       gated-mode branch, preserving every options block verbatim for when gated mode is on. Re-sync
       the dogfood copies (`codument update`) so `AGENTS.md`, `CLAUDE.md`, `.claude/skills/`, and

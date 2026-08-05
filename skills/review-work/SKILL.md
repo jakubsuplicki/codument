@@ -46,9 +46,9 @@ Lead with findings ordered by severity:
 
 Each finding should include the file and line where possible, the concrete risk, and the smallest safe fix.
 
-Outside autopilot, if there are findings, list them and stop for a user decision; do not fix findings automatically. In an autopilot run, auto-apply only safe, obvious fixes and continue, but pause the whole run for any judgment-call finding or one touching public interfaces, security, data loss or deletions, or dependency changes.
+Auto-apply only safe, obvious fixes and continue to `commit-work`, but pause the whole run for any judgment-call finding or one touching public interfaces, security, data loss or deletions, or dependency changes. In gated mode, list the findings and stop for a user decision instead; do not fix findings automatically.
 
-End with exactly these next options when findings exist:
+In gated mode, end with exactly these next options when findings exist:
 
 ```text
 Review complete. Findings need a decision:
@@ -58,7 +58,7 @@ Review complete. Findings need a decision:
 4. Pause here / make no changes
 ```
 
-If there are no findings, say so clearly and mention any remaining verification risk. End with exactly these next options:
+If there are no findings, say so clearly and mention any remaining verification risk, then continue to `commit-work`. In gated mode, end with exactly these next options instead:
 
 ```text
 Review clean. Next options:
@@ -83,7 +83,7 @@ Tier conservatively: `correctness` covers safety, security, data-loss, and logic
 - Treat extra unplanned scope as a finding.
 - Do not focus on formatting that automated tools should handle.
 - Do not manufacture issues.
-- Outside autopilot, do not fix findings automatically; wait for the user to approve all fixes, select specific findings, defer specific findings, or pause. In autopilot, auto-apply only safe, obvious fixes and pause the run for judgment-call findings (see above).
+- Auto-apply only safe, obvious fixes, and pause the run for judgment-call findings (see above). In gated mode do not fix findings automatically at all; wait for the user to approve all fixes, select specific findings, defer specific findings, or pause.
 - Do not mark review complete for commit until approved fixes are made or remaining findings are explicitly deferred by the user.
 - Do not commit until high and critical findings are fixed or explicitly deferred by the user.
 - Do not ask to start the next delivery-plan step after review.
