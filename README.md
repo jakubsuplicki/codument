@@ -32,9 +32,35 @@ Two independent adversarial gates, and the docs-backed workflow that produces th
 
 <br>
 
-**[Website](https://codument.studio/)** · **[Quick start](#try-it-on-your-own-repo--two-commands-zero-commitment)** · **[30-second demo](#try-it-in-30-seconds)** · **[Autopilot](#autopilot)** · **[How it works](#what-it-is)** · **[Docs](docs/)** · **[Report an issue](https://github.com/jakubsuplicki/codument/issues)**
+**[Website](https://codument.studio/)** · **[Quick start](#quick-start)** · **[30-second demo](#try-it-in-30-seconds)** · **[Autopilot](#autopilot)** · **[How it works](#what-it-is)** · **[Try it on your repo first](#try-it-on-your-own-repo--two-commands-zero-commitment)** · **[Docs](docs/)** · **[Report an issue](https://github.com/jakubsuplicki/codument/issues)**
 
 </div>
+
+## Quick start
+
+**A new project**
+
+```bash
+npm install -D codument
+npx codument init
+```
+
+Start a fresh agent session and chat normally. Describe what you want built; your agent grills the idea against your docs, writes a plan, and stops for your approval. **Approve it once and it builds the thing** — implementing, reviewing, documenting and committing each step on its own, and telling you where it is at every step.
+
+**A project that already has code**
+
+```bash
+npm install -D codument
+npx codument init      # installs the workflow and the docs structure
+npx codument scan      # maps your existing source to the docs that own it
+```
+
+Start a fresh agent session, say **`/update-docs`** once so those docs describe the code you already have, then chat as above.
+
+Two things worth knowing before you start:
+
+- **Start a new agent session after setup.** Agents read their instructions when a session opens, so one you already had running won't see any of this.
+- **Say "step by step" to slow it down.** That drops it back to stopping at every gate for your say-so, and it stays that way until you say "keep going".
 
 ## What it is
 
@@ -136,17 +162,19 @@ npx codument audit v1.0.0..HEAD      # replay your history against that map
 npm install -D codument
 ```
 
-Then run **one** of these, matching your project:
+Then, matching your project:
 
 ```bash
-npx codument init      # new project: scaffold docs + the agent workflow
-npx codument scan      # existing code, no docs yet: propose a registry + scaffolds
-npx codument adopt     # existing Codument project: normalize + refresh
+npx codument init                     # new project: the agent workflow + docs structure
+npx codument init && npx codument scan  # existing code, no docs yet: + map it to docs
+npx codument adopt                    # existing Codument project: normalize + refresh
 ```
+
+`init` is what installs the workflow, so every path starts with it. `scan` adds the second half an existing codebase needs — it reads your source and proposes which docs own which files — but it installs no workflow of its own, so it is a companion to `init`, not an alternative to it.
 
 `init` installs the Claude profile by default (`AGENTS.md`/`CLAUDE.md`, `.claude/` skills + agents + rules, `docs/` with the registry). Pick profiles explicitly with `--agents claude`, `--agents codex`, or `--agents codex,claude`.
 
-**Start a fresh agent session after setup.** Your agent reads its Codument workflow from files this step writes: `CLAUDE.md`/`AGENTS.md`, plus the `.claude/` skills and subagents. Coding agents load these when a session starts, so one you already had open won't see them. After `init` (or `scan`/`adopt`), start a new session (or run `/clear`) and your agent picks up the delivery loop, the skills, and the `/update-docs` step below. The git pre-commit gate from `codument hooks install` is the exception: git honors it on the next commit, no restart needed.
+**Start a fresh agent session after setup.** Your agent reads its Codument workflow from files this step writes: `CLAUDE.md`/`AGENTS.md`, plus the `.claude/` skills and subagents. Coding agents load these when a session starts, so one you already had open won't see them. Start a new session (or run `/clear`) and your agent picks up the delivery loop, the skills, and the `/update-docs` step below. The git pre-commit gate from `codument hooks install` is the exception: git honors it on the next commit, no restart needed.
 
 **Then have your agent write the docs.** On an existing codebase, `scan` only lays down empty scaffolds (marked `needs-review`). Tell your agent **`/update-docs`** and it reads your source to fill the registry's feature and concept docs with real content, giving `doctor` and `review` something to check against. That is the agent skill, not the `codument update` CLI in step 5 (which only re-syncs codument's own managed files on a version bump).
 
@@ -170,13 +198,16 @@ Installs the Claude profile by default:
 
 Pick profiles explicitly with `--agents claude`, `--agents codex`, or `--agents codex,claude`. The Codex/generic profile writes `AGENTS.md` and `.agents/skills/` only — portable across any agent that reads `AGENTS.md`.
 
-### Existing code, no docs yet → `scan`
+### Existing code, no docs yet → `init`, then `scan`
 
 ```bash
+npx codument init
 npx codument scan
 ```
 
-Groups source files into feature and concept docs, creates scaffolds, and populates `docs/.registry.json`. New entries are marked `needs-review`; run `/update-docs` (the agent) to fill them with real content.
+`scan` groups source files into feature and concept docs, creates scaffolds, and populates `docs/.registry.json`. New entries are marked `needs-review`; run `/update-docs` (the agent) to fill them with real content.
+
+Run it after `init`, not instead of it: `scan` deliberately installs no workflow — that is what makes it safe to run on a repo you haven't adopted (see [Try it on your own repo](#try-it-on-your-own-repo--two-commands-zero-commitment)) — so on its own it leaves you with a registry and no delivery loop.
 
 ### Existing Codument project → `adopt`
 
@@ -199,22 +230,24 @@ Chat normally. Codument's always-loaded instructions route clear intent into the
 
 ### Autopilot
 
-Once a plan is approved, tell your agent **"codument, run the plan"** (also recognized: "run the plan", "codument this plan", "autopilot", or `/work-step --auto`). It then works the approved plan end to end, implementing, reviewing, and committing each remaining step for you: one focused commit per step, under your own identity, no AI co-author trailer.
+**This is on by default, and approving the plan is what starts it.** Your agent then works the plan end to end — implementing, reviewing, documenting and committing each remaining step: one focused commit per step, under your own identity, no AI co-author trailer. It posts a checklist at every step boundary, so a run you aren't babysitting is still a run you can follow.
 
-It is opt-in per run and off by default. The per-step gates still run; autopilot only stops *waiting* for your routine confirmation. It hard-pauses for anything that needs a real decision, and you can say **"pause"** or **"stop autopilot"** to drop back to one gated step at a time.
+Every gate still runs. What's gone is the *waiting* — the turns where the only sensible answer was "yes, carry on". It still stops by itself the moment something needs you.
+
+**To stop at the gates instead, say "step by step"** (or "stop at the gates", "one step at a time", "pause"). That holds for the rest of the session, until you say "keep going".
 
 <details>
 <summary>Autopilot precondition, pause conditions, and why there's no CLI command for it</summary>
 
-Codument never runs your coding agent — your agent does. So you trigger autopilot by telling your agent, not by running a CLI command. Running `codument run` (alias `autopilot`) only prints this reminder and points you back at the phrase; the CLI itself does setup and deterministic checks, never your agent.
+Codument never runs your coding agent — your agent does. So autopilot lives in your agent's instructions, not in a CLI command. Running `codument run` (alias `autopilot`) only prints that reminder; the CLI itself does setup and deterministic checks, never your agent.
 
-Autopilot will not start until the plan is approved (`Status: approved`), and it pauses to ask when something needs a real decision:
+It will not start until the plan is approved (`Status: approved`) — that gate does not move, and it is the one place your say-so is always required. After that it pauses to ask when something needs a real decision:
 
 - a review finding that needs a human judgment call (and always for changes touching public interfaces, security, data loss, or dependencies),
 - a failing verification, or
 - a change that would fall outside the approved plan.
 
-To run a single fully-gated step instead, say **"work the next step"** or `/work-step` without `--auto`.
+To run a single step and stop, say **"work the next step"** or `/work-step` — an explicit one-step request is honored whatever the mode. The older trigger phrases ("codument, run the plan", "run the plan", "autopilot", `/work-step --auto`) still work; they just no longer have anything to turn on.
 
 </details>
 
@@ -232,9 +265,9 @@ flowchart LR
 0. On an uncharted project, the first real-work-intent message triggers `establish-charter` once: it asks whether this is a quick demo or a serious app, then walks the core tech and architecture choices recommendation-first — explained in plain language with trade-offs, so even a non-technical user understands the decisions — and writes `docs/charter.md`. A pure question doesn't trip it; a charted project skips it.
 1. Before any source edit the agent names the assumption the change depends on; a load-bearing one it cannot confirm — or a rough, ambiguous request — triggers `grill-with-docs`.
 2. Settled scope triggers `plan-with-docs`, which writes the durable plan and stops for approval.
-3. Approved plans trigger `work-step` for the next unchecked step.
+3. Approved plans trigger `work-step` for the next unchecked step, and keep going through the remaining steps unless you've asked for the gates.
 4. Any source edit gets reviewed before commit — `review-work` inside a plan, the same bar for an ad-hoc fix.
-5. Clean or explicitly resolved reviews offer `commit-work` as the next gated action.
+5. A clean review goes straight to `commit-work`; a finding that needs your judgment stops and asks.
 
 The installed workflow skills:
 

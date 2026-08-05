@@ -157,7 +157,7 @@ Status: approved.
       gated-mode branch, preserving every options block verbatim for when gated mode is on. Re-sync
       the dogfood copies (`codument update`) so `AGENTS.md`, `CLAUDE.md`, `.claude/skills/`, and
       `.agents/skills/` match their generators byte for byte.
-- [ ] **Step 3 — README: lead with what you do.** Add a **How you use it** block immediately after
+- [x] **Step 3 — README: lead with what you do.** Add a **How you use it** block immediately after
       the hero, before "What it is": numbered steps for a new project (`init` → new session → chat →
       approve once) and for an existing one (`init` → `scan` → new session → `/update-docs` → chat),
       with the off phrase named in a single line under them. Rewrite the Autopilot section as
