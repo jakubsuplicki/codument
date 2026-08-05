@@ -30,11 +30,14 @@ import {
 import { parseRegistryOrThrow, type Registry, readRegistrySync } from "../lib/registry.js";
 import {
   findCoveringReview,
+  findLatestReviewForBase,
+  gatherReviewedFiles,
   gatherReviewFingerprint,
   parseReviewArtifact,
+  reviewedDelta,
   writeReview,
 } from "../lib/review-artifact.js";
-import { gatherReviewBundle } from "../lib/review-bundle.js";
+import { gatherReviewBundle, type ReviewBundleDelta } from "../lib/review-bundle.js";
 import {
   confirmFindings,
   DEFAULT_TEST_SEARCH_DIRS,
@@ -84,6 +87,10 @@ interface ReviewOptions {
    *  their test pointers, the diff, ownership/blast facts) as JSON and exit. This is
    *  what an adversarial reviewer attacks; it adds no new source of truth. */
   bundle?: boolean;
+  /** With `--bundle`: force the WHOLE change set even when a prior review of this
+   *  base narrows it to a delta. The escape hatch for a deliberate fresh attack —
+   *  after a rebase, a long gap, or when the earlier review is not trusted. */
+  full?: boolean;
   /** Record an adversarial review from a findings JSON file
    *  (`{invariantsChecked, findings, signer}`): the command computes the
    *  fingerprint over the current diff AND the findings' named tests and writes the
@@ -533,7 +540,32 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   if (options.bundle) {
     const registry = readRegistrySync(join(root, "docs", ".registry.json"));
     const plan = detectApprovedPlanScope(root);
-    const bundle = gatherReviewBundle(root, effectiveBase, report.state, registry, plan);
+    // Delta scope: when a review of this same base was already recorded, the
+    // reviewer attacks only what moved since — the fix, not the eleven files the
+    // fix did not touch. That is where the re-review round's cost actually goes.
+    // The gate is untouched by this: it still requires ONE artifact covering every
+    // byte of the change set, so a narrow read can never buy a broad pass.
+    let delta: ReviewBundleDelta | null = null;
+    if (!options.full) {
+      const prior = findLatestReviewForBase(root, effectiveBase);
+      if (prior?.files) {
+        const { set: realChangeSet } = computeRealChange(report, report.deletions, exclusion);
+        const current = gatherReviewedFiles(root, realChangeSet);
+        const moved = reviewedDelta(prior.files, current);
+        // Only narrow when it genuinely narrows AND leaves something to attack.
+        // Nothing moved → the prior review still covers; an empty delta bundle
+        // would tell the adversary to attack nothing, so fall back to full.
+        if (moved.length > 0 && moved.length < current.length) {
+          const movedSet = new Set(moved);
+          delta = {
+            paths: moved,
+            alreadyReviewed: current.filter((f) => !movedSet.has(f.path)).map((f) => f.path),
+            priorFindings: prior.findings,
+          };
+        }
+      }
+    }
+    const bundle = gatherReviewBundle(root, effectiveBase, report.state, registry, plan, delta);
     console.log(JSON.stringify(bundle, null, 2));
     return;
   }
@@ -580,7 +612,15 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       provisional.findings,
       resolveTest,
     );
-    const path = writeReview(root, { ...provisional, diffFingerprint: fp });
+    // `files` rides along as scoping information for the NEXT `--bundle` (what moved
+    // since this recording), computed by the CLI like the fingerprint is — an agent
+    // cannot hand-author it. The gate ignores it entirely; coverage stays the single
+    // whole-set fingerprint equality, so this can never become a per-file pass.
+    const path = writeReview(root, {
+      ...provisional,
+      diffFingerprint: fp,
+      files: gatherReviewedFiles(root, realChangeSet),
+    });
     console.log(`  ${pc.green("✓")} Recorded adversarial review → ${path}`);
     return;
   }

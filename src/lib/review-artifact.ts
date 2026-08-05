@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { atomicWriteFileSync } from "./events.js";
 import { join } from "node:path";
@@ -38,6 +38,14 @@ export interface ReviewFinding {
   status: ReviewFindingStatus;
 }
 
+export interface ReviewedFile {
+  /** A repo-relative path that was in the change set when the review was recorded. */
+  path: string;
+  /** sha256 of the byte-normalized content at record time, or null when the file was
+   *  absent or unreadable then (the same fail-safe conflation the fingerprint makes). */
+  hash: string | null;
+}
+
 export interface ReviewArtifact {
   /** The base ref the reviewed diff was computed against. */
   base: string;
@@ -54,6 +62,13 @@ export interface ReviewArtifact {
   findings: ReviewFinding[];
   /** Who attested. An identity; second-party independence is the spawn's job. */
   signer: string;
+  /** Per-file hashes of the change set at record time. SCOPING INFORMATION ONLY —
+   *  the gate never reads it, so this cannot become a per-file coverage claim. Its
+   *  one job is letting `--bundle` compute what moved since the last recording, so
+   *  a re-review after a fix attacks the delta instead of the whole diff. Optional:
+   *  an artifact written before this existed simply carries no delta information and
+   *  the bundle falls back to the full change set. */
+  files?: ReviewedFile[];
 }
 
 export const REVIEWS_DIR = ".codument/reviews";
@@ -116,7 +131,34 @@ export function parseReviewArtifact(value: unknown): ReviewArtifact | null {
     findings.push(f);
   }
 
-  return { base, diffFingerprint, invariantsChecked, findings, signer };
+  // `files` is optional (absent = a legacy artifact carrying no delta information),
+  // but a present one is parsed as strictly as everything else: one malformed entry
+  // rejects the whole artifact rather than silently narrowing the recorded set.
+  let files: ReviewedFile[] | null = null;
+  if (v.files !== undefined) {
+    if (!Array.isArray(v.files)) return null;
+    files = [];
+    for (const raw of v.files) {
+      if (typeof raw !== "object" || raw === null) return null;
+      const e = raw as Record<string, unknown>;
+      const path = nonEmptyStr(e.path);
+      if (!path) return null;
+      const hash = e.hash === null ? null : nonEmptyStr(e.hash);
+      if (hash === null && e.hash !== null) return null;
+      files.push({ path, hash });
+    }
+  }
+
+  // Spread conditionally: an artifact without `files` must round-trip to an object
+  // without the key, so deep-equality against a legacy artifact still holds.
+  return {
+    base,
+    diffFingerprint,
+    invariantsChecked,
+    findings,
+    signer,
+    ...(files ? { files } : {}),
+  };
 }
 
 // Deterministic fingerprint of a reviewed change set: the base ref plus, for each
@@ -149,6 +191,21 @@ export function diffFingerprint(
     .slice(0, 32);
 }
 
+// Read one change-set path. Intentional conflation: a missing file and an unreadable
+// one (permission denied, EISDIR) both read as null. Both mean "the reviewed content
+// is not recoverable here", which fails safe — the fingerprint moves, so the review
+// reopens rather than passing on a file we cannot re-verify. Shared so the
+// fingerprint and the recorded per-file hashes see byte-identical content.
+function readChangeSetFile(root: string, path: string): string | null {
+  const abs = join(root, path);
+  if (!existsSync(abs)) return null;
+  try {
+    return readFileSync(abs, "utf8");
+  } catch {
+    return null;
+  }
+}
+
 // Impure wrapper: read each changed source off disk (deleted/unreadable → null)
 // and compute the diff fingerprint. Thin, beside the pure core.
 export function gatherDiffFingerprint(
@@ -156,23 +213,30 @@ export function gatherDiffFingerprint(
   base: string,
   changedSources: string[],
 ): string {
-  const files = changedSources.map((path) => {
-    const abs = join(root, path);
-    let content: string | null = null;
-    if (existsSync(abs)) {
-      try {
-        content = readFileSync(abs, "utf8");
-      } catch {
-        // Intentional conflation: an unreadable file (permission denied, EISDIR)
-        // is treated as deleted (content null). Both mean "the reviewed content
-        // is not recoverable here", which fails safe — the fingerprint moves, so
-        // the review reopens rather than passing on a file we cannot re-verify.
-        content = null;
-      }
-    }
-    return { path, content };
-  });
+  const files = changedSources.map((path) => ({
+    path,
+    content: readChangeSetFile(root, path),
+  }));
   return diffFingerprint(base, files);
+}
+
+// The per-file hashes `--record` stores on the artifact. Same content and the same
+// byte normalization the fingerprint uses, so a file that did not move between
+// record time and bundle time hashes identically. Not a coverage claim: nothing on
+// the gate's path reads the result (see `ReviewArtifact.files`).
+export function gatherReviewedFiles(root: string, changeSetPaths: string[]): ReviewedFile[] {
+  return [...changeSetPaths]
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    .map((path) => {
+      const content = readChangeSetFile(root, path);
+      return {
+        path,
+        hash:
+          content === null
+            ? null
+            : createHash("sha256").update(byteNormalize(content), "utf8").digest("hex"),
+      };
+    });
 }
 
 // The review fingerprint: the reviewed SOURCES (the change set) folded together
@@ -270,6 +334,65 @@ export function writeReview(root: string, artifact: ReviewArtifact): string {
   const path = join(dir, reviewFileName(artifact));
   atomicWriteFileSync(path, JSON.stringify(artifact, null, 2) + "\n");
   return path;
+}
+
+// The paths in the CURRENT change set that moved since a prior recording: a path the
+// prior artifact never hashed, or one whose hash changed. Pure. A path the prior
+// artifact hashed but that has since left the change set is not a delta — there is
+// nothing left to attack. This is the whole delta-bundle mechanism, and it is
+// deliberately outside the gate: scoping what the reviewer READS can never widen
+// what the gate ACCEPTS, which stays whole-set fingerprint equality.
+export function reviewedDelta(
+  prior: readonly ReviewedFile[],
+  current: readonly ReviewedFile[],
+): string[] {
+  const priorByPath = new Map(prior.map((f) => [f.path, f.hash]));
+  return current
+    .filter((f) => !priorByPath.has(f.path) || priorByPath.get(f.path) !== f.hash)
+    .map((f) => f.path)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+// The most recently WRITTEN review recorded against `base` — "your last review",
+// which is what a delta is relative to. Ordered by mtime (filenames are digests, so
+// they carry no order), tie-broken by filename for determinism. Using a clock here
+// is safe precisely because the result only scopes the bundle: a mis-picked prior
+// artifact can produce a differently-scoped read, never a different verdict.
+export function findLatestReviewForBase(root: string, base: string): ReviewArtifact | null {
+  const dir = join(root, REVIEWS_DIR);
+  if (!existsSync(dir)) return null;
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((f) => f.endsWith(".json"));
+  } catch {
+    return null;
+  }
+  const candidates: Array<{ name: string; mtimeMs: number }> = [];
+  for (const name of names) {
+    try {
+      candidates.push({ name, mtimeMs: statSync(join(dir, name)).mtimeMs });
+    } catch {
+      // unreadable entry: not a candidate
+    }
+  }
+  candidates.sort((a, b) => (b.mtimeMs - a.mtimeMs) || (a.name < b.name ? -1 : 1));
+  const matching: Array<{ mtimeMs: number; artifact: ReviewArtifact }> = [];
+  for (const c of candidates) {
+    try {
+      const r = parseReviewArtifact(JSON.parse(readFileSync(join(dir, c.name), "utf8")));
+      if (r && r.base === base) matching.push({ mtimeMs: c.mtimeMs, artifact: r });
+    } catch {
+      // skip malformed/unreadable review file
+    }
+  }
+  if (matching.length === 0) return null;
+  // Ambiguity refuses rather than guesses. A filename tie-break would be arbitrary
+  // (filenames are content digests), and a coarse-granularity filesystem or a
+  // copied/restored reviews directory can genuinely tie. Returning null costs a
+  // full-scope bundle — the safe direction, since a wrong pick would tell the
+  // adversary a file was already attacked when the wrong review attacked it.
+  if (matching.length > 1 && matching[0].mtimeMs === matching[1].mtimeMs) return null;
+  return matching[0].artifact;
 }
 
 // The review (if any) whose binding covers the current diff. Recomputed PER review

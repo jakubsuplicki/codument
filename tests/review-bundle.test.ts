@@ -286,5 +286,40 @@ describe("buildReviewBundle", () => {
     assert.deepEqual(bundle.dependents, state.dependents);
     assert.deepEqual(bundle.outOfPlan, ["src/x.ts"]);
     assert.deepEqual(bundle.plan, { path: "docs/plans/p.md", scope: ["src/a.ts"] });
+    // Absent delta = the pre-delta behavior, stated rather than implied.
+    assert.equal(bundle.scope, "full");
+    assert.deepEqual(bundle.alreadyReviewed, []);
+    assert.deepEqual(bundle.priorFindings, []);
+  });
+
+  it("delta scope narrows what to attack but never the contract block", () => {
+    const state = cs({
+      changedSources: ["src/a.ts", "src/b.ts"],
+      byFeature: [
+        { feature: "a", files: ["src/a.ts"] },
+        { feature: "b", files: ["src/b.ts"] },
+      ],
+    });
+    const priorFindings = [
+      { citation: "src/a.ts:1", detail: "bad", status: "advisory" as const, failingTest: null },
+    ];
+    const bundle = buildReviewBundle({
+      base: "abc123",
+      changeState: state,
+      registry,
+      docContents,
+      plan: null,
+      delta: { paths: ["src/a.ts"], alreadyReviewed: ["src/b.ts"], priorFindings },
+    });
+    assert.equal(bundle.scope, "delta");
+    assert.deepEqual(bundle.changedSources, ["src/a.ts"]);
+    assert.deepEqual(bundle.alreadyReviewed, ["src/b.ts"]);
+    assert.deepEqual(bundle.priorFindings, priorFindings);
+    // Every touched feature keeps its invariants and test pointers — scoping the
+    // oracle is how a narrow review becomes a shallow one.
+    assert.deepEqual(
+      bundle.features.map((f) => f.feature).sort(),
+      ["a", "b"],
+    );
   });
 });

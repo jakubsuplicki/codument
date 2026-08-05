@@ -101,6 +101,10 @@ program
     "Emit the adversarial-review bundle as JSON (the documented invariants + their tests + the diff an independent reviewer attacks) and exit",
   )
   .option(
+    "--full",
+    "With --bundle: attack the whole change set even when a prior review of this base narrows it to a delta (a deliberate fresh attack)",
+  )
+  .option(
     "--record <file>",
     "Record a fingerprint-bound adversarial review from a findings JSON file ({invariantsChecked, findings, signer}); the gate then enforces it",
   )

@@ -1,14 +1,17 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
-import { writeFileSync, existsSync, rmSync } from "node:fs";
+import { writeFileSync, existsSync, rmSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   parseReviewArtifact,
   diffFingerprint,
   gatherDiffFingerprint,
+  findLatestReviewForBase,
+  gatherReviewedFiles,
   gatherReviewFingerprint,
+  reviewedDelta,
   reviewCoversDiff,
   reviewFileName,
   readReviews,
@@ -275,5 +278,118 @@ describe("gatherDiffFingerprint (impure shell)", () => {
       gatherDiffFingerprint(tmp, "HEAD", ["gone.ts"]),
       diffFingerprint("HEAD", [{ path: "gone.ts", content: null }]),
     );
+  });
+});
+
+describe("reviewed files (scoping information, never coverage)", () => {
+  let tmp: string;
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-files-"));
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("hashes byte-normalized content, sorts by path, and nulls an absent file", () => {
+    writeFileSync(join(tmp, "b.ts"), "one\r\n");
+    writeFileSync(join(tmp, "a.ts"), "one\n");
+    const files = gatherReviewedFiles(tmp, ["b.ts", "gone.ts", "a.ts"]);
+    assert.deepEqual(
+      files.map((f) => f.path),
+      ["a.ts", "b.ts", "gone.ts"],
+    );
+    // CRLF folds to LF before hashing, so a line-ending flip is not a move.
+    assert.equal(files[0].hash, files[1].hash);
+    assert.equal(files[2].hash, null);
+  });
+
+  it("moves a file's hash when its content moves", () => {
+    writeFileSync(join(tmp, "a.ts"), "one");
+    const before = gatherReviewedFiles(tmp, ["a.ts"])[0].hash;
+    writeFileSync(join(tmp, "a.ts"), "two");
+    assert.notEqual(gatherReviewedFiles(tmp, ["a.ts"])[0].hash, before);
+  });
+
+  it("parses a well-formed files[] and rejects a malformed entry", () => {
+    const files = [{ path: "a.ts", hash: "deadbeef" }, { path: "gone.ts", hash: null }];
+    assert.deepEqual(parseReviewArtifact(artifact({ files }))?.files, files);
+    assert.equal(parseReviewArtifact({ ...artifact(), files: "a.ts" }), null);
+    assert.equal(parseReviewArtifact({ ...artifact(), files: [{ path: "", hash: "x" }] }), null);
+    assert.equal(parseReviewArtifact({ ...artifact(), files: [{ path: "a.ts", hash: 7 }] }), null);
+    assert.equal(parseReviewArtifact({ ...artifact(), files: [null] }), null);
+  });
+
+  it("round-trips a legacy artifact without inventing the key", () => {
+    const parsed = parseReviewArtifact(artifact());
+    assert.ok(parsed);
+    assert.ok(!("files" in (parsed as object)));
+  });
+
+  it("reviewedDelta names new and moved paths, sorted, and ignores departed ones", () => {
+    const prior = [
+      { path: "a.ts", hash: "h1" },
+      { path: "b.ts", hash: "h2" },
+      { path: "gone.ts", hash: "h3" },
+    ];
+    const current = [
+      { path: "a.ts", hash: "h1" }, // unchanged
+      { path: "b.ts", hash: "CHANGED" }, // moved
+      { path: "c.ts", hash: "h4" }, // new
+    ];
+    assert.deepEqual(reviewedDelta(prior, current), ["b.ts", "c.ts"]);
+    assert.deepEqual(reviewedDelta(prior, prior), []);
+    // A recorded null hash that is now readable counts as moved (and vice versa).
+    assert.deepEqual(reviewedDelta([{ path: "a.ts", hash: null }], [{ path: "a.ts", hash: "h" }]), [
+      "a.ts",
+    ]);
+  });
+
+  it("findLatestReviewForBase picks the newest artifact recorded against that base", () => {
+    const older = artifact({ base: "sha-old", diffFingerprint: "fp-old" });
+    const newer = artifact({ base: "sha-new", diffFingerprint: "fp-new" });
+    const olderPath = writeReview(tmp, older);
+    const newerPath = writeReview(tmp, newer);
+    // Pin mtimes: filenames are digests and carry no order.
+    utimesSync(olderPath, new Date(1_000_000), new Date(1_000_000));
+    utimesSync(newerPath, new Date(2_000_000), new Date(2_000_000));
+
+    assert.deepEqual(findLatestReviewForBase(tmp, "sha-new"), newer);
+    assert.deepEqual(findLatestReviewForBase(tmp, "sha-old"), older);
+    assert.equal(findLatestReviewForBase(tmp, "sha-absent"), null);
+
+    // Same base, two artifacts → the most recently written one wins.
+    const newest = artifact({ base: "sha-old", diffFingerprint: "fp-newest" });
+    utimesSync(writeReview(tmp, newest), new Date(3_000_000), new Date(3_000_000));
+    assert.deepEqual(findLatestReviewForBase(tmp, "sha-old"), newest);
+  });
+
+  it("refuses to guess when two artifacts for one base share an mtime", () => {
+    // A coarse-granularity filesystem or a copied .codument/reviews/ can genuinely
+    // tie, and the filename tie-break is a content digest — arbitrary. Guessing
+    // wrong would tell the adversary a file was already attacked when a different
+    // review attacked it, so ambiguity falls back to full scope.
+    const tie = new Date(5_000_000);
+    utimesSync(writeReview(tmp, artifact({ base: "sha", diffFingerprint: "fp-a" })), tie, tie);
+    utimesSync(writeReview(tmp, artifact({ base: "sha", diffFingerprint: "fp-b" })), tie, tie);
+    assert.equal(findLatestReviewForBase(tmp, "sha"), null);
+
+    // One of them touched later breaks the tie and resolution resumes.
+    const winner = artifact({ base: "sha", diffFingerprint: "fp-c" });
+    utimesSync(writeReview(tmp, winner), new Date(6_000_000), new Date(6_000_000));
+    assert.deepEqual(findLatestReviewForBase(tmp, "sha"), winner);
+  });
+
+  it("does NOT soften the gate: an artifact with files[] still voids on any edit", () => {
+    writeFileSync(join(tmp, "a.ts"), "source one");
+    writeFileSync(join(tmp, "b.ts"), "source two");
+    const resolve = makeResolver(tmp);
+    const paths = ["a.ts", "b.ts"];
+    const fp = gatherReviewFingerprint(tmp, "HEAD", paths, [], resolve);
+    writeReview(tmp, artifact({ diffFingerprint: fp, files: gatherReviewedFiles(tmp, paths) }));
+    assert.ok(findCoveringReview(tmp, "HEAD", paths, resolve));
+    // Editing ONE recorded file voids the whole artifact — the per-file hashes are
+    // scoping information and must never let the untouched file stay covered.
+    writeFileSync(join(tmp, "a.ts"), "fixed");
+    assert.equal(findCoveringReview(tmp, "HEAD", paths, resolve), null);
   });
 });

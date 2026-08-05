@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Registry } from "./registry.js";
+import type { ReviewFinding } from "./review-artifact.js";
 import type {
   ApprovedPlan,
   ChangeState,
@@ -41,8 +42,23 @@ export interface ReviewBundleFeature {
 export interface ReviewBundle {
   /** The ref the diff is computed against; the reviewer runs `git diff <base>`. */
   base: string;
-  /** Repo-relative changed source files. */
+  /** `full` — attack the whole change set (no prior review to measure against, or
+   *  `--full` was asked for). `delta` — a prior review of this same base exists and
+   *  only `changedSources` has moved since; the rest is in `alreadyReviewed`. The
+   *  gate is identical either way: it still demands one artifact covering every byte
+   *  of the change set, so a delta narrows what is READ, never what is ACCEPTED. */
+  scope: "full" | "delta";
+  /** The paths this round must attack. Under `full` scope, the changed source files.
+   *  Under `delta` scope, every path — source or not — that moved since the last
+   *  recorded review. */
   changedSources: string[];
+  /** Under `delta` scope: paths a prior review already attacked and that have not
+   *  moved since. Context, not a pass — read them to judge whether the delta breaks
+   *  something they rely on. Empty under `full` scope. */
+  alreadyReviewed: string[];
+  /** Under `delta` scope: the findings that prior review raised, so this round can
+   *  check the fixes actually fixed them. Empty under `full` scope. */
+  priorFindings: ReviewFinding[];
   /** Per touched feature: its contract, invariants, and test oracle. */
   features: ReviewBundleFeature[];
   /** Docs whose owned source moved but whose prose did not — must be addressed. */
@@ -120,12 +136,25 @@ export interface ReviewBundleInput {
    *  absent from the map yields an empty contract/invariants for that feature. */
   docContents: Map<string, string>;
   plan: { path: string; scope: string[] } | null;
+  /** When present the bundle is delta-scoped (see `ReviewBundle.scope`). The caller
+   *  computes it from the last recorded review's per-file hashes; absent or null
+   *  means full scope and a byte-identical bundle to the pre-delta behavior. */
+  delta?: ReviewBundleDelta | null;
+}
+
+export interface ReviewBundleDelta {
+  /** Paths that moved since the last recorded review — what to attack. */
+  paths: string[];
+  /** Paths that prior review saw and that have not moved. */
+  alreadyReviewed: string[];
+  /** That review's findings, so the fixes can be checked. */
+  priorFindings: ReviewFinding[];
 }
 
 // Pure, deterministic projection of a change-state into the reviewer's contract
 // bundle. No I/O, no clock — same inputs, same bundle.
 export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
-  const { base, changeState, registry, docContents, plan } = input;
+  const { base, changeState, registry, docContents, plan, delta } = input;
 
   const features: ReviewBundleFeature[] = [];
   for (const group of changeState.byFeature) {
@@ -147,10 +176,16 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
 
   return {
     base,
+    scope: delta ? "delta" : "full",
     // Re-sorted here so the projection's determinism is self-guaranteed, not
     // merely inherited from computeChangeState's output ordering. The structured
     // facts below are passed through as the analyzer already ordered them.
-    changedSources: sortStrings(changeState.changedSources),
+    // The per-feature contract blocks above are NEVER scoped by the delta: the
+    // reviewer keeps every touched feature's invariants and test pointers, because
+    // narrowing the oracle is how a scoped review turns into a shallow one.
+    changedSources: sortStrings(delta ? delta.paths : changeState.changedSources),
+    alreadyReviewed: delta ? sortStrings(delta.alreadyReviewed) : [],
+    priorFindings: delta ? delta.priorFindings : [],
     features,
     staleDocs: changeState.staleDocs,
     riskTouches: changeState.riskTouches,
@@ -169,6 +204,7 @@ export function gatherReviewBundle(
   changeState: ChangeState,
   registry: Registry,
   plan: ApprovedPlan | null,
+  delta?: ReviewBundleDelta | null,
 ): ReviewBundle {
   const docContents = new Map<string, string>();
   for (const group of changeState.byFeature) {
@@ -188,5 +224,6 @@ export function gatherReviewBundle(
     registry,
     docContents,
     plan: plan ? { path: plan.plan, scope: plan.scope } : null,
+    delta,
   });
 }
