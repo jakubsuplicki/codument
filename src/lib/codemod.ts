@@ -43,6 +43,14 @@ export interface MetaFile {
   charter?: CharterMeta;
   /** Project-specific additions to the exclusion spec. Absent = defaults only. */
   exclude?: ExcludeConfig;
+  /**
+   * How this project runs ONE test file, with the literal `{file}` token standing
+   * for the resolved path — e.g. `"vitest run {file}"`. Declared once here rather
+   * than passed as `--test-command` on every run: a project's runner is a fact
+   * about the project, not a per-invocation choice. `--test-command` still wins
+   * when given. Absent = codument's local-only default (`npx --no-install tsx`).
+   */
+  testCommand?: string;
 }
 
 const EXCLUDE_KEYS = new Set(["dirs", "globs"]);

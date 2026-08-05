@@ -41,10 +41,12 @@ import {
 } from "../lib/review-artifact.js";
 import { gatherReviewBundle, type ReviewBundleDelta } from "../lib/review-bundle.js";
 import {
+  confirmCondition,
   confirmFindings,
   DEFAULT_TEST_SEARCH_DIRS,
   defaultCommandAvailable,
   makeTestRunner,
+  resolveTestCommand,
   resolveTestPath,
 } from "../lib/review-confirm.js";
 import { emitCaught } from "../lib/review-events.js";
@@ -114,13 +116,9 @@ interface ReviewOptions {
 // single quoted string the user passed to dodge that (`"node --test {file}"`). Split
 // the single-string form on whitespace so `--test-command "npx tsx --test {file}"`
 // works. Genuine multi-element argv (no leading-dash args) is passed through as-is.
-export function normalizeTestCommand(command?: string[]): string[] | undefined {
-  if (!command || command.length === 0) return undefined;
-  if (command.length === 1 && /\s/.test(command[0])) {
-    return command[0].trim().split(/\s+/);
-  }
-  return command;
-}
+// Re-exported so existing callers (doctor, tests) keep one import site while the
+// single implementation lives beside the runner that consumes it.
+export { normalizeTestCommand } from "../lib/review-confirm.js";
 
 export interface ReviewReport {
   version: 2;
@@ -712,10 +710,9 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // claims) but rendered where the human decides — never a silent advisory.
   let confirmUnavailable: string | null = null;
   if (options.requireReview) {
-    if (!normalizeTestCommand(options.testCommand) && !defaultCommandAvailable(root)) {
-      confirmUnavailable =
-        'confirm step could not run: no local tsx (the default runner resolves local-only, never the network) — pass --test-command "<your runner> {file}"';
-    }
+    // Flag > `testCommand` in .codument-meta.json > the built-in default. A project
+    // declares its runner once instead of re-typing it on every gated run.
+    const resolvedTest = resolveTestCommand(root, options.testCommand);
     const { set: realChangeSet, realDeletions } = computeRealChange(
       report,
       report.deletions,
@@ -732,9 +729,23 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     const confirmedFindings = covering
       ? confirmFindings(
           covering.findings,
-          makeTestRunner({ root, command: normalizeTestCommand(options.testCommand) }),
+          makeTestRunner({ root, command: resolvedTest.command }),
         ).findings
       : null;
+    // The honesty condition is keyed on OUTCOMES, not on which flag was passed.
+    // Keying it on flag-absence meant supplying any command silenced it, working or
+    // not: a project pointing at a runner that emits no TAP got every finding
+    // quietly downgraded to advisory with nothing on screen — the silent
+    // always-green this gate exists to prevent. What the human needs to know is how
+    // many claims went unjudged, whatever the reason.
+    const unadjudicated = confirmedFindings?.filter((f) => f.testOutcome === "unrunnable") ?? [];
+    confirmUnavailable = confirmCondition({
+      problem: resolvedTest.problem,
+      unadjudicated: unadjudicated.length,
+      noun: "finding",
+      consequence: "advisory rather than judged",
+      defaultUnavailable: !resolvedTest.command && !defaultCommandAvailable(root),
+    });
     reviewGate = evaluateReviewGate(
       {
         realChangeCount: realChangeSet.length,

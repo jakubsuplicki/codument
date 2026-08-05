@@ -931,6 +931,92 @@ describe("--require-review names the could-not-run condition (no resolvable tsx)
     const report = JSON.parse(stdout);
     assert.match(report.reviewGate.confirmUnavailable, /no local tsx/);
   });
+
+  it("a declared testCommand suppresses it too — the runner is project config, not a per-run flag", async () => {
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => { return 10; };\n",
+      "src/lib/db.ts": "export const db = { v: 10 };\n",
+      ".codument-meta.json": JSON.stringify({
+        version: "0.13.0",
+        initialized: "2026-08-05",
+        project: {},
+        testCommand: "node --test {file}",
+      }),
+    });
+    const { stdout } = run(["review", "--require-review"], tmp);
+    assert.doesNotMatch(stdout, /confirm step could not run/);
+  });
+
+  it("a declared testCommand with no {file} slot is refused out loud, not silently obeyed", async () => {
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => { return 11; };\n",
+      "src/lib/db.ts": "export const db = { v: 11 };\n",
+      ".codument-meta.json": JSON.stringify({
+        version: "0.13.0",
+        initialized: "2026-08-05",
+        project: {},
+        // No {file}: this would run the whole suite once per finding.
+        testCommand: "npm test",
+      }),
+    });
+    const { status, stdout } = run(["review", "--require-review"], tmp);
+    assert.match(stdout, /no \{file\} token/);
+    assert.match(stdout, /default runner is used instead/);
+    // …and it must not take down the rest of the command.
+    assert.equal(status, 1, "the gate verdict is unaffected by the config problem");
+  });
+});
+
+describe("the could-not-run condition is keyed on OUTCOMES, not on which flag was passed", () => {
+  function run(args: string[], cwd: string): { status: number; stdout: string } {
+    try {
+      return { status: 0, stdout: execFileSync("node", [CLI, ...args], { cwd, encoding: "utf-8" }) };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { status: e.status ?? 1, stdout: e.stdout ?? "" };
+    }
+  }
+
+  it("names how many findings went unjudged when the configured runner cannot adjudicate", async () => {
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => { return 12; };\n",
+      "src/lib/db.ts": "export const db = { v: 12 };\n",
+      // A runner that exits nonzero with no test output — a toolchain failure, the
+      // exact shape of a project pointed at a non-TAP-emitting reporter.
+      ".codument-meta.json": JSON.stringify({
+        version: "0.13.0",
+        initialized: "2026-08-05",
+        project: {},
+        testCommand: "node -e process.exit(1) {file}",
+      }),
+      "broken.test.ts": "// a real file so the reference resolves\n",
+    });
+    await writeFile(
+      join(tmp, "findings.json"),
+      JSON.stringify({
+        invariantsChecked: ["login returns a constant"],
+        findings: [
+          {
+            citation: "src/auth/login.ts:1",
+            detail: "wrong constant",
+            status: "confirmed",
+            failingTest: "broken.test.ts",
+          },
+        ],
+        signer: "test",
+      }),
+    );
+    execFileSync("node", [CLI, "review", "--record", "findings.json"], {
+      cwd: tmp,
+      encoding: "utf-8",
+    });
+
+    const { stdout } = run(["review", "--require-review"], tmp);
+    // The old flag-keyed condition would say nothing here: a command WAS supplied.
+    assert.match(stdout, /1 finding could not be adjudicated/);
+    assert.match(stdout, /no test evidence/);
+    assert.doesNotMatch(stdout, /no local tsx/);
+  });
 });
 
 describe("deletions are first-class in the verdict", () => {

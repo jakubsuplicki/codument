@@ -5,6 +5,61 @@ All notable changes to Codument are recorded here. The format follows
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while it
 remains pre-1.0.
 
+## [Unreleased]
+
+The first field report that measured the loop instead of describing it: three
+delivery steps on a real product, six adversarial runs, ~44 minutes of review
+wall-clock and ~970k subagent tokens against ~20 minutes of implementation. The
+gate earned its keep — two real bugs, a tautological test, a missing negative
+case — so this release makes it cheaper, not weaker. Plan 33.
+
+### Added
+- **Delta bundles.** `codument review --bundle` now scopes itself to the files
+  that moved since the last recorded review of the same base (`scope: "delta"`),
+  carrying the untouched files as `alreadyReviewed` and that review's findings as
+  `priorFindings` so the reviewer can check the fix actually fixed them.
+  `--full` forces the whole change set. Previously, fixing one finding meant
+  re-attacking the entire diff: a three-finding step cost three whole-diff
+  reviews, which is where the field report's 2:1 ceremony-to-work ratio came
+  from. **The gate is unchanged** — coverage is still equality against one
+  artifact's whole-change-set fingerprint, and it still voids on any edit. What
+  narrowed is what the reviewer *reads*, never what the gate *accepts*. The
+  artifact gained a `files[]` of per-file hashes purely to compute that delta;
+  nothing on the verdict path reads it. Making coverage itself composable was
+  considered and rejected: `--record` fingerprints the whole change set whatever
+  the reviewer was handed, so composable artifacts would mint a durable pass for
+  files nobody attacked, and an unrelated edit in the same window would ride in
+  covered.
+- **`testCommand` in `.codument-meta.json`.** How a project runs one test file is
+  a fact about the project, not a per-invocation flag. Declared once, it is
+  resolved *inside* the shared runner, so `doctor --verify-invariants` picks it up
+  without its caller passing anything — a per-call-site fix would have re-broken
+  on the next consumer. `--test-command` still overrides it. A declaration with no
+  literal `{file}` slot is refused and reported rather than obeyed (it would run
+  the whole suite once per finding), and refusal degrades to the default instead
+  of throwing, so a typo cannot break `scan`.
+
+### Changed
+- **The "could not run" condition is keyed on outcomes, not on flags.** It used to
+  fire when the default runner was unresolvable and go quiet the moment any
+  command was supplied — so a project pointed at a runner emitting no TAP had
+  every finding silently downgraded to advisory with nothing on screen, the exact
+  silent always-green the gate exists to prevent. It now counts the findings whose
+  named test came back unrunnable and says so, whatever the runner's provenance.
+  `doctor --verify-invariants`, which had no such condition at all, prints the
+  same line — the two consumers of one runner can no longer disagree about a
+  toolchain gap.
+- **Dependents are ranked, collapsed, and capped.** The section printed one line
+  per declared `depends_on` edge: on this repo a single `src/lib` edit emitted 24
+  unranked, reason-less lines, which trains the reader to skip a section a real
+  warning can appear in. Every human surface — the CLI, the HTML card, the HTML
+  detail list — and the adversary's own bundle now render a count plus the top
+  ranked entries, one per dependent feature with its edges collapsed, features
+  depending on a changed *feature* before ones riding only a concept umbrella.
+  `state.dependents` is untouched for machine consumers; `dependentsSummary` is
+  added alongside it. The HTML card's count follows the summary, so the headline
+  finding total is no longer inflated by counting edge pairs.
+
 ## [0.13.0] - 2026-08-02
 
 0.12.0 shipped the response-altitude rule as written. This release ships it as

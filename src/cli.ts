@@ -70,7 +70,7 @@ program
   )
   .option(
     "--test-command <argv...>",
-    'How to run a cited invariant test under --verify-invariants; the literal {file} token is the resolved path. Pass as ONE quoted string, e.g. --test-command "vitest run {file}" (default: npx --no-install tsx --test {file} — local-only, never a network fetch)',
+    'How to run a cited invariant test under --verify-invariants; the literal {file} token is the resolved path. Pass as ONE quoted string, e.g. --test-command "vitest run {file}". OVERRIDES "testCommand" in .codument-meta.json (default: npx --no-install tsx --test {file} — local-only, never a network fetch)',
   )
   .action(doctor);
 
@@ -94,7 +94,7 @@ program
   )
   .option(
     "--test-command <argv...>",
-    'how to run a finding\'s named test under --require-review; the literal {file} token is the resolved path. Pass the whole command as ONE quoted string, e.g. --test-command "npx tsx --test {file}" or "vitest run {file}" (default: npx --no-install tsx --test {file} — local-only, never a network fetch). Point at a TAP-emitting runner for non-node:test projects',
+    'how to run a finding\'s named test under --require-review; the literal {file} token is the resolved path. Pass the whole command as ONE quoted string, e.g. --test-command "npx tsx --test {file}" or "vitest run {file}". OVERRIDES "testCommand" in .codument-meta.json, which is where a project should declare its runner once (default: npx --no-install tsx --test {file} — local-only, never a network fetch). Point at a TAP-emitting runner for non-node:test projects',
   )
   .option(
     "--bundle",

@@ -26,7 +26,11 @@ import {
   type InvariantVerdict,
   runInvariantCheck,
 } from "../lib/invariant-check.js";
-import { normalizeTestCommand } from "./review.js";
+import {
+  confirmCondition,
+  defaultCommandAvailable,
+  resolveTestCommand,
+} from "../lib/review-confirm.js";
 
 interface DoctorOptions {
   root?: string;
@@ -248,12 +252,29 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
   // Opt-in, environment-touching mode: RUN each doc invariant's cited test. Off by
   // default so bare doctor stays instant, deterministic, and byte-identical. When
   // on, a broken or unpinned invariant is a warn-level result that --strict fails on.
+  const resolvedTest = options.verifyInvariants
+    ? resolveTestCommand(root, options.testCommand)
+    : null;
   const invReport = options.verifyInvariants
     ? runInvariantCheck(
         root,
         readRegistrySync(join(root, "docs", ".registry.json")),
-        normalizeTestCommand(options.testCommand),
+        resolvedTest?.command,
       )
+    : null;
+  // Built from the SAME helper the review gate uses, so a refused declaration and
+  // an unadjudicated count can never be worded differently by the two consumers of
+  // one runner. Reading only `.command` and dropping `.problem` is what let this
+  // surface report "point your runner at TAP" when the declared runner was fine and
+  // only its `{file}` slot was missing.
+  const invCondition = invReport
+    ? confirmCondition({
+        problem: resolvedTest?.problem ?? null,
+        unadjudicated: invReport.results.filter((r) => r.verdict === "unrunnable").length,
+        noun: "invariant",
+        consequence: "excluded from the score",
+        defaultUnavailable: !resolvedTest?.command && !defaultCommandAvailable(root),
+      })
     : null;
 
   // --strict is opt-in CI gating: it only sets a nonzero exit code when there are
@@ -276,14 +297,22 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
   if (options.json) {
     // Spread the invariants block in ONLY when the mode ran, so bare doctor --json
     // is byte-identical to before this plan (the non-goal that keeps CI stable).
-    const out = invReport ? { ...report, invariants: invariantJson(invReport) } : report;
+    const out = invReport
+      ? {
+          ...report,
+          // Additive, and only in this opt-in mode: the machine surface carries the
+          // same named condition the human one prints, so a CI consumer cannot read
+          // an all-unrunnable run as a clean one.
+          invariants: { ...invariantJson(invReport), confirmUnavailable: invCondition },
+        }
+      : report;
     console.log(JSON.stringify(out, null, 2));
     if (strictFail) process.exitCode = 1;
     return;
   }
 
   printHuman(report, strictFail);
-  if (invReport) printInvariants(invReport, !!options.strict);
+  if (invReport) printInvariants(invReport, !!options.strict, invCondition);
   // Advisory skew nudge — human output only, so the --json contract stays
   // byte-identical; never a finding, never an exit-code input.
   const skew = versionSkewNotice(root);
@@ -464,7 +493,11 @@ const INVARIANT_ORDER: InvariantVerdict[] = [
   "honest",
 ];
 
-function printInvariants(report: InvariantCheckReport, strict: boolean): void {
+function printInvariants(
+  report: InvariantCheckReport,
+  strict: boolean,
+  condition: string | null = null,
+): void {
   console.log();
   console.log(
     `  ${pc.bold("Invariant checks")} ${pc.dim("(environment-dependent — runs each cited test)")}`,
@@ -476,6 +509,12 @@ function printInvariants(report: InvariantCheckReport, strict: boolean): void {
   const ratio = honestyRatio(report);
   const ratioStr = ratio === null ? pc.dim("N/A") : pc.bold(`${Math.round(ratio * 100)}%`);
   console.log(`    ${report.enforced}/${report.scored} enforced  ${ratioStr}`);
+
+  // The same honesty line the review gate prints, which this surface never had: an
+  // unrunnable invariant is excluded from the score, so without it a project whose
+  // runner emits no test evidence reads as "nothing to see" when nothing was
+  // checked. Worded by the shared builder, never rebuilt here.
+  if (condition) console.log(pc.yellow(`    ⚠ ${condition}`));
 
   const rank = (v: InvariantVerdict): number => INVARIANT_ORDER.indexOf(v);
   const nonGreen = report.results

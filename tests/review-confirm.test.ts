@@ -8,6 +8,8 @@ import {
   cleanNodeTestEnv,
   confirmFindings,
   defaultCommandAvailable,
+  confirmCondition,
+  resolveTestCommand,
   resolveTestPath,
   makeTestRunner,
   spawnArgvSync,
@@ -351,5 +353,140 @@ describe("default command is local-only (no network on the verdict path)", () =>
       await rm(tmp, { recursive: true, force: true });
       await rm(fakeBin, { recursive: true, force: true });
     }
+  });
+});
+
+describe("resolveTestCommand (flag > project config > built-in default)", () => {
+  let tmp: string;
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-testcmd-"));
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  const meta = (extra: Record<string, unknown>) =>
+    writeFileSync(
+      join(tmp, ".codument-meta.json"),
+      JSON.stringify({ version: "0.13.0", initialized: "2026-08-05", project: {}, ...extra }),
+    );
+
+  it("falls back to the built-in default when nothing is declared", () => {
+    assert.deepEqual(resolveTestCommand(tmp), { command: undefined, problem: null });
+    meta({});
+    assert.deepEqual(resolveTestCommand(tmp), { command: undefined, problem: null });
+  });
+
+  it("reads testCommand from project config, splitting the quoted string form", () => {
+    meta({ testCommand: "vitest run {file}" });
+    assert.deepEqual(resolveTestCommand(tmp).command, ["vitest", "run", "{file}"]);
+  });
+
+  it("lets the flag win over project config", () => {
+    meta({ testCommand: "vitest run {file}" });
+    assert.deepEqual(resolveTestCommand(tmp, ["bun test {file}"]).command, [
+      "bun",
+      "test",
+      "{file}",
+    ]);
+  });
+
+  it("refuses a declared command with no {file} slot and says so, rather than running the whole suite per finding", () => {
+    meta({ testCommand: "npm test" });
+    const r = resolveTestCommand(tmp);
+    assert.equal(r.command, undefined, "falls back to the default");
+    assert.match(r.problem ?? "", /no \{file\} token/);
+  });
+
+  it("refuses an empty declaration loudly", () => {
+    meta({ testCommand: "   " });
+    const r = resolveTestCommand(tmp);
+    assert.equal(r.command, undefined);
+    assert.match(r.problem ?? "", /empty/);
+  });
+
+  it("degrades to the default on an unreadable meta file instead of throwing", () => {
+    writeFileSync(join(tmp, ".codument-meta.json"), "{ not json");
+    assert.deepEqual(resolveTestCommand(tmp), { command: undefined, problem: null });
+  });
+
+  it("makeTestRunner picks config up on its own, so a caller that omits the command is not silently on tsx", () => {
+    // The test file must EXIST: resolveTestPath runs before the command is read, so
+    // a missing file returns unrunnable without ever exercising resolution — an
+    // assertion that would pass with the config lookup deleted.
+    writeFileSync(join(tmp, "probe.test.ts"), "");
+    // A command only the config declares, whose exit code is the whole assertion:
+    // node exits 3, and no other runner would. If makeTestRunner fell back to the
+    // default (tsx) the outcome could not be a nonzero-with-no-TAP unrunnable
+    // carrying exit 3.
+    meta({ testCommand: "node -e process.exit(3) {file}" });
+    const res = makeTestRunner({ root: tmp })("probe.test.ts");
+    assert.equal(res.outcome, "unrunnable", "nonzero exit with no TAP is unrunnable");
+    assert.match(res.detail ?? "", /exited 3/, "the CONFIGURED command ran, not the default");
+
+    // And the negative half: with no declaration the same file goes to the default
+    // runner, which does not exit 3.
+    rmSync(join(tmp, ".codument-meta.json"));
+    assert.doesNotMatch(
+      makeTestRunner({ root: tmp })("probe.test.ts").detail ?? "",
+      /exited 3/,
+      "without the declaration the configured command is not used",
+    );
+  });
+});
+
+describe("confirmCondition (one wording for every surface that runs tests)", () => {
+  const base = {
+    problem: null,
+    unadjudicated: 0,
+    noun: "finding",
+    consequence: "advisory rather than judged",
+    defaultUnavailable: false,
+  };
+
+  it("says nothing when nothing is wrong", () => {
+    assert.equal(confirmCondition(base), null);
+  });
+
+  it("reports the refused declaration AND the unadjudicated count together", () => {
+    // These are usually one incident: a slotless testCommand falls back to a default
+    // that cannot emit evidence. Reporting only the count names the symptom and
+    // drops the cause, which is the bug this shape exists to prevent.
+    const msg = confirmCondition({
+      ...base,
+      problem: "testCommand in .codument-meta.json has no {file} token (npm test) — …",
+      unadjudicated: 2,
+    });
+    assert.match(msg ?? "", /no \{file\} token/);
+    assert.match(msg ?? "", /2 findings could not be adjudicated/);
+  });
+
+  it("keeps the default-runner probe as a last resort, never alongside a real cause", () => {
+    assert.match(
+      confirmCondition({ ...base, defaultUnavailable: true }) ?? "",
+      /no local tsx/,
+    );
+    // A declared runner is judged by outcomes, so the probe must not also fire.
+    assert.doesNotMatch(
+      confirmCondition({ ...base, unadjudicated: 1, defaultUnavailable: true }) ?? "",
+      /no local tsx/,
+    );
+  });
+
+  it("reads in both numbers and for either noun", () => {
+    assert.match(confirmCondition({ ...base, unadjudicated: 1 }) ?? "", /1 finding could not/);
+    assert.match(
+      confirmCondition({ ...base, unadjudicated: 1 }) ?? "",
+      /it reads advisory rather than judged/,
+    );
+    assert.match(
+      confirmCondition({
+        ...base,
+        unadjudicated: 3,
+        noun: "invariant",
+        consequence: "excluded from the score",
+      }) ?? "",
+      /3 invariants could not be adjudicated.*they read excluded from the score/,
+    );
   });
 });

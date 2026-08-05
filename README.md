@@ -321,7 +321,7 @@ npx codument review --require-review --test-command "npx tsx --test {file}"   # 
 
 - **`--strict`** is the **step-sync gate**: it exits 1 while a step left a new source unmapped or a mapped doc stale. It is what Autopilot runs before checking a step off — materialize the file(s) and update the stale doc(s), then re-run until clean.
 - **`--base <ref>`** reviews the whole branch's drift (merge-base..working-tree), not just uncommitted changes — pair it with `codument ack --base <ref>` so a symbol move resolves against the same ref.
-- **`--bundle`** emits the adversarial-review bundle (the documented invariants + their tests + the diff) as JSON — the contract an independent reviewer attacks. The deterministic oracle that *decides* is the re-run of a finding's named test, never the bundle itself. **`--record <file>`** records a fingerprint-bound review from a findings JSON (`{invariantsChecked, findings, signer}`) that **`--require-review`** then enforces — exiting 1 on a non-trivial diff with no current artifact, or one carrying unresolved confirmed findings. A finding **blocks only** when its named test is red on a live re-run (`--test-command`, `{file}` = the resolved path; default `npx --no-install tsx --test {file}` — resolved locally, **never fetched from the network**); point it at a TAP-emitting runner for non-`node:test` projects. When no runner is resolvable without a fetch, the summary says so by name ("confirm step could not run — pass `--test-command`") instead of silently reading advisory. Opt-in today; the default-on flip is soak-deferred.
+- **`--bundle`** emits the adversarial-review bundle (the documented invariants + their tests + the diff) as JSON — the contract an independent reviewer attacks. The deterministic oracle that *decides* is the re-run of a finding's named test, never the bundle itself. **`--record <file>`** records a fingerprint-bound review from a findings JSON (`{invariantsChecked, findings, signer}`) that **`--require-review`** then enforces — exiting 1 on a non-trivial diff with no current artifact, or one carrying unresolved confirmed findings. A finding **blocks only** when its named test is red on a live re-run (`--test-command`, `{file}` = the resolved path; default `npx --no-install tsx --test {file}` — resolved locally, **never fetched from the network**); point it at a TAP-emitting runner for non-`node:test` projects. Declare your runner once as `testCommand` in `.codument-meta.json` (see [Declaring your test runner](#declaring-your-test-runner)); the flag overrides it. Whenever a finding's test cannot be adjudicated the summary says how many went unjudged, by name, instead of silently reading advisory — keyed on the outcome, so pointing at a runner that emits no test evidence does not quietly buy you a clean gate. Opt-in today; the default-on flip is soak-deferred.
 
 After you fix a finding, re-running `--bundle` scopes the next attack to what actually moved (`scope: "delta"`), carrying the untouched files and the earlier findings as context; `--full` forces the whole change set. This narrows what the reviewer reads, never what the gate accepts — coverage is still one artifact over every file in the change set, and it still voids on any edit.
 
@@ -625,6 +625,20 @@ scan:    scope: also excluding dirs: out, public-preprod — .codument-meta.json
 A typo is an error, not a silent no-op: an unknown key, a non-string entry, an empty entry, or a path in `dirs` fails the command by name. Declaring an excluded path that some registry entry still lists as a source keeps firing `generated-leakage`, so an exclusion can silence the gate only visibly.
 
 There is no `--exclude` flag on purpose. Scope is a repository artifact your reviewers see in the diff, not an invocation choice — a flag would let two runs of the same commit disagree about what was measured.
+
+### Declaring your test runner
+
+The same file is where you say how one test file runs, for the two modes that execute tests — the adversarial-review confirm step and `doctor --verify-invariants`:
+
+```json
+{
+  "testCommand": "vitest run {file}"
+}
+```
+
+`{file}` is the literal token codument replaces with the resolved test path, and it is required: a command without it would run your whole suite once per finding, which reads as a working gate while adjudicating nothing. Declare it here rather than passing `--test-command` on every run — your runner is a fact about the project, and re-typing it is how the "confirm step could not run" warning turns into background noise you stop reading. `--test-command` still overrides it for a one-off, and the default stays `npx --no-install tsx --test {file}` (local-only, never a network fetch).
+
+A malformed declaration does not break `scan` or `doctor`: the runner falls back to the default and says out loud that it did.
 
 </details>
 

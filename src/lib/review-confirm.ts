@@ -5,6 +5,7 @@ import {
 } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
+import { readMetaSync } from "./codemod.js";
 import type { ReviewFinding, ReviewFindingStatus } from "./review-artifact.js";
 
 // ── win32-safe spawning ──────────────────────────────────────────────────
@@ -179,6 +180,118 @@ export function defaultCommandAvailable(root: string): boolean {
 // gate's fingerprint resolver and the runner look in the same places.
 export const DEFAULT_TEST_SEARCH_DIRS: readonly string[] = ["", "tests"];
 
+/** Argv for a command given either as real argv or as one whitespace-joined string
+ *  (`--test-command "vitest run {file}"`, or the `testCommand` config value). An
+ *  empty/blank command normalizes to undefined — "not specified", never an empty
+ *  argv the spawn would choke on. */
+export function normalizeTestCommand(command?: readonly string[]): string[] | undefined {
+  if (!command || command.length === 0) return undefined;
+  if (command.length === 1 && /\s/.test(command[0])) {
+    const parts = command[0].trim().split(/\s+/);
+    return parts.length > 0 && parts[0] !== "" ? parts : undefined;
+  }
+  return [...command];
+}
+
+/**
+ * The one place the "could not run" condition is worded, for every surface that
+ * runs tests.
+ *
+ * Two things can go wrong independently — the project's declared runner was
+ * refused, and some claims came back unadjudicated — and they are usually the SAME
+ * incident: a slotless `testCommand` falls back to the default, the default cannot
+ * emit evidence, and every claim reads unrunnable. Reporting only the count would
+ * name the symptom and drop the cause ("point your runner at TAP" is bad advice
+ * when the declared runner was fine and only the `{file}` slot was missing), so
+ * both are said. Building the line here rather than at each call site is the
+ * point: two consumers of one runner must not be able to describe one toolchain
+ * gap differently.
+ */
+export function confirmCondition(input: {
+  /** A refused declaration from `resolveTestCommand`, if any. */
+  problem: string | null;
+  /** How many claims the runner could not decide. */
+  unadjudicated: number;
+  /** What went unjudged, singular: "finding" or "invariant". */
+  noun: string;
+  /** What that costs the reader, verb-free so it reads in both numbers:
+   *  "advisory rather than judged", "excluded from the score". */
+  consequence: string;
+  /** True when the BUILT-IN default is in play and cannot resolve locally. */
+  defaultUnavailable: boolean;
+}): string | null {
+  const parts: string[] = [];
+  if (input.problem) parts.push(input.problem);
+  if (input.unadjudicated > 0) {
+    const n = input.unadjudicated;
+    parts.push(
+      `${n} ${input.noun}${n === 1 ? "" : "s"} could not be adjudicated: the runner produced no test evidence, so ${n === 1 ? "it reads " : "they read "}${input.consequence}`,
+    );
+  }
+  // Only when nothing else already explains it: a project that declared a runner is
+  // judged by the outcome above, never by a probe of codument's own default.
+  if (parts.length === 0 && input.defaultUnavailable) {
+    parts.push(
+      "confirm step could not run: no local tsx (the default runner resolves local-only, never the network)",
+    );
+  }
+  if (parts.length === 0) return null;
+  return `${parts.join("; ")} — set testCommand in .codument-meta.json, or pass --test-command "<your runner> {file}"`;
+}
+
+export interface ResolvedTestCommand {
+  /** The argv to run, or undefined for the built-in default. */
+  command: string[] | undefined;
+  /** Set when a DECLARED command was refused and the default used instead. The
+   *  caller must surface it: silently ignoring a project's declared runner is the
+   *  same silent-wrong-thing the config exists to prevent. */
+  problem: string | null;
+}
+
+/**
+ * How to run one test file, resolved once for every consumer.
+ *
+ * Precedence: `--test-command` flag > `testCommand` in `.codument-meta.json` >
+ * the built-in local-only default. The config tier exists because a project's test
+ * runner is a fact about the project — re-typing it on every `--require-review` run
+ * is how the "could not run" warning became background noise.
+ *
+ * A declared command without the literal `{file}` token is REFUSED, not silently
+ * accepted: it would run the whole suite once per finding, which reads as a working
+ * gate while adjudicating nothing. Refusal falls back to the default and reports the
+ * problem — it does not throw, because `readMetaSync` runs on nearly every command
+ * path and a typo here must not break `scan` or `doctor`.
+ */
+export function resolveTestCommand(root: string, flag?: readonly string[]): ResolvedTestCommand {
+  const fromFlag = normalizeTestCommand(flag);
+  if (fromFlag) return { command: fromFlag, problem: null };
+
+  let declared: string | undefined;
+  try {
+    declared = readMetaSync(root)?.testCommand;
+  } catch {
+    // A malformed meta file is reported by the commands that validate it; the
+    // runner degrades to its default rather than adding a second failure mode.
+    return { command: undefined, problem: null };
+  }
+  if (declared === undefined) return { command: undefined, problem: null };
+
+  const argv = normalizeTestCommand([declared]);
+  if (!argv) {
+    return {
+      command: undefined,
+      problem: "testCommand in .codument-meta.json is empty — using the default runner",
+    };
+  }
+  if (!argv.includes("{file}")) {
+    return {
+      command: undefined,
+      problem: `testCommand in .codument-meta.json has no {file} token (${declared}) — it would run the whole suite per finding, so the default runner is used instead`,
+    };
+  }
+  return { command: argv, problem: null };
+}
+
 // Resolve a test reference (a bare name like `foo.test.ts` or a repo-relative
 // path) to an existing file under one of the search dirs, or null if none exists.
 export function resolveTestPath(
@@ -254,7 +367,10 @@ export function cleanNodeTestEnv(source: NodeJS.ProcessEnv = process.env): NodeJ
 // and map the result. A missing file, a spawn error, or a kill/timeout is
 // `unrunnable` (never a pass); exit 0 is `passed`; any nonzero exit is `failed`.
 export function makeTestRunner(opts: TestRunnerOptions): TestRunner {
-  const command = opts.command ?? DEFAULT_TEST_COMMAND;
+  // Resolution lives HERE, not at each call site: `invariantProbes` and any future
+  // consumer take an optional command, so a caller that omits it must still get the
+  // project's declared runner rather than silently falling back to codument's own.
+  const command = opts.command ?? resolveTestCommand(opts.root).command ?? DEFAULT_TEST_COMMAND;
   const searchDirs = opts.searchDirs ?? DEFAULT_TEST_SEARCH_DIRS;
   const timeout = opts.timeoutMs ?? 120_000;
   // Spawn the child in a clean env (see cleanNodeTestEnv) so its verdict is a pure
