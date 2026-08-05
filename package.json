@@ -1,6 +1,6 @@
 {
   "name": "codument",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Docs-based guardrails for AI coding workflows: coverage scoring, doc-drift checks, and diff safety review.",
   "type": "module",
   "bin": {

@@ -7,6 +7,10 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-05
+
+The release that stops charging you for the ceremony.
+
 The first field report that measured the loop instead of describing it: three
 delivery steps on a real product, six adversarial runs, ~44 minutes of review
 wall-clock and ~970k subagent tokens against ~20 minutes of implementation. The
@@ -18,6 +22,13 @@ end to end was opt-in behind a phrase most people never learned, so the shipped
 default was the slowest loop on offer — three routine confirmations per step,
 none of them asking a real question. That is now the default, and the escape is
 a sentence rather than a setting. Plan 34.
+
+The same correction applies to setup. Onboarding an existing project took two
+commands, and missing the second one failed silently — you got a delivery loop
+owning none of your code, with nothing to say so. It is one command now. Plan 35.
+
+Three defaults, one shape: what the tool asks you to remember should be what it
+cannot work out for itself. Nothing it checks has changed.
 
 ### Added
 - **Delta bundles.** `codument review --bundle` now scopes itself to the files
