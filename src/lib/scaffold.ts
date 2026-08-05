@@ -168,30 +168,30 @@ Route:
 When unsure between 2 and 3, the test is reversibility, not difficulty: reversible-with-a-follow-up is tier 2 (declare), not tier 3 (ask). One line, recommendation-first — never a questionnaire.
 
 ### Step gates
-At the end of each implementation step, stop and offer review options. Do not ask to start the next plan step yet.
+Every implementation step passes the same three gates in this order:
 
-Required sequence for every delivery-plan step:
+1. \`work-step\` implements and verifies one step, then hands it to \`review-work\`.
+2. \`review-work\` reviews that step: auto-apply only safe, obvious fixes, then hand it to \`commit-work\`. Pause for any judgment-call finding.
+3. \`commit-work\` commits that reviewed step, then starts the next unchecked step.
 
-1. \`work-step\` implements and verifies one step, then offers \`review-work\`, correction, or pause.
-2. \`review-work\` reviews that step, then waits for the user to approve all fixes, select fixes, defer findings with a reason, or pause. It must not fix findings automatically.
-3. \`commit-work\` commits that reviewed step, then offers the next \`work-step\`, plan review, compact context, or pause.
+Never move from one implementation step directly into the next without review and commit in between. That rule is absolute and holds in both modes; what the mode changes is only whether you *wait* for the user between the gates. By default you do not wait — **gated mode**, where you do, is what the user turns on by asking for it (see Autopilot below).
+
+In gated mode each gate stops instead and offers the user its options block — \`review-work\` / correction / pause after implementation, the findings decision after review, next-step / plan-review / compact-context / pause after the commit — and only the user can decide to fix, select, or defer review findings.
 
 When the user chooses compact context after a commit, use the active agent's native context-compaction command if one is available. If no native command is available, provide a concise restart note grounded in \`AGENTS.md\`, the active plan doc, \`docs/.registry.json\`, and \`git status\`, then pause.
 
-Outside an explicitly opted-in autopilot run, never move from one implementation step directly into the next without review and commit in between.
-Outside autopilot, only the user can decide to fix, select, or defer review findings; in an autopilot run the agent may auto-apply only safe, obvious fixes and must pause for any judgment-call finding.
+### Autopilot (on by default)
+Once a plan is approved, work it end to end without stopping for routine confirmation. Approval is the trigger: the user does not have to say anything else to start the run, though "codument, run the plan" (also "run the plan", "codument this plan", "autopilot", or a \`/work-step --auto\` hint) still works and is what \`codument run\` prints.
 
-### Autopilot (opt-in per run)
-Autopilot is off by default and applies to one run only; never assume it from a prior turn.
+The user turns it off by saying so — "step by step", "stop at the gates", "one step at a time", "pause", or "stop autopilot" — and **gated mode then holds for the rest of the session** until they lift it ("keep going", "run the plan"). Never assume gated mode from a previous session; never quietly resume automatic running after the user has asked for the gates.
 
-- Trigger: only when the user explicitly says "codument, run the plan" (also "run the plan", "codument this plan", "autopilot", or a best-effort \`/work-step --auto\` hint). The \`--auto\` flag is a convenience hint your host may ignore; the phrase is the reliable trigger.
-- Precondition: never start autopilot before the plan is approved. Confirm the active plan shows \`Status: approved\` (not draft or awaiting approval). If you cannot confirm approval, do not start; say so and ask the user to approve the plan.
-- While active, for each remaining delivery-plan step run \`work-step\` -> \`review-work\` -> \`commit-work\` without stopping for routine confirmations. Each gate still runs; you simply do not wait for the user to say continue. Commit per step with a focused conventional commit, attributed to the user only.
+- Precondition: never start before the plan is approved. Confirm the active plan shows \`Status: approved\` (not draft or awaiting approval). If you cannot confirm approval, do not start; say so and ask the user to approve the plan.
+- For each remaining delivery-plan step run \`work-step\` -> \`review-work\` -> \`commit-work\` without stopping for routine confirmations. Each gate still runs; you simply do not wait for the user to say continue. Commit per step with a focused conventional commit, attributed to the user only.
 - Step-sync gate: before \`commit-work\` checks a step off, \`codument review --strict\` must pass. It exits nonzero while the step left a new source unmapped or a mapped doc stale — materialize the file(s) (\`codument map materialize\`) and update the stale doc(s), then re-run until clean. A persistently red gate is a hard-pause condition; never check off or commit a step while it is red.
-- During \`review-work\` in autopilot, auto-apply only safe, obvious fixes, then proceed to \`commit-work\`. Always pause for any finding that needs a judgment call or that touches public interfaces, security, data loss or deletions, or dependency changes.
+- During \`review-work\`, auto-apply only safe, obvious fixes, then proceed to \`commit-work\`. Always pause for any finding that needs a judgment call or that touches public interfaces, security, data loss or deletions, or dependency changes.
 - Hard pause conditions (stop the run, report a compact summary, wait for the user): a judgment-call review finding, a verification failure, or any change that falls outside the approved plan.
-- Interrupt: if the user says "pause" or "stop autopilot", immediately return to the manual one-step-at-a-time gated loop.
-- Show progress at every step boundary: before starting each step, post a short checklist inline in the chat — the step just completed, the step now starting, and what remains. Autopilot suppresses the approval and option prompts and the waiting between steps, not the progress reporting; never advance from one step to the next silently.
+- An explicit single-step request is always honored: \`/work-step\` or "work the next step" runs exactly one step and stops, whatever the mode.
+- Show progress at every step boundary: before starting each step, post a short checklist inline in the chat — the step just completed, the step now starting, and what remains. Running without waiting suppresses the approval and option prompts and the waiting between steps, not the progress reporting; never advance from one step to the next silently.
 - On any pause or on plan completion, report a compact summary of steps done, commits made, and why it stopped.
 
 The Codument CLI does not run your coding agent. \`codument run\` is only a signpost that says so; autopilot lives entirely in these instructions, which your agent follows.

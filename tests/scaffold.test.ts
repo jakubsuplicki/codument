@@ -116,11 +116,11 @@ describe("buildManagedSection", () => {
     assert.ok(section.includes("Assumption gate (before any source edit)"));
     assert.ok(section.includes("never on ambiguity alone"));
     assert.ok(section.includes("Step gates"));
-    assert.ok(section.includes("Outside an explicitly opted-in autopilot run, never move from one implementation step directly into the next"));
-    // guard: the gate rule must stay mode-conditioned, never regress to the bare absolute
-    assert.ok(!section.includes("Never move from one implementation step directly into the next without review and commit in between."));
-    assert.ok(section.includes("It must not fix findings automatically"));
-    assert.ok(section.includes("Outside autopilot, only the user can decide to fix, select, or defer review findings"));
+    // the three gates are unconditional; only WAITING between them is mode-dependent
+    assert.ok(section.includes("Never move from one implementation step directly into the next without review and commit in between."));
+    assert.ok(section.includes("holds in both modes"));
+    assert.ok(section.includes("In gated mode each gate stops instead and offers the user its options block"));
+    assert.ok(section.includes("only the user can decide to fix, select, or defer review findings"));
     assert.ok(section.includes("compact context"));
     assert.ok(section.includes("native context-compaction command"));
     assert.ok(section.includes("Definition of Done"));
@@ -130,13 +130,26 @@ describe("buildManagedSection", () => {
     assert.ok(section.includes("docs/concepts/{name}.md"));
   });
 
-  it("includes opt-in autopilot routing", () => {
+  it("runs an approved plan without waiting, and says how to stop it", () => {
     const section = buildManagedSection();
-    assert.ok(section.includes("Autopilot (opt-in per run)"));
-    assert.ok(section.includes("off by default"));
+    assert.ok(section.includes("Autopilot (on by default)"));
+    // guard: the default must not regress to opt-in
+    assert.ok(!section.includes("Autopilot (opt-in per run)"));
+    assert.ok(!/[Aa]utopilot is off by default/.test(section));
+    assert.ok(section.includes("work it end to end without stopping for routine confirmation"));
+    assert.ok(section.includes("Approval is the trigger"));
+    // the off switch is phrase-only, so the phrases themselves are the contract
+    assert.ok(section.includes('"step by step"'));
+    assert.ok(section.includes('"stop at the gates"'));
+    assert.ok(section.includes("gated mode then holds for the rest of the session"));
     assert.ok(section.includes("codument, run the plan"));
     assert.ok(section.includes("Status: approved"));
     assert.ok(section.includes("stop autopilot"));
+    // the guardrails the flip must not take with it
+    assert.ok(section.includes("never start before the plan is approved"));
+    assert.ok(section.includes("Hard pause conditions"));
+    assert.ok(section.includes("public interfaces, security, data loss or deletions, or dependency changes"));
+    assert.ok(section.includes("runs exactly one step and stops, whatever the mode"));
     // the binary does not run the agent; autopilot is instruction-only. A
     // signpost `codument run` command IS registered, so the guidance must not
     // claim the command doesn't exist — the literal falsehood this pin
