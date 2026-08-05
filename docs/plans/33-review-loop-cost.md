@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 33: review-loop cost — delta bundles, ranked dependents, a discovered test runner
