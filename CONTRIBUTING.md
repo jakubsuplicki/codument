@@ -25,3 +25,8 @@ npm install
 npm run build
 npm test
 ```
+
+## Releasing
+
+How a version is cut here — changelog, the three files carrying the version, the tag, the GitHub
+release, then npm — is written down in [docs/guides/releasing.md](docs/guides/releasing.md).
