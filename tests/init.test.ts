@@ -240,6 +240,86 @@ describe("init command", () => {
     assert.ok(reg.features.x, "populated registry preserved under --force");
   });
 
+  // Installing the workflow over an existing codebase and leaving the registry
+  // empty is a silent half-install — the gate has nothing to check and
+  // /update-docs has no scaffolds to fill. init maps it in the same command.
+  describe("mapping existing code", () => {
+    async function writeSource(rel: string): Promise<void> {
+      const abs = join(tmp, rel);
+      await mkdir(dirname(abs), { recursive: true });
+      await writeFile(abs, "export const a = 1;\n");
+    }
+
+    it("maps an existing codebase in one command", async () => {
+      await writeSource("src/auth/login.ts");
+      await writeSource("src/lib/hash.ts");
+
+      const out = runInit();
+
+      const reg = JSON.parse(
+        await readFile(join(tmp, "docs", ".registry.json"), "utf-8"),
+      );
+      assert.deepStrictEqual(Object.keys(reg.features).sort(), ["auth", "lib"]);
+      assert.ok(existsSync(join(tmp, "docs", "features", "auth.md")));
+      assert.ok(existsSync(join(tmp, "docs", "concepts", "lib.md")));
+      // having mapped something, the next step it names is filling the scaffolds
+      assert.match(out, /\/update-docs/);
+    });
+
+    it("leaves a project with no source alone", async () => {
+      const out = runInit();
+
+      const reg = JSON.parse(
+        await readFile(join(tmp, "docs", ".registry.json"), "utf-8"),
+      );
+      assert.deepStrictEqual(reg, { features: {} });
+      assert.doesNotMatch(out, /source files/);
+    });
+
+    it("does not propose over a registry that already exists", async () => {
+      await writeSource("src/auth/login.ts");
+      await mkdir(join(tmp, "docs"), { recursive: true });
+      const regPath = join(tmp, "docs", ".registry.json");
+      await writeFile(regPath, JSON.stringify({ features: { mine: {} } }));
+
+      const out = runInit();
+
+      // authored ownership is adopt's case, not init's — nothing is proposed over it
+      const reg = JSON.parse(await readFile(regPath, "utf-8"));
+      assert.deepStrictEqual(Object.keys(reg.features), ["mine"]);
+      assert.doesNotMatch(out, /source files/);
+    });
+
+    it("--no-scan declines the mapping and still installs", async () => {
+      await writeSource("src/auth/login.ts");
+
+      const out = runInit("--no-scan");
+
+      const reg = JSON.parse(
+        await readFile(join(tmp, "docs", ".registry.json"), "utf-8"),
+      );
+      assert.deepStrictEqual(reg, { features: {} });
+      assert.doesNotMatch(out, /source files/);
+      assert.ok(existsSync(join(tmp, "AGENTS.md")), "workflow still installed");
+    });
+
+    it("names /update-docs only when the scan actually mapped something", async () => {
+      // scan skips files at the source root by its own rule (entry points and
+      // config), so a flat project scans cleanly and owns nothing. Pointing the
+      // user at scaffolds that were never written is worse than the generic hint.
+      await writeSource("src/index.ts");
+
+      const out = runInit();
+
+      const reg = JSON.parse(
+        await readFile(join(tmp, "docs", ".registry.json"), "utf-8"),
+      );
+      assert.deepStrictEqual(reg, { features: {} });
+      assert.match(out, /source files/, "the scan did run");
+      assert.doesNotMatch(out, /\/update-docs/);
+    });
+  });
+
   it("preserves non-codument settings keys under --force", async () => {
     await mkdir(join(tmp, ".claude"), { recursive: true });
     await writeFile(

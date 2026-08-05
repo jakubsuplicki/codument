@@ -17,6 +17,14 @@ import { ensureClaudeDocsHook } from "../lib/claude-settings.js";
 import { detectProject } from "../lib/detect.js";
 import { HookError, installHook } from "../lib/git-hooks.js";
 import {
+  discoverSourceFiles,
+  makeIgnoredPredicate,
+  resolveScopeSync,
+} from "../lib/analyze.js";
+import type { ExclusionSpec } from "../lib/exclusion-spec.js";
+import { listIgnoredPaths } from "../lib/git.js";
+import { scan } from "./scan.js";
+import {
   ensureDir,
   skillsDir,
   agentsDir,
@@ -25,7 +33,7 @@ import {
   buildManagedSection,
   copyTemplate,
 } from "../lib/scaffold.js";
-import { writeRegistry } from "../lib/registry.js";
+import { readRegistry, writeRegistry } from "../lib/registry.js";
 import type { Registry } from "../lib/registry.js";
 import { version as pkgVersion } from "../lib/version.js";
 
@@ -33,6 +41,42 @@ interface InitOptions {
   force?: boolean;
   agents?: string;
   hooks?: boolean;
+  /** commander's `--no-scan`: absent or true = scan existing code, false = skip. */
+  scan?: boolean;
+}
+
+/**
+ * Does this repo have code to map, by exactly the rule `scan` itself will use?
+ * Asked with scan's own walker, scope resolution and ignore predicate rather
+ * than a private heuristic, so the decision to run it cannot disagree with what
+ * it then finds.
+ *
+ * A scope that cannot be resolved answers "no" rather than propagating. Both of
+ * its failures — a meta that does not parse, and one that parses but declares
+ * an invalid exclusion — are refusals `scan` owns and states precisely, and
+ * installing the workflow is worth doing either way. Letting them escape here
+ * would mean a project could no longer install because of a field that only
+ * governs the mapping half.
+ */
+function hasScannableSource(root: string): boolean {
+  let spec: ExclusionSpec;
+  try {
+    const resolved = resolveScopeSync(root);
+    if (resolved.unreadable) return false;
+    spec = resolved.spec;
+  } catch {
+    return false;
+  }
+  const ignored = listIgnoredPaths(root);
+  const srcDir = existsSync(join(root, "src")) ? "src" : ".";
+  return (
+    discoverSourceFiles(
+      root,
+      srcDir,
+      spec,
+      makeIgnoredPredicate(ignored.ok ? ignored.paths : []),
+    ).paths.length > 0
+  );
 }
 
 export async function init(options: InitOptions): Promise<void> {
@@ -90,7 +134,12 @@ export async function init(options: InitOptions): Promise<void> {
   // scaffolds, but the registry carries human-authored ownership; never reset a
   // populated one. Re-scaffolding requires deleting the file deliberately.
   const registryPath = join(docsDir, ".registry.json");
-  if (!existsSync(registryPath)) {
+  // A registry this run creates is empty, which is the whole "existing code,
+  // nothing documented" case: the workflow is installed and owns none of the
+  // user's source. One that already existed is `adopt`'s case — proposing over
+  // authored ownership is not init's call.
+  const registryIsNew = !existsSync(registryPath);
+  if (registryIsNew) {
     const emptyRegistry: Registry = { features: {} };
     await writeRegistry(registryPath, emptyRegistry);
     console.log(`  ${pc.green("✓")} Created docs/.registry.json`);
@@ -151,12 +200,47 @@ export async function init(options: InitOptions): Promise<void> {
     }
   }
 
+  // Map existing code as part of setup. Installing the workflow over a codebase
+  // and leaving the registry empty is a silent half-install: the gate has
+  // nothing to check and `/update-docs` has no scaffolds to fill, and nothing
+  // says so until much later. Both halves of the condition are already known
+  // here, so the second command the user used to have to remember is this one.
+  let scanned = false;
+  let mapped = false;
+  if (options.scan !== false && registryIsNew && hasScannableSource(root)) {
+    console.log();
+    await scan({ root });
+    scanned = true;
+    // Finding source is not the same as mapping it: scan skips files sitting at
+    // the source root (entry points and config, by its own rule), so a flat
+    // project can scan cleanly and own nothing. The next step it earns depends
+    // on what it produced, not on whether it ran — pointing a user at scaffolds
+    // that do not exist is worse than the hint they had before.
+    mapped = Object.keys((await readRegistry(registryPath)).features).length > 0;
+  }
+
   console.log();
+  if (scanned && process.exitCode) {
+    // scan refuses rather than proposing a scope it could not read. The install
+    // itself is complete and useful, so say which half is missing instead of
+    // presenting the whole run as a failure — but keep its exit code, because a
+    // caller that scripted this deserves to know the mapping never happened.
+    console.log(pc.yellow(pc.bold("Installed, but the codebase was not mapped.")));
+    console.log();
+    console.log(`  Fix the reason above, then run ${pc.cyan("npx codument scan")} to map it.`);
+    console.log();
+    return;
+  }
   console.log(pc.green(pc.bold("Done!")));
   console.log();
   console.log("  Next steps:");
-  console.log(`    ${pc.dim("1.")} Start with ${pc.cyan("/grill-with-docs")} to shape the next feature`);
-  console.log(`    ${pc.dim("2.")} For existing code, run ${pc.cyan("npx codument scan")} to bootstrap docs`);
+  if (mapped) {
+    console.log(`    ${pc.dim("1.")} Run ${pc.cyan("/update-docs")} in a NEW agent session to fill the scaffolds`);
+    console.log(`    ${pc.dim("2.")} Then just chat — ${pc.cyan("/grill-with-docs")} shapes the next feature`);
+  } else {
+    console.log(`    ${pc.dim("1.")} Start with ${pc.cyan("/grill-with-docs")} to shape the next feature`);
+    console.log(`    ${pc.dim("2.")} For existing code, run ${pc.cyan("npx codument scan")} to bootstrap docs`);
+  }
   console.log();
 }
 

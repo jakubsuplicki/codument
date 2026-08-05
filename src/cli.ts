@@ -39,6 +39,10 @@ program
   .option("--agents <agents>", "Comma-separated agent profiles to install: codex, claude")
   .option("--force", "Overwrite existing files")
   .option("--hooks", "Also install the git pre-commit gate (codument hooks install)")
+  .option(
+    "--no-scan",
+    "Skip mapping existing source to docs (init scans when the repo has code and no registry yet)",
+  )
   .action(init);
 
 program
