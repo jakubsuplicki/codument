@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 34: autopilot by default — guardrails without the waiting
@@ -140,7 +140,7 @@ gates") when they want to drive it manually instead.
 
 ## Delivery Plan
 
-Status: approved.
+Status: shipped.
 
 - [x] **Step 1 — Flip the generated contract.** Rewrite the **Step gates** and **Autopilot**
       sections in `src/lib/scaffold.ts`: continuous run as the default, gated mode as the named
