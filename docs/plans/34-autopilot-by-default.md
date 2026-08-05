@@ -164,7 +164,7 @@ Status: approved.
       on-by-default and fold it into that story rather than leaving it buried in section 2; keep its
       `#autopilot` anchor and details block (precondition, pause list) intact. Update the nav line
       and the `--strict` autopilot reference.
-- [ ] **Step 4 — Signpost and changelog.** The `codument run` output in `src/cli.ts` so it no longer
+- [x] **Step 4 — Signpost and changelog.** The `codument run` output in `src/cli.ts` so it no longer
       implies the phrase is required, and a `CHANGELOG.md` entry framing this as a default change
       with a named off switch.
 

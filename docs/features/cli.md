@@ -17,7 +17,7 @@ The entry point is deliberately thin: a declarative table of commands mapped to 
 
 The surface is intentionally small and stable, because the command names are a public contract: users script against them and the agent is instructed to invoke them by name. New capability is added as a new command or flag, not by overloading an existing one. The version the binary reports is sourced from the package manifest at runtime rather than restated here, so the reported version cannot drift from the published package.
 
-One command is a signpost, not an action: `run` (aliased `autopilot`) exists only to explain that codument does not run your coding agent. The CLI's whole remit is setup and deterministic checks; the autopilot loop lives in the agent's instructions, so the binary's job is to redirect rather than to execute, and that boundary is stated in the command's own output.
+One command is a signpost, not an action: `run` (aliased `autopilot`) exists only to explain that codument does not run your coding agent. The CLI's whole remit is setup and deterministic checks; the delivery loop lives in the agent's instructions, so the binary's job is to redirect rather than to execute, and that boundary is stated in the command's own output. Since an approved plan runs on its own, the signpost has no trigger left to hand out — what it points at instead is the boundary itself and the way to slow the loop down, which keeps the command honest rather than vestigial.
 
 ## Invariants & boundaries
 

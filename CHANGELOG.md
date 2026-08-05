@@ -13,6 +13,12 @@ wall-clock and ~970k subagent tokens against ~20 minutes of implementation. The
 gate earned its keep — two real bugs, a tautological test, a missing negative
 case — so this release makes it cheaper, not weaker. Plan 33.
 
+It also flips what the loop does when you say nothing. Working an approved plan
+end to end was opt-in behind a phrase most people never learned, so the shipped
+default was the slowest loop on offer — three routine confirmations per step,
+none of them asking a real question. That is now the default, and the escape is
+a sentence rather than a setting. Plan 34.
+
 ### Added
 - **Delta bundles.** `codument review --bundle` now scopes itself to the files
   that moved since the last recorded review of the same base (`scope: "delta"`),
@@ -40,6 +46,23 @@ case — so this release makes it cheaper, not weaker. Plan 33.
   of throwing, so a typo cannot break `scan`.
 
 ### Changed
+- **An approved plan now runs without waiting between steps.** Autopilot is on by
+  default: approving the plan is what starts the run, and your agent implements,
+  reviews, documents and commits each remaining step without asking permission to
+  proceed between them. Say **"step by step"** (or "stop at the gates", "one step
+  at a time", "pause") to drop back to the fully gated loop — that holds for the
+  rest of the session, not just the next step. **No guardrail moved.** Source
+  edits still never begin before the plan reads `Status: approved`; the run still
+  hard-pauses for a judgment-call review finding, anything touching public
+  interfaces, security, data loss or dependencies, a failing verification, or work
+  drifting outside the plan; `codument review --strict` still gates every step
+  off; and a checklist is still posted at every step boundary. What went away is
+  the *waiting*, which was never what made the loop safe. The off switch is a
+  spoken phrase and not a config field on purpose: a mode you must edit a file to
+  escape is not an escape, and one that expired after a single step would repeat
+  the bug being fixed. Nothing in the CLI reads or enforces the mode — it lives
+  entirely in the generated instructions and the three loop skills, so an existing
+  project picks it up on `codument update` plus a fresh agent session.
 - **The "could not run" condition is keyed on outcomes, not on flags.** It used to
   fire when the default runner was unresolvable and go quiet the moment any
   command was supplied — so a project pointed at a runner emitting no TAP had

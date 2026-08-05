@@ -343,7 +343,10 @@ program
       [
         "Codument does not run your coding agent — your agent does.",
         "",
-        `To run an approved plan, tell your agent:  ${pc.bold('"codument, run the plan"')}`,
+        "An approved plan already runs without this command: approving it is what starts",
+        "your agent working the steps end to end.",
+        "",
+        `To stop at every gate instead, tell your agent:  ${pc.bold('"step by step"')}`,
         "",
         "The CLI only does setup and deterministic checks:",
         `  ${pc.dim(`codument ${others.join(" | ")}`)}`,
