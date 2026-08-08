@@ -167,7 +167,7 @@ guidance, not mechanism.
 
 | Plan | Theme | Finding it fixes |
 | --- | --- | --- |
-| [36](36-shared-file-ownership-resolution.md) | Shared-file ownership churn: resolution block, ownership-aware ack refusal, materialize warning | "Worst part by far": N stale docs per one-line edit, no ack clears it, prose written into five docs to buy green; inert acks recorded on unassigned symbols |
+| [36](36-shared-file-ownership-resolution.md) ✅ **shipped** | Shared-file ownership churn: resolution block, ownership-aware ack refusal, materialize warning | "Worst part by far": N stale docs per one-line edit, no ack clears it, prose written into five docs to buy green; inert acks recorded on unassigned symbols |
 | [37](37-brownfield-charter.md) | Brownfield charter: derive from code, confirm in one message | Charter gate interviewed a shipping app through datastore/auth/hosting its code settled months ago |
 | [38](38-fan-out-step-sizing.md) | Fan-out step sizing: skill rule + adversary objection class | "Generate twelve locales" as one step — ~35 agents, blown session, nothing flagged it before approval |
 | [39](39-field-polish.md) | Field polish: generated-artifact intent, Windows invocation fallback, single-anchor render collapse, verdict-last line, touched-section rule for legacy docs, `ack --prune` | The report's practical notes plus the two-register clash and dead-ack accumulation (342 acks, 52 auto-invalidated, nothing sweeps them) |
@@ -188,6 +188,16 @@ filable upstream. Two watch items, no plan: `related_sources` is exercised by ex
 in the field repo, both created that session, so the impact-only rule has near-zero field
 mileage; and entry `status` is authored metadata nothing maintains (routed to plan 39's
 update-docs line).
+
+**36 is shipped too** (`682a1f7`, `d8f0cc5`, `661bb4b`, `d274174`, and its doc pass). No wake or
+ack semantics moved — every existing gate-wiring and drift assertion passes unmodified — because
+the defect was never the wake. Waking every candidate is what derived-first ownership chose over
+guessing an owner; what failed is that the two registry edits ending it printed as an advisory
+below the blocking line, the stale-doc hint recommended a file ack that structurally cannot clear
+an unclaimed changed anchor, and `ack` recorded inert acknowledgments while printing a green
+checkmark. The resolution now renders inside the finding, every hint is computed from what would
+actually clear it, `ack` refuses and routes, and `map materialize` warns at the moment a second
+feature claims a file — where the churn is created rather than where it is finally paid for.
 
 Run 40 first — a false green on explicitly-claimed files beats every ergonomic fix, the same
 ranking plan 28's workspace false green got. Then 41 (silent corruption of the control plane the

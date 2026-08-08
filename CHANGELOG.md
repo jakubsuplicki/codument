@@ -77,6 +77,38 @@ remains pre-1.0.
   epilogue also lists only the routes that can clear what fired: it was offering
   `codument ack` under a finding no acknowledgment clears.
 
+- **A shared file now says how to stop being one, where you are actually looking.**
+  The field report called this the gate's worst experience: one line changed on a
+  file three features claimed woke three docs, no acknowledgment cleared any of
+  them, and the exit taken was prose written into five docs. The wake itself is
+  unchanged — waking every candidate is what derived-first ownership chose over
+  guessing an owner — but the two registry edits that END it used to print as a
+  warning BELOW the blocking line, where one session read past them 25 times. The
+  condition is now named on the `--strict` line, and the fix renders inside the
+  stale-doc entry, once per file however many docs it woke, with paste-ready text
+  for both routes: claim the symbol under one feature (`owned_symbols`), or keep one
+  primary owner and demote the file to the others' `related_sources`. Where the only
+  moved anchor is the whole-module one, the demotion leads.
+- **Guidance is computed from what would actually clear the finding.** A file-grain
+  ack never skips a `changed` anchor, so it cannot clear a wake an unclaimed shared
+  symbol is driving — yet that is exactly what the generic hint recommended, and the
+  field agent followed it and banked two acknowledgments that cleared nothing. The
+  hint and the `--strict` epilogue now name the ack route only while some stale doc
+  can still be settled that way.
+- **`codument ack` refuses an acknowledgment that reaches nothing.** Drift consults
+  acks only for a symbol with one resolved owner, so an ack on an unclaimed shared
+  symbol was inert — and was recorded anyway, printing `✓ acknowledged` and "re-run
+  to confirm the finding cleared" over a finding that could not clear. It now
+  resolves ownership first and refuses with the route that applies (unassigned →
+  the two registry edits; ambiguous → remove a claim; concept-only → the file-grain
+  ack; ungoverned → map the file), writing no ack file. The `owned` path is
+  unchanged, and a project with no registry behaves exactly as before.
+- **`codument map materialize` warns when a second feature claims the same file** —
+  the moment the churn is created, rather than weeks later at a red gate. It names
+  every owner and both exits, and never refuses: a genuinely multi-owner file is a
+  legitimate thing to have. Silent on the first claim, on a split whose symbols are
+  already claimed, and on a concept umbrella.
+
 ### Added
 - **`codument map materialize <file> --feature <slug>`** — name the owning
   feature directly, with no Feature Map in the loop. A plan's Map is compacted

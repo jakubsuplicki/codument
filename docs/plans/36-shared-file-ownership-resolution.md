@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 36: shared-file ownership churn — make the gate's designed fix reachable
@@ -141,7 +141,7 @@ No new source files.
 - [x] **Step 3 — Materialize shared-primary warning.** Warn on creating a second primary owner
       absent `owned_symbols` coverage. Tests: fires on the second claim; silent on the first
       claim, on secondary rows, and when claims already cover the path.
-- [ ] **Step 4 — Skills + docs.** The shared-file rule into `work-step` and `review-work`
+- [x] **Step 4 — Skills + docs.** The shared-file rule into `work-step` and `review-work`
       (mirror installed copies), the invariant + test links into `change-control-gate.md`,
       CHANGELOG, registry entries checked for every touched source.
 
