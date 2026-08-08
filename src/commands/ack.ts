@@ -27,7 +27,7 @@ import {
   renamedFromMap,
   resolveWorkspace,
 } from "../lib/git.js";
-import { resolveOwner } from "../lib/ownership.js";
+import { resolveOwner, splitAnchorId } from "../lib/ownership.js";
 import { type Registry, readRegistrySync } from "../lib/registry.js";
 import { emitAck, emitAckRemove } from "../lib/review-events.js";
 import { resolveBase, worktreeChangesSince, worktreeRenamesSince } from "../lib/two-ref.js";
@@ -194,6 +194,53 @@ export async function ackCommand(anchor: string | undefined, options: AckCliOpti
       `${ch.id} was ${ch.kind}, not changed — an added or removed symbol needs doc attention: ` +
         `update the owning doc, or acknowledge the file's additive residue with ` +
         `\`codument ack ${file} --reason "..."\``,
+    );
+    return;
+  }
+  // Who owns this symbol decides whether an ack can do anything at all. Drift
+  // consults acknowledgments only for an anchor that resolves to ONE owner, so an
+  // ack recorded against a shared symbol no feature claims is inert: it wrote a
+  // file, printed "✓ acknowledged … re-run to confirm the finding cleared", and
+  // the finding could not clear. A green checkmark over a red gate is worse than a
+  // refusal, because it spends the reader's trust in the surface — so refuse, and
+  // route to the two registry edits that end the wake, exactly as `review` does.
+  // Absent or unreadable registry → nothing is owned, so nothing is gated and
+  // there is no guidance to give; the pre-ownership behavior stands.
+  let registry: Registry | null = null;
+  try {
+    registry = readRegistrySync(join(root, "docs", ".registry.json"));
+  } catch {
+    registry = null;
+  }
+  const owner = registry ? resolveOwner(registry, ch.id) : null;
+  if (owner?.kind === "unowned") {
+    // No FEATURE owns the symbol, so no per-symbol ack can clear anything. Which
+    // route applies depends on what DOES gate the file: a concept umbrella wakes
+    // it whole, and only a file-grain judgment settles that; nothing at all means
+    // the ack would be an artifact about a symbol no verdict consults.
+    const concept = Object.values(registry?.features ?? {}).some(
+      (e) => e.type === "concept" && e.primary_sources.includes(file),
+    );
+    fail(
+      concept
+        ? `no feature owns ${ch.id} — it is narrated at file grain by a concept umbrella, which a per-symbol ack never clears: \`codument ack ${file} --reason "..."\``
+        : `no feature owns ${ch.id}, so nothing gates it and an ack would clear nothing. If it should be governed, map the file first: \`codument map materialize ${file}\``,
+    );
+    return;
+  }
+  if (owner?.kind === "unassigned" || owner?.kind === "ambiguous") {
+    const who = owner.kind === "unassigned" ? owner.candidates : owner.owners;
+    // The RESOLVED descriptor, not what was typed: a bare symbol name is a valid
+    // way to invoke ack, and a fragment echoing it back would not match anything.
+    const descriptor = splitAnchorId(ch.id).descriptor;
+    fail(
+      owner.kind === "unassigned"
+        ? `${ch.id} is a shared symbol no feature claims (${who.join(", ")}), so no ack reaches it — ` +
+            `the wake is ownership, not doc debt. Claim it under ONE of them in docs/.registry.json ` +
+            `("owned_symbols": { ${JSON.stringify(file)}: [${JSON.stringify(descriptor)}] }), or keep one ` +
+            `primary owner and move ${file} to the others' related_sources.`
+        : `${ch.id} is claimed by ${who.join(" and ")}, so ownership is ambiguous and no ack reaches it — ` +
+            `remove the claim from owned_symbols in all but one of them.`,
     );
     return;
   }

@@ -135,7 +135,7 @@ No new source files.
       "no doc impact →" hint from clearability. Tests: golden output for unassigned and ambiguous;
       single-anchor vs multi-anchor lead; the file-ack hint absent when a file ack cannot clear
       the wake, present when it can.
-- [ ] **Step 2 — Ownership-aware ack refusal.** Resolve the owner on the symbol path;
+- [x] **Step 2 — Ownership-aware ack refusal.** Resolve the owner on the symbol path;
       refuse-with-route for unassigned / ambiguous / concept-owned / unowned; `owned` unchanged.
       Tests per branch, including "refused ⇒ no ack file written" and "no registry ⇒ unchanged".
 - [ ] **Step 3 — Materialize shared-primary warning.** Warn on creating a second primary owner

@@ -293,6 +293,131 @@ describe("ack loop end-to-end through the real CLI (the headline ergonomics)", a
   });
 });
 
+// Plan 36: `ack` recorded an acknowledgment for a shared symbol no feature claims —
+// wrote the file, printed "✓ acknowledged … re-run to confirm the finding cleared" —
+// and the finding could not clear, because drift consults acks only for an anchor
+// with one resolved owner. A green checkmark over a red gate is worse than a
+// refusal: it spends the reader's trust in the surface. In the field, two such acks
+// accumulated on one contested file, one already auto-invalidated, gate still red.
+describe("ack refuses what it cannot clear, and says what would (plan 36)", async () => {
+  const SHARED = "src/shared.ts";
+  const SHARED_SRC = "export function priceOf() {\n  return 1;\n}\n";
+  const contested = (extra: Record<string, Record<string, unknown>> = {}) => ({
+    features: {
+      cart: {
+        doc: "docs/features/cart.md",
+        type: "feature",
+        primary_sources: [SHARED],
+        status: "current",
+        ...extra.cart,
+      },
+      checkout: {
+        doc: "docs/features/checkout.md",
+        type: "feature",
+        primary_sources: [SHARED],
+        status: "current",
+        ...extra.checkout,
+      },
+    },
+  });
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-ack-own-"));
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  async function setup(registry: unknown): Promise<void> {
+    await scaffold({
+      "docs/.registry.json": JSON.stringify(registry, null, 2),
+      "docs/features/cart.md": "# cart\n\nThe cart.\n",
+      "docs/features/checkout.md": "# checkout\n\nCheckout.\n",
+      "docs/concepts/util.md": "# util\n\nUtilities.\n",
+      [SHARED]: SHARED_SRC,
+    });
+    gitInit(tmp);
+    await scaffold({ [SHARED]: SHARED_SRC.replace("return 1;", "return 2;") });
+  }
+
+  it("an unassigned shared symbol is refused, routed to both registry fixes, and writes nothing", async () => {
+    await setup(contested());
+    const r = await capture(() =>
+      ackCommand(`${SHARED}::priceOf`, { reason: "internal only", root: tmp }),
+    );
+    assert.equal(r.code, 1, "refused");
+    assert.match(r.err, /shared symbol no feature claims \(cart, checkout\)/);
+    // Paste-ready, and keyed on the RESOLVED descriptor — a bare symbol name is a
+    // valid invocation, and a fragment echoing it back would match nothing.
+    assert.match(r.err, /"owned_symbols": \{ "src\/shared\.ts": \["priceOf\(\)\."\] \}/);
+    assert.match(r.err, /related_sources/);
+    assert.deepStrictEqual(readAcks(tmp), [], "a refusal records nothing");
+    // And the wake it would have claimed to clear is still there.
+    assert.deepStrictEqual(
+      buildReview(tmp).state.staleDocs.map((d) => d.feature),
+      ["cart", "checkout"],
+    );
+  });
+
+  it("a symbol two features both claim is refused with the opposite instruction", async () => {
+    await setup(
+      contested({
+        cart: { owned_symbols: { [SHARED]: ["priceOf()."] } },
+        checkout: { owned_symbols: { [SHARED]: ["priceOf()."] } },
+      }),
+    );
+    const r = await capture(() =>
+      ackCommand(`${SHARED}::priceOf`, { reason: "internal only", root: tmp }),
+    );
+    assert.equal(r.code, 1);
+    assert.match(r.err, /claimed by cart and checkout/);
+    assert.match(r.err, /remove the claim .*all but one/);
+    assert.deepStrictEqual(readAcks(tmp), []);
+  });
+
+  it("a concept-only file is routed to the file grain that actually clears it", async () => {
+    await setup({
+      features: {
+        util: {
+          doc: "docs/concepts/util.md",
+          type: "concept",
+          primary_sources: [SHARED],
+          status: "current",
+        },
+      },
+    });
+    const r = await capture(() =>
+      ackCommand(`${SHARED}::priceOf`, { reason: "internal only", root: tmp }),
+    );
+    assert.equal(r.code, 1);
+    assert.match(r.err, /concept umbrella/);
+    assert.match(r.err, /codument ack src\/shared\.ts/);
+    assert.deepStrictEqual(readAcks(tmp), []);
+  });
+
+  it("a symbol nothing governs is refused rather than banked as a decision about nothing", async () => {
+    await setup({ features: {} });
+    const r = await capture(() =>
+      ackCommand(`${SHARED}::priceOf`, { reason: "internal only", root: tmp }),
+    );
+    assert.equal(r.code, 1);
+    assert.match(r.err, /nothing gates it/);
+    assert.match(r.err, /map materialize/);
+    assert.deepStrictEqual(readAcks(tmp), []);
+  });
+
+  it("claiming the symbol makes the very same ack work — the refusal was routing, not policy", async () => {
+    await setup(contested({ cart: { owned_symbols: { [SHARED]: ["priceOf()."] } } }));
+    const r = await capture(() =>
+      ackCommand(`${SHARED}::priceOf`, { reason: "internal: same return shape", root: tmp }),
+    );
+    assert.equal(r.code, undefined, r.err);
+    assert.match(r.out, /acknowledged/);
+    assert.equal(readAcks(tmp).length, 1);
+    assert.deepStrictEqual(buildReview(tmp).state.staleDocs, [], "and it clears the wake");
+  });
+});
+
 // Plan 41 remediation: the rename map reached `buildReview` and nothing else, so
 // `review` and `ack` disagreed about the same moved file. Review called a renamed
 // symbol `changed` and printed an ack for it; ack read the base blob at the
