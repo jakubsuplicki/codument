@@ -123,6 +123,19 @@ remains pre-1.0.
   question, and the never-ask-experience rule are unchanged. Existing projects
   inherit the routing clause on `codument update`.
 
+- **A plan step that hides a loop is now caught before approval, not from inside it.**
+  "Generate twelve locales" shipped as one approved step and cost roughly
+  thirty-five agents and a session killed mid-flight — with the count sitting in
+  the plan text the whole time, seen by neither of the two artifacts that read a
+  plan before approval. `plan-with-docs` gains the missing definition of
+  *commit-sized*: a step repeating one operation over a list of artifacts is a loop,
+  a step sentence carrying its own count or plural is announcing a fan-out, and
+  there are two legal shapes (explicit batches with the first batch its own step, or
+  one exemplar then replication in batches of K). The plan adversary gains a matching
+  step-shape objection class, grounded in the plan's own words. No CLI lint: "too
+  big" is not decidable from checklist prose without guessing, and a deterministic
+  gate that guesses erodes the ones that do not.
+
 ### Added
 - **`codument map materialize <file> --feature <slug>`** — name the owning
   feature directly, with no Feature Map in the loop. A plan's Map is compacted

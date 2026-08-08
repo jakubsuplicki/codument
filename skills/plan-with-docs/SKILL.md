@@ -107,6 +107,32 @@ The symmetric twin of the implementation adversary in [review-work](../review-wo
 - **Fold objections into the Approval Summary — never a second block.** Merge every grounded objection into the Open Questions list, one line each, ordered most-serious-first: the objection, the committed fact it cites, and the one decision it forces. Volume is bounded by materiality, not a cap — if the plan contradicts many facts, say so plainly (it likely needs rework) rather than trimming grounded findings. "No material objections" is the expected, correct result for a well-grilled plan: surface it in one line and move on.
 - **The adversary never blocks and never reopens the grill on its own.** It informs the user's approve/change decision, which is the only adjudication; only the user routes work back to grilling.
 
+## Step sizing: a step is not a loop
+
+A step is the unit all three gates hold — `work-step` implements it, `review-work` reviews it,
+`commit-work` commits it. A step that hides an unbounded repetition breaks all three at once:
+implementation outruns the session, a review over dozens of agents' output is not a review, and
+the commit is a monolith. This happened in the field to "generate twelve locales" as one step:
+about thirty-five agents, a session limit hit mid-flight, fifteen of them killed. Nothing flagged
+it until someone was inside it — and the count had been sitting in the plan text the whole time.
+
+**The tell.** A step that performs the same operation over a *list* of artifacts — locales,
+endpoints, adapters, migrations, entities, components — is a loop, not a step. A step sentence
+carrying its own count or plural ("all twelve locales", "each endpoint", "every adapter") is
+announcing a fan-out that the review gate will be asked to pay for later.
+
+**Two legal shapes.** Either is fine; pick by whether the work has a template to debug.
+
+1. **Explicit batches.** One step per batch, each stating its size, with the first batch its own
+   step. The first batch debugs the template every later one inherits — merging it into a bigger
+   sweep means discovering the template was wrong on item eleven.
+2. **Exemplar then replication.** One step builds one instance end to end; later steps replicate
+   it in batches of K. Use this when the shape is genuinely unknown until something exists.
+
+Sizing is a plan-time judgment because that is the only moment the count is visible — the plan
+says "twelve locales" before a single agent spawns. This is the missing definition of
+*commit-sized*, not a new rule beside it.
+
 ## Compaction on ship
 
 The `## Delivery Plan` block is transient. When the final step lands (the last `- [x]`), compact it: lift any decision that outlived the work into `## Decisions` or an ADR, fold any newly-true constraint into `## Invariants & boundaries` (with a pointer to the test that enforces it), then delete the checklist, acceptance criteria, verification strategy, and open questions — the step-by-step record already lives in git history. What remains is the durable doc in the standard's layers. A shipped feature doc that still carries a delivery checklist is the lifecycle bloat the standard exists to prevent. Never delete a superseded decision; move it to an ADR so the decision chain stays intact.
@@ -114,7 +140,8 @@ The `## Delivery Plan` block is transient. When the final step lands (the last `
 ## Rules
 
 - The durable doc follows the documentation standard's layers; the `## Delivery Plan` is transient and never becomes permanent doc content.
-- Keep implementation steps independently reviewable and commit-sized.
+- Keep implementation steps independently reviewable and commit-sized — see Step sizing for what
+  that means when a step repeats over a list.
 - Do not mix unrelated features into one plan.
 - Do not begin source edits until approval is explicit.
 - Do not use planning to decide unresolved product, architecture, migration, compatibility, or verification boundaries.

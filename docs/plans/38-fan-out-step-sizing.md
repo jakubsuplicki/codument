@@ -1,5 +1,5 @@
 ---
-status: draft
+status: shipped
 ---
 
 # Plan 38: fan-out steps — a sizing rule the plan gate can hold
@@ -58,9 +58,9 @@ Skill and agent prose only; no source files.
 
 ## Delivery Plan
 
-- [ ] **Step 1 — Sizing rule in `plan-with-docs`.** The tell, the two shapes, the
+- [x] **Step 1 — Sizing rule in `plan-with-docs`.** The tell, the two shapes, the
       first-batch-first rationale; mirror the installed copy.
-- [ ] **Step 2 — Step-shape objection in the adversary.** Add the objection class to
+- [x] **Step 2 — Step-shape objection in the adversary.** Add the objection class to
       `agents/adversarial-planner.md` (mirror installed copy), record it in
       `docs/features/plan-adversary.md`, CHANGELOG.
 
