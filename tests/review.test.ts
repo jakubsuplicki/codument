@@ -1495,6 +1495,107 @@ describe("a rename never leaves the registry pointing at a ghost (probe C)", () 
   });
 });
 
+// Plan 39: two rendering findings from the same field session.
+describe("the verdict is the last line, and a single-anchor file says something new", () => {
+  function run(args: string[]): { code: number; out: string } {
+    try {
+      return {
+        code: 0,
+        out: execFileSync("node", [CLI, ...args], {
+          cwd: tmp,
+          encoding: "utf-8",
+          env: { ...process.env, NO_COLOR: "1" },
+        }),
+      };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { code: e.status ?? 1, out: e.stdout ?? "" };
+    }
+  }
+  const lastLine = (out: string): string => out.trimEnd().split("\n").pop() ?? "";
+
+  const REGISTRY = JSON.stringify(
+    {
+      features: {
+        ui: {
+          doc: "docs/features/ui.md",
+          type: "feature",
+          primary_sources: ["app/Button.tsx", "app/two.ts"],
+          status: "current",
+        },
+      },
+    },
+    null,
+    2,
+  );
+
+  async function fixture(): Promise<void> {
+    await scaffold({
+      "docs/features/ui.md": "# ui\n\n## In plain terms\nButtons.\n",
+      "app/Button.tsx":
+        "export default function Button(props: { label: string }) {\n  return props.label;\n}\n",
+      "app/two.ts": "export function alpha() {\n  return 1;\n}\nexport function beta() {\n  return 2;\n}\n",
+      "docs/.registry.json": REGISTRY,
+    });
+    gitInit(tmp);
+  }
+
+  it("`| tail -1` reads the verdict on a red run and on a clean one", async () => {
+    // The report's author grepped piped output instead of trusting the exit code
+    // and called the habit fragile — rightly, since `$?` after a pipe is the last
+    // command's status, not the gate's. The exit code stays the contract; this
+    // stops the fragile habit from producing a false green.
+    await fixture();
+    await scaffold({
+      "app/Button.tsx":
+        "export default function Button(props: { label: string }) {\n  return props.label.trim();\n}\n",
+    });
+
+    const red = run(["review", "--strict"]);
+    assert.equal(red.code, 1);
+    assert.match(lastLine(red.out), /^codument review: BLOCKED — 1 stale doc\(s\)$/);
+
+    await scaffold({ "docs/features/ui.md": "# ui\n\n## In plain terms\nButtons, trimmed.\n" });
+    const green = run(["review", "--strict"]);
+    assert.equal(green.code, 0);
+    assert.equal(lastLine(green.out), "codument review: clean");
+
+    // And bare `review` — informational, exit 0 — still ends with a verdict.
+    assert.equal(lastLine(run(["review"]).out), "codument review: clean");
+  });
+
+  it("a file whose only anchor is the module one is named by file, and says body vs contract", async () => {
+    // ADR 014 gives every default-exported component one `default.` anchor, so the
+    // drift line read `default (changed)` — the symbol name IS the file, and the
+    // line told the reader nothing the change list had not. Name the file, and
+    // spend the line on what was never visible: whether the contract moved.
+    await fixture();
+    await scaffold({
+      "app/Button.tsx":
+        "export default function Button(props: { label: string }) {\n  return props.label.trim();\n}\n",
+      "app/two.ts": "export function alpha() {\n  return 11;\n}\nexport function beta() {\n  return 2;\n}\n",
+    });
+    const out = run(["review", "--strict"]).out;
+    assert.match(out, /• app\/Button\.tsx \(body changed\) in ui/);
+    assert.doesNotMatch(out, /• default \(changed\)/, "the symbol name added nothing");
+    // A multi-symbol file is untouched: there the symbol name is the information.
+    assert.match(out, /• alpha \(changed\) in ui/);
+    // The ack route still names the precise anchor — the collapse is rendering only.
+    assert.match(out, /codument ack app\/Button\.tsx::default\. --reason/);
+  });
+
+  it("a contract move on that same shape says contract, not body", async () => {
+    await fixture();
+    await scaffold({
+      "app/Button.tsx":
+        "export default function Button(props: { label: string; tone: string }) {\n  return props.label;\n}\n",
+    });
+    const out = run(["review", "--strict"]).out;
+    assert.match(out, /• app\/Button\.tsx \(contract changed\) in ui/);
+    assert.match(out, /signature move/, "and a signature move still refuses the ack route");
+  });
+});
+
 // Plan 36 / the 2026-08-07 field report's "worst part by far": a one-line edit to a
 // file three features claim left three docs stale, no ack cleared it, and the agent
 // paid with prose written into five docs. The WAKE is ADR 004 working — an unclaimed

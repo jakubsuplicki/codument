@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 39: field polish — generated-artifact intent, Windows invocation, one-line findings, verdict last
@@ -103,7 +103,7 @@ practical-notes section of the report. Grouped because none changes what fires o
 
 ## Delivery Plan
 
-- [ ] **Step 1 — Review rendering.** Single-anchor collapse + verdict-last line; tests pin both
+- [x] **Step 1 — Review rendering.** Single-anchor collapse + verdict-last line; tests pin both
       (golden single-anchor output; last-line assertion across clean and red runs).
 - [ ] **Step 2 — Windows guidance.** Managed-section line via `buildManagedSection()` (regenerate
       in-repo blocks, pin in scaffold test); getting-started + README note; file the upstream

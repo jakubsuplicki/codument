@@ -939,6 +939,27 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     printReviewGate(reviewGate, confirmUnavailable, unreviewedCount);
     if (reviewGateFail) process.exitCode = 1;
   }
+
+  // The verdict is the LAST line of stdout, always. Readers grep piped output
+  // instead of trusting the exit code — a habit the field report calls fragile and
+  // is right about, since `$?` after a pipe is the last command's status, not the
+  // gate's. The exit code stays the contract; this just makes `| tail -1` tell the
+  // truth too, so the fragile habit stops producing false greens. It is terse on
+  // purpose: everything it names has already been said above at length.
+  const blocking: string[] = [];
+  if (strictFail) {
+    if (report.state.unmapped.length > 0) blocking.push(`${report.state.unmapped.length} unmapped`);
+    if (report.state.staleDocs.length > 0)
+      blocking.push(`${report.state.staleDocs.length} stale doc(s)`);
+    if (report.state.registryPointers.length > 0)
+      blocking.push(`${report.state.registryPointers.length} registry pointer(s)`);
+  }
+  if (reviewGateFail) blocking.push("adversarial review not covering this diff");
+  console.log(
+    blocking.length > 0
+      ? pc.red(`codument review: BLOCKED — ${blocking.join(", ")}`)
+      : pc.green("codument review: clean"),
+  );
 }
 
 // The full real-change set the adversarial-review gate scopes to: changed sources +
@@ -1297,11 +1318,28 @@ function printHuman(report: ReviewReport): void {
     console.log(
       `  ${pc.bold("Symbol drift")} ${pc.dim("— resolve each: update the doc, or ack a contract-neutral move")}`,
     );
+    // A file whose ONLY moved anchor is the whole-module one — the shape ADR 014
+    // gives every default-exported component and modern config file — was printing
+    // its file path in the change list and then a `default (changed)` line that
+    // added nothing: the symbol name IS the file. Name the file here instead, and
+    // spend the line saying the thing that was never visible — whether the move was
+    // body or contract. The anchor's precision is load-bearing (token invariance,
+    // the signature split, the ack route); only the restatement goes.
+    const perFile = new Map<string, number>();
+    for (const d of report.drift) {
+      const f = d.anchorId.split("::")[0];
+      perFile.set(f, (perFile.get(f) ?? 0) + 1);
+    }
+    const isWholeModule = (d: DriftFinding): boolean =>
+      (d.symbol === "default" || d.symbol === MODULE_ANCHOR_NAME) &&
+      perFile.get(d.anchorId.split("::")[0]) === 1;
     for (const d of unresolved) {
       const sigTag = d.signatureChanged ? ` ${pc.yellow("[signature changed]")}` : "";
-      console.log(
-        `    ${pc.dim("•")} ${pc.bold(d.symbol)} ${pc.dim(`(${d.kind}) in ${d.feature}`)}${sigTag}`,
-      );
+      const subject = isWholeModule(d) ? d.anchorId.split("::")[0] : d.symbol;
+      const what = isWholeModule(d)
+        ? `(${d.signatureChanged ? "contract" : "body"} ${d.kind}) in ${d.feature}`
+        : `(${d.kind}) in ${d.feature}`;
+      console.log(`    ${pc.dim("•")} ${pc.bold(subject)} ${pc.dim(what)}${sigTag}`);
       console.log(
         `        ${pc.dim("contract changed →")} update ${d.doc} ${pc.dim("at intent altitude")}`,
       );
