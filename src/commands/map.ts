@@ -81,6 +81,29 @@ export interface MaterializeResult {
   status: MaterializeStatus;
   docPath?: string;
   secondaryUpdated: string[];
+  /** Every FEATURE now claiming this file as primary, when there is more than one
+   *  and none of them has claimed a symbol on it. This call is the moment the
+   *  shared-file churn is created — from here every edit to the file wakes all of
+   *  these docs until the registry says who owns what — and it used to pass in
+   *  silence, so the cost was only ever met later, at a red gate, by someone who
+   *  had no idea a second claim had been added. */
+  sharedPrimary?: string[];
+}
+
+/** The FEATURES claiming `file` as primary with no per-symbol claim anywhere among
+ *  them — empty unless that is genuinely more than one. A deliberate split whose
+ *  owners are already authored is not warned about: it is the resolved state. */
+function unclaimedSharedOwners(root: string, file: string): string[] {
+  const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+  const owners = Object.entries(registry.features)
+    .filter(([, e]) => e.type === "feature" && e.primary_sources.includes(file))
+    .map(([key]) => key)
+    .sort();
+  if (owners.length < 2) return [];
+  const claimed = owners.some(
+    (key) => (registry.features[key].owned_symbols?.[file] ?? []).length > 0,
+  );
+  return claimed ? [] : owners;
 }
 
 function scaffoldDoc(key: string, row: FeatureMapRow, file: string, date: string): string {
@@ -165,6 +188,7 @@ export function materializeFileTo(
     status: "updated",
     docPath: existing.doc,
     secondaryUpdated: [],
+    sharedPrimary: unclaimedSharedOwners(root, file),
   };
 }
 
@@ -251,7 +275,14 @@ export function materializeFile(root: string, rows: FeatureMapRow[], file: strin
     }
   }
 
-  return { file, feature: key, status, docPath, secondaryUpdated };
+  return {
+    file,
+    feature: key,
+    status,
+    docPath,
+    secondaryUpdated,
+    sharedPrimary: unclaimedSharedOwners(root, file),
+  };
 }
 
 // ── Suspicious-shape check (deterministic, info-level) ──────────────────────
@@ -425,6 +456,7 @@ export function mapMaterialize(options: MapCliOptions = {}): void {
     console.log(
       `  ✓ ${file} ${direct.status === "updated" ? "added to" : "already in"} ${pc.bold(direct.feature!)}`,
     );
+    printSharedPrimaryWarning(direct);
     return;
   }
 
@@ -455,4 +487,29 @@ export function mapMaterialize(options: MapCliOptions = {}): void {
   }
   const verb = result.status === "created" ? "created" : result.status === "updated" ? "added to" : "already in";
   console.log(`  ✓ ${file} ${verb} ${pc.bold(result.feature!)}${result.secondaryUpdated.length ? pc.dim(` (+secondary ${result.secondaryUpdated.join(", ")})`) : ""}`);
+  printSharedPrimaryWarning(result);
+}
+
+/**
+ * Say it at the moment the shared claim is made, not at the red gate weeks later.
+ * From here, every edit to this file wakes all of these docs until the registry
+ * says who owns what — which is a cost worth accepting deliberately and never
+ * worth paying by accident. A warning, never a refusal: a genuine multi-owner file
+ * is a legitimate thing to have, and the tool does not get to decide otherwise.
+ */
+function printSharedPrimaryWarning(result: MaterializeResult): void {
+  const owners = result.sharedPrimary ?? [];
+  if (owners.length < 2) return;
+  console.log(
+    pc.yellow(`  ⚠ ${result.file} is now primary for ${owners.length} features: ${owners.join(", ")}`),
+  );
+  console.log(
+    pc.dim("    Every edit to it will wake all of them until one of these is true:"),
+  );
+  console.log(
+    pc.dim(`    · a symbol on it is claimed — "owned_symbols": { ${JSON.stringify(result.file)}: ["<descriptor>"] }`),
+  );
+  console.log(
+    pc.dim("    · one feature keeps it primary and the rest carry it in related_sources (a `[secondary: ...]` Map row does this)"),
+  );
 }

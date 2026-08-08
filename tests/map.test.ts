@@ -151,6 +151,70 @@ describe("materializeFileTo (the post-ship route)", () => {
     ]);
   });
 
+  // Plan 36: the moment a second feature claims a file is the moment the churn is
+  // created — from then on every edit wakes both docs until the registry says who
+  // owns what. It used to pass in silence, so the bill only arrived later, at a red
+  // gate, in front of someone who did not know a second claim had been added.
+  describe("the second primary claim is where the churn starts, so it says so", () => {
+    const claim = (key: string, patch: Record<string, unknown> = {}) => ({
+      doc: `docs/features/${key}.md`,
+      type: "feature",
+      primary_sources: [],
+      related_sources: [],
+      docs: [],
+      depends_on: [],
+      risk: [],
+      status: "current",
+      ...patch,
+    });
+    const write = async (features: Record<string, unknown>): Promise<void> => {
+      await writeFile(
+        join(root, "docs", ".registry.json"),
+        JSON.stringify({ features }, null, 2),
+      );
+    };
+
+    it("warns naming every owner once a second feature claims the file", async () => {
+      await write({
+        cart: claim("cart", { primary_sources: ["src/shared.ts"] }),
+        checkout: claim("checkout"),
+      });
+      const r = materializeFileTo(root, "src/shared.ts", "checkout");
+      assert.equal(r.status, "updated");
+      assert.deepEqual(r.sharedPrimary, ["cart", "checkout"]);
+    });
+
+    it("stays silent on the FIRST claim — one owner is the resolved state", async () => {
+      await write({ cart: claim("cart"), checkout: claim("checkout") });
+      assert.deepEqual(materializeFileTo(root, "src/solo.ts", "cart").sharedPrimary, []);
+    });
+
+    it("stays silent when the split is already authored", async () => {
+      // A deliberate multi-owner file whose symbols are claimed is not churn — it
+      // is exactly the fix the warning asks for, so warning about it would train
+      // the reader to ignore the one case that matters.
+      await write({
+        cart: claim("cart", {
+          primary_sources: ["src/shared.ts"],
+          owned_symbols: { "src/shared.ts": ["priceOf()."] },
+        }),
+        checkout: claim("checkout"),
+      });
+      assert.deepEqual(materializeFileTo(root, "src/shared.ts", "checkout").sharedPrimary, []);
+    });
+
+    it("does not count a concept umbrella as a competing owner", async () => {
+      // A concept co-documents at file grain and never fragments per-symbol
+      // ownership, so a file owned by one feature plus any number of umbrellas
+      // still resolves derived — no churn, nothing to warn about.
+      await write({
+        cart: claim("cart"),
+        lib: { ...claim("lib"), type: "concept", primary_sources: ["src/shared.ts"] },
+      });
+      assert.deepEqual(materializeFileTo(root, "src/shared.ts", "cart").sharedPrimary, []);
+    });
+  });
+
   it("is idempotent — a file already owned is a noop, never a duplicate", () => {
     assert.equal(materializeFileTo(root, "i18n/index.ts", "i18n").status, "noop");
     assert.deepEqual(readRegistrySync(join(root, "docs", ".registry.json")).features.i18n.primary_sources, [

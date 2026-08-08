@@ -138,7 +138,7 @@ No new source files.
 - [x] **Step 2 — Ownership-aware ack refusal.** Resolve the owner on the symbol path;
       refuse-with-route for unassigned / ambiguous / concept-owned / unowned; `owned` unchanged.
       Tests per branch, including "refused ⇒ no ack file written" and "no registry ⇒ unchanged".
-- [ ] **Step 3 — Materialize shared-primary warning.** Warn on creating a second primary owner
+- [x] **Step 3 — Materialize shared-primary warning.** Warn on creating a second primary owner
       absent `owned_symbols` coverage. Tests: fires on the second claim; silent on the first
       claim, on secondary rows, and when claims already cover the path.
 - [ ] **Step 4 — Skills + docs.** The shared-file rule into `work-step` and `review-work`
