@@ -311,6 +311,30 @@ export function worktreeDeletionsSince(root: string, base: string): string[] {
   return [...files].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
+// Renames between the merge-base of (base, HEAD) and the working tree — the
+// ref-ranged twin of the working-tree rename view. `worktreeChangesSince` already
+// reports a rename's DESTINATION as a change; this reports the pair, so a caller
+// can also see the path that ceased to exist. Silent on an unavailable diff (the
+// advisory stance this view already takes for changes), never a throw of its own.
+export function worktreeRenamesSince(
+  root: string,
+  base: string,
+): Array<{ from: string; to: string }> {
+  const { sha } = resolveBase(root, base, "HEAD");
+  const pairs: Array<{ from: string; to: string }> = [];
+  try {
+    const out = git(root, ["diff", "--name-status", "-M", "-z", sha]);
+    for (const e of parseDiffNameStatusZ(out)) {
+      if (e.code.startsWith("R") && e.oldPath) pairs.push({ from: e.oldPath, to: e.path });
+    }
+  } catch {
+    // no diff available
+  }
+  return pairs.sort((a, b) =>
+    a.to !== b.to ? (a.to < b.to ? -1 : 1) : a.from < b.from ? -1 : a.from > b.from ? 1 : 0,
+  );
+}
+
 // Paths changed between the merge-base of (base, HEAD) and the current working
 // tree — the LOCAL two-ref advisory view: everything on this branch since it
 // diverged from `base`, committed or not, which is the same question CI answers

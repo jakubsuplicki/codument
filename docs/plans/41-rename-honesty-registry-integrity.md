@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 41: rename honesty — the gate sees both sides of a move, and the registry cannot point at ghosts

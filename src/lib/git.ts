@@ -153,6 +153,23 @@ interface StatusEntry {
   x: string;
   y: string;
   path: string;
+  /** For a rename/copy, the path it came FROM. Absent otherwise. Git reports this
+   *  as a separate NUL field, and it used to be consumed and thrown away — which
+   *  is why a `git mv` presented to the gate as a bare add, leaving the registry
+   *  pointing at a path that no longer exists with nothing to notice. */
+  origin?: string;
+}
+
+/** A path that moved: git's own rename detection, never a similarity guess of
+ *  ours. Both halves matter — `to` is the change to judge, `from` is the path any
+ *  registry entry naming it has just been left pointing at. */
+export interface RenamePair {
+  from: string;
+  to: string;
+}
+
+function isRenameEntry(e: StatusEntry): boolean {
+  return e.x === "R" || e.x === "C" || e.y === "R" || e.y === "C";
 }
 
 // Parse `git status --porcelain -z` into entries. NUL-terminated output disables
@@ -175,10 +192,13 @@ function parseStatusZ(out: string): StatusEntry[] {
     const x = tok[0];
     const y = tok[1];
     const path = tok.slice(3); // "XY " prefix (two status chars + a space)
-    // A rename/copy carries its origin path in the next NUL field — skip it.
-    if (x === "R" || x === "C" || y === "R" || y === "C") i += 2;
-    else i += 1;
-    entries.push({ x, y, path });
+    // A rename/copy carries its origin path in the next NUL field. It is consumed
+    // either way (it is not a change of its own), but it is KEPT: the vanished
+    // path is the whole point of a rename for anything that holds a path.
+    const rename = x === "R" || x === "C" || y === "R" || y === "C";
+    const origin = rename ? tokens[i + 1] : undefined;
+    i += rename ? 2 : 1;
+    entries.push(origin ? { x, y, path, origin } : { x, y, path });
   }
   return entries;
 }
@@ -328,6 +348,45 @@ function getWorkingTreeDeletionsIn(root: string): string[] {
     if (e.x === "D" || e.y === "D") files.add(e.path);
   }
   return sortPaths(files);
+}
+
+/**
+ * Renames in the working tree as `{from, to}` pairs, sorted by destination. A
+ * rename is neither a bare add nor a bare delete: `to` already travels as a
+ * change, but `from` travelled nowhere at all, so a registry entry naming it was
+ * left pointing at a vanished path with no signal anywhere. Detection is entirely
+ * git's (`status` reports R/C after its own similarity pass) — we add no
+ * heuristic of our own, so what the gate sees is what git saw.
+ */
+function getWorkingTreeRenamesIn(root: string): RenamePair[] {
+  if (!isGitRepo(root)) return [];
+  let out: string;
+  try {
+    out = git(root, ["status", "--porcelain", "-z", "-uall"]);
+  } catch (err) {
+    // Fail closed for the same reason as getWorkingTreeChanges: a status that
+    // throws must never read as "nothing moved".
+    throw new GateError(`git status failed: ${(err as Error).message}`, "git-failed");
+  }
+  const pairs: RenamePair[] = [];
+  for (const e of parseStatusZ(out)) {
+    if (isRenameEntry(e) && e.origin) pairs.push({ from: e.origin, to: e.path });
+  }
+  return sortRenames(pairs);
+}
+
+function sortRenames(pairs: RenamePair[]): RenamePair[] {
+  const seen = new Set<string>();
+  const out: RenamePair[] = [];
+  for (const p of pairs) {
+    const key = `${p.from}\0${p.to}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(p);
+  }
+  return out.sort((a, b) =>
+    a.to !== b.to ? (a.to < b.to ? -1 : 1) : a.from < b.from ? -1 : a.from > b.from ? 1 : 0,
+  );
 }
 
 /**
@@ -647,6 +706,28 @@ export function getWorkingTreeDeletions(
   workspace: Workspace = resolveWorkspace(root),
 ): string[] {
   return aggregateChanges(workspace, getWorkingTreeDeletionsIn);
+}
+
+/**
+ * Renames across the workspace, workspace-relative POSIX. Both halves of a pair
+ * carry the same member prefix — a rename is always within one repository, since
+ * git cannot see across a member boundary — so a member-local move surfaces to the
+ * workspace root with its origin intact.
+ */
+export function getWorkingTreeRenames(
+  root: string,
+  workspace: Workspace = resolveWorkspace(root),
+): RenamePair[] {
+  const pairs: RenamePair[] = [];
+  for (const member of workspace.members) {
+    for (const p of getWorkingTreeRenamesIn(member.root)) {
+      const from = prefixed(member.prefix, p.from);
+      const to = prefixed(member.prefix, p.to);
+      if (isMemberDir(workspace, to)) continue;
+      pairs.push({ from, to });
+    }
+  }
+  return sortRenames(pairs);
 }
 
 /**

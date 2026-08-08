@@ -14,6 +14,7 @@ import {
   readBlobAtRef,
   refReachable,
   resolveBase,
+  worktreeRenamesSince,
 } from "../src/lib/two-ref.js";
 
 function git(root: string, args: string[]): string {
@@ -234,5 +235,21 @@ describe("changedPathsBetween: -z path decoding and rename ordering", () => {
     assert.ok(renamed, "rename detected");
     assert.equal(renamed?.path, "new-näme.ts", "new path at head");
     assert.equal(renamed?.oldPath, "old-name.ts", "old path at base");
+  });
+
+  // Plan 41: the ref-ranged twin of the working-tree rename view. The destination
+  // already travels as a change; without the pair, the origin a registry entry may
+  // still name travels nowhere.
+  it("worktreeRenamesSince reports the pair against a base ref", () => {
+    const pairs = worktreeRenamesSince(tmp, a);
+    assert.ok(
+      pairs.some((p) => p.from === "old-name.ts" && p.to === "new-näme.ts"),
+      `expected the rename pair, got ${JSON.stringify(pairs)}`,
+    );
+    // Sorted by destination, and no path arrives octal-escaped or quoted.
+    for (const p of pairs) {
+      assert.doesNotMatch(p.from, /\\\d{3}|^"/, `origin ${p.from} is escaped`);
+      assert.doesNotMatch(p.to, /\\\d{3}|^"/, `destination ${p.to} is escaped`);
+    }
   });
 });

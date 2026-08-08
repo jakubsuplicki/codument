@@ -9,6 +9,8 @@ import { tmpdir } from "node:os";
 import {
   assertRootIsRepoToplevel,
   getWorkingTreeChanges,
+  getWorkingTreeDeletions,
+  getWorkingTreeRenames,
   listIgnoredPaths,
   listTrackedFiles,
   NOT_A_REPO,
@@ -139,6 +141,52 @@ describe("path listings distinguish 'could not determine' from 'determined: none
     } finally {
       process.env.PATH = orig;
     }
+  });
+});
+
+// Plan 41: a rename is neither a bare add nor a bare delete. The destination
+// already travelled as a change; the ORIGIN travelled nowhere, which is how a
+// `git mv` left the registry pointing at a vanished path with nothing to notice.
+describe("renames are reported as pairs, not as a bare add", () => {
+  async function repoWith(files: Record<string, string>): Promise<void> {
+    execFileSync("git", ["init", "-q"], { cwd: tmp });
+    execFileSync("git", ["config", "user.email", "t@example.com"], { cwd: tmp });
+    execFileSync("git", ["config", "user.name", "T"], { cwd: tmp });
+    for (const [p, c] of Object.entries(files)) {
+      await mkdir(dirname(join(tmp, p)), { recursive: true });
+      await writeFile(join(tmp, p), c);
+    }
+    execFileSync("git", ["add", "-A"], { cwd: tmp });
+    execFileSync("git", ["commit", "-qm", "init"], { cwd: tmp });
+  }
+
+  it("a git mv yields the pair, and neither a deletion nor a dropped origin", async () => {
+    await repoWith({ "a.ts": "export const a = 1;\n" });
+    execFileSync("git", ["mv", "a.ts", "b.ts"], { cwd: tmp });
+
+    assert.deepEqual(getWorkingTreeRenames(tmp), [{ from: "a.ts", to: "b.ts" }]);
+    // The destination still counts as a change (unchanged behavior)…
+    assert.ok(getWorkingTreeChanges(tmp).includes("b.ts"));
+    // …and a rename is still NOT a deletion, so the deletion wake does not fire.
+    assert.deepEqual(getWorkingTreeDeletions(tmp), []);
+  });
+
+  it("a plain deletion is not a rename, and a plain edit is neither", async () => {
+    await repoWith({ "a.ts": "export const a = 1;\n", "keep.ts": "export const k = 1;\n" });
+    execFileSync("git", ["rm", "-q", "a.ts"], { cwd: tmp });
+    assert.deepEqual(getWorkingTreeRenames(tmp), []);
+    assert.deepEqual(getWorkingTreeDeletions(tmp), ["a.ts"]);
+  });
+
+  it("a path with spaces and non-ASCII survives the pair intact", async () => {
+    // NUL framing is what makes this work; a quoted/escaped path would arrive
+    // mangled and silently fail to match any registry entry — the same hazard the
+    // change listing already guards, now on the origin half too.
+    await repoWith({ "src/föo bar.ts": "export const a = 1;\n" });
+    execFileSync("git", ["mv", "src/föo bar.ts", "src/bäz qux.ts"], { cwd: tmp });
+    assert.deepEqual(getWorkingTreeRenames(tmp), [
+      { from: "src/föo bar.ts", to: "src/bäz qux.ts" },
+    ]);
   });
 });
 
