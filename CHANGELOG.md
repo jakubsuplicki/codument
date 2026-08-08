@@ -7,6 +7,33 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+### Changed
+- **A registration is now a claim of governance (ADR 017).** A file a feature or
+  concept owns in `primary_sources` that no adapter can judge — a locale pack,
+  registered config, a content file — is gated at whole-file grain: a content
+  change or a deletion wakes its owning docs, and a doc update or a file-grain
+  ack (`codument ack <path>`) clears it. Previously such a file was info-only,
+  so **rewriting a registered contract file to say something entirely different
+  passed `review --strict` green, and deleting one passed with no line at all** —
+  a false green on precisely the files someone took the trouble to declare
+  load-bearing. Found by a field probe on an app whose whole user-visible string
+  surface was twenty registered locale packs.
+
+  Two things deliberately did NOT change: `related_sources` still never wakes
+  (it claims impact, not ownership), and the exclusion spec still overrides the
+  registry. Both keep the info-only surface, now rendered apart — an excluded
+  registration is two declarations contradicting each other, an impact-only one
+  is working as designed.
+
+  **If you registered non-source files expecting a purely informational notice,
+  they now gate.** Either is one line to change: move the path to
+  `related_sources` to keep it impact-only, or declare it in the `exclude` block
+  of `.codument-meta.json` to drop it from scope entirely.
+- `review`'s headline counts name governed changes instead of folding them into
+  "other", governed deletions are listed beside deleted sources, and the review
+  bundle carries the governed set so a file that can block a step is never
+  missing from the adversary's oracle.
+
 ## [0.14.0] - 2026-08-05
 
 The release that stops charging you for the ceremony.

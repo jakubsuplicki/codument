@@ -147,6 +147,53 @@ No guardrail moved in either: the plan-approval gate, the hard-pause conditions,
 gate are unchanged, `scan` still installs nothing on its own, and both escapes are cheap — a spoken
 phrase ("step by step") that holds for the session, and `--no-scan`.
 
+## Field report — Expo app dogfood (36–39)
+
+A 2026-08-07 field report from building an Expo app under the gate — the first to answer "what
+would you keep": the doc standard and the invariant→test rule found the session's real bugs (a
+vacuous placeholder check, a UTC-midnight date bug, three contract divergences found while writing
+prose), the plan survived a context compaction and a session kill, and mandatory review caught
+what nothing local could. The friction list drove these plans; every mechanism was verified
+against source first.
+
+Verification sharpened the worst item: the multi-owner churn is a **routing** defect, not a
+design defect — the designed resolutions (`owned_symbols` claims, `related_sources` demotion)
+exist and were never surfaced at the wake, while `codument ack` recorded acks for unassigned
+shared symbols that drift never consults: a green checkmark over a red gate. Two reported items
+dissolved on verification: file acks refusing moved symbols is ADR 012 working as decided, and
+the "luck" that kept 240 generated locale files ungoverned is the source-extension spec working
+as designed — the missing piece was recorded intent (plan 27's `exclude` block), which is
+guidance, not mechanism.
+
+| Plan | Theme | Finding it fixes |
+| --- | --- | --- |
+| [36](36-shared-file-ownership-resolution.md) | Shared-file ownership churn: resolution block, ownership-aware ack refusal, materialize warning | "Worst part by far": N stale docs per one-line edit, no ack clears it, prose written into five docs to buy green; inert acks recorded on unassigned symbols |
+| [37](37-brownfield-charter.md) | Brownfield charter: derive from code, confirm in one message | Charter gate interviewed a shipping app through datastore/auth/hosting its code settled months ago |
+| [38](38-fan-out-step-sizing.md) | Fan-out step sizing: skill rule + adversary objection class | "Generate twelve locales" as one step — ~35 agents, blown session, nothing flagged it before approval |
+| [39](39-field-polish.md) | Field polish: generated-artifact intent, Windows invocation fallback, single-anchor render collapse, verdict-last line, touched-section rule for legacy docs, `ack --prune` | The report's practical notes plus the two-register clash and dead-ack accumulation (342 acks, 52 auto-invalidated, nothing sweeps them) |
+| [40](40-registered-file-governance.md) | Registration is governance: file-grain wake for registered files no adapter judges | **Structural false green** (probes B and D, both reproduced live): rewriting a registered locale/contract file counted "0 source, 1 other" and exited 0; deleting one printed "1 deleted" and exited 0 with no advisory at all |
+| [41](41-rename-honesty-registry-integrity.md) | Rename honesty + registry-pointer integrity + post-ship materialize | Probe C: `git mv` on a registered source is add-only to the gate, leaves a permanent ghost in `primary_sources` nothing reaps (doctor's `missing-source` warn lives where the loop never looks), and `map materialize` is unreachable after plan compaction — two mandated behaviours disabling each other |
+
+Two follow-up interrogations of the reporting session (registry pastes, `ack --list`, transcript
+grep, live probes B/C/D) confirmed the unassigned-shared-symbol mechanism, corrected one
+mislabelled file, and rewrote the ranking. The ownership signpost had fired **25 times** and was
+ignored because of *placement* (an advisory block below the blocking line); the stale-docs hint
+recommended file-grain acks that structurally cannot clear unassigned changed anchors (two
+accumulated, one dead). Probe B surfaced the plan-40 false green; probes C and D surfaced the
+plan-41 rename/ghost-pointer cluster and confirmed deletion blindness live. The reporter's
+exit-code complaint dissolved (`--strict` returns 1 correctly; their `$?`-after-`tail` reading
+was the error — plan 39's verdict-last line still meets the habit halfway), and the bunx failure
+was pinned to bun's own argument marshalling (arity equals the quoted value's word count),
+filable upstream. Two watch items, no plan: `related_sources` is exercised by exactly two entries
+in the field repo, both created that session, so the impact-only rule has near-zero field
+mileage; and entry `status` is authored metadata nothing maintains (routed to plan 39's
+update-docs line).
+
+Run 40 first — a false green on explicitly-claimed files beats every ergonomic fix, the same
+ranking plan 28's workspace false green got. Then 41 (silent corruption of the control plane the
+gate itself reads), then 36 (the report's "worst part by far", now with the placement and hint
+fixes the follow-up demanded). 37–39 are independent and in any order.
+
 Still to plan, ranked by value: shipped delivery scaffolding is never compacted out of docs (the
 standard says it should be; nothing enforces it); the Decisions layer states conclusions without
 naming evidence, which is how a wrong recorded decision survived two fix attempts; unmapped prose
