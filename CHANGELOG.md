@@ -7,6 +7,46 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-08
+
+The dogfood release. An Expo app was built end to end under the gate by an agent
+that had never seen codument, and its field report is what this release answers —
+six plans (36–41) drawn from one session's transcript, registry pastes, ack list
+and four live probes.
+
+What that session found was not a design that failed. Every wake, every ack rule,
+every ownership decision behaved exactly as its ADR says. What failed was the gate
+telling the truth about itself at the two moments it matters most: **when it stays
+green**, and **when it goes red and the reader needs a way out.**
+
+Three false greens are closed. A registered file no adapter can judge — a locale
+pack, a content file, registered config — could be rewritten to say something
+entirely different and pass `--strict`; deleting one passed with no line at all. A
+`git mv` on a registered source presented as a bare add, so re-registering the new
+path left a permanent ghost in `primary_sources` that nothing reaped. And `review`
+would sign off `clean` over findings it had just listed whenever `--strict` was
+absent — the exact `| tail -1` misread the verdict line was added to prevent.
+
+The red path is the other half, and it cost that session more. A one-line edit to a
+file three features claimed woke three docs, no acknowledgment could clear any of
+them, and the exit taken was prose written into five docs — the mirror edit the
+whole ack protocol exists to prevent. The two registry edits that end it existed
+the entire time; they printed as an advisory below the blocking line, and one
+session read past them twenty-five times. Placement was the defect. Every
+resolution now renders inside the finding it resolves, is computed from what would
+actually clear that finding, and `ack` refuses to record one that reaches nothing
+instead of printing a green checkmark over a red gate.
+
+Around those: the charter gate stops interviewing a shipping app through decisions
+its code settled months ago; a step that fans out over a list is caught before
+approval rather than after thirty-five agents; `ack --prune` sweeps what
+auto-invalidation leaves behind; and the emitted contract names the launcher
+symptom that cost that session its acknowledgment route for an entire run.
+
+Both plans reviewed adversarially after shipping were reopened over what the review
+found — 41 for ten confirmed findings, 36 for three. That is the record as it
+happened, and it is in the plan docs.
+
 ### Changed
 - **A registration is now a claim of governance (ADR 017).** A file a feature or
   concept owns in `primary_sources` that no adapter can judge — a locale pack,
