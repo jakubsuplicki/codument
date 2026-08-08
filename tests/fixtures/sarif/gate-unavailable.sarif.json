@@ -53,6 +53,17 @@
               }
             },
             {
+              "id": "codument/registry-pointer",
+              "name": "RegistryPointer",
+              "shortDescription": {
+                "text": "A registry entry still names a source path this change renamed or deleted."
+              },
+              "helpUri": "https://github.com/jakubsuplicki/codument/blob/main/docs/features/registry-health.md",
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
               "id": "codument/unevaluable",
               "name": "Unevaluable",
               "shortDescription": {

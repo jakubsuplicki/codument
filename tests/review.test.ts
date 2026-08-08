@@ -1432,6 +1432,48 @@ describe("a rename never leaves the registry pointing at a ghost (probe C)", () 
     assert.equal(r.code, 0, `the split's correct end state must be reachable:\n${r.out}`);
   });
 
+  it("every surface reports the pointer — none of them says clean while the gate is red", async () => {
+    // The state that exposed it: a registered source deleted, the owning doc
+    // updated in the same change (so the deletion's DOC debt is paid), the entry
+    // still naming the path. `--strict` fails on the pointer alone, which left
+    // watch printing ✓ CLEAN, the HTML report saying "Nothing suspicious", and CI
+    // uploading a SARIF with zero results beside a check that exited 1.
+    await scaffold({
+      "docs/features/i18n.md": "# i18n\n\nFormats dates for display.\n",
+      "i18n/format.ts": "export const version = 1;\n",
+      "docs/.registry.json": registryFor(["i18n/format.ts"]),
+    });
+    gitInit(tmp);
+
+    execFileSync("git", ["rm", "-q", "i18n/format.ts"], { cwd: tmp });
+    await scaffold({ "docs/features/i18n.md": "# i18n\n\nDate formatting was removed.\n" });
+
+    const strict = runReview();
+    assert.equal(strict.code, 1, `the pointer alone must fail --strict:\n${strict.out}`);
+    // …and the epilogue must not offer a route that cannot clear it.
+    assert.match(strict.out, /re-point the entry|drop it/i, "names the fix that works");
+    assert.doesNotMatch(
+      strict.out.split("--strict:")[1] ?? "",
+      /codument ack/,
+      "no acknowledgment clears a pointer, so none is offered under it",
+    );
+
+    const watch = runReview(["watch", "--once"]);
+    assert.match(watch.out, /registry pointer/i, `watch must not omit it:\n${watch.out}`);
+
+    const sarif = runReview(["review", "--format", "sarif"]);
+    const results = JSON.parse(sarif.out).runs[0].results as Array<{ ruleId: string }>;
+    assert.ok(
+      results.some((r) => r.ruleId === "codument/registry-pointer"),
+      "a red check must never upload a SARIF that reads as a clean pass",
+    );
+
+    runReview(["report", "--no-open"]);
+    const html = await readFile(join(tmp, ".codument", "report.html"), "utf-8");
+    assert.match(html, /names a path this change removed/, "the report card renders");
+    assert.doesNotMatch(html, /Nothing suspicious/, "the page must not call it clear");
+  });
+
   it("a PRE-EXISTING dangle never blocks an unrelated change", async () => {
     await scaffold({
       "docs/features/i18n.md": "# i18n\n",

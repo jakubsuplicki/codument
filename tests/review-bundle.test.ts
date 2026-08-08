@@ -87,6 +87,11 @@ function cs(partial: Partial<ChangeState>): ChangeState {
     planScoped: false,
     ownershipLints: [],
     unevaluable: [],
+    deletedSources: [],
+    ungatedRegistered: [],
+    registryPointers: [],
+    governedRegistered: [],
+    governedDeleted: [],
     ...partial,
   };
 }

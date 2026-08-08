@@ -177,7 +177,7 @@ finding — it self-announces at the next touch of that feature's source, and `d
       file-grain and governed wakes. Tests: the printed ack works when pasted for a renamed
       precise file; a pure rename of a coarse file and of a governed registered file fires nothing;
       a rename that also edits still wakes and is still ackable.
-- [ ] **Step R3 — the pointer finding reaches every surface.** A SARIF rule and results; the
+- [x] **Step R3 — the pointer finding reaches every surface.** A SARIF rule and results; the
       verdict model and its gloss; an HTML report card; the `--strict` epilogue names the pointer
       fix instead of offering an ack that cannot clear it. Tests: `--strict` red implies SARIF
       results present and the invocation unsuccessful; `watch` does not say CLEAN; the report card

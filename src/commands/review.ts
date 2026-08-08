@@ -886,16 +886,24 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
         `  ✗ --strict: ${reasons.join(" and ")} — the registry/docs are not in sync for this change.`,
       ),
     );
-    console.log(
-      pc.dim(
-        "    Materialize unmapped sources (`codument map materialize <file>`), then resolve each stale doc:",
-      ),
-    );
-    console.log(
-      pc.dim(
-        "    update it at intent altitude, or acknowledge a change that owes no doc line (`codument ack <path>` / `codument ack <path>::<symbol>`), then re-run.",
-      ),
-    );
+    // Only the routes that can actually clear what fired. At the moment of most
+    // pressure, a command that cannot resolve the finding it sits under is worse
+    // than no guidance at all — it is a plausible thing to try that leaves the gate
+    // exactly as red. A registry pointer is the sharp case: no acknowledgment
+    // clears it, and offering one here sent the reader to a refusal.
+    const routes: string[] = [];
+    if (report.state.unmapped.length > 0)
+      routes.push("    Materialize unmapped sources: `codument map materialize <file>`.");
+    if (report.state.registryPointers.length > 0)
+      routes.push(
+        "    Fix each registry pointer — re-point the entry to the new path, or drop it. No ack applies: the pointer is simply false.",
+      );
+    if (report.state.staleDocs.length > 0)
+      routes.push(
+        "    Resolve each stale doc: update it at intent altitude, or acknowledge a change that owes no doc line (`codument ack <path>` / `codument ack <path>::<symbol>`).",
+      );
+    for (const line of routes) console.log(pc.dim(line));
+    console.log(pc.dim("    Then re-run."));
     process.exitCode = 1;
   }
 

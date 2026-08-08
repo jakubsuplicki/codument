@@ -53,6 +53,17 @@
               }
             },
             {
+              "id": "codument/registry-pointer",
+              "name": "RegistryPointer",
+              "shortDescription": {
+                "text": "A registry entry still names a source path this change renamed or deleted."
+              },
+              "helpUri": "https://github.com/jakubsuplicki/codument/blob/main/docs/features/registry-health.md",
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
               "id": "codument/unevaluable",
               "name": "Unevaluable",
               "shortDescription": {
@@ -97,6 +108,56 @@
               "physicalLocation": {
                 "artifactLocation": {
                   "uri": "src/shared/util.ts"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "codument/registry-pointer",
+          "level": "warning",
+          "message": {
+            "text": "src/i18n/format.ts was renamed to src/i18n/dateFormat.ts, but docs/.registry.json still names it under i18n. Re-point the entry, or drop the path — no acknowledgment clears a false pointer."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/.registry.json"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "relatedLocations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/i18n/dateFormat.ts"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "codument/registry-pointer",
+          "level": "warning",
+          "message": {
+            "text": "src/legacy/dropped.ts was deleted in this change, but docs/.registry.json still names it under auth, billing. Re-point the entry, or drop the path — no acknowledgment clears a false pointer."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/.registry.json"
                 },
                 "region": {
                   "startLine": 1

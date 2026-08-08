@@ -67,6 +67,13 @@ export interface Verdict {
   /** New changed sources with no registry owner — surfaced as context, not a
    *  severity driver (a missing mapping isn't the same as a doc behind code). */
   unmapped: number;
+  /** Registry entries left naming a path this change removed. Carried for the same
+   *  reason `unmapped` is, and on the same terms: it blocks `--strict` but does not
+   *  move the severity ladder, which grades whether the DOCS are behind the code.
+   *  What it must never do is go unmentioned — a verdict that reads clean over a
+   *  tree the gate refuses is the one way the live view and a snapshot can
+   *  contradict each other. */
+  registryPointers: number;
 }
 
 export interface VerdictOptions {
@@ -175,6 +182,15 @@ function riskGloss(risk: RiskFinding[]): string | null {
 }
 
 function buildGloss(v: Verdict, state: ChangeState): string {
+  // A registry entry naming a path this change removed blocks `--strict` without
+  // moving the severity ladder, so it has to ride EVERY gloss rather than one
+  // branch of it. The state it turns up in most often — a deletion whose owning doc
+  // WAS updated — has nothing else left to report, so the view announced a tidy
+  // little change over a tree the gate refuses. `review` and `watch` deriving from
+  // one analyzer is worth nothing if the projection drops a blocking finding.
+  const pointers =
+    v.registryPointers > 0 ? plural(v.registryPointers, "stale registry pointer") : "";
+  const withPointers = (s: string): string => (pointers ? `${s} · ${pointers}` : s);
   if (v.status === "clean") {
     const parts: string[] = [];
     if (v.blast.touched > 0) {
@@ -189,19 +205,19 @@ function buildGloss(v: Verdict, state: ChangeState): string {
       // Source was touched cleanly, but config/asset files also changed — note
       // them so the gloss accounts for the whole tree, not just governed files.
       if (other > 0) parts.push(`+${plural(other, "other file")}`);
-      return parts.join(" · ");
+      return withPointers(parts.join(" · "));
     }
     // Nothing codument governs was touched — but a doc-only or config/asset change
     // still isn't an empty tree; never claim "working tree clean" while real files
     // sit uncommitted (the false-clean a stranger would catch on a screenshot).
     if (state.changedDocs.length > 0) {
       const docs = `${plural(state.changedDocs.length, "doc")} updated · no source changes`;
-      return other > 0 ? `${docs} · +${plural(other, "other file")}` : docs;
+      return withPointers(other > 0 ? `${docs} · +${plural(other, "other file")}` : docs);
     }
     if (other > 0) {
-      return `${plural(other, "file")} changed · not source or docs`;
+      return withPointers(`${plural(other, "file")} changed · not source or docs`);
     }
-    return "working tree clean";
+    return pointers || "working tree clean";
   }
   // Non-clean: enumerate active findings in descending severity.
   const pieces: string[] = [];
@@ -209,6 +225,7 @@ function buildGloss(v: Verdict, state: ChangeState): string {
   if (r) pieces.push(r);
   if (v.offPlan) pieces.push(`${plural(v.offPlan.files.length, "file")} off-plan`);
   if (v.drift.length > 0) pieces.push(`${plural(v.drift.length, "doc")} now behind code`);
+  if (pointers) pieces.push(pointers);
   return pieces.join(" · ");
 }
 
@@ -280,6 +297,7 @@ export function classifyVerdict(state: ChangeState, opts: VerdictOptions): Verdi
       totalFiles: opts.inScopeSourceCount ?? 0,
     },
     unmapped: state.unmapped.length,
+    registryPointers: state.registryPointers.length,
   };
   verdict.gloss = buildGloss(verdict, state);
   return verdict;

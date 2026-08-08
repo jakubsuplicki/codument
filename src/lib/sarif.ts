@@ -99,6 +99,15 @@ const RULES: SarifRule[] = [
     defaultConfiguration: { level: "warning" },
   },
   {
+    id: "codument/registry-pointer",
+    name: "RegistryPointer",
+    shortDescription: {
+      text: "A registry entry still names a source path this change renamed or deleted.",
+    },
+    helpUri: `${DOCS}/registry-health.md`,
+    defaultConfiguration: { level: "warning" },
+  },
+  {
     id: "codument/unevaluable",
     name: "Unevaluable",
     shortDescription: {
@@ -201,6 +210,34 @@ export function reviewReportToSarif(report: ReviewReport, notifications: string[
       },
       locations: [loc(lint.file)],
     });
+  }
+
+  // A registry entry left naming a path this change removed. A `--strict` input like
+  // the two above, so it has to project: a run that failed on this alone was
+  // uploading a SARIF with no results at all — a report reading as a clean pass
+  // beside a check that exited 1, which is the "no findings" ⇒ "clean" misread the
+  // whole fail-closed discriminant exists to prevent. Anchored on the entry's DOC,
+  // because the vanished path has no file for an annotation to land on.
+  for (const p of state.registryPointers) {
+    const what =
+      p.kind === "renamed"
+        ? `was renamed to ${p.renamedTo ?? "another path"}`
+        : "was deleted in this change";
+    const result: SarifResult = {
+      ruleId: "codument/registry-pointer",
+      level: "warning",
+      message: {
+        text: `${p.file} ${what}, but docs/.registry.json still names it under ${p.features.join(
+          ", ",
+        )}. Re-point the entry, or drop the path — no acknowledgment clears a false pointer.`,
+      },
+      locations: [loc("docs/.registry.json")],
+    };
+    // Assigned only when there IS one: an explicit `undefined` survives in the
+    // object even though JSON.stringify drops it, and the schema check reads the
+    // object, not the serialization.
+    if (p.renamedTo) result.relatedLocations = [loc(p.renamedTo)];
+    results.push(result);
   }
 
   // A changed file the gate could not parse (parse error / conflict markers) is a

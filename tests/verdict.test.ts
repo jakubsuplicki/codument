@@ -26,6 +26,13 @@ function mkState(p: Partial<ChangeState> = {}): ChangeState {
     dependentsSummary: [],
     outOfPlan: [],
     planScoped: false,
+    ownershipLints: [],
+    unevaluable: [],
+    deletedSources: [],
+    ungatedRegistered: [],
+    registryPointers: [],
+    governedRegistered: [],
+    governedDeleted: [],
     ...p,
   };
 }
@@ -244,6 +251,52 @@ describe("classifyVerdict — headline is the highest severity, gloss enumerates
     // Honest: a clean verdict must not read "working tree clean" while
     // undocumented new files exist.
     assert.equal(v.gloss, "2 unmapped files");
+  });
+
+  // Plan 41 remediation: a dangling registry pointer became a third `--strict`
+  // input and reached no other surface, so `watch` announced a tidy change over a
+  // tree the gate refused — the one way the live view and a snapshot can
+  // contradict each other. It rides every gloss for the same reason `unmapped`
+  // does, and grades severity for the same reason it does not: the ladder is about
+  // whether the DOCS are behind the code.
+  const pointer = [
+    { file: "src/gone.ts", features: ["i18n"], kind: "deleted" as const },
+  ];
+
+  it("a registry pointer is named in the gloss without moving the severity ladder", () => {
+    const v = classifyVerdict(mkState({ registryPointers: pointer }), OPTS);
+    assert.equal(v.status, "clean", "a false pointer is not the docs falling behind");
+    assert.equal(v.registryPointers, 1);
+    assert.equal(v.gloss, "1 stale registry pointer", "…but it is never unsaid");
+  });
+
+  it("it survives every clean branch, including the one with nothing else to report", () => {
+    // The state it actually turns up in: a deletion whose owning doc WAS updated.
+    // Nothing else is left to narrate, so this is exactly where a dropped finding
+    // reads as an all-clear.
+    const docOnly = classifyVerdict(
+      mkState({ changedDocs: ["docs/features/i18n.md"], registryPointers: pointer }),
+      OPTS,
+    );
+    assert.equal(docOnly.gloss, "1 doc updated · no source changes · 1 stale registry pointer");
+
+    const other = classifyVerdict(
+      mkState({ otherChanged: ["app.json"], registryPointers: pointer }),
+      OPTS,
+    );
+    assert.match(other.gloss, /1 stale registry pointer$/);
+
+    // And on a non-clean verdict it is enumerated beside the findings that did
+    // move the ladder, rather than being crowded out by them.
+    const drifting = classifyVerdict(
+      mkState({
+        staleDocs: [{ feature: "f", doc: "docs/features/f.md", changedSources: ["src/y.ts"] }],
+        registryPointers: pointer,
+      }),
+      OPTS,
+    );
+    assert.equal(drifting.status, "drifting");
+    assert.equal(drifting.gloss, "1 doc now behind code · 1 stale registry pointer");
   });
 });
 

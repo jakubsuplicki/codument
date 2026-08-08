@@ -28,6 +28,13 @@ function emptyState(): ChangeState {
     dependentsSummary: [],
     outOfPlan: [],
     planScoped: false,
+    ownershipLints: [],
+    unevaluable: [],
+    deletedSources: [],
+    ungatedRegistered: [],
+    registryPointers: [],
+    governedRegistered: [],
+    governedDeleted: [],
   };
 }
 

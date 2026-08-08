@@ -95,6 +95,18 @@ export function renderReviewReportHtml(data: ReportData): string {
     },
     {
       level: "warn",
+      count: s.registryPointers.length,
+      label: "The registry names a path this change removed",
+      items: s.registryPointers.map((p) =>
+        p.kind === "renamed"
+          ? `${short(p.file)} → ${short(p.renamedTo ?? "?")} (${p.features.join(", ")})`
+          : `${short(p.file)} deleted (${p.features.join(", ")})`,
+      ),
+      explain:
+        "A rename or deletion left docs/.registry.json naming a path that no longer exists. The registry is what ownership, context packs and the review bundle are all derived from, so a false pointer degrades every one of them silently. Re-point the entry or drop the path; no acknowledgment clears it, because nothing here is a judgment call.",
+    },
+    {
+      level: "warn",
       count: plan ? s.outOfPlan.length : 0,
       label: plan
         ? `Changes outside the approved plan (${shortDoc(plan.plan)})`

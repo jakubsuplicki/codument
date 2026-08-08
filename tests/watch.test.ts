@@ -153,6 +153,7 @@ describe("renderFrame token block", () => {
         dependents: [],
         dependentsSummary: [],
         planScoped: false,
+        registryPointers: [],
       },
     }) as unknown as Review;
   const coverage = { coverage: { percent: 80 } } as never;
@@ -405,6 +406,7 @@ describe("renderFrame caught section (impact ledger)", () => {
         dependents: [],
         dependentsSummary: [],
         planScoped: false,
+        registryPointers: [],
       },
     }) as unknown as Review;
   const coverage = { coverage: { percent: 80 } } as never;

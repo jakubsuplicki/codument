@@ -47,6 +47,20 @@ const EVERY_FINDING_REPORT: ReviewReport = {
     ],
     unevaluable: ["src/legacy/broken.ts"],
     deletedSources: [],
+    ungatedRegistered: [],
+    governedRegistered: [],
+    governedDeleted: [],
+    // Both pointer shapes, because they render different messages and a CI check
+    // failing on one of them alone used to upload a SARIF with no results at all.
+    registryPointers: [
+      {
+        file: "src/i18n/format.ts",
+        features: ["i18n"],
+        kind: "renamed",
+        renamedTo: "src/i18n/dateFormat.ts",
+      },
+      { file: "src/legacy/dropped.ts", features: ["auth", "billing"], kind: "deleted" },
+    ],
   },
   drift: [
     {
@@ -120,9 +134,10 @@ describe("reviewReportToSarif", () => {
     clean.state.outOfPlan = [];
     clean.state.ownershipLints = [];
     clean.state.unevaluable = [];
+    clean.state.registryPointers = [];
     const sarif = reviewReportToSarif(clean);
     assert.equal(sarif.runs[0].results.length, 0);
-    assert.equal(sarif.runs[0].tool.driver.rules.length, 5, "the catalog is advertised regardless");
+    assert.equal(sarif.runs[0].tool.driver.rules.length, 6, "the catalog is advertised regardless");
   });
 });
 

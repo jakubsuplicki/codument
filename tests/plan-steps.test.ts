@@ -277,6 +277,7 @@ describe("watch tape integration", () => {
         dependents: [],
         dependentsSummary: [],
         planScoped: false,
+        registryPointers: [],
       },
     } as unknown as Parameters<typeof renderFrame>[0];
     const coverage = { coverage: { percent: 94 } } as never;
