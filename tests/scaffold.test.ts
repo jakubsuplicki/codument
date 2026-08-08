@@ -133,6 +133,24 @@ describe("buildManagedSection", () => {
     assert.ok(section.includes("docs/concepts/{name}.md"));
   });
 
+  it("names the mangled-argument symptom and a working invocation", () => {
+    // A field session lost `codument ack --reason "..."` for its whole run: bunx on
+    // Windows split the quoted value into words before argv, so commander counted
+    // three arguments and refused. Re-quoting cannot fix a split that happened
+    // upstream of the process, so the guidance has to name the symptom (the agent
+    // sees an arity error, not a launcher bug) and a different way to invoke.
+    const section = buildManagedSection();
+    assert.ok(section.includes('`--reason "one two three"` rejected as three'));
+    assert.ok(section.includes("the launcher split it before codument saw argv"));
+    assert.ok(section.includes("npx codument"));
+    assert.ok(section.includes("node node_modules/codument/dist/cli.js"));
+    // Symptom-keyed, not platform ceremony: it sits with the loop that runs these
+    // commands, and never tells a working setup to change how it invokes.
+    assert.ok(
+      section.indexOf("Seen with `bunx` on Windows") < section.indexOf("### Quality bar"),
+    );
+  });
+
   it("runs an approved plan without waiting, and says how to stop it", () => {
     const section = buildManagedSection();
     assert.ok(section.includes("Autopilot (on by default)"));

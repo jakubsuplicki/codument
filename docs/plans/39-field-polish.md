@@ -21,9 +21,17 @@ didn't survive PowerShell" and it surviving.
    value into words before argv — `--reason "one two three"` fails with "Expected 1 argument
    but got 3", arity tracking the word count — identically from PowerShell and Git Bash, while
    byte-identical direct `node` invocation works. Purely bunx argument marshalling; commander
-   never sees it. Filable upstream against bun as-is (one package, one flag, three words) —
-   filing it is part of this plan's step; nothing in the emitted guidance or docs warns
-   meanwhile.
+   never sees it. Filing it is part of this plan's step; nothing in the emitted guidance or docs
+   warns meanwhile.
+
+   **Narrowed during step 2, and it is not about codument.** `bunx --yes prettier --check
+   "one two three"` reports three missing patterns (`one`, `two`, `three`) where `npx --yes`
+   on the same command reports one (`one two three`) — bun 1.2.19, Windows 11, identically from
+   PowerShell and Git Bash, so the shell is not the variable. It is bunx's **download-and-run**
+   path specifically: a bin already present in local `node_modules` runs through bunx with its
+   quoting intact. That makes the upstream report one command against a package everyone knows,
+   with codument out of the picture entirely — and it means the guidance is correctly written
+   symptom-first, since a reader hitting this has no reason to suspect their launcher.
 3. **Single-anchor render noise.** Under ADR 014 a component/config file has one precise
    `default.` anchor, so every edit prints a file-level change *and* a `default (changed)` line
    that "never told me anything the file-level change list hadn't." The anchor's precision is
@@ -112,9 +120,11 @@ practical-notes section of the report. Grouped because none changes what fires o
 - [x] **Step 1 — Review rendering.** Single-anchor collapse + verdict-last line; tests pin both
       (golden single-anchor output; last-line assertion across clean, red and ungated runs).
       Amended post-review: an ungated run no longer says `clean` over what it just listed.
-- [ ] **Step 2 — Windows guidance.** Managed-section line via `buildManagedSection()` (regenerate
-      in-repo blocks, pin in scaffold test); getting-started + README note; file the upstream
-      bun issue with the minimal repro and link it from the note.
+- [x] **Step 2 — Windows guidance.** Managed-section line via `buildManagedSection()` (regenerate
+      in-repo blocks, pin in scaffold test); getting-started + README note. The upstream repro is
+      verified and narrowed to a codument-free one-liner (above); **filing the bun issue is left
+      for the maintainer** — it posts publicly under their account, which is not a step's call to
+      make. The note deliberately carries no issue link until one exists.
 - [ ] **Step 3 — `ack --prune`.** The flag, the `--list` footer, audit events; tests: prunes only
       invalidated, idempotent on a clean set, indeterminate untouched.
 - [ ] **Step 4 — Skill rules.** The exclude rule into `work-step` and the touched-section rule

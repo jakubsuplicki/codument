@@ -8,6 +8,8 @@ title: Getting Started
 - npm
 - An AI coding agent that can read markdown repo instructions and skills
 
+If a codument command's quoted argument comes back refused as several arguments — `--reason "one two three"` rejected as three — the launcher split it before codument saw argv, so re-quoting cannot fix it. Invoke the CLI as `npx codument …` or `node node_modules/codument/dist/cli.js …`. Seen with `bunx` on Windows.
+
 ## Setup
 
 Install dependencies:

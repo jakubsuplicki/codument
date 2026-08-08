@@ -56,6 +56,8 @@ Use Codument as the durable control plane for agent-led engineering work:
 8. Commit focused work with a conventional commit, authored as the user with no AI `Co-Authored-By` trailer.
 9. Move to the next unchecked step.
 
+If a codument command's quoted argument comes back refused as several arguments — `--reason "one two three"` rejected as three — the launcher split it before codument saw argv, so no quoting fixes it. Run the CLI a different way for the rest of the session: `npx codument …`, or `node node_modules/codument/dist/cli.js …`. Seen with `bunx` on Windows.
+
 ### Quality bar
 Aim for the best-effort, durable solution, not the first plausible one. Before calling a plan or a step done, zoom out and check it adversarially — where is this half-baked, what did I assume, what would break it. Resolve issues yourself; pull the user in only for a genuinely load-bearing, unconfirmed call (the assumption gate below), not for work that should just happen.
 

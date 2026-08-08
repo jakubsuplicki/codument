@@ -100,6 +100,8 @@ codument is two tools used in two places, and keeping them straight is the whole
 
 **Rule of thumb: the CLI finds and reports; your agent fixes.** Codument never writes your code or docs.
 
+**If a quoted argument comes back refused as several arguments** — `--reason "one two three"` rejected as three — your launcher split it before codument saw it, and no amount of re-quoting helps. Run it as `npx codument …` or `node node_modules/codument/dist/cli.js …` instead. Seen with `bunx` on Windows.
+
 ## Works with your stack
 
 | Language | Files | Resolution | Since |
