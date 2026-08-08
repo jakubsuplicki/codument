@@ -1,5 +1,5 @@
 ---
-status: shipped
+status: approved
 ---
 
 # Plan 41: rename honesty — the gate sees both sides of a move, and the registry cannot point at ghosts
@@ -119,6 +119,72 @@ Verified mechanisms, each checked against source:
       `commit-work` (mirror installed copies); `change-control-gate.md` +
       `registry-health.md` invariants with test links; CHANGELOG; registry entries for touched
       sources.
+
+## Post-ship remediation (adversarial review of `e6cd910..4c931e3`)
+
+Steps 1–4 landed and were then reviewed by three lenses with every finding put to an
+independent refuter. Ten findings survived refutation, five were refuted. They reduce to three
+roots, all introduced by this plan, and they mean the plan's own acceptance criteria do not yet
+hold — hence the reopen rather than a follow-up plan.
+
+**Root 1 — the rename map reached exactly one caller.** `buildReview` passes `renamedFrom` into
+`gatherAnchorChanges`; nothing else does. So `review` and `ack` now disagree about the same moved
+file, and `review` prints an ack command that `ack` refuses ("was added, not changed"), whose own
+suggested fallbacks also refuse. The only surviving resolution is the doc edit the ack route
+exists to prevent — which breaks the gate's own standing invariant that *every resolution command
+the surface prints works when pasted*. The same single-caller threading is why a rename-aware
+base read only ever reached the `precise` branch: a coarse-classified or governed-registered file
+still wakes its owning doc on a **pure** rename, making this plan's headline invariant false at
+every grain but one, backed by a precise-only test.
+
+**Root 2 — a pair git labels a rename is trusted without checking the head side.** The plan's own
+Decisions say "exists at base AND is deleted at head"; neither loop checks the head half. Two
+reachable states break it. A **copy** (`status.renames copies`, a supported git setting) reports
+`C` — which `isRenameEntry` accepts, while the two-ref twin filters to `R`, so the two listers
+disagree — and a copy's origin certainly still exists: the pointer fires on a present file, and
+the copy's anchors are read from the original, laundering an entire new contract as unchanged. A
+**file split** (`git mv a b`, then re-create `a` as a re-export shim — a routine refactor) leaves
+git reporting both the rename and an untracked `a`: the gate reports a path it can see on disk as
+removed, and no registry state clears it. Dropping the entry makes the surviving file unmapped;
+re-adding it re-fires the pointer; there is no ack path. That is an unsatisfiable `--strict`, the
+one failure mode worse than a false green.
+
+**Root 3 — a new blocking finding that only one surface knows about.** `registryPointers` became a
+third `--strict` input but was never added to the SARIF projection, `classifyVerdict`, or the HTML
+report. All three lenses caught the SARIF half independently. So a CI job uploads a SARIF that
+reads as a clean pass while the check exits 1, and `watch`/`report` print `✓ CLEAN` over a tree the
+gate blocks — breaking the standing invariant that `review` and `watch` cannot disagree.
+
+Refuted and deliberately not fixed: renames into an excluded path and unstaged filesystem moves
+(both pre-existing, and this plan tightened rather than loosened them); `materializeFileTo` not
+existence-checking its path (the plan-driven route never did either, and the path is hand-typed in
+both); the `--strict` epilogue's generic second sentence (the paste-ready fix is already printed
+four lines above, and the mis-route hard-fails rather than looping) — reworded anyway in R3, since
+it costs one line to stop naming a command that cannot clear the finding it sits under. One real
+gap is recorded as future work rather than fixed here: `namingEntries` resolves only
+`primary_sources`/`related_sources`, so a renamed or deleted feature **doc** is not a pointer
+finding — it self-announces at the next touch of that feature's source, and `doctor` still warns.
+
+- [x] **Step R1 — a pair git calls a rename is a MOVE only when the origin is gone.** `isRenameEntry`
+      accepts `R` only (a copy is not a move, and the two listers stop disagreeing); a shared
+      `movesOnly` filter drops any pair whose origin is still present in the change set; the
+      deleted-pointer branch takes the same guard. Tests: copy detection on yields no pair and no
+      pointer; the `git mv` + shim file split stays satisfiable and its correct end state goes
+      green; probe C is unchanged.
+- [ ] **Step R2 — rename-awareness is a property of the change, not of one caller.**
+      `fileContentTransition` takes the base-side path; `resolveFileGrainAcked`, the review ack
+      card, and both `ack` surfaces resolve it through the same map; a pure move is skipped by the
+      file-grain and governed wakes. Tests: the printed ack works when pasted for a renamed
+      precise file; a pure rename of a coarse file and of a governed registered file fires nothing;
+      a rename that also edits still wakes and is still ackable.
+- [ ] **Step R3 — the pointer finding reaches every surface.** A SARIF rule and results; the
+      verdict model and its gloss; an HTML report card; the `--strict` epilogue names the pointer
+      fix instead of offering an ack that cannot clear it. Tests: `--strict` red implies SARIF
+      results present and the invocation unsuccessful; `watch` does not say CLEAN; the report card
+      renders.
+- [ ] **Step R4 — invariants, tests, CHANGELOG.** The rename invariant restated so it is true at
+      every grain with tests to match; the pointer invariant scoped to source paths with the doc
+      gap named honestly; CHANGELOG; registry sync.
 
 ## Acceptance criteria
 

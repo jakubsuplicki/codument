@@ -171,8 +171,8 @@ guidance, not mechanism.
 | [37](37-brownfield-charter.md) | Brownfield charter: derive from code, confirm in one message | Charter gate interviewed a shipping app through datastore/auth/hosting its code settled months ago |
 | [38](38-fan-out-step-sizing.md) | Fan-out step sizing: skill rule + adversary objection class | "Generate twelve locales" as one step — ~35 agents, blown session, nothing flagged it before approval |
 | [39](39-field-polish.md) | Field polish: generated-artifact intent, Windows invocation fallback, single-anchor render collapse, verdict-last line, touched-section rule for legacy docs, `ack --prune` | The report's practical notes plus the two-register clash and dead-ack accumulation (342 acks, 52 auto-invalidated, nothing sweeps them) |
-| [40](40-registered-file-governance.md) | Registration is governance: file-grain wake for registered files no adapter judges | **Structural false green** (probes B and D, both reproduced live): rewriting a registered locale/contract file counted "0 source, 1 other" and exited 0; deleting one printed "1 deleted" and exited 0 with no advisory at all |
-| [41](41-rename-honesty-registry-integrity.md) | Rename honesty + registry-pointer integrity + post-ship materialize | Probe C: `git mv` on a registered source is add-only to the gate, leaves a permanent ghost in `primary_sources` nothing reaps (doctor's `missing-source` warn lives where the loop never looks), and `map materialize` is unreachable after plan compaction — two mandated behaviours disabling each other |
+| [40](40-registered-file-governance.md) ✅ **shipped** | Registration is governance: file-grain wake for registered files no adapter judges | **Structural false green** (probes B and D, both reproduced live): rewriting a registered locale/contract file counted "0 source, 1 other" and exited 0; deleting one printed "1 deleted" and exited 0 with no advisory at all |
+| [41](41-rename-honesty-registry-integrity.md) 🔧 **in remediation** | Rename honesty + registry-pointer integrity + post-ship materialize | Probe C: `git mv` on a registered source is add-only to the gate, leaves a permanent ghost in `primary_sources` nothing reaps (doctor's `missing-source` warn lives where the loop never looks), and `map materialize` is unreachable after plan compaction — two mandated behaviours disabling each other |
 
 Two follow-up interrogations of the reporting session (registry pastes, `ack --list`, transcript
 grep, live probes B/C/D) confirmed the unassigned-shared-symbol mechanism, corrected one
@@ -193,6 +193,28 @@ Run 40 first — a false green on explicitly-claimed files beats every ergonomic
 ranking plan 28's workspace false green got. Then 41 (silent corruption of the control plane the
 gate itself reads), then 36 (the report's "worst part by far", now with the placement and hint
 fixes the follow-up demanded). 37–39 are independent and in any order.
+
+**40 is shipped; 41's four steps landed and were then reopened by their own review.** 40 (`3d50d97`, `1d2543c`, `e6cd910`) closed the false green at its root:
+a registered file no adapter can parse now gates at whole-file grain — edits and deletions alike —
+clearable by doc attention or a file ack, with `related_sources` still never waking and the
+exclusion spec still overriding registration, both now worded apart (ADR-017). 41 (`ad64ca0`,
+`fe46639`, `a842ee2`, `4c931e3`) made a rename visible on both sides: the listers report `{from,
+to}` pairs instead of discarding the origin, a change that strands a registered path holds
+`--strict` red until the entry stops naming it, and `map materialize --feature <slug>` gives
+post-ship files a route that does not depend on a compacted-out Map. Implementation found one thing
+the plan had not: a pure rename was reporting every symbol as *added*, which both lied and forced a
+doc edit for a change that moved no contract — base-side anchors now read from where the file
+actually lived, so a pure rename fires nothing and a rename-plus-edit reports exactly what moved.
+
+A three-lens adversarial pass over those four commits then confirmed ten findings against them, so
+41 went back to `approved` with a remediation checklist rather than staying marked shipped over
+known blockers. Three roots: the rename map reached only one caller (so `review` printed an ack
+that `ack` refused, and the rename-aware read never left the precise grain); a pair git labels a
+rename was trusted without checking that the origin was gone (a copy, or a `git mv` plus a
+re-export shim, made `--strict` unsatisfiable); and the new blocking finding was never added to
+SARIF, the watch verdict, or the HTML report, so CI uploaded a clean-reading SARIF while the check
+exited 1. The full triage — including the five refuted findings and the one gap deliberately left
+as future work — is in the plan's own post-ship remediation section.
 
 Still to plan, ranked by value: shipped delivery scaffolding is never compacted out of docs (the
 standard says it should be; nothing enforces it); the Decisions layer states conclusions without

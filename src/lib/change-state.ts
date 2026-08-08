@@ -14,7 +14,7 @@ import {
 import { resolveOwner, splitAnchorId } from "./ownership.js";
 import { fileContentTransition, type AnchorChange } from "./fingerprint.js";
 import { ackCovers, isFileGrainAck, type Acknowledgment } from "./acknowledgment.js";
-import type { RenamePair } from "./git.js";
+import { movesOnly, type RenamePair } from "./git.js";
 import { extractStatus, isApproved } from "./plan-steps.js";
 
 // Deterministic diff snapshot over the v2 registry. Pure function of (registry,
@@ -554,16 +554,28 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   // path it clears itself, with no acknowledgment and nothing to remember. A
   // rename's origin is the case that was invisible before — it reached the gate as
   // a bare add, so the pointer rotted silently while the verdict went green.
+  // A pointer is false only when the path is actually GONE. Git reports a rename
+  // (and, with copy detection, a copy) from a similarity pass over one side of the
+  // change, and `deletedFiles` reports the index side — so both can name a path
+  // that is present at head: `git mv a b` plus a re-export shim at `a`, or a plain
+  // copy. Demanding the registry stop naming a file you can see on disk is not a
+  // fix anyone can apply — dropping the entry only makes the surviving file
+  // unmapped — so the guard is the plan's own predicate, enforced rather than
+  // assumed: named at base, absent at head. `changedFiles` is the head-side
+  // evidence both modes already carry (it unions untracked paths), and it is
+  // git's own byte-exact spelling, so a case-only rename on a case-insensitive
+  // filesystem is still a move.
   const registryPointers: RegistryPointer[] = [];
   const namingEntries = (path: string): string[] =>
     entries.filter(([, e]) => allSources(e).includes(path)).map(([key]) => key);
-  for (const { from, to } of input.renames ?? []) {
+  for (const { from, to } of movesOnly(input.renames ?? [], changed)) {
     const features = namingEntries(from);
     if (features.length > 0) {
       registryPointers.push({ file: from, features: sortStrings(features), kind: "renamed", renamedTo: to });
     }
   }
   for (const file of deleted) {
+    if (changed.has(file)) continue; // removed from the index, still on disk
     const features = namingEntries(file);
     if (features.length > 0) {
       registryPointers.push({ file, features: sortStrings(features), kind: "deleted" });

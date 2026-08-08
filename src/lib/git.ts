@@ -168,8 +168,32 @@ export interface RenamePair {
   to: string;
 }
 
+// A COPY is not a move. Git reports `C` alongside `R` when copy detection is on
+// (`status.renames copies`), and both carry an origin path — but a copy's origin
+// is still right there, so treating one as a rename says a present file was
+// removed AND reads the new file's base content from the original, laundering an
+// entirely new contract as unchanged. `R` only, which is also what the ref-ranged
+// twin (`worktreeRenamesSince`) has always matched: the two listers must not
+// disagree about what moved.
 function isRenameEntry(e: StatusEntry): boolean {
-  return e.x === "R" || e.x === "C" || e.y === "R" || e.y === "C";
+  return e.x === "R" || e.y === "R";
+}
+
+/**
+ * The subset of `pairs` that are genuinely MOVES: git's rename detection is a
+ * similarity pass over one side of the change, so it can pair an origin that is
+ * still present at head. The routine case is a file split — `git mv a b`, then
+ * re-create `a` as a re-export shim — where git reports the rename AND an
+ * untracked `a`. Judged as a move, that says a file you can see on disk was
+ * removed, and no registry state clears it (dropping the entry makes the shim
+ * unmapped; keeping it re-fires the finding). A move is a pair whose origin is
+ * gone, so the origin must not appear in the change set as a path of its own.
+ */
+export function movesOnly(
+  pairs: readonly RenamePair[],
+  presentAtHead: ReadonlySet<string>,
+): RenamePair[] {
+  return pairs.filter((p) => !presentAtHead.has(p.from));
 }
 
 // Parse `git status --porcelain -z` into entries. NUL-terminated output disables
@@ -194,7 +218,10 @@ function parseStatusZ(out: string): StatusEntry[] {
     const path = tok.slice(3); // "XY " prefix (two status chars + a space)
     // A rename/copy carries its origin path in the next NUL field. It is consumed
     // either way (it is not a change of its own), but it is KEPT: the vanished
-    // path is the whole point of a rename for anything that holds a path.
+    // path is the whole point of a rename for anything that holds a path. The
+    // consume test is deliberately WIDER than `isRenameEntry` — a copy's origin
+    // field is still on the wire, so failing to eat it would desync every
+    // following entry — while only `R` is a move.
     const rename = x === "R" || x === "C" || y === "R" || y === "C";
     const origin = rename ? tokens[i + 1] : undefined;
     i += rename ? 2 : 1;

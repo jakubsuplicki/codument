@@ -13,6 +13,7 @@ import {
   getWorkingTreeRenames,
   listIgnoredPaths,
   listTrackedFiles,
+  movesOnly,
   NOT_A_REPO,
   forgetWorkspace,
   repoFor,
@@ -176,6 +177,47 @@ describe("renames are reported as pairs, not as a bare add", () => {
     execFileSync("git", ["rm", "-q", "a.ts"], { cwd: tmp });
     assert.deepEqual(getWorkingTreeRenames(tmp), []);
     assert.deepEqual(getWorkingTreeDeletions(tmp), ["a.ts"]);
+  });
+
+  it("a COPY is not a move, even with git's copy detection turned on", async () => {
+    // `status.renames copies` is a supported setting, and under it git reports `C`
+    // with an origin path exactly like a rename. Reading that as a move says a
+    // file still sitting on disk was removed, and makes the copy's base content
+    // the ORIGINAL's — laundering an entirely new file's contract as unchanged.
+    const body = "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n";
+    await repoWith({ "a.ts": body });
+    execFileSync("git", ["config", "status.renames", "copies"], { cwd: tmp });
+    await writeFile(join(tmp, "copy.ts"), body);
+    // git only considers MODIFIED files as copy sources, so the original has to
+    // move for the copy to be detected at all — which is also the realistic shape:
+    // you copy a file and then edit one of the two.
+    await writeFile(join(tmp, "a.ts"), `${body}export const d = 4;\n`);
+    execFileSync("git", ["add", "-A"], { cwd: tmp });
+
+    // Guard the fixture: prove git really did classify it as a copy, so this test
+    // fails loudly if a future git stops emitting `C` rather than passing vacuously.
+    const porcelain = execFileSync("git", ["status", "--porcelain"], {
+      cwd: tmp,
+      encoding: "utf-8",
+    });
+    assert.ok(/^C/m.test(porcelain), `expected a copy entry, got:\n${porcelain}`);
+    assert.deepEqual(getWorkingTreeRenames(tmp), []);
+  });
+
+  it("movesOnly drops a pair whose origin is still present — the file-split refactor", () => {
+    // `git mv a b` then re-create `a` as a re-export shim: git reports the rename
+    // AND an untracked `a`. Judged as a move it demands the registry stop naming a
+    // path that exists, which nothing can satisfy — dropping the entry only makes
+    // the shim unmapped.
+    const pairs = [
+      { from: "src/format.ts", to: "src/dateFormat.ts" },
+      { from: "src/gone.ts", to: "src/moved.ts" },
+    ];
+    assert.deepEqual(movesOnly(pairs, new Set(["src/format.ts", "src/dateFormat.ts"])), [
+      { from: "src/gone.ts", to: "src/moved.ts" },
+    ]);
+    // A genuine move survives untouched: only the destination is in the change set.
+    assert.deepEqual(movesOnly(pairs, new Set(["src/dateFormat.ts", "src/moved.ts"])), pairs);
   });
 
   it("a path with spaces and non-ASCII survives the pair intact", async () => {

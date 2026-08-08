@@ -690,6 +690,37 @@ describe("registry pointers left dangling by this change", () => {
     );
   });
 
+  it("a path that is still THERE was not removed — neither half fires on a present file", () => {
+    // Both inputs can name a path that exists at head: git pairs renames by
+    // similarity (a file split re-creates the origin as a shim), and `deletedFiles`
+    // reports the index side (`git rm x` then re-create x). Demanding the registry
+    // stop naming a file you can see on disk is unsatisfiable — dropping the entry
+    // only makes the surviving file unmapped — so presence at head settles it.
+    const split = computeChangeState({
+      registry: registry as never,
+      changedFiles: ["i18n/dateFormat.ts", "i18n/format.ts"],
+      renames: [{ from: "i18n/format.ts", to: "i18n/dateFormat.ts" }],
+    });
+    assert.deepEqual(split.registryPointers, [], "the origin is present — nothing was removed");
+
+    const recreated = computeChangeState({
+      registry: registry as never,
+      changedFiles: ["i18n/format.ts"],
+      deletedFiles: ["i18n/format.ts"],
+    });
+    assert.deepEqual(recreated.registryPointers, [], "removed from the index, still on disk");
+
+    // Control: with the path genuinely gone, both still fire (so the guard above
+    // narrows the finding rather than deleting it).
+    const gone = computeChangeState({
+      registry: registry as never,
+      changedFiles: ["i18n/dateFormat.ts"],
+      renames: [{ from: "i18n/format.ts", to: "i18n/dateFormat.ts" }],
+      deletedFiles: [],
+    });
+    assert.equal(gone.registryPointers.length, 1, "a real move still flags");
+  });
+
   it("a related-only registration dangles too — a wrong pointer is wrong either way", () => {
     const reg = {
       features: {

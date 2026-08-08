@@ -29,6 +29,7 @@ import {
   getWorkingTreeChanges,
   getWorkingTreeDeletions,
   getWorkingTreeRenames,
+  movesOnly,
   isGitRepo,
   type RenamePair,
 } from "../lib/git.js";
@@ -258,7 +259,13 @@ export function buildReview(
   const deletions = deletedFiles ?? getWorkingTreeDeletions(root);
   // A rename's origin reaches the verdict ONLY here: the destination rides
   // `changes`, but the vanished path is what a registry entry may still name.
-  const renames = opts.renames ?? getWorkingTreeRenames(root);
+  // Filtered to genuine MOVES before anything reads it: git pairs by similarity,
+  // so a copy or a file split (`git mv a b` plus a shim at `a`) arrives as a
+  // rename whose origin is still present. Both consumers below would be wrong
+  // about it — the anchor map would read the new file's base from the original
+  // and launder its whole contract as unchanged, and the pointer finding would
+  // demand the registry stop naming a file that exists.
+  const renames = movesOnly(opts.renames ?? getWorkingTreeRenames(root), new Set(changes));
   const plan = detectApprovedPlanScope(root);
   // Per-symbol anchor diffs for the precise (TS) changed files, base ref vs the
   // working tree — this is what dissolves the shared-file cascade in the verdict.

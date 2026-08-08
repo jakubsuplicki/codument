@@ -1391,6 +1391,47 @@ describe("a rename never leaves the registry pointing at a ghost (probe C)", () 
     assert.equal(r.code, 0, `re-pointing the entry resolves it:\n${r.out}`);
   });
 
+  it("a file SPLIT stays satisfiable — the origin is still there, so nothing was removed", async () => {
+    // `git mv a b` then re-create `a` as a re-export shim: git reports a rename
+    // whose origin is present on disk. Read as a move, the gate demanded the
+    // registry stop naming a file you can see — and no registry state satisfied
+    // it: dropping the entry made the shim unmapped, keeping it re-fired the
+    // pointer, and there is no ack for a pointer. An unsatisfiable --strict is
+    // worse than the false green this plan set out to close.
+    await scaffold({
+      "docs/features/i18n.md": "# i18n\n\nFormats dates for display.\n",
+      "i18n/format.ts": "export function formatDate(d: Date): string {\n  return d.toISOString();\n}\n",
+      "docs/.registry.json": registryFor(["i18n/format.ts"]),
+    });
+    gitInit(tmp);
+
+    execFileSync("git", ["mv", "i18n/format.ts", "i18n/dateFormat.ts"], { cwd: tmp });
+    await scaffold({ "i18n/format.ts": 'export { formatDate } from "./dateFormat.js";\n' });
+
+    // Guard the fixture: this only tests anything while git still calls it a
+    // rename. If it stops, the test must fail rather than pass for a new reason.
+    const porcelain = execFileSync("git", ["status", "--porcelain", "-uall"], {
+      cwd: tmp,
+      encoding: "utf-8",
+    });
+    assert.ok(/^R/m.test(porcelain), `expected git to report a rename:\n${porcelain}`);
+
+    // The origin is NOT a removed path — it is right there — so no pointer fires.
+    let r = runReview();
+    assert.ok(
+      !r.out.includes("Registry names a path this change removed"),
+      `a path present on disk was not removed:\n${r.out}`,
+    );
+
+    // And the honest end state — both files owned, doc updated — is reachable.
+    await scaffold({
+      "docs/.registry.json": registryFor(["i18n/format.ts", "i18n/dateFormat.ts"]),
+      "docs/features/i18n.md": "# i18n\n\nFormats dates for display, via a re-export shim.\n",
+    });
+    r = runReview();
+    assert.equal(r.code, 0, `the split's correct end state must be reachable:\n${r.out}`);
+  });
+
   it("a PRE-EXISTING dangle never blocks an unrelated change", async () => {
     await scaffold({
       "docs/features/i18n.md": "# i18n\n",
