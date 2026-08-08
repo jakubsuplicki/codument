@@ -1686,7 +1686,7 @@ describe("an unclaimed shared file says how to stop being one (plan 36)", () => 
     const out = runReview(["review"]).out;
     assert.match(out, /shared symbol claimed by more than one feature/);
     assert.match(out, /remove .* from owned_symbols in all but one of cart and checkout/);
-    assert.doesNotMatch(out, /claim it  →/, "adding another claim would make it worse");
+    assert.doesNotMatch(out, /claim it {2}→/, "adding another claim would make it worse");
   });
 });
 
