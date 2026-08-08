@@ -37,7 +37,7 @@ Use this after `review-work` is clean, or after the user has approved/deferred e
 ## Rules
 
 - Do not commit unresolved high or critical review findings.
-- Do not commit while `codument review --strict` is red — a new source left unmapped or a mapped doc left stale must be synced first.
+- Do not commit while `codument review --strict` is red — a new source left unmapped, a mapped doc left stale, or a registry entry still naming a path this change renamed or deleted must be synced first. The last one is a pointer fix, never prose: re-point the entry, or drop it.
 - Do not decide to defer review findings yourself; only the user can defer findings.
 - Do not commit unrelated dirty files.
 - Do not claim verification passed if a command failed or could not run.

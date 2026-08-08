@@ -33,6 +33,35 @@ remains pre-1.0.
   "other", governed deletions are listed beside deleted sources, and the review
   bundle carries the governed set so a file that can block a step is never
   missing from the adversary's oracle.
+- **A change may no longer leave the registry pointing at a file it removed.**
+  `git mv` presented to the gate as a bare add — the destination flagged as
+  unmapped, the vanished origin mentioned nowhere — so registering the new path
+  and resolving the doc produced a **green run with a permanent ghost** in
+  `primary_sources` that nothing ever reaped. (`doctor` detects it, in a command
+  the delivery loop never runs.) A rename or deletion that strands a registered
+  path is now a blocking finding naming the entries at fault and the fix; it
+  clears the moment the registry stops naming the path, with no acknowledgment
+  to record. Scoped to what THIS change removed — a path already missing at the
+  base ref stays `doctor`'s warning, because review judges the change and doctor
+  judges the repo.
+- **A rename is judged as a move, not as a deletion and a birth.** A moved file's
+  base-side content is now read from where it actually lived and re-keyed to
+  where it lives now, so a pure rename fires nothing and wakes no doc. Before,
+  every symbol in a renamed file reported as *added* — which stated something
+  false about the contract and demanded a doc edit for a change that said nothing
+  about the doc. A rename that also edits the file reports exactly the symbols
+  that really moved, and a contract edit still refuses the ack path.
+
+### Added
+- **`codument map materialize <file> --feature <slug>`** — name the owning
+  feature directly, with no Feature Map in the loop. A plan's Map is compacted
+  out of its doc when the work ships, which left every later file addition or
+  rename refusing against a plan that no longer carried one: two mandated
+  behaviours disabling each other, with a hand-edited registry as the only way
+  through. The old refusal now signposts this route. It refuses an unknown slug
+  rather than inventing a feature — that needs a responsibility line to seed its
+  doc, which is plan work — and it is no way around scope: an excluded path is
+  refused exactly as it is through the Map.
 
 ## [0.14.0] - 2026-08-05
 

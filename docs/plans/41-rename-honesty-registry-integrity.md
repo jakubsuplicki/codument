@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 41: rename honesty — the gate sees both sides of a move, and the registry cannot point at ghosts
@@ -103,19 +103,19 @@ Verified mechanisms, each checked against source:
 
 ## Delivery Plan
 
-- [ ] **Step 1 — Rename pairs in the listers.** Working-tree + base-range + workspace
+- [x] **Step 1 — Rename pairs in the listers.** Working-tree + base-range + workspace
       aggregation; deletions and changes unchanged for non-rename entries. Tests: `git mv`
       yields a pair and neither a bare delete nor a dropped origin; `git rm` unchanged;
       NUL-path edge cases (spaces, non-ASCII) hold.
-- [ ] **Step 2 — Registry findings + strict.** The rename finding and the change-created-dangle
+- [x] **Step 2 — Registry findings + strict.** The rename finding and the change-created-dangle
       finding in `computeChangeState`; strict fails while an entry names a vanished path;
       rendering with paste-ready fixes. Tests: probe C replayed end-to-end — the field
       sequence (mv → register new → resolve doc) stays red until the entry drops the ghost;
       pre-existing dangle does not block; `git rm` with entry cleanup goes green.
-- [ ] **Step 3 — Post-ship materialize.** `--feature` explicit route; refusal message offers
+- [x] **Step 3 — Post-ship materialize.** `--feature` explicit route; refusal message offers
       it; secondary stays map-only. Tests: routes to the named feature, refuses unknown slugs,
       plan-driven path unchanged.
-- [ ] **Step 4 — Skills + docs.** The rename/delete registry practice into `work-step` and
+- [x] **Step 4 — Skills + docs.** The rename/delete registry practice into `work-step` and
       `commit-work` (mirror installed copies); `change-control-gate.md` +
       `registry-health.md` invariants with test links; CHANGELOG; registry entries for touched
       sources.
