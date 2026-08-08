@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 37: brownfield charter — derive from the code, confirm in one message
@@ -68,7 +68,7 @@ registry the skill never consults.
 
 ## Delivery Plan
 
-- [ ] **Step 1 — Skill brownfield path.** Read-before-asking step, the derive-and-confirm message
+- [x] **Step 1 — Skill brownfield path.** Read-before-asking step, the derive-and-confirm message
       shape, the contradiction rule, provenance wording; persist/mirror behavior unchanged.
       Mirror the installed copy.
 - [ ] **Step 2 — Managed-section clause.** Add the clause in `buildManagedSection()`, regenerate

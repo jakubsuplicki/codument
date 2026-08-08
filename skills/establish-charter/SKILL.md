@@ -46,19 +46,71 @@ loop. Do not re-interview.
 
 1. **Confirm the gate applies.** Charter missing + real-work intent. If a charter exists, skip to the
    normal loop. If the message is a pure question, answer it and stop.
-2. **Q1 — seriousness (always, first).** Ask the single question, framed plainly:
+2. **Read the repo before asking it anything** (see Brownfield First). A project that already has
+   working code has already made most of these decisions; asking it to choose again is worse than
+   ceremony. If it has, take the brownfield path and skip to step 7.
+3. **Q1 — seriousness (always, first).** Ask the single question, framed plainly:
    *"Before we build: is this a quick demo / throwaway to try an idea, or a serious app you intend to
    ship and maintain?"* Recommend based on what they've described, and explain the difference in one
    line (a demo optimizes for speed now; a serious app pays a little more attention now to avoid
    painful rewrites later). Wait for the answer.
-3. **Walk the core tech questions — on BOTH paths.** In order, one at a time: **architecture style →
+4. **Walk the core tech questions — on BOTH paths.** In order, one at a time: **architecture style →
    datastore → auth → hosting/deploy** (serious path also covers **scale/traffic expectations** and
    **testing strategy**). For each, use the Recommendation Format below.
-4. **Adapt depth by seriousness** (see Demo Path / Serious Path).
-5. **Persist** (see Persisting The Charter): write `docs/charter.md`, mirror a 2-line summary into
+5. **Adapt depth by seriousness** (see Demo Path / Serious Path).
+6. **Persist** (see Persisting The Charter): write `docs/charter.md`, mirror a 2-line summary into
    `docs/overview.md`, and on the serious path write an ADR per real architecture decision.
-6. **Hand off to the normal loop.** Once the charter is written, proceed with the user's original
+7. **Brownfield: derive, confirm once, then persist.** Present the derived charter in a single
+   message (see Brownfield First), take the confirmation, then persist exactly as step 6 does.
+8. **Hand off to the normal loop.** Once the charter is written, proceed with the user's original
    request through the standard grill → plan → work loop. The charter now informs every later grill.
+
+## Brownfield First
+
+A charter gate that interviews a shipping app through datastore, auth and hosting is asking it to
+re-decide what its own code settled months ago. The field case: an app running on SQLite and
+Firebase was walked through both choices — "pure ceremony… no notion that a project might already
+have made these decisions in code." Worse than ceremony, in fact: an answer that contradicts the
+code is either silently ignored, or an accidental migration decision nobody scoped.
+
+**Look before asking.** Read what is already there — `docs/.registry.json` (an adopted project's
+`init` populates it), `docs/overview.md`, the dependency manifest, and config/infra files. Whether
+this amounts to a real codebase is your judgment, the same kind of call real-work intent already
+is — never a file count or a string match.
+
+**Derive, then confirm in ONE message.** For a project with substantial working code, do not walk
+the questions. Derive each dimension from the code and present the whole charter at once, each line
+carrying its evidence in plain words, with the seriousness recommendation on top (something already
+shipping defaults to *serious*). The user's job is to confirm or correct, not to answer a
+questionnaire:
+
+```text
+This project has been running for a while, so I read the stack rather than asking you to pick it again:
+
+  Seriousness   serious — it has shipped code and a real user-facing surface
+  Architecture  local-first mobile app, Expo Router file-based routing
+  Datastore     SQLite on-device — `expo-sqlite` in dependencies, migrations under db/
+  Auth          Firebase Auth — `@react-native-firebase/auth`, google-services.json present
+  Hosting       EAS Build / Expo updates — eas.json at the root
+  Testing       Jest, ~40 unit tests under __tests__/
+
+Does that match how you think about it? Tell me anything that is wrong and I'll fix it before writing
+the charter.
+```
+
+Only a dimension the code genuinely does not answer earns its own question, asked in the normal
+Recommendation Format. One underivable dimension is one question — not a reopened interview.
+
+**A correction is a migration, not a charter edit.** If the user contradicts a derived line ("we're
+moving off Firebase"), that is a decision about the future, and it goes to the normal grill/plan
+loop as its own piece of work. Write the charter describing what the code does today. A charter that
+claims something the code does not do is worse than no charter: every later grill inherits the lie.
+
+**Record where each line came from.** A derived decision carries `derived from code at adoption` as
+its rationale, so a later grill knows the confidence behind it — nobody argued for this, it was
+read off the repo. Decisions genuinely made during the charter keep the normal treatment, ADRs
+included. Do not mint ADRs for derived status quo: an ADR restating what the code already does is
+bloat, and it dilutes the ones that record a real argument.
 
 ## Recommendation Format
 
@@ -130,7 +182,12 @@ Do not research on the demo path, and do not research choices that are not genui
 
 - Do not ask the user's experience level. Ever.
 - Do not branch behavior on inferred experience — only verbosity adapts.
-- Do not dump a questionnaire; one decision at a time, recommendation-first.
+- Do not dump a questionnaire; one decision at a time, recommendation-first. The brownfield
+  confirm-once message is the deliberate exception: it asks nothing, it states what the code
+  already decided.
+- Do not interview a project through a decision its own code has already made — read it and confirm.
+- Do not write a charter line the code contradicts; a correction is a migration, and migrations go
+  through the normal grill/plan loop.
 - Do not run the gate when a charter already exists, or on a pure question / read-only request.
 - Do not present an unresearched guess as established fact on the serious path.
 - Do not start source edits during the charter gate — this sets direction, it does not implement.
