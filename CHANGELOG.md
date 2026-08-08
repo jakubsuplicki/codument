@@ -109,6 +109,20 @@ remains pre-1.0.
   legitimate thing to have. Silent on the first claim, on a split whose symbols are
   already claimed, and on a concept umbrella.
 
+- **The charter gate no longer interviews a project through decisions its code has
+  already made.** It fired on an app that had been shipping on SQLite and Firebase
+  for months and walked it through datastore, auth and hosting — ceremony at best,
+  and at worst an accidental migration decision, since an answer contradicting the
+  code is either silently discarded or a scope change nobody planned. On a project
+  with substantial working code the skill now reads the repo (registry, overview,
+  dependency manifest, config and infra files), derives the stack, and presents the
+  whole charter in **one confirm-once message** with each line's evidence in plain
+  words. Only a dimension the code cannot answer earns a question; a correction is
+  treated as a migration and routed to the normal grill/plan loop, so the charter
+  never claims something the code does not do. Greenfield behaviour, the seriousness
+  question, and the never-ask-experience rule are unchanged. Existing projects
+  inherit the routing clause on `codument update`.
+
 ### Added
 - **`codument map materialize <file> --feature <slug>`** — name the owning
   feature directly, with no Feature Map in the loop. A plan's Map is compacted

@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 37: brownfield charter — derive from the code, confirm in one message
@@ -71,9 +71,9 @@ registry the skill never consults.
 - [x] **Step 1 — Skill brownfield path.** Read-before-asking step, the derive-and-confirm message
       shape, the contradiction rule, provenance wording; persist/mirror behavior unchanged.
       Mirror the installed copy.
-- [ ] **Step 2 — Managed-section clause.** Add the clause in `buildManagedSection()`, regenerate
+- [x] **Step 2 — Managed-section clause.** Add the clause in `buildManagedSection()`, regenerate
       the in-repo managed blocks through the same path, pin the wording in the scaffold test.
-- [ ] **Step 3 — Feature doc + wiring.** Record the decision in
+- [x] **Step 3 — Feature doc + wiring.** Record the decision in
       `docs/features/project-charter-gate.md`, compact its stale shipped Delivery Plan, update
       CHANGELOG and registry.
 

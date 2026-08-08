@@ -102,6 +102,9 @@ describe("buildManagedSection", () => {
     assert.ok(section.includes("Do not wait for the user to name a skill"));
     assert.ok(section.includes("Charter gate (runs before the normal grill"));
     assert.ok(section.includes("run `establish-charter` first"));
+    // A project with working code has already made these decisions; interviewing it
+    // through them is ceremony at best and an unscoped migration at worst.
+    assert.ok(section.includes("derived from the code and confirmed in one message"));
     // the charter gate must be the FIRST routing rule, ahead of the assumption gate
     assert.ok(
       section.indexOf("Charter gate") <
