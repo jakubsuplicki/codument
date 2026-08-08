@@ -144,7 +144,56 @@ remains pre-1.0.
   big" is not decidable from checklist prose without guessing, and a deterministic
   gate that guesses erodes the ones that do not.
 
+- **`review` ends with its verdict, and `clean` means clean.** The report's author
+  read gate results by grepping piped output rather than trusting the exit code,
+  which is fragile for a real reason: `$?` after a pipe is the last command's
+  status, not the gate's. Every human run now ends stdout with a single verdict
+  line, emitted after the guidance so no hint can drift below it, and that word is
+  reserved for a run with nothing to report — an ungated `codument review` names
+  what it found and says it did not gate it, rather than signing off `clean` over
+  the stale docs it just listed. Exit codes, `--json`, SARIF and the bundle are
+  untouched.
+- **A file whose only anchor is the whole-module one is named by its file.** Under
+  the default-export decision every component and modern config file carries a
+  single `default.` anchor, so drift printed a `default (changed)` line directly
+  under a change list that had just named the file — "it never told me anything the
+  file-level change list hadn't". It now names the path and says whether the move
+  was body or contract, which is the part that was never visible. Multi-anchor
+  files, `--json` and SARIF render exactly as before.
+- **The agent contract names the mangled-argument symptom.** A field session lost
+  `codument ack --reason "..."` for its whole run: the launcher split the quoted
+  value into words before argv, so the extra words counted as positional arguments
+  and the command was refused. Re-quoting cannot reach a split that happened
+  upstream of the process, and nothing said so — the agent read an argument-count
+  error with no reason to suspect its launcher. The emitted contract, the README
+  and getting-started now carry one line keyed to that symptom naming two
+  invocations that work. Reproduced as `bunx --yes prettier --check "one two
+  three"` (three patterns, where `npx` sees one) on bun 1.2.19 / Windows 11, from
+  both PowerShell and Git Bash; it is bunx's download-and-run path, not codument.
+- **`work-step` requires a generating step to declare its output.** 240 generated
+  files went ungoverned only because their extension is not a source extension —
+  the right outcome reached by luck. A step that writes a generator now declares
+  the output path in `.codument-meta.json`'s `exclude` block as part of that step,
+  which is recorded intent rather than a property of the file extension.
+- **`update-docs` says what to do with a doc written at the wrong altitude.** When
+  a gate-owed line lands in a section written wall-to-wall in mechanism voice, the
+  choice used to be implicit: match the doc's voice and write what the standard
+  forbids, or write to the standard and leave the doc in two registers. Rewrite the
+  section you touched, leave the rest alone — a whole-doc rewrite is the owning
+  repo's decision, not a side effect of clearing a wake. Same skill, one more rule:
+  registry `status` is authored metadata nothing maintains, so a feature whose docs
+  a step genuinely brings current gets its stale `status` updated in that step.
+
 ### Added
+- **`codument ack --prune`** — remove every auto-invalidated acknowledgment in one
+  pass. Auto-invalidation is the trust model working, but it accumulates: a field
+  session ended with 342 acks, 52 of them invalidated, each printing its own
+  `--remove` hint that nothing in the loop ever ran. `ack --list` now closes by
+  naming the one command that ends the pile instead of repeating a hint per ack.
+  It removes only what the list itself calls invalidated, recomputed through the
+  same function so the two cannot disagree, and leaves an `indeterminate` ack
+  alone — an unreadable file is a parse error to fix, not a dead judgment to
+  delete. Removals ride the same audit path a hand `--remove` does.
 - **`codument map materialize <file> --feature <slug>`** — name the owning
   feature directly, with no Feature Map in the loop. A plan's Map is compacted
   out of its doc when the work ships, which left every later file addition or

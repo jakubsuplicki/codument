@@ -170,7 +170,7 @@ guidance, not mechanism.
 | [36](36-shared-file-ownership-resolution.md) ✅ **shipped** | Shared-file ownership churn: resolution block, ownership-aware ack refusal, materialize warning | "Worst part by far": N stale docs per one-line edit, no ack clears it, prose written into five docs to buy green; inert acks recorded on unassigned symbols |
 | [37](37-brownfield-charter.md) ✅ **shipped** | Brownfield charter: derive from code, confirm in one message | Charter gate interviewed a shipping app through datastore/auth/hosting its code settled months ago |
 | [38](38-fan-out-step-sizing.md) ✅ **shipped** | Fan-out step sizing: skill rule + adversary objection class | "Generate twelve locales" as one step — ~35 agents, blown session, nothing flagged it before approval |
-| [39](39-field-polish.md) | Field polish: generated-artifact intent, Windows invocation fallback, single-anchor render collapse, verdict-last line, touched-section rule for legacy docs, `ack --prune` | The report's practical notes plus the two-register clash and dead-ack accumulation (342 acks, 52 auto-invalidated, nothing sweeps them) |
+| [39](39-field-polish.md) ✅ **shipped** | Field polish: generated-artifact intent, Windows invocation fallback, single-anchor render collapse, verdict-last line, touched-section rule for legacy docs, `ack --prune` | The report's practical notes plus the two-register clash and dead-ack accumulation (342 acks, 52 auto-invalidated, nothing sweeps them) |
 | [40](40-registered-file-governance.md) ✅ **shipped** | Registration is governance: file-grain wake for registered files no adapter judges | **Structural false green** (probes B and D, both reproduced live): rewriting a registered locale/contract file counted "0 source, 1 other" and exited 0; deleting one printed "1 deleted" and exited 0 with no advisory at all |
 | [41](41-rename-honesty-registry-integrity.md) ✅ **shipped** | Rename honesty + registry-pointer integrity + post-ship materialize | Probe C: `git mv` on a registered source is add-only to the gate, leaves a permanent ghost in `primary_sources` nothing reaps (doctor's `missing-source` warn lives where the loop never looks), and `map materialize` is unreachable after plan compaction — two mandated behaviours disabling each other |
 
@@ -198,6 +198,26 @@ an unclaimed changed anchor, and `ack` recorded inert acknowledgments while prin
 checkmark. The resolution now renders inside the finding, every hint is computed from what would
 actually clear it, `ack` refuses and routes, and `map materialize` warns at the moment a second
 feature claims a file — where the churn is created rather than where it is finally paid for.
+
+**36 was then reopened and closed again** (`6eeaf9d`). An adversarial pass over the whole
+post-41 range confirmed four findings out of twelve; three of them land here, sharing one root:
+the new resolution block is computed per FILE and printed under every doc that file woke,
+consulting neither how the anchor moved, nor which doc it prints under, nor which of the two
+ownership shapes fired. So it denied an ack that works for an added symbol — three lines under
+where it printed that very ack; it attached itself to concept umbrellas, whose file-grain wake
+`owned_symbols` cannot fix, and took away the file ack that does clear them; and its `--strict`
+summary told a doubly-claimed symbol to claim itself again. The plan's own criterion — *no
+output anywhere suggests an ack that cannot clear the wake* — held in the direction it was
+written and failed in the other. The fourth finding is plan 39's verdict line, fixed in the same
+commit: it counted findings only under `--strict`, so a bare run signed off `clean` over stale
+docs it had just listed.
+
+**39 is shipped** (`65c6091`, `6eeaf9d`, `ff4b563`, `e4e3734`). The bunx failure was narrowed
+during step 2 and is not about codument at all: `bunx --yes prettier --check "one two three"`
+reports three missing patterns where `npx` reports one, on bun 1.2.19 / Windows 11, identically
+from PowerShell and Git Bash — bunx's download-and-run path specifically, since a bin already in
+local `node_modules` keeps its quoting. Filing that upstream posts publicly and is left for the
+maintainer; the shipped guidance is symptom-keyed and carries no issue link until one exists.
 
 Run 40 first — a false green on explicitly-claimed files beats every ergonomic fix, the same
 ranking plan 28's workspace false green got. Then 41 (silent corruption of the control plane the

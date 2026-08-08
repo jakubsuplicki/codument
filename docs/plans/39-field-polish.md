@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 39: field polish — generated-artifact intent, Windows invocation, one-line findings, verdict last
@@ -127,7 +127,7 @@ practical-notes section of the report. Grouped because none changes what fires o
       make. The note deliberately carries no issue link until one exists.
 - [x] **Step 3 — `ack --prune`.** The flag, the `--list` footer, audit events; tests: prunes only
       invalidated, idempotent on a clean set, indeterminate untouched.
-- [ ] **Step 4 — Skill rules.** The exclude rule into `work-step` and the touched-section rule
+- [x] **Step 4 — Skill rules.** The exclude rule into `work-step` and the touched-section rule
       into `update-docs` (mirror installed copies); CHANGELOG; registry checked for touched
       sources.
 
