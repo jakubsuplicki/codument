@@ -301,6 +301,25 @@ function anchorsAtRef(root: string, ref: string, path: string): Anchor[] | null 
   return content === null ? null : adapterFor(path).anchors(path, content);
 }
 
+// The base-side anchors for a file that MOVED: read the content from where it
+// lived at the base ref, but key it under the path it lives at now. An anchor id
+// embeds its file path, so without the re-key every symbol in a renamed file
+// diffs as "added" — the gate reporting a contract that never changed, and the
+// owning doc woken for a move that says nothing about it. Parsing under the
+// destination path is deliberate: identity follows the file, so a same-extension
+// rename (effectively all of them) compares symbol-for-symbol, and a rename that
+// also changes extension is judged by the adapter that owns the file now.
+function anchorsAtRefFrom(
+  root: string,
+  ref: string,
+  basePath: string,
+  headPath: string,
+): Anchor[] | null {
+  if (basePath === headPath) return anchorsAtRef(root, ref, basePath);
+  const content = readBlobAtRef(root, ref, basePath);
+  return content === null ? null : adapterFor(headPath).anchors(headPath, content);
+}
+
 // Diff two anchor sets by id: present only at head = "added", only at base =
 // "removed", a differing fingerprint = "changed". A null set means the file was
 // absent at that ref (added/removed wholesale). Sorted by id.
@@ -434,7 +453,15 @@ export interface GatheredAnchors {
 // (file-grain) AND surfaced. If `base` is unreachable (e.g. a fresh repo with no
 // HEAD) the result is empty and the gate degrades to file-grain. Reads git +
 // disk, no clock — deterministic.
-export function gatherAnchorChanges(root: string, base: string, paths: string[]): GatheredAnchors {
+export function gatherAnchorChanges(
+  root: string,
+  base: string,
+  paths: string[],
+  /** Renames in this change, destination → origin. A moved file's base-side
+   *  content lives at its ORIGIN, so without this every symbol in it diffs as
+   *  "added" and its owning doc wakes for a move that changed no contract. */
+  renamedFrom?: ReadonlyMap<string, string>,
+): GatheredAnchors {
   const anchorChanges: Record<string, AnchorChange[]> = {};
   const unevaluable: string[] = [];
   if (!refReachable(root, base)) return { anchorChanges, unevaluable };
@@ -454,7 +481,7 @@ export function gatherAnchorChanges(root: string, base: string, paths: string[])
     if (klass.mode !== "precise") continue; // coarse → file-grain (omit)
     try {
       anchorChanges[path] = diffAnchorSets(
-        anchorsAtRef(root, base, path),
+        anchorsAtRefFrom(root, base, renamedFrom?.get(path) ?? path, path),
         adapterFor(path).anchors(path, headContent),
       );
     } catch (err) {

@@ -14,6 +14,7 @@ import {
 import { resolveOwner, splitAnchorId } from "./ownership.js";
 import { fileContentTransition, type AnchorChange } from "./fingerprint.js";
 import { ackCovers, isFileGrainAck, type Acknowledgment } from "./acknowledgment.js";
+import type { RenamePair } from "./git.js";
 import { extractStatus, isApproved } from "./plan-steps.js";
 
 // Deterministic diff snapshot over the v2 registry. Pure function of (registry,
@@ -69,6 +70,12 @@ export interface ChangeStateInput {
    *  stance a removal owes doc attention — a doc update or the doc's own
    *  removal). A deleted doc counts as doc attention for the staleness check. */
   deletedFiles?: string[];
+  /** Renames in this change, as `{from, to}` pairs from git's own detection. The
+   *  destination already arrives via `changedFiles`; the ORIGIN arrives only here,
+   *  and it is the half that matters to the registry — a `git mv` used to present
+   *  as a bare add, so an entry naming the old path was left pointing at nothing
+   *  and the gate went green over it. */
+  renames?: RenamePair[];
   /** Registry as of the base ref. Deleted files resolve ownership against this
    *  when provided (falling back to `registry`), so removing a file's registry
    *  entry in the same change cannot dodge the deletion wake — the entry that
@@ -137,6 +144,27 @@ export interface OwnershipLint {
   features: string[];
 }
 
+/** A registry entry still naming a path THIS CHANGE removed from the tree. The
+ *  registry is the control plane every other answer is derived from — ownership,
+ *  context packs, the adversary's grounding all read it as truth — so an entry
+ *  pointing at a file that no longer exists quietly corrupts all three. A rename
+ *  and a deletion both produce one; they are told apart because the fix differs
+ *  (re-point vs remove), not because the gate treats them differently.
+ *
+ *  Scoped deliberately to paths this change removed. A path already missing at the
+ *  base ref is PRE-EXISTING debt and stays `doctor`'s `missing-source` warn — review
+ *  judges the change, doctor judges the repo, and blocking an unrelated edit on an
+ *  adopting repo's old dangles would make the gate unsatisfiable. */
+export interface RegistryPointer {
+  /** The path that no longer exists. */
+  file: string;
+  /** Registry entries still naming it, sorted. */
+  features: string[];
+  kind: "renamed" | "deleted";
+  /** Where it moved to, for a rename — the path the entry should now name. */
+  renamedTo?: string;
+}
+
 export interface ChangeState {
   changedSources: string[];
   changedDocs: string[];
@@ -192,6 +220,10 @@ export interface ChangeState {
    *  owner, cleared by doc attention or a file-grain ack (ADR 017). Before that
    *  decision they were info-only, which meant rewriting a registered contract
    *  file passed `--strict` green. */
+  /** Registry entries left pointing at a path this change removed (see
+   *  `RegistryPointer`). A strict input: the gate stays red until the registry
+   *  stops naming the vanished path. */
+  registryPointers: RegistryPointer[];
   governedRegistered: string[];
   /** Deleted counterparts of `governedRegistered` — an owned unjudgeable file
    *  removed. Wakes its owners with no ack fast-path, the same stance ADR 012
@@ -516,6 +548,29 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   }
   staleDocs.sort((a, b) => (a.feature < b.feature ? -1 : a.feature > b.feature ? 1 : 0));
 
+  // ── Registry pointers left dangling BY THIS CHANGE ──────────────────────
+  // Resolved against the CURRENT registry, because the finding is about the
+  // registry being wrong right now: the moment an entry stops naming the vanished
+  // path it clears itself, with no acknowledgment and nothing to remember. A
+  // rename's origin is the case that was invisible before — it reached the gate as
+  // a bare add, so the pointer rotted silently while the verdict went green.
+  const registryPointers: RegistryPointer[] = [];
+  const namingEntries = (path: string): string[] =>
+    entries.filter(([, e]) => allSources(e).includes(path)).map(([key]) => key);
+  for (const { from, to } of input.renames ?? []) {
+    const features = namingEntries(from);
+    if (features.length > 0) {
+      registryPointers.push({ file: from, features: sortStrings(features), kind: "renamed", renamedTo: to });
+    }
+  }
+  for (const file of deleted) {
+    const features = namingEntries(file);
+    if (features.length > 0) {
+      registryPointers.push({ file, features: sortStrings(features), kind: "deleted" });
+    }
+  }
+  registryPointers.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+
   // high-fanout among changed files
   const highFanout: HighFanoutChange[] = [];
   for (const file of changedSources) {
@@ -613,6 +668,7 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     unevaluable: sortStrings(input.unevaluable ?? []),
     deletedSources,
     ungatedRegistered,
+    registryPointers,
     governedRegistered: sortStrings(governedRegistered),
     governedDeleted: sortStrings(governedDeletedSet),
   };

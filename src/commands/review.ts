@@ -28,7 +28,9 @@ import {
   getHeadSha,
   getWorkingTreeChanges,
   getWorkingTreeDeletions,
+  getWorkingTreeRenames,
   isGitRepo,
+  type RenamePair,
 } from "../lib/git.js";
 import { parseRegistryOrThrow, type Registry, readRegistrySync } from "../lib/registry.js";
 import {
@@ -67,6 +69,7 @@ import {
   resolveBase,
   worktreeChangesSince,
   worktreeDeletionsSince,
+  worktreeRenamesSince,
 } from "../lib/two-ref.js";
 import { versionSkewNotice } from "../lib/version.js";
 
@@ -229,7 +232,14 @@ export function buildReview(
   changedFiles?: string[],
   baseRef = "HEAD",
   deletedFiles?: string[],
-  opts: { requireIndependentAck?: boolean; exclusion?: ExclusionSpec } = {},
+  opts: {
+    requireIndependentAck?: boolean;
+    exclusion?: ExclusionSpec;
+    /** Renames in this change. Defaults to the working-tree view; the `--base`
+     *  caller passes its own ref-ranged list, exactly as it does for changes and
+     *  deletions. */
+    renames?: RenamePair[];
+  } = {},
 ): ReviewReport {
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
   const ws = resolveWorkspace(root);
@@ -246,12 +256,19 @@ export function buildReview(
   // Pure deletions are first-class: a deleted owned source must wake its doc
   // exactly like an edit would (the `--base` caller passes its own two-ref list).
   const deletions = deletedFiles ?? getWorkingTreeDeletions(root);
+  // A rename's origin reaches the verdict ONLY here: the destination rides
+  // `changes`, but the vanished path is what a registry entry may still name.
+  const renames = opts.renames ?? getWorkingTreeRenames(root);
   const plan = detectApprovedPlanScope(root);
   // Per-symbol anchor diffs for the precise (TS) changed files, base ref vs the
   // working tree — this is what dissolves the shared-file cascade in the verdict.
   // Best-effort: coarse/non-TS files degrade to file-grain ownership; parse-error
   // files come back as `unevaluable` (gated file-grain AND surfaced).
-  const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, changes);
+  // Destination → origin, so a moved file's base content is read from where it
+  // actually lived. Without it a pure rename reports every symbol as newly added
+  // and wakes the owning doc for a change that moved no contract.
+  const renamedFrom = new Map(renames.map((r) => [r.to, r.from]));
+  const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, changes, renamedFrom);
   const acks = readAcks(root);
   // Change authorship (pure repo state) — the source of "the change author" for the
   // self-vs-independent split, computed once and shared by the card and the strict
@@ -316,6 +333,7 @@ export function buildReview(
     unevaluable,
     fileGrainAcked,
     deletedFiles: deletions,
+    renames,
     // Deleted files resolve ownership against the registry AT THE BASE — the
     // entry that owned the file while it existed — so removing the entry in the
     // same change cannot dodge the wake.
@@ -487,13 +505,10 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       // the changed-file set answer the same question.
       const baseRef = resolveBase(root, options.base, "HEAD").sha;
       const changes = worktreeChangesSince(root, options.base);
-      report = buildReview(
-        root,
-        changes,
-        baseRef,
-        worktreeDeletionsSince(root, options.base),
-        reviewOpts,
-      );
+      report = buildReview(root, changes, baseRef, worktreeDeletionsSince(root, options.base), {
+        ...reviewOpts,
+        renames: worktreeRenamesSince(root, options.base),
+      });
       effectiveBase = baseRef;
     } else {
       // Default: working tree vs HEAD (what `git status` shows). Resolve HEAD to a
@@ -687,7 +702,14 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // (informational) and depends_on (a separate concern), so the gate stays
   // satisfiable — a genuine leaf feature with no deps can still pass.
   const strictFail =
-    !!options.strict && (report.state.unmapped.length > 0 || report.state.staleDocs.length > 0);
+    !!options.strict &&
+    (report.state.unmapped.length > 0 ||
+      report.state.staleDocs.length > 0 ||
+      // A registry entry naming a path this change removed. The registry is the
+      // control plane every other answer derives from, so letting a step commit a
+      // pointer to a file that no longer exists is a green verdict over a corrupted
+      // ground truth — the one thing worse than a stale doc.
+      report.state.registryPointers.length > 0);
 
   // Adversarial-review gate (opt-in). For a NON-TRIVIAL diff it requires a current,
   // fingerprint-bound review artifact whose findings — RE-CONFIRMED here by running
@@ -829,6 +851,10 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       reasons.push(`${report.state.unmapped.length} unmapped new source file(s)`);
     if (report.state.staleDocs.length > 0)
       reasons.push(`${report.state.staleDocs.length} stale doc(s)`);
+    if (report.state.registryPointers.length > 0)
+      reasons.push(
+        `${report.state.registryPointers.length} registry entr(ies) naming a path this change removed`,
+      );
     console.log(
       pc.red(
         `  ✗ --strict: ${reasons.join(" and ")} — the registry/docs are not in sync for this change.`,
@@ -1012,6 +1038,21 @@ function printHuman(report: ReviewReport): void {
   section(
     "Changed by feature",
     state.byFeature.map((g) => `${pc.cyan(g.feature)} — ${g.files.join(", ")}`),
+  );
+
+  // The registry pointing at a file that no longer exists. Printed BEFORE the doc
+  // sections because it is a fact about the control plane rather than about prose:
+  // leave it and every later ownership answer is derived from a lie. A rename is
+  // the case that used to be invisible, so it names the destination inline — the
+  // fix is a replacement, not a deletion.
+  section(
+    pc.yellow("Registry names a path this change removed (re-point it, or drop it)"),
+    state.registryPointers.map((p) => {
+      const where = `${p.features.join(", ")}`;
+      return p.kind === "renamed"
+        ? `${pc.yellow("⚠")} ${p.file} ${pc.dim("→ renamed to")} ${p.renamedTo} ${pc.dim(`· still named by ${where}`)}\n        ${pc.dim("fix →")} replace it with ${pc.cyan(p.renamedTo ?? "")} in ${where}${pc.dim(", or `codument map materialize` the new path and drop the old")}`
+        : `${pc.yellow("⚠")} ${p.file} ${pc.dim("→ deleted")} ${pc.dim(`· still named by ${where}`)}\n        ${pc.dim("fix →")} remove it from ${where}${pc.dim(" (a doc update for the removal is owed separately)")}`;
+    }),
   );
 
   section(

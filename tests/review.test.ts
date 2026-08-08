@@ -1317,6 +1317,101 @@ describe("coarse-file ack signpost", () => {
   });
 });
 
+// Plan 41 / probe C: `git mv` on a registered source presented to the gate as a
+// bare add. The destination failed as unmapped (correct), the origin was never
+// mentioned, and once the new path was registered and the stale doc resolved the
+// gate went GREEN with the registry still naming a file that no longer exists.
+describe("a rename never leaves the registry pointing at a ghost (probe C)", () => {
+  function runReview(args: string[] = ["review", "--strict"]): { code: number; out: string } {
+    try {
+      const out = execFileSync("node", [CLI, ...args], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: { ...process.env, NO_COLOR: "1" },
+      });
+      return { code: 0, out };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { code: e.status ?? 1, out: e.stdout ?? "" };
+    }
+  }
+
+  const registryFor = (sources: string[]) =>
+    JSON.stringify(
+      {
+        features: {
+          i18n: {
+            doc: "docs/features/i18n.md",
+            type: "feature",
+            primary_sources: sources,
+            related_sources: [],
+            docs: [],
+            depends_on: [],
+            risk: [],
+            status: "current",
+          },
+        },
+      },
+      null,
+      2,
+    );
+
+  it("the field sequence stays RED until the entry stops naming the origin", async () => {
+    await scaffold({
+      "docs/features/i18n.md": "# i18n\n\nFormats dates for display.\n",
+      "i18n/format.ts": "export function formatDate(d: Date): string {\n  return d.toISOString();\n}\n",
+      "docs/.registry.json": registryFor(["i18n/format.ts"]),
+    });
+    gitInit(tmp);
+
+    execFileSync("git", ["mv", "i18n/format.ts", "i18n/dateFormat.ts"], { cwd: tmp });
+
+    // 1. The destination is unmapped (this part always worked) AND the origin is
+    //    now named — the half that used to be invisible.
+    let r = runReview();
+    assert.equal(r.code, 1, `a rename must gate:\n${r.out}`);
+    assert.ok(r.out.includes("i18n/format.ts"), `the vanished path must be named:\n${r.out}`);
+    assert.ok(
+      r.out.includes("Registry names a path this change removed"),
+      `the pointer finding must render:\n${r.out}`,
+    );
+
+    // 2. Register the new path but leave the old one — the field's end state,
+    //    which used to be GREEN with a permanent ghost in the registry.
+    await scaffold({
+      "docs/.registry.json": registryFor(["i18n/format.ts", "i18n/dateFormat.ts"]),
+    });
+    r = runReview();
+    assert.equal(r.code, 1, `the ghost pointer must keep the gate red:\n${r.out}`);
+    assert.ok(r.out.includes("i18n/format.ts"), "the ghost must still be named");
+
+    // 3. Drop the origin: the registry is honest again and the gate goes green.
+    await scaffold({ "docs/.registry.json": registryFor(["i18n/dateFormat.ts"]) });
+    r = runReview();
+    assert.equal(r.code, 0, `re-pointing the entry resolves it:\n${r.out}`);
+  });
+
+  it("a PRE-EXISTING dangle never blocks an unrelated change", async () => {
+    await scaffold({
+      "docs/features/i18n.md": "# i18n\n",
+      "i18n/index.ts": "export const a = 1;\n",
+      // `i18n/gone.ts` was never in the tree — old debt, doctor's business.
+      "docs/.registry.json": registryFor(["i18n/index.ts", "i18n/gone.ts"]),
+    });
+    gitInit(tmp);
+    await scaffold({
+      "i18n/index.ts": "export const a = 2;\n",
+      "docs/features/i18n.md": "# i18n\n\nHolds the value.\n",
+    });
+    const r = runReview();
+    assert.equal(r.code, 0, `pre-existing dangles are doctor's, not review's:\n${r.out}`);
+    assert.ok(
+      !r.out.includes("Registry names a path this change removed"),
+      "review must not claim this change removed it",
+    );
+  });
+});
+
 // ADR 017 SUPERSEDES the plan-17 info-only stance for OWNED unjudgeable files.
 // This suite used to assert that a changed registered .css left `--strict` green
 // with a grey advisory — which is exactly the false green a field probe caught on
@@ -1432,21 +1527,25 @@ describe("governed registered changes in review (ADR 017)", () => {
     rmSync(join(tmp, "app/site.css"));
     let r = runReview();
     assert.equal(r.code, 1, `deleting an owned governed file must gate:\n${r.out}`);
-
-    // The gating case above names the file through the Stale-docs line, so it
-    // cannot pin the deletions RENDERING. The case that can is the resolved one:
-    // once the owning doc is updated the verdict goes green, and the deletions
-    // section becomes the only place the removal is named at all. Without it, a
-    // `git rm` on a registered locale pack is an anonymous "1 deleted" — probe D's
-    // original silence.
-    await scaffold({ "docs/features/site.md": "# site\n\nThe hero style was removed.\n" });
-    r = runReview();
-    assert.equal(r.code, 0, `doc attention resolves the deletion:\n${r.out}`);
+    // The deletions section is what NAMES the removal. Asserting the header is the
+    // bite: drop the governed half of that section and the header disappears
+    // entirely, leaving an anonymous "1 deleted" in the headline — probe D's
+    // original silence. (The filename alone would not prove it: other sections
+    // mention the path too.)
     assert.ok(
       r.out.includes("Deleted sources"),
       `the deletions section must render for a governed deletion:\n${r.out}`,
     );
-    assert.ok(r.out.includes("app/site.css"), `the removed file must still be named:\n${r.out}`);
+    assert.ok(r.out.includes("app/site.css"), `the removed file must be named:\n${r.out}`);
+
+    // Full resolution takes both halves: the doc owes attention for the removal,
+    // and the registry must stop naming a path that no longer exists (plan 41).
+    await scaffold({
+      "docs/features/site.md": "# site\n\nThe hero style was removed.\n",
+      "docs/.registry.json": registryWith({ primary_sources: [], related_sources: [] }),
+    });
+    r = runReview();
+    assert.equal(r.code, 0, `doc attention + a clean registry resolves it:\n${r.out}`);
   });
 
   it("an impact-only registration stays info-only and green", async () => {

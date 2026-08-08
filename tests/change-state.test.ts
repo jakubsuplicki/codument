@@ -626,6 +626,109 @@ describe("ungated registered changes (non-source blind spot)", () => {
   });
 });
 
+// Plan 41: the registry is the control plane every other answer derives from, so
+// an entry left pointing at a path this change removed is worse than a stale doc.
+// Probe C: `git mv` on a registered source reached the gate as a bare add, and the
+// ghost pointer survived a fully green run with nothing to reap it.
+describe("registry pointers left dangling by this change", () => {
+  const registry = {
+    features: {
+      i18n: {
+        doc: "docs/concepts/i18n.md",
+        type: "concept" as const,
+        primary_sources: ["i18n/format.ts"],
+        related_sources: [],
+        docs: [],
+        depends_on: [],
+        risk: [],
+        status: "current",
+      },
+    },
+  };
+
+  it("PROBE C: a renamed registered source leaves a pointer finding naming the destination", () => {
+    const s = computeChangeState({
+      registry: registry as never,
+      changedFiles: ["i18n/dateFormat.ts"],
+      renames: [{ from: "i18n/format.ts", to: "i18n/dateFormat.ts" }],
+    });
+    assert.deepEqual(s.registryPointers, [
+      {
+        file: "i18n/format.ts",
+        features: ["i18n"],
+        kind: "renamed",
+        renamedTo: "i18n/dateFormat.ts",
+      },
+    ]);
+  });
+
+  it("re-pointing the entry clears it — the finding self-heals, no ack to remember", () => {
+    const repointed = {
+      features: { i18n: { ...registry.features.i18n, primary_sources: ["i18n/dateFormat.ts"] } },
+    };
+    const s = computeChangeState({
+      registry: repointed as never,
+      changedFiles: ["i18n/dateFormat.ts"],
+      renames: [{ from: "i18n/format.ts", to: "i18n/dateFormat.ts" }],
+    });
+    assert.deepEqual(s.registryPointers, []);
+  });
+
+  it("a deletion leaves one too, and doc attention does NOT settle it", () => {
+    const s = computeChangeState({
+      registry: registry as never,
+      // The owning doc is updated in the same change, so the deletion's DOC debt is
+      // paid — the pointer debt is a separate obligation and must survive it.
+      changedFiles: ["docs/concepts/i18n.md"],
+      deletedFiles: ["i18n/format.ts"],
+    });
+    assert.deepEqual(s.staleDocs, [], "the doc was attended to");
+    assert.deepEqual(
+      s.registryPointers.map((p) => [p.file, p.kind]),
+      [["i18n/format.ts", "deleted"]],
+      "…but the registry still names the removed path",
+    );
+  });
+
+  it("a related-only registration dangles too — a wrong pointer is wrong either way", () => {
+    const reg = {
+      features: {
+        i18n: {
+          ...registry.features.i18n,
+          primary_sources: ["i18n/index.ts"],
+          related_sources: ["i18n/format.ts"],
+        },
+      },
+    };
+    const s = computeChangeState({
+      registry: reg as never,
+      changedFiles: ["i18n/dateFormat.ts"],
+      renames: [{ from: "i18n/format.ts", to: "i18n/dateFormat.ts" }],
+    });
+    assert.deepEqual(s.registryPointers.map((p) => p.features), [["i18n"]]);
+  });
+
+  it("a PRE-EXISTING dangle does not fire — review judges the change, doctor judges the repo", () => {
+    // Nothing was renamed or deleted here; `i18n/format.ts` is simply absent from
+    // the tree and always was. Blocking an unrelated edit on an adopting repo's old
+    // debt is what would make the gate unsatisfiable.
+    const s = computeChangeState({
+      registry: registry as never,
+      changedFiles: ["i18n/other.ts"],
+    });
+    assert.deepEqual(s.registryPointers, []);
+  });
+
+  it("renaming an UNREGISTERED file is not a pointer problem", () => {
+    const s = computeChangeState({
+      registry: registry as never,
+      changedFiles: ["src/b.ts"],
+      renames: [{ from: "src/a.ts", to: "src/b.ts" }],
+    });
+    assert.deepEqual(s.registryPointers, []);
+  });
+});
+
 // ADR 017: a registration is an explicit claim that a file is load-bearing to a
 // named doc, so a file no adapter can judge is still GOVERNED at file grain when a
 // feature/concept OWNS it. The field false green this closes: rewriting a
