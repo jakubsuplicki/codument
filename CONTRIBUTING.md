@@ -30,3 +30,10 @@ npm test
 
 How a version is cut here — changelog, the three files carrying the version, the tag, the GitHub
 release, then npm — is written down in [docs/guides/releasing.md](docs/guides/releasing.md).
+
+## Getting feedback from a real run
+
+Codument's best releases have come from building something real with it and then interrogating the
+agent that did. How to run that interrogation so it returns evidence rather than agreeable prose —
+the artifacts to pull, the counts to ask for, and the probes that have each found a real defect —
+is in [docs/guides/field-validation.md](docs/guides/field-validation.md).
