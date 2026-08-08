@@ -172,7 +172,7 @@ guidance, not mechanism.
 | [38](38-fan-out-step-sizing.md) | Fan-out step sizing: skill rule + adversary objection class | "Generate twelve locales" as one step — ~35 agents, blown session, nothing flagged it before approval |
 | [39](39-field-polish.md) | Field polish: generated-artifact intent, Windows invocation fallback, single-anchor render collapse, verdict-last line, touched-section rule for legacy docs, `ack --prune` | The report's practical notes plus the two-register clash and dead-ack accumulation (342 acks, 52 auto-invalidated, nothing sweeps them) |
 | [40](40-registered-file-governance.md) ✅ **shipped** | Registration is governance: file-grain wake for registered files no adapter judges | **Structural false green** (probes B and D, both reproduced live): rewriting a registered locale/contract file counted "0 source, 1 other" and exited 0; deleting one printed "1 deleted" and exited 0 with no advisory at all |
-| [41](41-rename-honesty-registry-integrity.md) 🔧 **in remediation** | Rename honesty + registry-pointer integrity + post-ship materialize | Probe C: `git mv` on a registered source is add-only to the gate, leaves a permanent ghost in `primary_sources` nothing reaps (doctor's `missing-source` warn lives where the loop never looks), and `map materialize` is unreachable after plan compaction — two mandated behaviours disabling each other |
+| [41](41-rename-honesty-registry-integrity.md) ✅ **shipped** | Rename honesty + registry-pointer integrity + post-ship materialize | Probe C: `git mv` on a registered source is add-only to the gate, leaves a permanent ghost in `primary_sources` nothing reaps (doctor's `missing-source` warn lives where the loop never looks), and `map materialize` is unreachable after plan compaction — two mandated behaviours disabling each other |
 
 Two follow-up interrogations of the reporting session (registry pastes, `ack --list`, transcript
 grep, live probes B/C/D) confirmed the unassigned-shared-symbol mechanism, corrected one
@@ -194,7 +194,7 @@ ranking plan 28's workspace false green got. Then 41 (silent corruption of the c
 gate itself reads), then 36 (the report's "worst part by far", now with the placement and hint
 fixes the follow-up demanded). 37–39 are independent and in any order.
 
-**40 is shipped; 41's four steps landed and were then reopened by their own review.** 40 (`3d50d97`, `1d2543c`, `e6cd910`) closed the false green at its root:
+**40 and 41 are shipped, 41 the long way round.** 40 (`3d50d97`, `1d2543c`, `e6cd910`) closed the false green at its root:
 a registered file no adapter can parse now gates at whole-file grain — edits and deletions alike —
 clearable by doc attention or a file ack, with `related_sources` still never waking and the
 exclusion spec still overriding registration, both now worded apart (ADR-017). 41 (`ad64ca0`,
@@ -213,8 +213,16 @@ that `ack` refused, and the rename-aware read never left the precise grain); a p
 rename was trusted without checking that the origin was gone (a copy, or a `git mv` plus a
 re-export shim, made `--strict` unsatisfiable); and the new blocking finding was never added to
 SARIF, the watch verdict, or the HTML report, so CI uploaded a clean-reading SARIF while the check
-exited 1. The full triage — including the five refuted findings and the one gap deliberately left
-as future work — is in the plan's own post-ship remediation section.
+exited 1. Four remediation steps (`33323af`, `d8cdba1`, `a3d3b85`, and this doc pass) closed all
+three, each fix mutation-tested individually. The full triage — including the five refuted
+findings and the two gaps deliberately left as future work — is in the plan's own post-ship
+remediation section.
+
+The lesson is about the review, not the code: plan 41's four steps were committed without an
+adversarial pass, against a repo whose own workflow mandates one, and the pass found a blocker in
+the most safety-critical code here. Every defect it caught was introduced by a fix, and the two
+worst were introduced by the fix for the plan's own headline finding — which is the argument for
+the gate stated as plainly as it gets.
 
 Still to plan, ranked by value: shipped delivery scaffolding is never compacted out of docs (the
 standard says it should be; nothing enforces it); the Decisions layer states conclusions without

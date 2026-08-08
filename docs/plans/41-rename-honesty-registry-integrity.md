@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 41: rename honesty — the gate sees both sides of a move, and the registry cannot point at ghosts
@@ -160,10 +160,13 @@ Refuted and deliberately not fixed: renames into an excluded path and unstaged f
 existence-checking its path (the plan-driven route never did either, and the path is hand-typed in
 both); the `--strict` epilogue's generic second sentence (the paste-ready fix is already printed
 four lines above, and the mis-route hard-fails rather than looping) — reworded anyway in R3, since
-it costs one line to stop naming a command that cannot clear the finding it sits under. One real
-gap is recorded as future work rather than fixed here: `namingEntries` resolves only
+it costs one line to stop naming a command that cannot clear the finding it sits under. Two real
+gaps are recorded as future work rather than fixed here. `namingEntries` resolves only
 `primary_sources`/`related_sources`, so a renamed or deleted feature **doc** is not a pointer
 finding — it self-announces at the next touch of that feature's source, and `doctor` still warns.
+And `tsconfig.json` includes only `src`, so a test that hand-builds a `ChangeState` silently rots
+as the type grows: three fixtures had already drifted two fields behind before this pass found
+them by runtime crash. Typechecking the tests would catch that class at the point of change.
 
 - [x] **Step R1 — a pair git calls a rename is a MOVE only when the origin is gone.** `isRenameEntry`
       accepts `R` only (a copy is not a move, and the two listers stop disagreeing); a shared
@@ -182,9 +185,19 @@ finding — it self-announces at the next touch of that feature's source, and `d
       fix instead of offering an ack that cannot clear it. Tests: `--strict` red implies SARIF
       results present and the invocation unsuccessful; `watch` does not say CLEAN; the report card
       renders.
-- [ ] **Step R4 — invariants, tests, CHANGELOG.** The rename invariant restated so it is true at
+- [x] **Step R4 — invariants, tests, CHANGELOG.** The rename invariant restated so it is true at
       every grain with tests to match; the pointer invariant scoped to source paths with the doc
-      gap named honestly; CHANGELOG; registry sync.
+      gap named honestly; CHANGELOG; registry sync. *(The invariants landed per-step rather than
+      here — the step-sync gate holds a step's docs open with it, which is the rule working: a
+      step whose contract changed cannot be committed with the doc deferred to a later step. What
+      remained for R4 was the CHANGELOG and the close-out.)*
+
+Every fix was mutation-tested individually: each of the seven — the move filter, the
+present-at-head guards, the base-path transition, the pure-move skip, `ack`'s map, the SARIF
+projection, the verdict gloss, the report card, and the epilogue routing — was reverted in turn
+and the naming test observed to fail. Three fixture files were also repaired: they build
+`ChangeState` by hand and had drifted behind the type, which `npm run typecheck` cannot catch
+because `tsconfig.json` includes only `src`. That gap is real and stays open, recorded below.
 
 ## Acceptance criteria
 

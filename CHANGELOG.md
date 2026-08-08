@@ -44,13 +44,38 @@ remains pre-1.0.
   to record. Scoped to what THIS change removed — a path already missing at the
   base ref stays `doctor`'s warning, because review judges the change and doctor
   judges the repo.
-- **A rename is judged as a move, not as a deletion and a birth.** A moved file's
-  base-side content is now read from where it actually lived and re-keyed to
-  where it lives now, so a pure rename fires nothing and wakes no doc. Before,
-  every symbol in a renamed file reported as *added* — which stated something
-  false about the contract and demanded a doc edit for a change that said nothing
-  about the doc. A rename that also edits the file reports exactly the symbols
-  that really moved, and a contract edit still refuses the ack path.
+- **A rename is judged as a move, not as a deletion and a birth — at every grain,
+  by every surface.** A moved file's base-side content is now read from where it
+  actually lived and re-keyed to where it lives now, so a pure rename fires
+  nothing and wakes no doc. Before, every symbol in a renamed file reported as
+  *added* — which stated something false about the contract and demanded a doc
+  edit for a change that said nothing about the doc. A rename that also edits the
+  file reports exactly the symbols that really moved, and a contract edit still
+  refuses the ack path.
+
+  Where the base content lived is one derived map that every reader of a base
+  blob shares. `codument ack` reads it too, so **the ack command `review` prints
+  for a moved symbol now runs**; it used to refuse its own instruction ("was
+  added, not changed"), along with each fallback that refusal suggested, leaving
+  a doc edit as the only exit. Coarse-classified and governed-registered files
+  share it as well, so a pure rename of a `.py` constants file or a registered
+  `.css` no longer wakes every owner of it.
+- **A copy and a file split are not moves.** Git pairs paths by similarity, so it
+  reports a rename whose origin is still present — a copy (with copy detection
+  on), or `git mv a b` followed by re-creating `a` as a re-export shim. The gate
+  then insisted the registry stop naming a file you can see on disk, which
+  **nothing could satisfy**: dropping the entry made the shim unmapped, keeping
+  it re-fired the finding, and a pointer has no ack. A pair now counts as a move
+  only when the origin is actually gone.
+- **Every surface reports a dangling registry pointer.** It blocks `--strict`,
+  and only `review`'s own output knew about it — so on a deletion whose owning
+  doc *was* updated, `watch` printed `✓ CLEAN`, the HTML report said "Nothing
+  suspicious", and `review --format sarif` uploaded a report with **zero results
+  beside a check that exited 1**. There is now a `codument/registry-pointer`
+  SARIF rule, a verdict-model field named in the gloss (without moving the
+  severity ladder — that grades doc drift), and a report card. The `--strict`
+  epilogue also lists only the routes that can clear what fired: it was offering
+  `codument ack` under a finding no acknowledgment clears.
 
 ### Added
 - **`codument map materialize <file> --feature <slug>`** — name the owning
