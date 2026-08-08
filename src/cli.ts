@@ -317,6 +317,10 @@ map
   .command("materialize <file>")
   .description("Create/extend the owning feature's registry entry + doc for <file>")
   .option("--plan <path>", "Plan doc to read (default: the single approved plan)")
+  .option(
+    "--feature <slug>",
+    "Name the owning feature directly (must already exist) — the route once a plan has shipped and its Feature Map is compacted away",
+  )
   .option("--root <dir>", "Project root (default: current directory)")
   .action((file, options) => mapMaterialize({ file, ...options }));
 

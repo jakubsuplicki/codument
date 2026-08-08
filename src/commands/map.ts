@@ -30,6 +30,10 @@ interface MapCliOptions {
   json?: boolean;
   root?: string;
   dir?: string;
+  /** Name the owning feature outright, with no Feature Map in the loop — the
+   *  post-ship route for a repo whose plans have shipped and compacted their Maps
+   *  away. Must name an entry that already exists. */
+  feature?: string;
 }
 
 interface ResolvedMap {
@@ -63,7 +67,13 @@ function resolveMap(root: string, planOpt?: string): ResolvedMap | { error: stri
 
 // ── Materialization (the testable writer core) ──────────────────────────────
 
-export type MaterializeStatus = "created" | "updated" | "noop" | "unmapped" | "ambiguous";
+export type MaterializeStatus =
+  | "created"
+  | "updated"
+  | "noop"
+  | "unmapped"
+  | "ambiguous"
+  | "unknown-feature";
 
 export interface MaterializeResult {
   file: string;
@@ -106,6 +116,56 @@ ${seed}
 
 - \`${file}\` <!-- narrative role: orchestrator / analyzer / seam -->
 `;
+}
+
+/**
+ * Materialize `file` into an EXISTING feature named outright, with no Feature Map
+ * in the loop. The post-ship route: a plan's Map is compacted out of its doc when
+ * the work ships (the standard requires it), which left every later file addition
+ * or rename on a refusal pointing at a plan that no longer carries a Map — two
+ * mandated behaviors disabling each other, with a hand-edited registry as the only
+ * way out.
+ *
+ * Deliberately refuses an unknown slug rather than inventing the feature: creating
+ * one needs a responsibility line to seed its doc, and that is exactly what a Map
+ * row carries and a bare flag cannot. Naming a new feature is new work, and new
+ * work gets a plan. Secondary routing stays Map-only for the same reason.
+ */
+export function materializeFileTo(
+  root: string,
+  file: string,
+  featureKey: string,
+): MaterializeResult {
+  const registryPath = join(root, "docs", ".registry.json");
+  const existing = readRegistrySync(registryPath).features[featureKey];
+  if (!existing) return { file, feature: null, status: "unknown-feature", secondaryUpdated: [] };
+  if (existing.primary_sources.includes(file))
+    return { file, feature: featureKey, status: "noop", docPath: existing.doc, secondaryUpdated: [] };
+
+  const scope = resolveScopeSync(root);
+  try {
+    updateRegistryEntry(
+      registryPath,
+      featureKey,
+      { primary_sources: [...existing.primary_sources, file] },
+      scope.spec,
+    );
+  } catch (err) {
+    // Same rule-naming courtesy the Map path gives: a project's own declaration
+    // and a built-in heuristic call for different responses.
+    if (err instanceof ExcludedSourceError && !err.rule) {
+      const rule = declaredRuleFor(err.path, scope.configured);
+      if (rule) throw new ExcludedSourceError(err.key, err.path, err.field, rule);
+    }
+    throw err;
+  }
+  return {
+    file,
+    feature: featureKey,
+    status: "updated",
+    docPath: existing.doc,
+    secondaryUpdated: [],
+  };
 }
 
 /**
@@ -333,13 +393,55 @@ export function mapMaterialize(options: MapCliOptions = {}): void {
     process.exitCode = 1;
     return;
   }
+  const file = toRepoRel(root, options.file);
+
+  // The explicit route: name the owning feature outright. This is what a plan's
+  // Feature Map row records, made inline for a repo whose plans have all shipped
+  // (and whose Maps are therefore compacted away).
+  if (options.feature) {
+    const direct = materializeFileTo(root, file, options.feature);
+    if (direct.status === "unknown-feature") {
+      const known = Object.keys(
+        readRegistrySync(join(root, "docs", ".registry.json")).features,
+      ).sort();
+      console.log(
+        pc.yellow(`codument map materialize: no registry entry named "${options.feature}"`),
+      );
+      console.log(
+        pc.dim(
+          known.length > 0
+            ? `  known features: ${known.join(", ")}`
+            : "  the registry has no entries yet — run `codument scan` or plan the feature first",
+        ),
+      );
+      console.log(
+        pc.dim(
+          "  A NEW feature needs a responsibility line to seed its doc, which a plan's Feature Map row carries — plan it rather than naming it here.",
+        ),
+      );
+      process.exitCode = 1;
+      return;
+    }
+    console.log(
+      `  ✓ ${file} ${direct.status === "updated" ? "added to" : "already in"} ${pc.bold(direct.feature!)}`,
+    );
+    return;
+  }
+
   const resolved = resolveMap(root, options.plan);
   if ("error" in resolved) {
     console.log(pc.yellow("codument map materialize: " + resolved.error));
+    // The refusal is a signpost, not a dead end: a shipped plan has had its Map
+    // compacted out, so pointing at it cannot work and the explicit route is the
+    // one that does.
+    console.log(
+      pc.dim(
+        "  Working past a shipped plan? Name the owner directly: `codument map materialize <file> --feature <slug>`",
+      ),
+    );
     process.exitCode = 1;
     return;
   }
-  const file = toRepoRel(root, options.file);
   const result = materializeFile(root, resolved.map.rows, file);
   if (result.status === "unmapped") {
     console.log(pc.yellow(`  ⚠ ${file} is not in the Feature Map — add a row or fix the path (not lumped)`));

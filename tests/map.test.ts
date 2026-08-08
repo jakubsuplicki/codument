@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseFeatureMap } from "../src/lib/feature-map.js";
-import { materializeFile, shapeWarnings } from "../src/commands/map.js";
+import { materializeFile, materializeFileTo, shapeWarnings } from "../src/commands/map.js";
 import { readRegistrySync, ExcludedSourceError } from "../src/lib/registry.js";
 
 const MAP_MD = `
@@ -112,6 +112,72 @@ describe("materializeFile", () => {
 // call for different responses — "un-map it or narrow your declaration" versus
 // "codument's guess may be wrong about your file" — and one generic refusal
 // sends both to the same dead end.
+// Plan 41: a plan's Feature Map is compacted out of its doc when the work ships
+// (the standard requires it), which left every LATER file addition or rename on a
+// refusal pointing at a plan that no longer carries a Map — two mandated behaviors
+// disabling each other, with a hand-edited registry as the only way out.
+describe("materializeFileTo (the post-ship route)", () => {
+  let root: string;
+  const registry = {
+    features: {
+      i18n: {
+        doc: "docs/features/i18n.md",
+        type: "feature",
+        primary_sources: ["i18n/index.ts"],
+        related_sources: [],
+        docs: [],
+        depends_on: [],
+        risk: [],
+        status: "current",
+      },
+    },
+  };
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-map2-"));
+    await mkdir(join(root, "docs", "features"), { recursive: true });
+    await writeFile(join(root, "docs", ".registry.json"), JSON.stringify(registry, null, 2));
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("adds the file to a named existing feature, with no plan in the loop", () => {
+    const r = materializeFileTo(root, "i18n/dateFormat.ts", "i18n");
+    assert.equal(r.status, "updated");
+    assert.equal(r.feature, "i18n");
+    assert.deepEqual(readRegistrySync(join(root, "docs", ".registry.json")).features.i18n.primary_sources, [
+      "i18n/dateFormat.ts",
+      "i18n/index.ts",
+    ]);
+  });
+
+  it("is idempotent — a file already owned is a noop, never a duplicate", () => {
+    assert.equal(materializeFileTo(root, "i18n/index.ts", "i18n").status, "noop");
+    assert.deepEqual(readRegistrySync(join(root, "docs", ".registry.json")).features.i18n.primary_sources, [
+      "i18n/index.ts",
+    ]);
+  });
+
+  it("refuses an unknown slug rather than inventing a feature", () => {
+    // Creating one needs a responsibility line to seed its doc — exactly what a
+    // Map row carries and a bare flag cannot. New features are new work, and new
+    // work gets a plan.
+    const r = materializeFileTo(root, "src/x.ts", "nope");
+    assert.equal(r.status, "unknown-feature");
+    assert.equal(r.feature, null);
+    assert.deepEqual(Object.keys(readRegistrySync(join(root, "docs", ".registry.json")).features), [
+      "i18n",
+    ]);
+  });
+
+  it("still refuses an excluded path — the explicit route is not a way around scope", () => {
+    assert.throws(
+      () => materializeFileTo(root, "dist/bundle.js", "i18n"),
+      ExcludedSourceError,
+    );
+  });
+});
+
 describe("materializeFile names the rule that refused a path", () => {
   let root: string;
   beforeEach(async () => {
