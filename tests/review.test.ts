@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { realpathSync, rmSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -1381,6 +1381,74 @@ describe("governed registered changes in review (ADR 017)", () => {
     assert.equal(r.code, 0, `a doc update must clear it, got:\n${r.out}`);
   });
 
+  it("the counts line names governed changes instead of burying them in 'other'", async () => {
+    await scaffold({
+      "docs/features/site.md": "# site\n",
+      "app/site.css": ".hero { color: red; }\n",
+      "docs/.registry.json": registryWith({
+        primary_sources: ["app/site.css"],
+        related_sources: [],
+      }),
+    });
+    gitInit(tmp);
+    await scaffold({ "app/site.css": ".hero { color: green; }\n", "notes.txt": "scratch\n" });
+    const r = runReview();
+    assert.ok(r.out.includes("1 governed"), `governed not named:\n${r.out}`);
+    assert.ok(r.out.includes("1 other"), `the ungoverned remainder is still other:\n${r.out}`);
+    assert.ok(!r.out.includes("2 other"), "a governed file must not be counted as other too");
+  });
+
+  it("the residue splits: an excluded registration reads as a contradiction, not 'verify by hand'", async () => {
+    await scaffold({
+      "docs/features/site.md": "# site\n",
+      "src/site.ts": "export const a = 1;\n",
+      "types/api.d.ts": "export declare const x: number;\n",
+      "docs/.registry.json": registryWith({
+        primary_sources: ["src/site.ts", "types/api.d.ts"],
+        related_sources: [],
+      }),
+    });
+    gitInit(tmp);
+    await scaffold({ "types/api.d.ts": "export declare const x: string;\n" });
+    const r = runReview();
+    assert.equal(r.code, 0, "exclusion still overrides registration — no gate");
+    assert.ok(
+      r.out.includes("Registered but excluded"),
+      `the contradiction must be named as such:\n${r.out}`,
+    );
+    assert.ok(r.out.includes("types/api.d.ts"), "file not named");
+  });
+
+  it("a governed DELETION is visible, not silent (probe D)", async () => {
+    await scaffold({
+      "docs/features/site.md": "# site\n",
+      "app/site.css": ".hero { color: red; }\n",
+      "docs/.registry.json": registryWith({
+        primary_sources: ["app/site.css"],
+        related_sources: [],
+      }),
+    });
+    gitInit(tmp);
+    rmSync(join(tmp, "app/site.css"));
+    let r = runReview();
+    assert.equal(r.code, 1, `deleting an owned governed file must gate:\n${r.out}`);
+
+    // The gating case above names the file through the Stale-docs line, so it
+    // cannot pin the deletions RENDERING. The case that can is the resolved one:
+    // once the owning doc is updated the verdict goes green, and the deletions
+    // section becomes the only place the removal is named at all. Without it, a
+    // `git rm` on a registered locale pack is an anonymous "1 deleted" — probe D's
+    // original silence.
+    await scaffold({ "docs/features/site.md": "# site\n\nThe hero style was removed.\n" });
+    r = runReview();
+    assert.equal(r.code, 0, `doc attention resolves the deletion:\n${r.out}`);
+    assert.ok(
+      r.out.includes("Deleted sources"),
+      `the deletions section must render for a governed deletion:\n${r.out}`,
+    );
+    assert.ok(r.out.includes("app/site.css"), `the removed file must still be named:\n${r.out}`);
+  });
+
   it("an impact-only registration stays info-only and green", async () => {
     await scaffold({
       "docs/features/site.md": "# site\n",
@@ -1395,7 +1463,7 @@ describe("governed registered changes in review (ADR 017)", () => {
     await scaffold({ "app/site.css": ".hero { color: green; }\n" });
     const r = runReview();
     assert.equal(r.code, 0, `related_sources claims impact, never ownership:\n${r.out}`);
-    assert.ok(r.out.includes("Registered but ungated"), "info section missing");
+    assert.ok(r.out.includes("Registered as impact only"), "info section missing");
     assert.ok(r.out.includes("app/site.css"), "file not named");
   });
 });

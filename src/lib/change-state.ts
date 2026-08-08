@@ -202,6 +202,12 @@ export interface ChangeState {
 export interface UngatedRegisteredChange {
   file: string;
   owners: { feature: string; doc: string }[];
+  /** WHY this registered file is not governed — two different situations that need
+   *  two different words. `excluded`: the exclusion spec drops it, so the
+   *  registration contradicts a declaration and one of them should go.
+   *  `impact-only`: it is named solely in `related_sources`, which claims impact and
+   *  never ownership, so not waking is correct and there is nothing to fix. */
+  kind: "excluded" | "impact-only";
 }
 
 function sortStrings(values: Iterable<string>): string[] {
@@ -329,7 +335,8 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     if (!owners || owners.length === 0) continue;
     const ownedPrimary =
       (featurePrimary.get(file)?.length ?? 0) > 0 || (conceptPrimary.get(file)?.length ?? 0) > 0;
-    if (ownedPrimary && !isExcluded(file, exclusion)) {
+    const excluded = isExcluded(file, exclusion);
+    if (ownedPrimary && !excluded) {
       governedRegistered.push(file);
       continue;
     }
@@ -339,6 +346,9 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
         .slice()
         .sort()
         .map((key) => ({ feature: key, doc: entryByKey.get(key)?.doc ?? "" })),
+      // Exclusion first: a file that is BOTH excluded and impact-only is reported as
+      // the contradiction, the stronger signal and the only one with something to fix.
+      kind: excluded ? "excluded" : "impact-only",
     });
   }
 

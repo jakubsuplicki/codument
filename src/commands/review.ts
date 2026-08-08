@@ -11,6 +11,7 @@ import {
   type DependentSummary,
   detectApprovedPlanScope,
   resolveFileGrainAcked,
+  type UngatedRegisteredChange,
 } from "../lib/change-state.js";
 import { computeDrift, type DriftFinding } from "../lib/drift.js";
 import {
@@ -984,9 +985,16 @@ function printHuman(report: ReviewReport): void {
     return;
   }
 
+  // Governed registered files ride inside `otherChanged` (they are not a recognized
+  // source), so counting them there too would double-count and — worse — leave the
+  // headline saying "other" about files that now gate. Name them, and report the
+  // remainder as other. The machine field is untouched.
+  const governedCount = state.governedRegistered.length;
+  const otherCount = state.otherChanged.length - governedCount;
   console.log(
     `  ${report.changedFileCount} changed file(s): ${state.changedSources.length} source, ${state.changedDocs.length} docs` +
-      (state.otherChanged.length > 0 ? `, ${state.otherChanged.length} other` : "") +
+      (governedCount > 0 ? `, ${governedCount} governed` : "") +
+      (otherCount > 0 ? `, ${otherCount} other` : "") +
       (report.deletions.length > 0 ? `, ${report.deletions.length} deleted` : "") +
       (plan ? pc.dim(`  (plan: ${plan.plan})`) : ""),
   );
@@ -1008,7 +1016,9 @@ function printHuman(report: ReviewReport): void {
 
   section(
     pc.yellow("Deleted sources (a removal owes its doc attention — update it or remove it too)"),
-    state.deletedSources.map((f) => `${pc.yellow("⚠")} ${f}`),
+    [...state.deletedSources, ...state.governedDeleted]
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+      .map((f) => `${pc.yellow("⚠")} ${f}`),
   );
 
   // A stale doc whose changed source was gated at FILE grain (a coarse file:
@@ -1048,14 +1058,27 @@ function printHuman(report: ReviewReport): void {
     state.unevaluable.map((f) => `${pc.yellow("⚠")} ${f}`),
   );
 
-  // Info-only, never a strict input: the registry claims these files matter to a
-  // doc, but no adapter gates their staleness — say so instead of staying silent
-  // (the .vue blind spot found in the website dogfood).
+  // The ungoverned residue, split because the two halves need different words. An
+  // impact-only registration is working as designed — nothing to fix, just verify by
+  // hand. An EXCLUDED one is two declarations contradicting each other, and printing
+  // "verify by hand" there hides that one of them should go.
+  const excludedRegistered = state.ungatedRegistered.filter((u) => u.kind === "excluded");
+  const impactOnly = state.ungatedRegistered.filter((u) => u.kind === "impact-only");
+  const ownersOf = (u: UngatedRegisteredChange) =>
+    pc.dim(`→ ${u.owners.map((o) => o.doc).join(", ")}`);
   section(
-    pc.dim("Registered but ungated (no adapter judges these — verify their docs by hand)"),
-    state.ungatedRegistered.map(
-      (u) => `${pc.dim("•")} ${u.file} ${pc.dim(`→ ${u.owners.map((o) => o.doc).join(", ")}`)}`,
+    // Both remediations are named because either rule may have fired, and only one
+    // of them is narrowable: a project's own `exclude` can be narrowed, a built-in
+    // rule cannot — offering only the latter would be the dead end the excluded-source
+    // refusal and the generated-leakage lint both split their wording to avoid.
+    pc.yellow(
+      "Registered but excluded (the spec drops it, so the registration governs nothing — un-map it, or narrow your own `exclude` if you declared it)",
     ),
+    excludedRegistered.map((u) => `${pc.yellow("⚠")} ${u.file} ${ownersOf(u)}`),
+  );
+  section(
+    pc.dim("Registered as impact only (no adapter judges these — verify their docs by hand)"),
+    impactOnly.map((u) => `${pc.dim("•")} ${u.file} ${ownersOf(u)}`),
   );
 
   // Per-symbol drift: owned symbols that moved. The deterministic verdict above is

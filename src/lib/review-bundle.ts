@@ -59,6 +59,14 @@ export interface ReviewBundle {
   /** Under `delta` scope: the findings that prior review raised, so this round can
    *  check the fixes actually fixed them. Empty under `full` scope. */
   priorFindings: ReviewFinding[];
+  /** Changed files no adapter can judge that a feature/concept nonetheless OWNS, so
+   *  the gate governs them at file grain (ADR 017) — locale packs, registered config,
+   *  content files. They are part of this round's attack surface and are named
+   *  separately because the reviewer must read them differently: there is no symbol
+   *  diff to reason about, so the question is whether the file's CONTENT still matches
+   *  what its owning doc promises. Under `delta` scope they also appear in
+   *  `changedSources` when they moved. */
+  governedRegistered: string[];
   /** Per touched feature: its contract, invariants, and test oracle. */
   features: ReviewBundleFeature[];
   /** Docs whose owned source moved but whose prose did not — must be addressed. */
@@ -191,6 +199,7 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
     changedSources: sortStrings(delta ? delta.paths : changeState.changedSources),
     alreadyReviewed: delta ? sortStrings(delta.alreadyReviewed) : [],
     priorFindings: delta ? delta.priorFindings : [],
+    governedRegistered: sortStrings(changeState.governedRegistered),
     features,
     staleDocs: changeState.staleDocs,
     riskTouches: changeState.riskTouches,

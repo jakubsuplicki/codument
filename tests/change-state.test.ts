@@ -531,6 +531,7 @@ describe("ungated registered changes (non-source blind spot)", () => {
       {
         file: "app/assets/site.css",
         owners: [{ feature: "website", doc: "docs/features/website.md" }],
+        kind: "impact-only",
       },
     ]);
     // Still in the other-changed bucket (it is not a recognized source)…
@@ -597,7 +598,11 @@ describe("ungated registered changes (non-source blind spot)", () => {
       changedFiles: ["types/api.d.ts"],
     });
     assert.deepEqual(s.ungatedRegistered, [
-      { file: "types/api.d.ts", owners: [{ feature: "types", doc: "docs/features/types.md" }] },
+      {
+        file: "types/api.d.ts",
+        owners: [{ feature: "types", doc: "docs/features/types.md" }],
+        kind: "excluded",
+      },
     ]);
     // Still excluded from every verdict input and from other-changed.
     assert.deepEqual(s.staleDocs, []);
@@ -833,6 +838,49 @@ describe("governed registered changes (ADR 017)", () => {
     assert.deepEqual(s.governedRegistered, []);
     assert.deepEqual(s.staleDocs, []);
     assert.equal(s.ungatedRegistered.length, 1, "the contradiction is still surfaced");
+  });
+
+  it("the residue is discriminated: excluded is a contradiction, impact-only is by design", () => {
+    const reg = {
+      features: {
+        i18n: {
+          ...registry.features.i18n,
+          primary_sources: ["i18n/index.ts", "data/fixtures.seed.json"],
+          related_sources: ["i18n/locales/en/journal.json"],
+        },
+      },
+    };
+    const s = computeChangeState({
+      registry: reg as never,
+      changedFiles: ["data/fixtures.seed.json", "i18n/locales/en/journal.json"],
+    });
+    assert.deepEqual(
+      s.ungatedRegistered.map((u) => [u.file, u.kind]),
+      [
+        ["data/fixtures.seed.json", "excluded"],
+        ["i18n/locales/en/journal.json", "impact-only"],
+      ],
+    );
+  });
+
+  it("a file that is BOTH excluded and impact-only reports the contradiction", () => {
+    // Precedence, pinned: the two classes overlap, and only one of them names
+    // something to fix. Without this case the discriminator could key off ownership
+    // instead of exclusion and every other assertion would still pass.
+    const reg = {
+      features: {
+        i18n: {
+          ...registry.features.i18n,
+          primary_sources: ["i18n/index.ts"],
+          related_sources: ["data/fixtures.seed.json"],
+        },
+      },
+    };
+    const s = computeChangeState({
+      registry: reg as never,
+      changedFiles: ["data/fixtures.seed.json"],
+    });
+    assert.deepEqual(s.ungatedRegistered.map((u) => u.kind), ["excluded"]);
   });
 
   it("an UNREGISTERED unjudgeable file stays outside governance entirely", () => {

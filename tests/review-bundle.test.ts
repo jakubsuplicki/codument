@@ -201,6 +201,26 @@ describe("buildReviewBundle", () => {
     assert.equal(a.hasUntestedInvariant, false);
   });
 
+  // ADR 017: a governed registered file can BLOCK a step while carrying no symbol
+  // diff, so leaving it out of the oracle would hand the adversary a change set
+  // smaller than the one the gate is enforcing.
+  it("carries governed registered files — a file that gates must not be missing from the oracle", () => {
+    const bundle = buildReviewBundle({
+      base: "HEAD",
+      changeState: cs({
+        changedSources: ["src/a.ts"],
+        byFeature: [{ feature: "a", files: ["src/a.ts"] }],
+        governedRegistered: ["i18n/locales/en/journal.json"],
+      }),
+      registry,
+      docContents,
+      plan: null,
+    });
+    assert.deepEqual(bundle.governedRegistered, ["i18n/locales/en/journal.json"]);
+    // …and it stays out of the structural attack list, which means something else.
+    assert.deepEqual(bundle.changedSources, ["src/a.ts"]);
+  });
+
   it("flags a feature whose invariants are marked untested/planned", () => {
     const bundle = buildReviewBundle({
       base: "HEAD",
