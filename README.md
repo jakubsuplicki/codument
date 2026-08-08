@@ -413,6 +413,7 @@ npx codument ack src/registry.ts --reason "added a helper export; no contract ch
 
 npx codument ack --list                 # list recorded acks with their handles
 npx codument ack --remove <handle>      # remove one by handle
+npx codument ack --prune                # remove every auto-invalidated ack in one pass
 npx codument ack src/foo.ts::bar --base main --signer alice   # match review --base; attribute the signer
 ```
 

@@ -63,6 +63,7 @@ export interface AckCliOptions {
   list?: boolean;
   json?: boolean;
   remove?: string;
+  prune?: boolean;
   root?: string;
 }
 
@@ -117,6 +118,10 @@ export async function ackCommand(anchor: string | undefined, options: AckCliOpti
   }
   if (options.remove !== undefined) {
     removeAck(root, options.remove);
+    return;
+  }
+  if (options.prune) {
+    pruneAcks(root);
     return;
   }
 
@@ -483,14 +488,28 @@ function listAcks(root: string): void {
     return;
   }
   console.log(pc.bold(`Acknowledgments (${acks.length})`));
+  let invalidated = 0;
   for (const a of acks) {
     const validity = ackValidity(root, a);
+    if (validity === "invalidated") invalidated += 1;
     console.log(
       `  ${pc.bold(handleOf(a))}  ${a.anchorId} ${pc.dim(
         `(${short(a.fromHash)}→${short(a.toHash)})`,
       )}${validityTag(validity)}`,
     );
     console.log(`    ${pc.dim(`${a.signer}:`)} ${a.reason}`);
+  }
+  // Auto-invalidation (ADR 006) is the design working, but it produces dead weight
+  // nothing sweeps: a field session finished with 52 of 342 acks invalidated, each
+  // carrying its own `--remove` hint that nothing in the loop ever ran. The list is
+  // where the pile becomes visible, so it is where the one command that ends it
+  // belongs — a per-ack hint fifty-two times is how the pile got there.
+  if (invalidated > 0) {
+    console.log(
+      pc.dim(
+        `\n  ${invalidated} of these ${invalidated === 1 ? "is" : "are"} auto-invalidated and clear nothing — \`codument ack --prune\` removes them all.`,
+      ),
+    );
   }
 }
 
@@ -500,6 +519,41 @@ function listAcksJson(root: string): void {
     acks: readAcks(root).map((a) => ackToJson(root, a)),
   };
   console.log(JSON.stringify(payload, null, 2));
+}
+
+// Sweep every ack the working tree has already moved past. Validity is recomputed
+// here exactly as `--list` recomputes it — one function, so the command can never
+// remove something the list called covering. It is deliberately narrow: an
+// INDETERMINATE ack is not dead, it is unreadable (the file does not parse), and
+// deleting it would destroy a judgment on the strength of a parse error the user
+// still has to fix. Removals ride the same audit path a manual `--remove` does, so
+// a swept ack is as traceable as a hand-removed one.
+function pruneAcks(root: string): void {
+  const acks = readAcks(root);
+  const dead = acks.filter((a) => ackValidity(root, a) === "invalidated");
+  if (dead.length === 0) {
+    console.log(
+      pc.dim(
+        acks.length === 0
+          ? "No acknowledgments recorded."
+          : `Nothing to prune — none of the ${acks.length} recorded acknowledgment(s) is auto-invalidated.`,
+      ),
+    );
+    return;
+  }
+  for (const a of dead) {
+    const handle = handleOf(a);
+    rmSync(join(root, ACKS_DIR, `${handle}.json`), { force: true });
+    emitAckRemove(root, handle, a.anchorId);
+    console.log(`  ${pc.dim("removed")} ${pc.bold(handle)}  ${a.anchorId}`);
+  }
+  // The count that remains is stated because the point of the sweep is the pile,
+  // not the individual ack: "52 removed, 290 still standing" is the shape a reader
+  // needs to know the trust surface did not just get quietly smaller.
+  const left = acks.length - dead.length;
+  console.log(
+    `${pc.green("✓")} pruned ${dead.length} auto-invalidated acknowledgment(s); ${left} still recorded`,
+  );
 }
 
 function removeAck(root: string, handle: string): void {

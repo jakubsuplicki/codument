@@ -125,7 +125,7 @@ practical-notes section of the report. Grouped because none changes what fires o
       verified and narrowed to a codument-free one-liner (above); **filing the bun issue is left
       for the maintainer** — it posts publicly under their account, which is not a step's call to
       make. The note deliberately carries no issue link until one exists.
-- [ ] **Step 3 — `ack --prune`.** The flag, the `--list` footer, audit events; tests: prunes only
+- [x] **Step 3 — `ack --prune`.** The flag, the `--list` footer, audit events; tests: prunes only
       invalidated, idempotent on a clean set, indeterminate untouched.
 - [ ] **Step 4 — Skill rules.** The exclude rule into `work-step` and the touched-section rule
       into `update-docs` (mirror installed copies); CHANGELOG; registry checked for touched

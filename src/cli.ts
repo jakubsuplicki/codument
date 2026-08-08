@@ -187,6 +187,10 @@ program
     "with --list, emit the acks as a versioned JSON contract (anchor, transition, signer, reason, recomputed validity)",
   )
   .option("--remove <handle>", "remove a recorded acknowledgment by its handle")
+  .option(
+    "--prune",
+    "remove every auto-invalidated acknowledgment in one pass (covering and indeterminate ones are left alone)",
+  )
   .option("--root <dir>", "project root (defaults to current directory)")
   .action((anchor, options) => ackCommand(anchor, options));
 

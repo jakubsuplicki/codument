@@ -78,6 +78,7 @@ const REGISTRY = {
 };
 
 const A_SRC = "export function foo() {\n  return 1;\n}\n";
+const B_SRC = "export function bar() {\n  return 1;\n}\n";
 
 describe("codument ack — the reachable agent-judge surface", async () => {
   beforeEach(async () => {
@@ -900,6 +901,121 @@ describe("codument ack --list --json — the machine audit surface", async () =>
       "covering",
       "resolves the same last-wins anchor the gate bound → agrees (a find-first classifier would read invalidated)",
     );
+  });
+});
+
+// Auto-invalidation (ADR 006) is the trust model working: an ack vouches for one
+// fingerprint transition and stops covering the moment the anchor moves past it. What
+// it produced in the field was dead weight nothing swept — 52 of 342 acks invalidated,
+// each printing its own `--remove` hint that no step in the loop ever ran.
+describe("codument ack --prune — sweeping what auto-invalidation left behind", async () => {
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-ackprune-"));
+    await scaffold({
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            alpha: { ...REGISTRY.features.alpha, primary_sources: ["src/a.ts", "src/b.ts"] },
+          },
+        },
+        null,
+        2,
+      ),
+      "docs/features/alpha.md": "# alpha\n\nThe foo() helper returns a number.\n",
+      "src/a.ts": A_SRC,
+      "src/b.ts": B_SRC,
+    });
+    gitInit(tmp);
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  const prune = () => capture(() => ackCommand(undefined, { prune: true, root: tmp }));
+  const handles = (): string[] => readAcks(tmp).map((a) => ackFileName(a).replace(/\.json$/, ""));
+
+  it("removes the invalidated acks and leaves every covering one standing", async () => {
+    // Two acks on two files; only the first file moves again, so only its ack dies.
+    await scaffold({
+      "src/a.ts": A_SRC.replace("return 1;", "return 2;"),
+      "src/b.ts": `${B_SRC}export const K = 1;\n`,
+    });
+    await capture(() => ackCommand("src/a.ts::foo", { reason: "internal", root: tmp }));
+    await capture(() => ackCommand("src/b.ts", { reason: "additive only", root: tmp }));
+    assert.equal(handles().length, 2);
+
+    await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 999;") });
+    const r = await prune();
+    assert.equal(r.code, undefined, r.err);
+    assert.match(r.out, /pruned 1 auto-invalidated acknowledgment\(s\); 1 still recorded/);
+
+    const left = readAcks(tmp);
+    assert.equal(left.length, 1);
+    assert.equal(left[0].anchorId, "src/b.ts", "the covering ack survives");
+  });
+
+  it("says so and removes nothing when every ack still covers", async () => {
+    await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
+    await capture(() => ackCommand("src/a.ts::foo", { reason: "internal", root: tmp }));
+
+    const r = await prune();
+    assert.equal(r.code, undefined, r.err);
+    assert.match(r.out, /Nothing to prune/);
+    assert.equal(readAcks(tmp).length, 1);
+  });
+
+  it("is idempotent — a second pass finds nothing left to sweep", async () => {
+    await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
+    await capture(() => ackCommand("src/a.ts::foo", { reason: "internal", root: tmp }));
+    await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 999;") });
+
+    assert.match((await prune()).out, /pruned 1 /);
+    const second = await prune();
+    assert.equal(second.code, undefined, second.err);
+    assert.match(second.out, /No acknowledgments recorded/);
+  });
+
+  it("never touches an INDETERMINATE ack — an unreadable file is not a dead judgment", async () => {
+    // The file stops parsing, so validity cannot be computed. Deleting the ack here
+    // would destroy a recorded judgment on the strength of a parse error the user
+    // still has to fix — and the ack may well be covering once it does.
+    await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
+    await capture(() => ackCommand("src/a.ts::foo", { reason: "internal", root: tmp }));
+    await scaffold({ "src/a.ts": "export function foo( {\n  return 2;\n" });
+
+    const r = await prune();
+    assert.match(r.out, /Nothing to prune/);
+    assert.equal(readAcks(tmp).length, 1, "the judgment survives the parse error");
+  });
+
+  it("every sweep is auditable on the same path a hand removal uses", async () => {
+    await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
+    await capture(() => ackCommand("src/a.ts::foo", { reason: "internal", root: tmp }));
+    const dead = handles()[0];
+    await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 999;") });
+    await prune();
+
+    const removals = readAllEvents(tmp).filter((e) => e.type === "ack-remove");
+    assert.equal(removals.length, 1);
+    const data = (removals[0] as { data: { handle: string; anchorId: string | null } }).data;
+    assert.equal(data.handle, dead);
+    assert.equal(data.anchorId, "src/a.ts::foo().");
+  });
+
+  it("the list ends with the one command that clears the pile, not a hint per ack", async () => {
+    await scaffold({
+      "src/a.ts": A_SRC.replace("return 1;", "return 2;"),
+      "src/b.ts": `${B_SRC}export const K = 1;\n`,
+    });
+    await capture(() => ackCommand("src/a.ts::foo", { reason: "internal", root: tmp }));
+    await capture(() => ackCommand("src/b.ts", { reason: "additive only", root: tmp }));
+    await scaffold({
+      "src/a.ts": A_SRC.replace("return 1;", "return 999;"),
+      "src/b.ts": `${B_SRC}export const K = 2;\n`,
+    });
+
+    const list = stripAnsi((await capture(() => ackCommand(undefined, { list: true, root: tmp }))).out);
+    assert.match(list, /2 of these are auto-invalidated and clear nothing — `codument ack --prune`/);
   });
 });
 
