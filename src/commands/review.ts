@@ -893,16 +893,28 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // a reader triaging a red gate reads the red line, and anything beside it is
     // scenery. Both numbers are stated because the ratio IS the finding — N docs
     // woken by one file is the churn, and one registry edit ends all of it.
-    const contested = new Set(
-      report.state.ownershipLints.filter((l) => l.changeKind === "changed").map((l) => l.file),
-    );
+    // A doc is ownership-driven only where the unresolved symbol names ITS feature
+    // as a candidate owner. A concept umbrella woken by the same file is not: its
+    // wake is file-grain and a file ack clears it, so counting it here denied it
+    // that ack twice over — the per-doc hint was withheld, and the generic route
+    // below was suppressed as "nothing an ack can settle".
+    const contestedFor = (file: string, feature: string): boolean =>
+      report.state.ownershipLints.some(
+        (l) => l.file === file && l.changeKind === "changed" && l.features.includes(feature),
+      );
     const ownershipOnly = report.state.staleDocs.filter(
-      (d) => d.changedSources.length > 0 && d.changedSources.every((f) => contested.has(f)),
+      (d) => d.changedSources.length > 0 && d.changedSources.every((f) => contestedFor(f, d.feature)),
     );
+    const contested = new Set(ownershipOnly.flatMap((d) => d.changedSources));
     if (ownershipOnly.length > 0) {
       console.log(
         pc.red(
-          `    ${ownershipOnly.length} of those doc(s) ${ownershipOnly.length === 1 ? "was" : "were"} woken by ${contested.size === 1 ? "a shared file" : `${contested.size} shared files`} no feature claims per-symbol — that wake repeats on every edit until the registry says who owns it, and no ack clears it (fix printed with the stale doc above).`,
+          // Both shapes are named because they take OPPOSITE fixes — one adds a
+          // claim to `owned_symbols`, the other removes one — and a summary that
+          // asserts the unclaimed half sends every doubly-claimed reader the wrong
+          // way. The line carries the ratio, which is the finding; the exact edit
+          // is per-file and stays where it is correct, beside its stale doc.
+          `    ${ownershipOnly.length} of those doc(s) ${ownershipOnly.length === 1 ? "was" : "were"} woken by ${contested.size === 1 ? "a shared file" : `${contested.size} shared files`} whose per-symbol ownership does not resolve — no feature claims it, or two do — and that wake repeats on every edit until the registry says who owns it, and no ack clears it (fix printed with the stale doc above).`,
         ),
       );
     }
@@ -918,9 +930,13 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       routes.push(
         "    Fix each registry pointer — re-point the entry to the new path, or drop it. No ack applies: the pointer is simply false.",
       );
+    // Deliberately a pointer, not the command. The edit differs by shape — claim an
+    // unclaimed symbol, drop a duplicate claim, or demote the file — and a summary
+    // that restates one of them is a route that is wrong for the others. It is also
+    // how this line came to print the exact opposite of the fix it sat above.
     if (ownershipOnly.length > 0)
       routes.push(
-        "    Claim the shared symbol (`owned_symbols`) or demote the file to `related_sources` — a registry edit, not a doc edit.",
+        "    Settle the shared file's per-symbol ownership in `docs/.registry.json` — a registry edit, not a doc edit; the exact one is printed with each stale doc above.",
       );
     // Offered only while some stale doc can actually be settled that way. Where
     // every one of them traces to an unclaimed shared symbol, an ack is refused and
@@ -946,20 +962,29 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // gate's. The exit code stays the contract; this just makes `| tail -1` tell the
   // truth too, so the fragile habit stops producing false greens. It is terse on
   // purpose: everything it names has already been said above at length.
-  const blocking: string[] = [];
-  if (strictFail) {
-    if (report.state.unmapped.length > 0) blocking.push(`${report.state.unmapped.length} unmapped`);
-    if (report.state.staleDocs.length > 0)
-      blocking.push(`${report.state.staleDocs.length} stale doc(s)`);
-    if (report.state.registryPointers.length > 0)
-      blocking.push(`${report.state.registryPointers.length} registry pointer(s)`);
-  }
+  const gateable: string[] = [];
+  if (report.state.unmapped.length > 0) gateable.push(`${report.state.unmapped.length} unmapped`);
+  if (report.state.staleDocs.length > 0)
+    gateable.push(`${report.state.staleDocs.length} stale doc(s)`);
+  if (report.state.registryPointers.length > 0)
+    gateable.push(`${report.state.registryPointers.length} registry pointer(s)`);
+  const blocking = strictFail ? [...gateable] : [];
   if (reviewGateFail) blocking.push("adversarial review not covering this diff");
-  console.log(
-    blocking.length > 0
-      ? pc.red(`codument review: BLOCKED — ${blocking.join(", ")}`)
-      : pc.green("codument review: clean"),
-  );
+  if (blocking.length > 0) {
+    console.log(pc.red(`codument review: BLOCKED — ${blocking.join(", ")}`));
+  } else if (gateable.length > 0) {
+    // Ungated, but NOT clean. Without `--strict` this run is a report and exits 0
+    // by design, so the exit code cannot carry the difference — which is exactly why
+    // the word had to. `clean` printed under a screen of stale docs is the false
+    // green this line exists to kill, and the bare form is the one the review skill
+    // tells an agent to run; a reader who trusts `| tail -1` there gets the same lie
+    // by a shorter route. Name what was found, and say plainly that nothing gated it.
+    console.log(
+      pc.yellow(`codument review: ${gateable.join(", ")} — not gated (add \`--strict\` to gate)`),
+    );
+  } else {
+    console.log(pc.green("codument review: clean"));
+  }
 }
 
 // The full real-change set the adversarial-review gate scopes to: changed sources +
@@ -1097,6 +1122,12 @@ function ownershipResolution(
    *  registry edit, so repeating it per woken doc is the same volume that taught
    *  the field reader to skip the block in the first place. */
   full: boolean,
+  /** True when every lint here is an added or removed anchor, which a file-grain
+   *  ack DOES skip — so the ack clears this wake, and the block prints that very
+   *  command three lines above. The denial below is true only of a `changed`
+   *  anchor; stated unconditionally it pushed the reader off a working one-line
+   *  ack and onto a registry edit that drops a co-owner's real ownership. */
+  ackClears: boolean,
 ): string {
   const descriptors = [...new Set(lints.map((l) => l.descriptor))].sort();
   const candidates = [...new Set(lints.flatMap((l) => l.features))].sort();
@@ -1114,12 +1145,20 @@ function ownershipResolution(
     )} ${pc.dim(`— ${file} :: ${descriptors.join(", ")} · across ${candidates.join(", ")}`)}` +
     `${indent}  ${pc.dim("this recurs on EVERY edit to the file until the registry says who owns it")}`;
 
+  // What an ack can and cannot do here, said once for both shapes. The recurrence
+  // is the point either way: the ack settles THIS wake, the registry edit is what
+  // stops the next edit re-firing it.
+  const close = ackClears
+    ? "the ack above clears this one; only the registry edit stops it returning on the next edit"
+    : ambiguous
+      ? "no ack clears this — an ack needs one resolved owner, and there are two"
+      : "no ack — symbol or file — clears this; prose in the other candidates' docs buys green and spends the standard";
+
   if (ambiguous) {
     return (
       `${head}${indent}  ${pc.dim("fix →")} remove ${pc.cyan(list)} from ${pc.cyan(
         "owned_symbols",
-      )} in all but one of ${andList(candidates)}` +
-      `${indent}  ${pc.dim("no ack clears this — an ack needs one resolved owner, and there are two")}`
+      )} in all but one of ${andList(candidates)}` + `${indent}  ${pc.dim(close)}`
     );
   }
 
@@ -1140,10 +1179,7 @@ function ownershipResolution(
     (d) => d === "default." || d === MODULE_ANCHOR_NAME || d === `${MODULE_ANCHOR_NAME}.`,
   );
   const fixes = wholeFileOnly ? demote + claim : claim + demote;
-  return (
-    `${head}${fixes}${indent}  ` +
-    pc.dim("no ack — symbol or file — clears this; prose in the other candidates' docs buys green and spends the standard")
-  );
+  return `${head}${fixes}${indent}  ${pc.dim(close)}`;
 }
 
 function printHuman(report: ReviewReport): void {
@@ -1245,20 +1281,28 @@ function printHuman(report: ReviewReport): void {
     list.push(l);
     lintsByFile.set(l.file, list);
   }
+  // The lints that concern a GIVEN doc: the ones naming its feature as a candidate
+  // owner. A contested file does not wake one kind of doc — a concept umbrella
+  // wakes at file grain and never consults `owned_symbols` (per-symbol ownership is
+  // a feature concept; `resolveOwner` skips concept entries entirely). So the
+  // per-symbol resolution is not the umbrella's fix, and the file ack that DOES
+  // clear it must not be withheld from it on another doc's account.
+  const lintsFor = (f: string, feature: string): OwnershipLint[] =>
+    (lintsByFile.get(f) ?? []).filter((l) => l.features.includes(feature));
   // A file-grain ack skips added/removed anchors but never a `changed` one, so it
   // cannot clear a wake an unassigned CHANGED symbol is driving. Such a file looks
   // coarse from here (no drift entry — drift only carries resolved owners), which
   // is how the generic hint came to recommend the one command guaranteed not to
   // work: in the field the agent followed it and banked two inert acks.
-  const ackBlocked = (f: string): boolean =>
-    (lintsByFile.get(f) ?? []).some((l) => l.changeKind === "changed");
+  const ackBlocked = (f: string, feature: string): boolean =>
+    lintsFor(f, feature).some((l) => l.changeKind === "changed");
   const resolutionShown = new Set<string>();
   section(
     pc.yellow("Stale docs (source changed, mapped doc did not)"),
     state.staleDocs.map((d) => {
       let line = `${pc.yellow("⚠")} ${d.feature}: ${d.doc} (changed: ${d.changedSources.join(", ")})`;
       const coarse = d.changedSources.filter(
-        (f) => !driftFiles.has(f) && !unevaluableFiles.has(f) && !ackBlocked(f),
+        (f) => !driftFiles.has(f) && !unevaluableFiles.has(f) && !ackBlocked(f, d.feature),
       );
       if (coarse.length > 0) {
         line += `\n        ${pc.dim("doc impact    →")} update ${d.doc} ${pc.dim("at intent altitude")}`;
@@ -1267,9 +1311,15 @@ function printHuman(report: ReviewReport): void {
         }
       }
       for (const f of d.changedSources) {
-        const lints = lintsByFile.get(f);
-        if (!lints || lints.length === 0) continue;
-        line += ownershipResolution(f, lints, d.feature, !resolutionShown.has(f));
+        const lints = lintsFor(f, d.feature);
+        if (lints.length === 0) continue;
+        line += ownershipResolution(
+          f,
+          lints,
+          d.feature,
+          !resolutionShown.has(f),
+          !ackBlocked(f, d.feature),
+        );
         resolutionShown.add(f);
       }
       return line;

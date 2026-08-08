@@ -89,12 +89,20 @@ remains pre-1.0.
   for both routes: claim the symbol under one feature (`owned_symbols`), or keep one
   primary owner and demote the file to the others' `related_sources`. Where the only
   moved anchor is the whole-module one, the demotion leads.
-- **Guidance is computed from what would actually clear the finding.** A file-grain
-  ack never skips a `changed` anchor, so it cannot clear a wake an unclaimed shared
-  symbol is driving — yet that is exactly what the generic hint recommended, and the
-  field agent followed it and banked two acknowledgments that cleared nothing. The
-  hint and the `--strict` epilogue now name the ack route only while some stale doc
-  can still be settled that way.
+- **Guidance is computed from what would actually clear the finding — and is never
+  withheld where it would.** A file-grain ack never skips a `changed` anchor, so it
+  cannot clear a wake an unclaimed shared symbol is *changing* — yet that is exactly
+  what the generic hint recommended, and the field agent followed it and banked two
+  acknowledgments that cleared nothing. The hint and the `--strict` epilogue now name
+  the ack route only while some stale doc can still be settled that way. The converse
+  binds too, and costs more when it breaks: the same ack DOES clear an unclaimed
+  symbol that was merely added or removed, and it does clear a concept umbrella woken
+  at file grain by the contested file — so the resolution is scoped to the doc it
+  prints under, and denies nothing it had just offered. A contested file is not one
+  thing with one answer: what moved, whose wake it is, and whether the symbol is
+  unclaimed or doubly-claimed each change the fix, and the `--strict` summary now
+  states the condition and points at the per-file fix rather than restating one shape
+  of it — it previously told a doubly-claimed symbol to claim itself again.
 - **`codument ack` refuses an acknowledgment that reaches nothing.** Drift consults
   acks only for a symbol with one resolved owner, so an ack on an unclaimed shared
   symbol was inert — and was recorded anyway, printing `✓ acknowledged` and "re-run

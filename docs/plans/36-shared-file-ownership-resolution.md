@@ -145,6 +145,55 @@ No new source files.
       (mirror installed copies), the invariant + test links into `change-control-gate.md`,
       CHANGELOG, registry entries checked for every touched source.
 
+## Post-ship remediation (adversarial review of `4c931e3..65c6091`)
+
+Steps 1–4 landed and were then reviewed by three lenses with every finding put to an independent
+refuter. Three findings against this plan survived refutation. They share one root, and they mean
+this plan's own acceptance criterion — *no output anywhere suggests an ack that cannot clear the
+wake* — held only in the direction it was written and failed in the other, so the reopen is the
+honest record rather than a follow-up plan.
+
+**Root — the resolution block treats a contested file as one thing with one answer.** It is
+computed per FILE and printed under every doc that file woke, consulting neither how the anchor
+moved, nor which doc it is printing under, nor which of the two ownership shapes fired. Each of
+the three omissions produces a false sentence at the moment of most pressure:
+
+- **`changeKind` is ignored.** A file-grain ack skips added and removed anchors, so for an added
+  unclaimed symbol the ack *works* — and the block prints that ack three lines above its own
+  "no ack — symbol or file — clears this". Two other sites in the same file already narrow to
+  `changed`; this one did not, so one block gave opposite advice in two halves. A reader who
+  believes the stronger claim takes the demotion instead, permanently dropping a co-owner's real
+  ownership to clear what one line would have cleared.
+- **The woken doc's kind is ignored.** Per-symbol ownership is a feature concept — `resolveOwner`
+  skips concept entries — so a concept umbrella woken file-grain by the same file is not
+  contested at all. It got the ownership block (all three of whose statements are false for it),
+  lost the file ack that does clear it, and, because it counted toward the ownership-only tally,
+  the `--strict` epilogue suppressed the generic ack route as well. Both routes gone, the doc
+  edit left standing: the mirror prose this plan exists to prevent, arrived at by this plan.
+- **The lint's kind is ignored in the summary.** The `--strict` line asserts "no feature claims
+  per-symbol" and routes to `owned_symbols` for *every* contested file, so a doubly-claimed
+  symbol got a headline denying its own condition and a route that, followed, adds a third claim
+  and leaves the gate exactly as red — four lines below the inline block that states the correct
+  inverse fix.
+
+**The fix, one step.** Scope the block to the lints naming the doc's own feature (which excludes
+concept umbrellas by construction), derive the ack sentence from the same `changed` predicate the
+ack hint already uses, and reduce the epilogue's route to the condition plus a pointer at the
+per-file fix — a summary that restates one shape's fix is a route that is wrong for the others,
+which is exactly how it came to print the opposite of the fix directly above it.
+
+- [x] **Step 5 — The block answers for the wake in front of it.** Per-doc lint scoping,
+      `changeKind`-derived ack sentence, shape-neutral epilogue. Tests: an ADDED unclaimed symbol
+      keeps the ack that clears it and pastes green; a concept umbrella keeps its own route while
+      the generic one survives for it; the blocking summary refuses to call a doubly-claimed
+      symbol unclaimed. Each mutation-tested.
+
+Five findings against this range were refuted, and two are recorded as genuinely out of scope:
+`owned_symbols` keys are not repointed by a rename (pre-existing, identical at the range base —
+`namingEntries` reads only `primary_sources`/`related_sources`), and `watch` still leads `✓ CLEAN`
+over a `--strict`-blocked tree (the established severity-ladder contract, which `unmapped` set
+long before this plan).
+
 ## Acceptance criteria
 
 - The field scenario replayed — a one-line edit to a component file in three features'

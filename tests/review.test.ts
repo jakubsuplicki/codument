@@ -1555,12 +1555,24 @@ describe("the verdict is the last line, and a single-anchor file says something 
     assert.equal(red.code, 1);
     assert.match(lastLine(red.out), /^codument review: BLOCKED — 1 stale doc\(s\)$/);
 
+    // The same tree WITHOUT `--strict` is a report, not a gate: exit 0 by design, so
+    // the exit code cannot carry the difference and the word had to. Saying `clean`
+    // here — under a stale doc it had just listed — is the same false green by a
+    // shorter route, and the bare form is the one the review skill tells agents to
+    // run. Name the findings, and say plainly that nothing gated them.
+    const ungated = run(["review"]);
+    assert.equal(ungated.code, 0, "bare review still exits 0 — the gate is opt-in");
+    assert.equal(
+      lastLine(ungated.out),
+      "codument review: 1 stale doc(s) — not gated (add `--strict` to gate)",
+    );
+
     await scaffold({ "docs/features/ui.md": "# ui\n\n## In plain terms\nButtons, trimmed.\n" });
     const green = run(["review", "--strict"]);
     assert.equal(green.code, 0);
     assert.equal(lastLine(green.out), "codument review: clean");
 
-    // And bare `review` — informational, exit 0 — still ends with a verdict.
+    // And bare `review` says `clean` only where there is nothing to report.
     assert.equal(lastLine(run(["review"]).out), "codument review: clean");
   });
 
@@ -1661,8 +1673,8 @@ describe("an unclaimed shared file says how to stop being one (plan 36)", () => 
     // The condition is named ON the red line — the whole defect was that these
     // words printed somewhere else.
     const epilogue = r.out.split("--strict:")[1] ?? "";
-    assert.match(epilogue, /shared file .*no feature claims per-symbol/);
-    assert.match(epilogue, /owned_symbols.*related_sources|related_sources.*owned_symbols/);
+    assert.match(epilogue, /shared file whose per-symbol ownership does not resolve/);
+    assert.match(epilogue, /Settle the shared file's per-symbol ownership/);
 
     // The ack route is withheld: every stale doc here traces to the unclaimed
     // symbol, and no ack of any grain clears one. Offering it is what banked two
@@ -1788,6 +1800,138 @@ describe("an unclaimed shared file says how to stop being one (plan 36)", () => 
     assert.match(out, /shared symbol claimed by more than one feature/);
     assert.match(out, /remove .* from owned_symbols in all but one of cart and checkout/);
     assert.doesNotMatch(out, /claim it {2}→/, "adding another claim would make it worse");
+  });
+
+  // The summary line and the route beside it are read by someone triaging a red
+  // gate; they used to restate the UNCLAIMED fix unconditionally, so a doubly-claimed
+  // symbol got a headline that denied its own condition and a route that, followed,
+  // adds a third claim and leaves the gate exactly as red.
+  it("the blocking summary does not describe a doubly-claimed symbol as unclaimed", async () => {
+    await threeOwners({
+      cart: { owned_symbols: { [CONTESTED]: ["default."] } },
+      checkout: { owned_symbols: { [CONTESTED]: ["default."] } },
+    });
+    const epilogue = runReview().out.split("--strict:")[1] ?? "";
+    assert.match(epilogue, /per-symbol ownership does not resolve/);
+    assert.doesNotMatch(
+      epilogue,
+      /no feature claims it\b(?![\s\S]*or two do)/,
+      "two features claim it — saying none do is false",
+    );
+    assert.doesNotMatch(
+      epilogue,
+      /Claim the shared symbol/,
+      "the route must not print the opposite of the printed fix",
+    );
+    assert.match(epilogue, /printed with each stale doc above/);
+  });
+
+  // An ack denied where it works. `changeKind` decides what clears a wake: a
+  // file-grain ack skips an added/removed anchor, so for one the block's closing
+  // sentence and the ack command printed three lines above it contradicted each
+  // other — and a reader who believed the sentence instead performed the demotion,
+  // permanently dropping a co-owner's real ownership to clear a one-line ack.
+  it("an ADDED unclaimed symbol keeps the ack that clears it, and does not deny it", async () => {
+    await scaffold({
+      "docs/features/cart.md": "# cart\n\n## In plain terms\nThe cart.\n",
+      "docs/features/checkout.md": "# checkout\n\n## In plain terms\nCheckout.\n",
+      "src/shared.ts": "export function priceOf() {\n  return 1;\n}\n",
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            cart: { ...feature("cart"), primary_sources: ["src/shared.ts"] },
+            checkout: { ...feature("checkout"), primary_sources: ["src/shared.ts"] },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    gitInit(tmp);
+    await scaffold({
+      "src/shared.ts": "export function priceOf() {\n  return 1;\n}\nexport function taxOf() {\n  return 2;\n}\n",
+    });
+
+    const r = runReview();
+    assert.equal(r.code, 1);
+    assert.match(r.out, /shared symbol no feature claims/, "still fails loud, and still routes");
+    assert.doesNotMatch(
+      r.out,
+      /no ack — symbol or file — clears this/,
+      "a file ack skips an added anchor, so denying it is false",
+    );
+    assert.match(r.out, /the ack above clears this one; only the registry edit stops it returning/);
+
+    // The proof the sentence was wrong: the command printed in the same block works.
+    const m = r.out.match(/codument ack (\S+) --reason/);
+    assert.ok(m, `the ack route is offered where it clears the wake:\n${r.out}`);
+    execFileSync("node", [CLI, "ack", m![1], "--reason", "new helper, no contract owed yet"], {
+      cwd: tmp,
+      encoding: "utf-8",
+    });
+    assert.equal(runReview().code, 0, "and it clears the gate");
+  });
+
+  // A concept umbrella is not a per-symbol owner (`resolveOwner` skips concept
+  // entries), so a contested file wakes it at FILE grain and `owned_symbols` is not
+  // its fix. Attaching the ownership block to it stated three false things at once,
+  // and counting it as ownership-driven suppressed the generic ack route — leaving a
+  // doc edit, the mirror prose the ack protocol exists to prevent, as the only exit.
+  it("a concept umbrella woken by the same file gets its own route, not the ownership block", async () => {
+    await scaffold({
+      "docs/features/cart.md": "# cart\n\n## In plain terms\nThe cart.\n",
+      "docs/features/checkout.md": "# checkout\n\n## In plain terms\nCheckout.\n",
+      "docs/concepts/platform.md": "# platform\n\n## In plain terms\nThe platform.\n",
+      "src/shared.ts": "export function priceOf() {\n  return 1;\n}\n",
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            cart: { ...feature("cart"), primary_sources: ["src/shared.ts"] },
+            checkout: { ...feature("checkout"), primary_sources: ["src/shared.ts"] },
+            platform: {
+              doc: "docs/concepts/platform.md",
+              type: "concept",
+              primary_sources: ["src/shared.ts"],
+              status: "current",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    gitInit(tmp);
+    await scaffold({ "src/shared.ts": "export function priceOf() {\n  return 2;\n}\n" });
+
+    const r = runReview();
+    assert.equal(r.code, 1);
+    const entry = (key: string) =>
+      (r.out.split(`⚠ ${key}: docs/`)[1] ?? "").split(/\n {4}⚠ /)[0];
+
+    // The umbrella keeps the ack that clears it…
+    assert.match(entry("platform"), /no doc impact →/);
+    assert.doesNotMatch(
+      entry("platform"),
+      /shared symbol no feature claims/,
+      "per-symbol ownership is not a concept umbrella's fix",
+    );
+    // …while the two candidate owners still get the resolution and no dead ack.
+    assert.match(entry("cart") + entry("checkout"), /shared symbol no feature claims/);
+    assert.doesNotMatch(entry("cart"), /no doc impact →/);
+
+    // Only the two features are ownership-driven, so the generic route survives.
+    const epilogue = r.out.split("--strict:")[1] ?? "";
+    assert.match(epilogue, /2 of those doc\(s\) were woken by a shared file/);
+    assert.match(epilogue, /Resolve each stale doc/);
+
+    // And the ack the umbrella was denied genuinely clears the umbrella alone.
+    execFileSync("node", [CLI, "ack", "src/shared.ts", "--reason", "no narration owed"], {
+      cwd: tmp,
+      encoding: "utf-8",
+    });
+    const after = runReview();
+    assert.equal(after.code, 1, "the contested symbol still blocks");
+    assert.doesNotMatch(after.out, /platform: docs\//, "but the umbrella is settled");
   });
 });
 

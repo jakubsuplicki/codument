@@ -87,7 +87,13 @@ practical-notes section of the report. Grouped because none changes what fires o
   and the bundle are untouched.
 - **Verdict-last contract**: every human-output mode of `review` ends stdout with a single
   verdict line (clean, or the blocking-finding count); exit codes unchanged; a test pins
-  "last line is the verdict" so hint text can never drift below it again.
+  "last line is the verdict" so hint text can never drift below it again. **Amended after the
+  adversarial review of step 1**: as first shipped the line counted findings only under
+  `--strict`, so bare `review` signed off `clean` over stale docs, unmapped sources and registry
+  pointers it had just listed — the `| tail -1` false green the line exists to kill, on the form
+  `review-work` tells an agent to run. `clean` is now reserved for a run with nothing to report;
+  an ungated run names its findings and says it did not gate them. Exit codes still do not move,
+  so the plan's non-goal holds.
 - **`update-docs` gains the touched-section rule**: when a gate-owed edit lands in a section
   written at mechanism altitude, rewrite that section to the standard rather than matching its
   voice or appending a second register — and leave the rest of the doc alone. A whole-doc rewrite
@@ -104,7 +110,8 @@ practical-notes section of the report. Grouped because none changes what fires o
 ## Delivery Plan
 
 - [x] **Step 1 — Review rendering.** Single-anchor collapse + verdict-last line; tests pin both
-      (golden single-anchor output; last-line assertion across clean and red runs).
+      (golden single-anchor output; last-line assertion across clean, red and ungated runs).
+      Amended post-review: an ungated run no longer says `clean` over what it just listed.
 - [ ] **Step 2 — Windows guidance.** Managed-section line via `buildManagedSection()` (regenerate
       in-repo blocks, pin in scaffold test); getting-started + README note; file the upstream
       bun issue with the minimal repro and link it from the note.
