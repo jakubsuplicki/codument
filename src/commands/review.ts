@@ -30,6 +30,7 @@ import {
   getWorkingTreeDeletions,
   getWorkingTreeRenames,
   movesOnly,
+  renamedFromMap,
   isGitRepo,
   type RenamePair,
 } from "../lib/git.js";
@@ -274,7 +275,7 @@ export function buildReview(
   // Destination → origin, so a moved file's base content is read from where it
   // actually lived. Without it a pure rename reports every symbol as newly added
   // and wakes the owning doc for a change that moved no contract.
-  const renamedFrom = new Map(renames.map((r) => [r.to, r.from]));
+  const renamedFrom = renamedFromMap(renames, new Set(changes));
   const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, changes, renamedFrom);
   const acks = readAcks(root);
   // Change authorship (pure repo state) — the source of "the change author" for the
@@ -325,7 +326,24 @@ export function buildReview(
   // File-grain acks (`codument ack <path>`): a bare-path ack covering a file's
   // current content clears its additive/concept/coarse staleness (never a moved
   // symbol). Resolved here (git+disk) and passed to the pure analyzer.
-  const fileGrainAcked = resolveFileGrainAcked(root, baseRef, changes, honoredAcks, unevaluable);
+  const fileGrainAcked = resolveFileGrainAcked(
+    root,
+    baseRef,
+    changes,
+    honoredAcks,
+    unevaluable,
+    renamedFrom,
+  );
+  // Rename destinations whose content did not actually move. The precise grain says
+  // this for itself with an empty anchor diff; coarse and governed-registered files
+  // have no per-symbol view to say it with, so it is computed once here — from the
+  // same map the anchors use, so no two grains can disagree about what moved.
+  const unchangedMoves = [...renamedFrom]
+    .filter(([to, from]) => {
+      const t = fileContentTransition(root, baseRef, to, from);
+      return t.from !== null && t.from === t.to;
+    })
+    .map(([to]) => to);
   const state = computeChangeState({
     registry,
     changedFiles: changes,
@@ -341,6 +359,7 @@ export function buildReview(
     fileGrainAcked,
     deletedFiles: deletions,
     renames,
+    unchangedMoves,
     // Deleted files resolve ownership against the registry AT THE BASE — the
     // entry that owned the file while it existed — so removing the entry in the
     // same change cannot dodge the wake.
@@ -375,10 +394,10 @@ export function buildReview(
   // File-grain coverage for the card uses the FULL ack set too (a self file-ack stays
   // visible under the flag), so resolve it independently of the honored gate set.
   const cardFileGrainAcked = requireIndependentAck
-    ? resolveFileGrainAcked(root, baseRef, changes, acks, unevaluable)
+    ? resolveFileGrainAcked(root, baseRef, changes, acks, unevaluable, renamedFrom)
     : fileGrainAcked;
   for (const file of cardFileGrainAcked) {
-    const { from, to } = fileContentTransition(root, baseRef, file);
+    const { from, to } = fileContentTransition(root, baseRef, file, renamedFrom.get(file) ?? file);
     if (from === null || to === null) continue;
     const ack = acks.find((a) => isFileGrainAck(a) && ackCovers(a, file, from, to));
     if (ack) {

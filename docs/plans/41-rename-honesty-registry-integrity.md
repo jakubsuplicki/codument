@@ -171,7 +171,7 @@ finding — it self-announces at the next touch of that feature's source, and `d
       deleted-pointer branch takes the same guard. Tests: copy detection on yields no pair and no
       pointer; the `git mv` + shim file split stays satisfiable and its correct end state goes
       green; probe C is unchanged.
-- [ ] **Step R2 — rename-awareness is a property of the change, not of one caller.**
+- [x] **Step R2 — rename-awareness is a property of the change, not of one caller.**
       `fileContentTransition` takes the base-side path; `resolveFileGrainAcked`, the review ack
       card, and both `ack` surfaces resolve it through the same map; a pure move is skipped by the
       file-grain and governed wakes. Tests: the printed ack works when pasted for a renamed

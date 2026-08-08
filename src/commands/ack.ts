@@ -20,11 +20,17 @@ import {
   isSignatureMove,
   warmAdaptersForRepo,
 } from "../lib/fingerprint.js";
-import { getGitAuthor, resolveWorkspace } from "../lib/git.js";
+import {
+  getGitAuthor,
+  getWorkingTreeChanges,
+  getWorkingTreeRenames,
+  renamedFromMap,
+  resolveWorkspace,
+} from "../lib/git.js";
 import { resolveOwner } from "../lib/ownership.js";
 import { type Registry, readRegistrySync } from "../lib/registry.js";
 import { emitAck, emitAckRemove } from "../lib/review-events.js";
-import { resolveBase } from "../lib/two-ref.js";
+import { resolveBase, worktreeChangesSince, worktreeRenamesSince } from "../lib/two-ref.js";
 
 // `codument ack` — the reachable surface for the agent-judge loop. When a review
 // finding is a pure-internal refactor that owes no doc change, the agent records a
@@ -32,6 +38,23 @@ import { resolveBase } from "../lib/two-ref.js";
 // mirror sentence to clear the gate. The command recomputes the exact `from`->`to`
 // transition itself (against the same base ref `review` used), so the agent never
 // copies a fingerprint — it runs the line `review` prints, or names the symbol.
+
+// Where each moved file's base content lived, resolved exactly as `review` resolves
+// it — same listers, same move filter, same map. `ack` reads base blobs for a living,
+// so it has to answer "did this file move?" the same way the surface that printed the
+// command did: when it did not, a `git mv` made `review` say `changed` and print an
+// ack, while `ack` saw a file that never existed at that path, called it `added`, and
+// refused its own instruction. Advisory: a rename lister that cannot answer leaves the
+// map empty, which is exactly the pre-rename behavior.
+function renamedFromFor(root: string, base?: string): Map<string, string> {
+  try {
+    return base
+      ? renamedFromMap(worktreeRenamesSince(root, base), new Set(worktreeChangesSince(root, base)))
+      : renamedFromMap(getWorkingTreeRenames(root), new Set(getWorkingTreeChanges(root)));
+  } catch {
+    return new Map();
+  }
+}
 
 export interface AckCliOptions {
   reason?: string;
@@ -142,7 +165,8 @@ export async function ackCommand(anchor: string | undefined, options: AckCliOpti
     }
   }
 
-  const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, [file]);
+  const renamedFrom = renamedFromFor(root, options.base);
+  const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, [file], renamedFrom);
   if (unevaluable.includes(file)) {
     fail(`${file} does not parse — fix the parse error before acking`);
     return;
@@ -230,13 +254,14 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
 
   // A parse-unevaluable file is never acked into freshness (the fail-loud stance the
   // symbol path also takes) — fix the parse error, then ack.
-  const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, [file]);
+  const renamedFrom = renamedFromFor(root, options.base);
+  const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, [file], renamedFrom);
   if (unevaluable.includes(file)) {
     fail(`${file} does not parse — fix the parse error before acking`);
     return;
   }
 
-  const { from, to } = fileContentTransition(root, baseRef, file);
+  const { from, to } = fileContentTransition(root, baseRef, file, renamedFrom.get(file) ?? file);
   if (from === null && to === null) {
     fail(`${file} is absent at ${baseLabel} and in the working tree — nothing to ack`);
     return;

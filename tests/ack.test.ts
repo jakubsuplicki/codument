@@ -293,6 +293,130 @@ describe("ack loop end-to-end through the real CLI (the headline ergonomics)", a
   });
 });
 
+// Plan 41 remediation: the rename map reached `buildReview` and nothing else, so
+// `review` and `ack` disagreed about the same moved file. Review called a renamed
+// symbol `changed` and printed an ack for it; ack read the base blob at the
+// DESTINATION, found nothing there, called it `added`, and refused its own
+// instruction — leaving the doc edit the ack route exists to prevent. The rule the
+// gate already claims: every resolution command the surface prints works when pasted.
+describe("a MOVED file is judged the same way by review and by ack", async () => {
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-ack-rename-"));
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  const run = (args: string[]): { code: number; out: string } => {
+    try {
+      return {
+        code: 0,
+        out: execFileSync("node", [CLI, ...args], {
+          cwd: tmp,
+          encoding: "utf-8",
+          env: { ...process.env, NO_COLOR: "1" },
+        }),
+      };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { code: e.status ?? 1, out: e.stdout ?? "" };
+    }
+  };
+
+  const registryFor = (sources: string[], doc = "docs/features/alpha.md") =>
+    JSON.stringify(
+      {
+        features: {
+          alpha: { doc, type: "feature", primary_sources: sources, status: "current" },
+        },
+      },
+      null,
+      2,
+    );
+
+  it("the per-symbol ack review prints for a renamed file runs, and clears the gate", async () => {
+    await scaffold({
+      "docs/.registry.json": registryFor(["src/a.ts"]),
+      "docs/features/alpha.md": "# alpha\n\nThe foo() helper returns a number.\n",
+      "src/a.ts": A_SRC,
+    });
+    gitInit(tmp);
+
+    execFileSync("git", ["mv", "src/a.ts", "src/b.ts"], { cwd: tmp });
+    await scaffold({
+      "src/b.ts": A_SRC.replace("return 1;", "return 2;"),
+      "docs/.registry.json": registryFor(["src/b.ts"]),
+    });
+
+    // The move is judged as a move: the symbol reads `changed`, not `added` — so a
+    // per-symbol ack is offered at all.
+    const review = run(["review"]);
+    const m = review.out.match(/codument ack (\S+) --reason/);
+    assert.ok(m, `review must offer a per-symbol ack for a moved symbol:\n${review.out}`);
+    assert.equal(m![1], "src/b.ts::foo().");
+
+    // Pasting it works — the half that used to refuse.
+    const acked = run(["ack", m![1], "--reason", "internal: same return shape"]);
+    assert.equal(acked.code, 0, `the printed ack must run:\n${acked.out}`);
+
+    assert.equal(run(["review", "--strict"]).code, 0, "and it must clear the gate");
+  });
+
+  it("a PURE rename wakes nothing at any grain — precise, coarse, or governed", async () => {
+    // The rename-aware base read only ever reached the precise branch, so a coarse
+    // file (no per-symbol anchors) and a governed registered one (no adapter at all)
+    // still read their destination as fresh content at a new path: every primary
+    // owner woken, for a change that moved no contract, with the printed file-grain
+    // ack refused for the same base-path reason.
+    await scaffold({
+      "docs/.registry.json": registryFor(["src/a.ts", "app/settings.py", "app/site.css"]),
+      "docs/features/alpha.md": "# alpha\n\nThe foo() helper returns a number.\n",
+      "src/a.ts": A_SRC,
+      "app/settings.py": "_DEBUG = True\n",
+      "app/site.css": "body { color: red; }\n",
+    });
+    gitInit(tmp);
+
+    execFileSync("git", ["mv", "src/a.ts", "src/z.ts"], { cwd: tmp });
+    execFileSync("git", ["mv", "app/settings.py", "app/config.py"], { cwd: tmp });
+    execFileSync("git", ["mv", "app/site.css", "app/style.css"], { cwd: tmp });
+    await scaffold({
+      "docs/.registry.json": registryFor(["src/z.ts", "app/config.py", "app/style.css"]),
+    });
+
+    const r = run(["review", "--strict"]);
+    assert.equal(r.code, 0, `three pure renames must wake nothing:\n${r.out}`);
+    assert.doesNotMatch(r.out, /Stale docs/, "no doc is owed prose for a move");
+  });
+
+  it("a rename that ALSO edits still fires at coarse grain, and its printed ack works", async () => {
+    // The control for the case above: silence must come from the content being
+    // identical, never from renames being skipped wholesale.
+    await scaffold({
+      "docs/.registry.json": registryFor(["app/site.css"]),
+      "docs/features/alpha.md": "# alpha\n\nStyles the page.\n",
+      "app/site.css": "body { color: red; }\n",
+    });
+    gitInit(tmp);
+
+    execFileSync("git", ["mv", "app/site.css", "app/style.css"], { cwd: tmp });
+    await scaffold({
+      "app/style.css": "body { color: blue; }\n",
+      "docs/.registry.json": registryFor(["app/style.css"]),
+    });
+
+    const r = run(["review", "--strict"]);
+    assert.equal(r.code, 1, `a moved-AND-edited file still owes its doc:\n${r.out}`);
+    const m = r.out.match(/codument ack (\S+) --reason/);
+    assert.ok(m, `the file-grain route must be offered:\n${r.out}`);
+    assert.equal(m![1], "app/style.css");
+
+    const acked = run(["ack", m![1], "--reason", "recolour only; no documented contract moved"]);
+    assert.equal(acked.code, 0, `the printed file-grain ack must run:\n${acked.out}`);
+    assert.equal(run(["review", "--strict"]).code, 0, "and it must clear the gate");
+  });
+});
+
 // ── File-grain ack: `codument ack <path>` ───────────────────────────────────
 //
 // The additive/concept/coarse residue a per-symbol ack cannot reach, cleared with a

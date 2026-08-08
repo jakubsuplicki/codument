@@ -76,6 +76,14 @@ export interface ChangeStateInput {
    *  as a bare add, so an entry naming the old path was left pointing at nothing
    *  and the gate went green over it. */
   renames?: RenamePair[];
+  /** Rename DESTINATIONS whose content is byte-identical to the origin at base: a
+   *  pure move, which changes no contract and so owes no doc anything. Precise
+   *  files need no such input (an empty anchor diff already says it), but a coarse
+   *  or governed-registered file has no per-symbol view to say it with — its
+   *  destination just looks like fresh content at a new path, so it woke every
+   *  primary owner and the printed file-grain ack was refused, leaving a doc edit
+   *  as the only exit. Absent → nothing is treated as a pure move. */
+  unchangedMoves?: string[];
   /** Registry as of the base ref. Deleted files resolve ownership against this
    *  when provided (falling back to `registry`), so removing a file's registry
    *  entry in the same change cannot dodge the deletion wake — the entry that
@@ -404,6 +412,11 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   // input's contract). Undefined → legacy fallback to the filtered set.
   const contentMoved =
     input.contentMovedFiles !== undefined ? new Set(input.contentMovedFiles) : undefined;
+  // A file that only MOVED carries no content change to wake anything with. The
+  // precise branch says this for itself (an empty anchor diff), so this set exists
+  // for the grains that cannot: coarse and governed-registered files, whose
+  // destination is otherwise indistinguishable from new content at a new path.
+  const unchangedMoves = new Set(input.unchangedMoves ?? []);
 
   for (const file of changedSources) {
     const acked = fileGrainAcked.has(file);
@@ -445,11 +458,13 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
       // ack (the file-grain judgment) or a doc update clears that contribution.
       const moved = contentMoved !== undefined ? contentMoved.has(file) : precise.length > 0;
       if (moved && !acked) wakeConcepts(file);
-    } else if (!acked) {
+    } else if (!acked && !unchangedMoves.has(file)) {
       // FILE-GRAIN FALLBACK (coarse/non-TS, or anchors uncomputable): every
       // PRIMARY owner — feature or concept — wakes; related_sources never does. A
       // covering file-grain ack clears the whole fallback wake (a coarse file has no
-      // per-symbol move to protect — the ack is the file-grain judgment for it).
+      // per-symbol move to protect — the ack is the file-grain judgment for it), and
+      // a pure move never enters it at all — the same silence a precise pure rename
+      // already gets from an empty anchor diff.
       for (const key of featurePrimary.get(file) ?? []) wake(key, file);
       wakeConcepts(file);
     }
@@ -457,9 +472,12 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
 
   // Governed registered files ride the SAME file-grain fallback: no adapter can
   // judge them, so there is no per-symbol move to protect and a file-grain ack is
-  // the file-grain judgment for them. `related_sources` still never wakes.
+  // the file-grain judgment for them. `related_sources` still never wakes, and a
+  // pure move is silent here too — a registration widens what the gate governs, not
+  // what counts as a change.
   for (const file of governedRegistered) {
     if (fileGrainAcked.has(file)) continue;
+    if (unchangedMoves.has(file)) continue;
     for (const key of featurePrimary.get(file) ?? []) wake(key, file);
     wakeConcepts(file);
   }
@@ -695,13 +713,16 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
 // clean tree pays nothing. A file that just became unevaluable (a fresh parse error)
 // is excluded — the fail-loud stance holds: a broken file is never acked fresh. The
 // ack's `to` must match the file's current content, so a later edit auto-invalidates
-// it exactly like a symbol ack.
+// it exactly like a symbol ack. `renamedFrom` (destination → origin) is what makes a
+// MOVED file ackable at all: its base content lived at the origin, so without the map
+// the transition reads as "added" and the ack the gate printed is refused.
 export function resolveFileGrainAcked(
   root: string,
   base: string,
   changedFiles: string[],
   acks: Acknowledgment[],
   unevaluable: string[] = [],
+  renamedFrom?: ReadonlyMap<string, string>,
 ): string[] {
   const fileAcks = acks.filter(isFileGrainAck);
   if (fileAcks.length === 0) return [];
@@ -711,7 +732,7 @@ export function resolveFileGrainAcked(
   for (const file of changedFiles) {
     if (!ackedIds.has(file)) continue; // no file-grain ack names this path
     if (unevaluableSet.has(file)) continue; // parse-unevaluable is never acked fresh
-    const { from, to } = fileContentTransition(root, base, file);
+    const { from, to } = fileContentTransition(root, base, file, renamedFrom?.get(file) ?? file);
     if (from === null || to === null) continue; // added/deleted — no content transition
     if (fileAcks.some((a) => ackCovers(a, file, from, to))) covered.push(file);
   }

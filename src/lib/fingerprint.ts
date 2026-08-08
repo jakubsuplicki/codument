@@ -525,12 +525,20 @@ export function fileContentChange(
 // the file's content moves — exactly as a per-symbol ack binds a symbol's transition.
 // The base is read from git; the head from disk, then byte-normalized by the coarse
 // adapter so it hashes identically to a committed blob.
+//
+// `basePath` is where the file lived at the base ref, for a file that MOVED — the
+// file-grain twin of the rename-aware anchor read. Without it a moved file has no
+// content transition at all (`from` is null, because nothing lived at the
+// destination then), so the gate calls a renamed file "added", refuses the very ack
+// it printed as the fix, and leaves a doc edit as the only way out — for a change
+// that moved no contract.
 export function fileContentTransition(
   root: string,
   base: string,
   path: string,
+  basePath: string = path,
 ): { from: string | null; to: string | null } {
-  const baseContent = readBlobAtRef(root, base, path);
+  const baseContent = readBlobAtRef(root, base, basePath);
   let headContent: string | null;
   try {
     headContent = readFileSync(join(root, path), "utf-8");

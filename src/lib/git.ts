@@ -196,6 +196,21 @@ export function movesOnly(
   return pairs.filter((p) => !presentAtHead.has(p.from));
 }
 
+/**
+ * Destination → origin for the genuine moves in a change: where each moved file's
+ * base-side content actually lived. Every surface that reads a base blob for a
+ * changed path resolves it through THIS map — the anchor diff, the file-grain ack
+ * transition, `review`'s guidance, and `ack`'s acceptance — because two surfaces
+ * deriving it separately is precisely how `review` came to print an ack command
+ * that `ack` refused.
+ */
+export function renamedFromMap(
+  pairs: readonly RenamePair[],
+  presentAtHead: ReadonlySet<string>,
+): Map<string, string> {
+  return new Map(movesOnly(pairs, presentAtHead).map((p) => [p.to, p.from]));
+}
+
 // Parse `git status --porcelain -z` into entries. NUL-terminated output disables
 // git's C-style path quoting entirely, so a non-ASCII or space-bearing path (e.g.
 // `src/föo.ts`) arrives verbatim instead of octal-escaped and silently dropped
