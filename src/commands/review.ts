@@ -10,6 +10,7 @@ import {
   DEPENDENT_CAP,
   type DependentSummary,
   detectApprovedPlanScope,
+  type OwnershipLint,
   resolveFileGrainAcked,
   type UngatedRegisteredChange,
 } from "../lib/change-state.js";
@@ -886,6 +887,25 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
         `  ✗ --strict: ${reasons.join(" and ")} — the registry/docs are not in sync for this change.`,
       ),
     );
+    // When the stale docs trace to an unclaimed shared symbol, say so ON the
+    // blocking line. The same words used to print as a ⚠ advisory further down,
+    // between high-fanout and dependents, and a field run read past them 25 times:
+    // a reader triaging a red gate reads the red line, and anything beside it is
+    // scenery. Both numbers are stated because the ratio IS the finding — N docs
+    // woken by one file is the churn, and one registry edit ends all of it.
+    const contested = new Set(
+      report.state.ownershipLints.filter((l) => l.changeKind === "changed").map((l) => l.file),
+    );
+    const ownershipOnly = report.state.staleDocs.filter(
+      (d) => d.changedSources.length > 0 && d.changedSources.every((f) => contested.has(f)),
+    );
+    if (ownershipOnly.length > 0) {
+      console.log(
+        pc.red(
+          `    ${ownershipOnly.length} of those doc(s) ${ownershipOnly.length === 1 ? "was" : "were"} woken by ${contested.size === 1 ? "a shared file" : `${contested.size} shared files`} no feature claims per-symbol — that wake repeats on every edit until the registry says who owns it, and no ack clears it (fix printed with the stale doc above).`,
+        ),
+      );
+    }
     // Only the routes that can actually clear what fired. At the moment of most
     // pressure, a command that cannot resolve the finding it sits under is worse
     // than no guidance at all — it is a plausible thing to try that leaves the gate
@@ -898,7 +918,15 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       routes.push(
         "    Fix each registry pointer — re-point the entry to the new path, or drop it. No ack applies: the pointer is simply false.",
       );
-    if (report.state.staleDocs.length > 0)
+    if (ownershipOnly.length > 0)
+      routes.push(
+        "    Claim the shared symbol (`owned_symbols`) or demote the file to `related_sources` — a registry edit, not a doc edit.",
+      );
+    // Offered only while some stale doc can actually be settled that way. Where
+    // every one of them traces to an unclaimed shared symbol, an ack is refused and
+    // a doc edit is prose written to buy green — so naming either here would be the
+    // dead end this line exists to stop printing.
+    if (report.state.staleDocs.length > ownershipOnly.length)
       routes.push(
         "    Resolve each stale doc: update it at intent altitude, or acknowledge a change that owes no doc line (`codument ack <path>` / `codument ack <path>::<symbol>`).",
       );
@@ -1018,6 +1046,85 @@ export function dependentLines(summary: DependentSummary[]): string[] {
   return lines;
 }
 
+/** "a", "a and b", "a, b and c" — these lines are read under pressure, and a
+ *  possessive plural spliced onto a comma list ("checkout, product' ...") reads as
+ *  a typo, which is one more reason to skip the block. */
+function andList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/**
+ * The resolution for a shared-file wake, rendered INSIDE the stale-doc entry the
+ * wake produced rather than as an advisory section of its own.
+ *
+ * The wake itself is ADR 004 working: a symbol on a file several features claim,
+ * that none of them claims per-symbol, wakes every candidate rather than guessing.
+ * What was missing is that nothing said so where the reader was looking, and
+ * nothing named the two edits that end it — so the field session met this 25 times,
+ * read it as decoration, and paid instead with prose written into five docs, which
+ * is the mirror-edit failure the whole ack protocol exists to prevent.
+ *
+ * Both fixes are registry edits, because who owns a symbol is a decision the
+ * registry exists to record. The tool routes; it never picks.
+ */
+function ownershipResolution(
+  file: string,
+  lints: OwnershipLint[],
+  feature: string,
+  /** False for the second and later stale docs the same file woke: the fix is ONE
+   *  registry edit, so repeating it per woken doc is the same volume that taught
+   *  the field reader to skip the block in the first place. */
+  full: boolean,
+): string {
+  const descriptors = [...new Set(lints.map((l) => l.descriptor))].sort();
+  const candidates = [...new Set(lints.flatMap((l) => l.features))].sort();
+  const others = candidates.filter((c) => c !== feature);
+  const ambiguous = lints.some((l) => l.kind === "ambiguous");
+  const list = descriptors.map((d) => JSON.stringify(d)).join(", ");
+  const indent = "\n        ";
+  if (!full) {
+    return `${indent}${pc.dim(`↑ woken by the same unclaimed shared file (${file}) — one registry edit clears all of these`)}`;
+  }
+
+  const head =
+    `${indent}${pc.yellow("⚠")} ${pc.bold(
+      ambiguous ? "shared symbol claimed by more than one feature" : "shared symbol no feature claims",
+    )} ${pc.dim(`— ${file} :: ${descriptors.join(", ")} · across ${candidates.join(", ")}`)}` +
+    `${indent}  ${pc.dim("this recurs on EVERY edit to the file until the registry says who owns it")}`;
+
+  if (ambiguous) {
+    return (
+      `${head}${indent}  ${pc.dim("fix →")} remove ${pc.cyan(list)} from ${pc.cyan(
+        "owned_symbols",
+      )} in all but one of ${andList(candidates)}` +
+      `${indent}  ${pc.dim("no ack clears this — an ack needs one resolved owner, and there are two")}`
+    );
+  }
+
+  const claim = `${indent}  ${pc.dim("claim it  →")} add under ONE of them in docs/.registry.json: ${pc.cyan(
+    `"owned_symbols": { ${JSON.stringify(file)}: [${list}] }`,
+  )}`;
+  const demote = `${indent}  ${pc.dim("demote it →")} keep ${file} in one feature's ${pc.cyan(
+    "primary_sources",
+  )}, move it to the ${pc.cyan("related_sources")} of ${
+    others.length > 0 ? andList(others) : "the other candidates"
+  } ${pc.dim("— impact, never a wake")}`;
+  // A file whose only moved anchors are the whole-module ones has nothing to split:
+  // claiming that single anchor IS file ownership under another name, so the
+  // demotion is the honest lead. This is the shape ADR 014 gives every modern
+  // config and default-exported component — which is why the field run met it on
+  // every contested file.
+  const wholeFileOnly = descriptors.every(
+    (d) => d === "default." || d === MODULE_ANCHOR_NAME || d === `${MODULE_ANCHOR_NAME}.`,
+  );
+  const fixes = wholeFileOnly ? demote + claim : claim + demote;
+  return (
+    `${head}${fixes}${indent}  ` +
+    pc.dim("no ack — symbol or file — clears this; prose in the other candidates' docs buys green and spends the standard")
+  );
+}
+
 function printHuman(report: ReviewReport): void {
   const { state, plan } = report;
 
@@ -1096,6 +1203,7 @@ function printHuman(report: ReviewReport): void {
       .map((f) => `${pc.yellow("⚠")} ${f}`),
   );
 
+
   // A stale doc whose changed source was gated at FILE grain (a coarse file:
   // .js, generated, re-export-only) produces no Symbol-drift entry, so without
   // this signpost the only visible resolution is a doc edit — the exact pressure
@@ -1105,27 +1213,46 @@ function printHuman(report: ReviewReport): void {
   // refuses it (fix the parse instead).
   const driftFiles = new Set(report.drift.map((d) => d.anchorId.split("::")[0]));
   const unevaluableFiles = new Set(state.unevaluable);
+  // Ownership lints, indexed by the file that carries them. The resolution used to
+  // print as its own ⚠ section BELOW the blocking line, among genuinely advisory
+  // blocks — where it fired 25 times in one field run and was read as decoration
+  // every time. Position was the whole defect, so the fix is structural: the
+  // resolution belongs inside the finding it resolves.
+  const lintsByFile = new Map<string, OwnershipLint[]>();
+  for (const l of state.ownershipLints) {
+    const list = lintsByFile.get(l.file) ?? [];
+    list.push(l);
+    lintsByFile.set(l.file, list);
+  }
+  // A file-grain ack skips added/removed anchors but never a `changed` one, so it
+  // cannot clear a wake an unassigned CHANGED symbol is driving. Such a file looks
+  // coarse from here (no drift entry — drift only carries resolved owners), which
+  // is how the generic hint came to recommend the one command guaranteed not to
+  // work: in the field the agent followed it and banked two inert acks.
+  const ackBlocked = (f: string): boolean =>
+    (lintsByFile.get(f) ?? []).some((l) => l.changeKind === "changed");
+  const resolutionShown = new Set<string>();
   section(
     pc.yellow("Stale docs (source changed, mapped doc did not)"),
     state.staleDocs.map((d) => {
       let line = `${pc.yellow("⚠")} ${d.feature}: ${d.doc} (changed: ${d.changedSources.join(", ")})`;
-      const coarse = d.changedSources.filter((f) => !driftFiles.has(f) && !unevaluableFiles.has(f));
+      const coarse = d.changedSources.filter(
+        (f) => !driftFiles.has(f) && !unevaluableFiles.has(f) && !ackBlocked(f),
+      );
       if (coarse.length > 0) {
         line += `\n        ${pc.dim("doc impact    →")} update ${d.doc} ${pc.dim("at intent altitude")}`;
         for (const f of coarse) {
           line += `\n        ${pc.dim("no doc impact →")} ${pc.cyan(`codument ack ${f} --reason "..."`)} ${pc.dim("(file-grain; expires when the file changes again)")}`;
         }
       }
+      for (const f of d.changedSources) {
+        const lints = lintsByFile.get(f);
+        if (!lints || lints.length === 0) continue;
+        line += ownershipResolution(f, lints, d.feature, !resolutionShown.has(f));
+        resolutionShown.add(f);
+      }
       return line;
     }),
-  );
-
-  section(
-    pc.yellow("Unassigned shared symbols (set owned_symbols in the registry)"),
-    state.ownershipLints.map(
-      (l) =>
-        `${pc.yellow("⚠")} ${l.file} :: ${l.descriptor} — ${l.kind} across ${l.features.join(", ")}`,
-    ),
   );
 
   section(

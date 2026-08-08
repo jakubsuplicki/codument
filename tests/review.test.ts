@@ -1495,6 +1495,201 @@ describe("a rename never leaves the registry pointing at a ghost (probe C)", () 
   });
 });
 
+// Plan 36 / the 2026-08-07 field report's "worst part by far": a one-line edit to a
+// file three features claim left three docs stale, no ack cleared it, and the agent
+// paid with prose written into five docs. The WAKE is ADR 004 working — an unclaimed
+// shared symbol wakes every candidate rather than guessing. What failed was routing:
+// the resolution printed as a ⚠ advisory below the blocking line (ignored 25 times in
+// one run), and the stale-doc hint recommended a file-grain ack, which structurally
+// cannot clear a wake driven by a changed unassigned anchor (two dead acks banked).
+describe("an unclaimed shared file says how to stop being one (plan 36)", () => {
+  function runReview(args: string[] = ["review", "--strict"]): { code: number; out: string } {
+    try {
+      const out = execFileSync("node", [CLI, ...args], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: { ...process.env, NO_COLOR: "1" },
+      });
+      return { code: 0, out };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { code: e.status ?? 1, out: e.stdout ?? "" };
+    }
+  }
+
+  const CONTESTED = "app/components/Button.tsx";
+  const feature = (key: string, extra: Record<string, unknown> = {}) => ({
+    doc: `docs/features/${key}.md`,
+    type: "feature",
+    primary_sources: [CONTESTED],
+    status: "current",
+    ...extra,
+  });
+
+  async function threeOwners(extra: Record<string, Record<string, unknown>> = {}): Promise<void> {
+    await scaffold({
+      "docs/features/cart.md": "# cart\n\n## In plain terms\nThe cart.\n",
+      "docs/features/checkout.md": "# checkout\n\n## In plain terms\nCheckout.\n",
+      "docs/features/product.md": "# product\n\n## In plain terms\nProduct.\n",
+      [CONTESTED]:
+        "export default function Button(props: { label: string }) {\n  return props.label;\n}\n",
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            cart: feature("cart", extra.cart),
+            checkout: feature("checkout", extra.checkout),
+            product: feature("product", extra.product),
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    gitInit(tmp);
+    await scaffold({
+      [CONTESTED]:
+        "export default function Button(props: { label: string }) {\n  return props.label.trim();\n}\n",
+    });
+  }
+
+  it("the field replay: the fix is on the blocking line, stated once, and no dead ack is offered", async () => {
+    await threeOwners();
+    const r = runReview();
+    assert.equal(r.code, 1);
+
+    // The condition is named ON the red line — the whole defect was that these
+    // words printed somewhere else.
+    const epilogue = r.out.split("--strict:")[1] ?? "";
+    assert.match(epilogue, /shared file .*no feature claims per-symbol/);
+    assert.match(epilogue, /owned_symbols.*related_sources|related_sources.*owned_symbols/);
+
+    // The ack route is withheld: every stale doc here traces to the unclaimed
+    // symbol, and no ack of any grain clears one. Offering it is what banked two
+    // inert acks in the field.
+    assert.doesNotMatch(epilogue, /codument ack/, "no ack can clear this, so none is offered");
+    assert.doesNotMatch(
+      r.out,
+      /no doc impact →/,
+      "and the per-file file-ack hint is withheld for the same reason",
+    );
+
+    // Both real fixes are printed, with the paste-ready registry fragment…
+    assert.match(r.out, /"owned_symbols": \{ "app\/components\/Button\.tsx": \["default\."\] \}/);
+    assert.match(r.out, /related_sources of checkout and product/);
+    // …exactly once, though three docs woke: it is one file, so one registry edit.
+    const shown = r.out.match(/shared symbol no feature claims/g) ?? [];
+    assert.equal(shown.length, 1, `stated once, not once per woken doc:\n${r.out}`);
+    assert.equal((r.out.match(/woken by the same unclaimed shared file/g) ?? []).length, 2);
+  });
+
+  it("a whole-file anchor leads with the demotion, since claiming it IS file ownership", async () => {
+    // ADR 014's shape — a default-exported component or config has ONE anchor, so
+    // "claim the symbol" and "own the file" are the same act said two ways. The
+    // field's contested files were all this shape.
+    await threeOwners();
+    const out = runReview(["review"]).out;
+    const demote = out.indexOf("demote it →");
+    const claim = out.indexOf("claim it  →");
+    assert.ok(demote > 0 && claim > 0, `both fixes printed:\n${out}`);
+    assert.ok(demote < claim, "the demotion leads for a single whole-file anchor");
+  });
+
+  it("a per-symbol split leads with the claim, because there is something to split", async () => {
+    await scaffold({
+      "docs/features/cart.md": "# cart\n\n## In plain terms\nThe cart.\n",
+      "docs/features/checkout.md": "# checkout\n\n## In plain terms\nCheckout.\n",
+      "src/shared.ts": "export function priceOf() {\n  return 1;\n}\nexport function taxOf() {\n  return 2;\n}\n",
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            cart: { ...feature("cart"), primary_sources: ["src/shared.ts"] },
+            checkout: { ...feature("checkout"), primary_sources: ["src/shared.ts"] },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    gitInit(tmp);
+    await scaffold({
+      "src/shared.ts": "export function priceOf() {\n  return 11;\n}\nexport function taxOf() {\n  return 2;\n}\n",
+    });
+    const out = runReview(["review"]).out;
+    const demote = out.indexOf("demote it →");
+    const claim = out.indexOf("claim it  →");
+    assert.ok(demote > 0 && claim > 0, `both fixes printed:\n${out}`);
+    assert.ok(claim < demote, "with real symbols to divide, claiming leads");
+  });
+
+  it("the file-ack hint survives where a file ack genuinely clears the wake", async () => {
+    // The control for the withheld hint above: withholding must come from
+    // clearability, not from suppressing the hint whenever ownership is contested.
+    await scaffold({
+      "docs/features/site.md": "# site\n\n## In plain terms\nStyles.\n",
+      "app/site.css": "body { color: red; }\n",
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            site: { ...feature("site"), primary_sources: ["app/site.css"] },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    gitInit(tmp);
+    await scaffold({ "app/site.css": "body { color: blue; }\n" });
+    const r = runReview();
+    assert.equal(r.code, 1);
+    assert.match(r.out, /no doc impact →/, "a coarse file's ack route still prints");
+    assert.match(r.out, /codument ack app\/site\.css/);
+  });
+
+  it("either fix ends the churn: one wake, and one ack clears it", async () => {
+    // The acceptance criterion, and the proof that this plan changed no semantics —
+    // both resolutions were always available, they were just never named.
+    await threeOwners({ cart: { owned_symbols: { [CONTESTED]: ["default."] } } });
+    let r = runReview();
+    assert.equal((r.out.match(/^ {4}⚠ \w+: docs/gm) ?? []).length, 1, "one doc wakes, not three");
+    const m = r.out.match(/codument ack (\S+) --reason/);
+    assert.ok(m, `a claimed symbol is ackable again:\n${r.out}`);
+    execFileSync("node", [CLI, "ack", m![1], "--reason", "same props in, same node out"], {
+      cwd: tmp,
+      encoding: "utf-8",
+    });
+    assert.equal(runReview().code, 0, "and the ack clears the gate");
+
+    // The demotion reaches the same place by the other route.
+    rmSync(join(tmp, ".codument", "acks"), { recursive: true, force: true });
+    await scaffold({
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            cart: feature("cart"),
+            checkout: { ...feature("checkout"), primary_sources: [], related_sources: [CONTESTED] },
+            product: { ...feature("product"), primary_sources: [], related_sources: [CONTESTED] },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    r = runReview();
+    assert.equal((r.out.match(/^ {4}⚠ \w+: docs/gm) ?? []).length, 1, "one wake by demotion too");
+  });
+
+  it("a symbol two features BOTH claim gets the opposite fix, not the same one", async () => {
+    await threeOwners({
+      cart: { owned_symbols: { [CONTESTED]: ["default."] } },
+      checkout: { owned_symbols: { [CONTESTED]: ["default."] } },
+    });
+    const out = runReview(["review"]).out;
+    assert.match(out, /shared symbol claimed by more than one feature/);
+    assert.match(out, /remove .* from owned_symbols in all but one of cart and checkout/);
+    assert.doesNotMatch(out, /claim it  →/, "adding another claim would make it worse");
+  });
+});
+
 // ADR 017 SUPERSEDES the plan-17 info-only stance for OWNED unjudgeable files.
 // This suite used to assert that a changed registered .css left `--strict` green
 // with a grey advisory — which is exactly the false green a field probe caught on

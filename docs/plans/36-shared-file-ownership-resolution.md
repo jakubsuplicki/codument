@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 
 # Plan 36: shared-file ownership churn — make the gate's designed fix reachable
@@ -128,7 +128,7 @@ No new source files.
 
 ## Delivery Plan
 
-- [ ] **Step 1 — Resolution inside the failure.** Wire `ownershipLints` into the stale-doc
+- [x] **Step 1 — Resolution inside the failure.** Wire `ownershipLints` into the stale-doc
       entries and the strict failure line (recurs-until-set wording); build the resolution detail
       (paste-ready `owned_symbols` fragment covering `<module>`/`default.`, the `related_sources`
       alternative, the no-ack sentence, demotion-first lead for single-anchor files); compute the

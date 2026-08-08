@@ -145,6 +145,10 @@ describe("gate wiring — fail loud on unresolved shared symbols", () => {
         descriptor: "orphan().",
         kind: "unassigned",
         features: ["alpha", "beta"],
+        // How the anchor moved decides what can clear the wake: a file-grain ack
+        // skips added/removed but never `changed`, so the surface must not offer
+        // one here (plan 36).
+        changeKind: "changed",
       },
     ]);
   });

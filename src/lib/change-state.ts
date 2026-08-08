@@ -150,6 +150,13 @@ export interface OwnershipLint {
   descriptor: string;
   kind: "unassigned" | "ambiguous";
   features: string[];
+  /** How the anchor itself moved. Carried because it decides what can CLEAR the
+   *  wake, which is the difference between guidance and a dead end: a file-grain
+   *  ack skips an added/removed anchor but never a `changed` one, so a file ack
+   *  cannot clear a wake driven by a changed unassigned symbol. A surface that
+   *  offers one anyway sends the reader to a refusal at the moment of most
+   *  pressure — and in the field, to two acks that recorded and cleared nothing. */
+  changeKind: "added" | "removed" | "changed";
 }
 
 /** A registry entry still naming a path THIS CHANGE removed from the tree. The
@@ -439,6 +446,7 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
             descriptor: splitAnchorId(ch.id).descriptor,
             kind: "unassigned",
             features: res.candidates,
+            changeKind: ch.kind,
           });
         } else if (res.kind === "ambiguous") {
           for (const o of res.owners) wake(o, file);
@@ -447,6 +455,7 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
             descriptor: splitAnchorId(ch.id).descriptor,
             kind: "ambiguous",
             features: res.owners,
+            changeKind: ch.kind,
           });
         }
         // "unowned": no feature owns it per-symbol; a concept umbrella (below) may.
