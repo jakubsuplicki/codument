@@ -1317,43 +1317,86 @@ describe("coarse-file ack signpost", () => {
   });
 });
 
-describe("ungated registered changes surface in review (info-only)", () => {
-  // .vue was this surface's founding example; plan 20's adapter retired it —
-  // the notice retires itself per file type as judgment arrives. .css remains
-  // genuinely ungated.
-  it("a changed registered .css is named with its doc and strict stays green", async () => {
+// ADR 017 SUPERSEDES the plan-17 info-only stance for OWNED unjudgeable files.
+// This suite used to assert that a changed registered .css left `--strict` green
+// with a grey advisory — which is exactly the false green a field probe caught on
+// a registered locale pack (the app's whole user-visible string surface, rewritten
+// to a different contract, exit 0). A registration is an explicit claim that a file
+// is load-bearing to a named doc, so an OWNED one is now governed at file grain.
+// The info-only surface survives for what is genuinely ungoverned: an impact-only
+// (`related_sources`) registration, and one the exclusion spec drops.
+describe("governed registered changes in review (ADR 017)", () => {
+  function runReview(): { code: number; out: string } {
+    try {
+      const out = execFileSync("node", [CLI, "review", "--strict"], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: { ...process.env, NO_COLOR: "1" },
+      });
+      return { code: 0, out };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { code: e.status ?? 1, out: e.stdout ?? "" };
+    }
+  }
+
+  const registryWith = (site: Record<string, unknown>) =>
+    JSON.stringify({ features: { site: { doc: "docs/features/site.md", type: "feature", docs: [], depends_on: [], risk: [], status: "current", ...site } } }, null, 2);
+
+  it("FIELD REPLAY: rewriting an owned unjudgeable file gates, and both resolutions clear it", async () => {
     await scaffold({
       "docs/features/site.md": "# site\n",
       "app/site.css": ".hero { color: red; }\n",
-      "docs/.registry.json": JSON.stringify(
-        {
-          features: {
-            site: {
-              doc: "docs/features/site.md",
-              type: "feature",
-              primary_sources: ["app/site.css"],
-              related_sources: [],
-              docs: [],
-              depends_on: [],
-              risk: [],
-              status: "current",
-            },
-          },
-        },
-        null,
-        2,
-      ),
+      "docs/.registry.json": registryWith({
+        primary_sources: ["app/site.css"],
+        related_sources: [],
+      }),
     });
     gitInit(tmp);
+
+    // 1. The false green, closed: an owned unjudgeable file's content moved.
     await scaffold({ "app/site.css": ".hero { color: green; }\n" });
-    const out = execFileSync("node", [CLI, "review", "--strict"], {
+    let r = runReview();
+    assert.equal(r.code, 1, `an owned unjudgeable change must gate, got:\n${r.out}`);
+    assert.ok(r.out.includes("app/site.css"), "file not named");
+    assert.ok(r.out.includes("docs/features/site.md"), "owning doc not named");
+
+    // 2. A file-grain ack clears it — the ack route reaches unjudgeable files.
+    execFileSync("node", [CLI, "ack", "app/site.css", "--reason", "palette only; no documented contract moved"], {
       cwd: tmp,
       encoding: "utf-8",
       env: { ...process.env, NO_COLOR: "1" },
     });
-    assert.ok(out.includes("Registered but ungated"), "info section missing");
-    assert.ok(out.includes("app/site.css"), "file not named");
-    assert.ok(out.includes("docs/features/site.md"), "owning doc not named");
+    r = runReview();
+    assert.equal(r.code, 0, `a file-grain ack must clear it, got:\n${r.out}`);
+
+    // 3. The ack is content-bound: the next edit re-wakes it (no ride-forever).
+    await scaffold({ "app/site.css": ".hero { color: blue; }\n" });
+    r = runReview();
+    assert.equal(r.code, 1, "the ack must auto-invalidate when the file moves again");
+
+    // 4. Doc attention clears it too — the other honest resolution.
+    await scaffold({ "docs/features/site.md": "# site\n\nThe hero reads blue.\n" });
+    r = runReview();
+    assert.equal(r.code, 0, `a doc update must clear it, got:\n${r.out}`);
+  });
+
+  it("an impact-only registration stays info-only and green", async () => {
+    await scaffold({
+      "docs/features/site.md": "# site\n",
+      "src/site.ts": "export const a = 1;\n",
+      "app/site.css": ".hero { color: red; }\n",
+      "docs/.registry.json": registryWith({
+        primary_sources: ["src/site.ts"],
+        related_sources: ["app/site.css"],
+      }),
+    });
+    gitInit(tmp);
+    await scaffold({ "app/site.css": ".hero { color: green; }\n" });
+    const r = runReview();
+    assert.equal(r.code, 0, `related_sources claims impact, never ownership:\n${r.out}`);
+    assert.ok(r.out.includes("Registered but ungated"), "info section missing");
+    assert.ok(r.out.includes("app/site.css"), "file not named");
   });
 });
 

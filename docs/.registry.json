@@ -448,7 +448,8 @@
         "docs/architecture/decisions/006-agent-judge-resolution-self-resolve-with-audit-trail.md",
         "docs/architecture/decisions/010-freshness-resolution-detect-test-verify-agent-driven.md",
         "docs/architecture/decisions/014-default-export-expressions-are-body-grain.md",
-        "docs/architecture/decisions/015-wasm-only-bundled-parser-determinism.md"
+        "docs/architecture/decisions/015-wasm-only-bundled-parser-determinism.md",
+        "docs/architecture/decisions/017-registration-is-governance.md"
       ],
       "depends_on": [
         "cli",

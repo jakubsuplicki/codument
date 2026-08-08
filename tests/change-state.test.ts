@@ -621,6 +621,232 @@ describe("ungated registered changes (non-source blind spot)", () => {
   });
 });
 
+// ADR 017: a registration is an explicit claim that a file is load-bearing to a
+// named doc, so a file no adapter can judge is still GOVERNED at file grain when a
+// feature/concept OWNS it. The field false green this closes: rewriting a
+// registered locale pack (the app's entire user-visible string surface) counted as
+// "0 source, 1 other" and exited 0.
+describe("governed registered changes (ADR 017)", () => {
+  const registry = {
+    features: {
+      i18n: {
+        doc: "docs/concepts/i18n.md",
+        type: "concept" as const,
+        primary_sources: ["i18n/index.ts", "i18n/locales/en/journal.json"],
+        related_sources: [],
+        docs: [],
+        depends_on: [],
+        risk: [],
+        status: "current",
+      },
+    },
+  };
+
+  it("FIELD REPLAY: rewriting an owned locale pack wakes its doc (was a silent green)", () => {
+    const s = computeChangeState({
+      registry: registry as never,
+      changedFiles: ["i18n/locales/en/journal.json"],
+    });
+    assert.deepEqual(s.governedRegistered, ["i18n/locales/en/journal.json"]);
+    // It is governed, so it is no longer merely "ungated / verify by hand"…
+    assert.deepEqual(s.ungatedRegistered, []);
+    // …and it now feeds the stale-doc verdict `--strict` already gates on.
+    assert.deepEqual(
+      s.staleDocs.map((d) => d.feature),
+      ["i18n"],
+    );
+    assert.deepEqual(s.staleDocs[0].changedSources, ["i18n/locales/en/journal.json"]);
+  });
+
+  // Both clearing tests below assert an EMPTY staleDocs, which is also what a
+  // missing governed wake would produce — so each pairs the assertion with proof
+  // that the file was genuinely governed, and the ack case with an unacked control.
+  // Without that pairing they would pass with the whole wake deleted.
+  it("doc attention clears it, exactly like any other wake", () => {
+    // Control first: the same change WITHOUT the doc edit must wake, so the empty
+    // staleDocs below proves the doc edit cleared a real wake rather than that no
+    // wake ever existed. (`governedRegistered` alone would not prove it — a file is
+    // classified governed whether or not the wake fires.)
+    const woke = computeChangeState({
+      registry: registry as never,
+      changedFiles: ["i18n/locales/en/journal.json"],
+    });
+    assert.equal(woke.staleDocs.length, 1, "control: it wakes without doc attention");
+    const s = computeChangeState({
+      registry: registry as never,
+      changedFiles: ["i18n/locales/en/journal.json", "docs/concepts/i18n.md"],
+    });
+    assert.deepEqual(s.staleDocs, [], "…and the doc edit clears it");
+  });
+
+  it("a file-grain ack clears it — the ack route is reachable for unjudgeable files", () => {
+    const input = {
+      registry: registry as never,
+      changedFiles: ["i18n/locales/en/journal.json"],
+    };
+    // Control: without the ack this exact input wakes, so the ack is load-bearing.
+    assert.equal(computeChangeState(input).staleDocs.length, 1);
+    const s = computeChangeState({ ...input, fileGrainAcked: ["i18n/locales/en/journal.json"] });
+    assert.deepEqual(s.staleDocs, []);
+    // Still reported as governed: the ack adjudicated it, it was never ungoverned.
+    assert.deepEqual(s.governedRegistered, ["i18n/locales/en/journal.json"]);
+  });
+
+  it("DELETION PARITY: removing an owned locale pack wakes its doc (probe D)", () => {
+    const s = computeChangeState({
+      registry: registry as never,
+      changedFiles: [],
+      deletedFiles: ["i18n/locales/en/journal.json"],
+    });
+    assert.deepEqual(s.governedDeleted, ["i18n/locales/en/journal.json"]);
+    assert.deepEqual(
+      s.staleDocs.map((d) => d.feature),
+      ["i18n"],
+    );
+  });
+
+  it("a deletion is not ack-clearable — a removal owes doc attention (ADR 012)", () => {
+    const s = computeChangeState({
+      registry: registry as never,
+      changedFiles: [],
+      deletedFiles: ["i18n/locales/en/journal.json"],
+      fileGrainAcked: ["i18n/locales/en/journal.json"],
+    });
+    assert.equal(s.staleDocs.length, 1, "no ack fast-path for a deletion");
+  });
+
+  // The DELETION axis of the governed-set matrix. Deletion is the branch this
+  // change newly reaches, so the two rules it must not break — related never
+  // wakes, exclusion overrides registration — are guarded here as well as on the
+  // changed path; a green suite that only ever tested the changed path would not
+  // notice an ownership guard widened to include related sources.
+  it("DELETION × related-only: an impact-only registration still never wakes", () => {
+    const reg = {
+      features: {
+        i18n: {
+          ...registry.features.i18n,
+          primary_sources: ["i18n/index.ts"],
+          related_sources: ["i18n/locales/en/journal.json"],
+        },
+      },
+    };
+    const s = computeChangeState({
+      registry: reg as never,
+      changedFiles: [],
+      deletedFiles: ["i18n/locales/en/journal.json"],
+    });
+    assert.deepEqual(s.governedDeleted, []);
+    assert.deepEqual(s.staleDocs, [], "related claims impact, never ownership — even on deletion");
+  });
+
+  it("DELETION × excluded: exclusion still overrides registration", () => {
+    const reg = {
+      features: {
+        gen: {
+          doc: "docs/features/gen.md",
+          type: "feature" as const,
+          primary_sources: ["data/fixtures.seed.json"],
+          related_sources: [],
+          docs: [],
+          depends_on: [],
+          risk: [],
+          status: "current",
+        },
+      },
+    };
+    const s = computeChangeState({
+      registry: reg as never,
+      changedFiles: [],
+      deletedFiles: ["data/fixtures.seed.json"],
+    });
+    assert.deepEqual(s.governedDeleted, []);
+    assert.deepEqual(s.staleDocs, []);
+  });
+
+  it("a file owned by one feature and merely related to another wakes only its owner", () => {
+    const reg = {
+      features: {
+        i18n: { ...registry.features.i18n, primary_sources: ["i18n/locales/en/journal.json"] },
+        shell: {
+          doc: "docs/features/shell.md",
+          type: "feature" as const,
+          primary_sources: ["src/shell.ts"],
+          related_sources: ["i18n/locales/en/journal.json"],
+          docs: [],
+          depends_on: [],
+          risk: [],
+          status: "current",
+        },
+      },
+    };
+    for (const input of [
+      { changedFiles: ["i18n/locales/en/journal.json"], deletedFiles: [] },
+      { changedFiles: [], deletedFiles: ["i18n/locales/en/journal.json"] },
+    ]) {
+      const s = computeChangeState({ registry: reg as never, ...input });
+      assert.deepEqual(
+        s.staleDocs.map((d) => d.feature),
+        ["i18n"],
+        "the co-mentioning feature must not wake",
+      );
+    }
+  });
+
+  it("related-only registration stays impact-only — it never wakes", () => {
+    const reg = {
+      features: {
+        i18n: {
+          ...registry.features.i18n,
+          primary_sources: ["i18n/index.ts"],
+          related_sources: ["i18n/locales/en/journal.json"],
+        },
+      },
+    };
+    const s = computeChangeState({
+      registry: reg as never,
+      changedFiles: ["i18n/locales/en/journal.json"],
+    });
+    assert.deepEqual(s.governedRegistered, [], "related claims impact, never ownership");
+    assert.deepEqual(s.staleDocs, []);
+    assert.equal(s.ungatedRegistered.length, 1, "still surfaced as verify-by-hand");
+  });
+
+  it("exclusion beats registration — an excluded owned file stays ungoverned", () => {
+    const reg = {
+      features: {
+        gen: {
+          doc: "docs/features/gen.md",
+          type: "feature" as const,
+          primary_sources: ["data/fixtures.seed.json"],
+          related_sources: [],
+          docs: [],
+          depends_on: [],
+          risk: [],
+          status: "current",
+        },
+      },
+    };
+    const s = computeChangeState({
+      registry: reg as never,
+      changedFiles: ["data/fixtures.seed.json"],
+    });
+    assert.deepEqual(s.governedRegistered, []);
+    assert.deepEqual(s.staleDocs, []);
+    assert.equal(s.ungatedRegistered.length, 1, "the contradiction is still surfaced");
+  });
+
+  it("an UNREGISTERED unjudgeable file stays outside governance entirely", () => {
+    const s = computeChangeState({
+      registry: registry as never,
+      changedFiles: ["i18n/locales/fr/journal.json"],
+    });
+    assert.deepEqual(s.governedRegistered, []);
+    assert.deepEqual(s.staleDocs, []);
+    assert.deepEqual(s.unmapped, [], "a non-source file never becomes 'unmapped'");
+    assert.deepEqual(s.otherChanged, ["i18n/locales/fr/journal.json"]);
+  });
+});
+
 // A first-party module that lives under a test directory but is not itself a
 // test stays governed — the boundary the exclusion spec draws, seen from the
 // gate rather than from the matcher. This repo's own conformance battery is the

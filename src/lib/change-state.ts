@@ -176,12 +176,27 @@ export interface ChangeState {
    *  not silently absent from it (owned ones also wake their owners' docs). */
   deletedSources: string[];
   /** Changed files the registry names as sources (primary or related) but that
-   *  the gate does not judge — outside the source-extension spec (.vue, .css,
-   *  .json, …) or excluded by it (declaration artifacts, generated files). The
-   *  registry says "load-bearing", the gate cannot judge them — fail-loud about
-   *  the blind spot (info-only; never a strict verdict input). Their docs are
-   *  named so a human/agent can verify by hand. */
+   *  the gate does not judge AND does not govern — the residue left after
+   *  `governedRegistered` takes the primary-owned, non-excluded ones. Two classes
+   *  survive: registered-but-EXCLUDED (the spec overrides the registry, so the
+   *  registration contradicts a declaration) and IMPACT-ONLY (named solely in
+   *  `related_sources`, which claims impact and never ownership — ADR 004). Both
+   *  stay info-only, never a strict verdict input; their docs are named so a
+   *  human/agent can verify by hand. */
   ungatedRegistered: UngatedRegisteredChange[];
+  /** Changed files no adapter judges that a feature/concept nonetheless OWNS
+   *  (`primary_sources`) and the exclusion spec does not drop — locale packs,
+   *  registered config, content files. A registration is an explicit claim that
+   *  the file is load-bearing to a named doc, so these are GOVERNED at file grain
+   *  exactly like an unparseable source: any content move wakes every primary
+   *  owner, cleared by doc attention or a file-grain ack (ADR 017). Before that
+   *  decision they were info-only, which meant rewriting a registered contract
+   *  file passed `--strict` green. */
+  governedRegistered: string[];
+  /** Deleted counterparts of `governedRegistered` — an owned unjudgeable file
+   *  removed. Wakes its owners with no ack fast-path, the same stance ADR 012
+   *  takes for a deleted source: a removal owes doc attention. */
+  governedDeleted: string[];
 }
 
 export interface UngatedRegisteredChange {
@@ -243,28 +258,8 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     ),
   );
 
-  // Registered-but-ungated: a file the registry explicitly claims (so someone
-  // decided it matters to a doc) that the gate does not judge — because no
-  // adapter recognizes its extension (.vue, .css) OR because the default spec
-  // excludes it outright (a declaration artifact, a generated file). Built from
-  // the full changed set, not the other-changed bucket: exclusion silences the
-  // DEFAULT scope, but a registration is an explicit human claim, so silence for
-  // a registered file would be a false "fresh" whatever dropped it.
   const entryByKey = new Map(entries);
   const changedSourceSet = new Set(changedSources);
-  const ungatedRegistered: UngatedRegisteredChange[] = [];
-  for (const file of sortStrings(changed)) {
-    if (isDoc(file) || changedSourceSet.has(file)) continue;
-    const owners = fileToFeatures.get(file);
-    if (!owners || owners.length === 0) continue;
-    ungatedRegistered.push({
-      file,
-      owners: owners
-        .slice()
-        .sort()
-        .map((key) => ({ feature: key, doc: entryByKey.get(key)?.doc ?? "" })),
-    });
-  }
 
   // group changed sources by owning feature
   const groups = new Map<string, string[]>();
@@ -306,6 +301,45 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
       if (!list.includes(key)) list.push(key);
       idx.set(src, list);
     }
+  }
+
+  // ── Registered files no adapter judges ──────────────────────────────────
+  // A file the registry explicitly claims (someone decided it matters to a doc)
+  // that no adapter can judge — outside the source-extension spec (.json, .css)
+  // or excluded by it (a declaration artifact, a generated file). Built from the
+  // full changed set, not the other-changed bucket: exclusion silences the
+  // DEFAULT scope, but a registration is an explicit human claim, so silence for
+  // a registered file would be a false "fresh" whatever dropped it.
+  //
+  // Such a file splits by whether the registry OWNS it (ADR 017):
+  //   - owned (`primary_sources`) and not excluded -> GOVERNED at file grain. The
+  //     honest floor is the one an unparseable source already gets: any content
+  //     move wakes every primary owner, cleared by doc attention or a file-grain
+  //     ack. Without it, rewriting a registered contract file (a locale pack, a
+  //     content file) passed `--strict` green — a false green on the very files
+  //     someone took the trouble to claim.
+  //   - anything else -> the info-only residue. EXCLUDED beats registration (the
+  //     spec overrides the registry, so the two declarations contradict), and an
+  //     IMPACT-ONLY registration (`related_sources`) never wakes by design.
+  const governedRegistered: string[] = [];
+  const ungatedRegistered: UngatedRegisteredChange[] = [];
+  for (const file of sortStrings(changed)) {
+    if (isDoc(file) || changedSourceSet.has(file)) continue;
+    const owners = fileToFeatures.get(file);
+    if (!owners || owners.length === 0) continue;
+    const ownedPrimary =
+      (featurePrimary.get(file)?.length ?? 0) > 0 || (conceptPrimary.get(file)?.length ?? 0) > 0;
+    if (ownedPrimary && !isExcluded(file, exclusion)) {
+      governedRegistered.push(file);
+      continue;
+    }
+    ungatedRegistered.push({
+      file,
+      owners: owners
+        .slice()
+        .sort()
+        .map((key) => ({ feature: key, doc: entryByKey.get(key)?.doc ?? "" })),
+    });
   }
 
   // feature/concept -> the changed files that woke it (for staleDoc.changedSources)
@@ -379,6 +413,15 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     }
   }
 
+  // Governed registered files ride the SAME file-grain fallback: no adapter can
+  // judge them, so there is no per-symbol move to protect and a file-grain ack is
+  // the file-grain judgment for them. `related_sources` still never wakes.
+  for (const file of governedRegistered) {
+    if (fileGrainAcked.has(file)) continue;
+    for (const key of featurePrimary.get(file) ?? []) wake(key, file);
+    wakeConcepts(file);
+  }
+
   // ── Deletions wake owners file-grain, with no ack fast-path ─────────────
   // A removed owned file is a real contract change: its owners' docs owe
   // attention (an update, or their own removal). Ownership resolves against the
@@ -387,12 +430,23 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   // current registry still flags its (base) doc below.
   const deletionRegistry = input.baseRegistry ?? registry;
   const deletionEntries = Object.entries(deletionRegistry.features);
+  // Deleted files no adapter judges and the spec does not drop. Whether one is
+  // actually OWNED is decided by the loop below against the BASE registry — the
+  // same authority the deleted-source path uses, so removing the entry in the same
+  // change cannot dodge the wake. Deleting a registered locale pack used to exit
+  // green with no line at all: `ungatedRegistered` is built from the CHANGED set,
+  // which deletions never enter, so the blind spot had no advisory either.
+  const deletedUnjudged = deleted.filter(
+    (f) => !isDoc(f) && !isSourceFile(f, exclusion) && !isExcluded(f, exclusion),
+  );
+  const governedDeletedSet = new Set<string>();
   // base-only features woken by a deletion: key -> {docs, files} synthesized
   // into staleDocs after the main per-entry loop (which walks the CURRENT registry).
   const removedEntryWakes = new Map<string, { doc: string; docs: string[]; files: Set<string> }>();
-  for (const file of deletedSources) {
+  for (const file of [...deletedSources, ...deletedUnjudged]) {
     for (const [key, entry] of deletionEntries) {
       if (!entry.primary_sources.includes(file)) continue;
+      if (!isSourceFile(file, exclusion)) governedDeletedSet.add(file);
       if (key in registry.features) {
         wake(key, file);
       } else {
@@ -549,6 +603,8 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     unevaluable: sortStrings(input.unevaluable ?? []),
     deletedSources,
     ungatedRegistered,
+    governedRegistered: sortStrings(governedRegistered),
+    governedDeleted: sortStrings(governedDeletedSet),
   };
 }
 
