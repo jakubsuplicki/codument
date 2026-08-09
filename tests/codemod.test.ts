@@ -291,3 +291,34 @@ describe("an exclude block is validated on read, never silently ignored", () => 
     await assert.rejects(() => readMeta(tmp), /use exclude\.globs/);
   });
 });
+
+// Plan 45 step 1: the three-way comparison reads "both changed" whenever neither side
+// matches the recorded hash — including an upgrade where the two sides arrived at the
+// SAME content. "Both changed" means back the file up and overwrite it with what is
+// already there, so one `codument update` on this repository wrote 21 backups, none of
+// them preserving anything.
+describe("a backup is written only when something would be lost (plan 45)", () => {
+  const upstream = "shared content";
+
+  it("converged content is a skip, however it got there", () => {
+    // Both sides moved to the same text; the stored hash remembers neither.
+    const r = decideMergeStrategy(upstream, upstream, hashContent("something older"));
+    assert.equal(r.action, "skip");
+    assert.match(r.reason, /already up to date/);
+  });
+
+  it("the untouched case still reads exactly as it always has", () => {
+    const r = decideMergeStrategy(upstream, upstream, hashContent(upstream));
+    assert.equal(r.action, "skip");
+    assert.match(r.reason, /no changes/);
+  });
+
+  it("a first update with no recorded hash and identical content is still a skip", () => {
+    assert.equal(decideMergeStrategy(upstream, upstream, undefined).action, "skip");
+  });
+
+  it("a genuine divergence is still merged, so nothing stops being preserved", () => {
+    const r = decideMergeStrategy(upstream, "local edits", hashContent("something older"));
+    assert.equal(r.action, "merge");
+  });
+});

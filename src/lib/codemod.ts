@@ -172,11 +172,25 @@ export function decideMergeStrategy(
   const upstreamHash = hashContent(upstreamContent);
   const currentHash = hashContent(currentContent);
 
+  // Converged: the two sides agree, whatever the recorded hash remembers about how
+  // they got there. Asked BEFORE the three-way comparison because that comparison
+  // reads "both changed" for an upgrade where upstream and local arrived at the same
+  // content — and "both changed" means back the file up and overwrite it with what is
+  // already there. One `update` on this repository wrote 21 backups that way, none of
+  // them preserving anything, from the tool whose whole subject is not leaving mess in
+  // a repository. Nothing can be lost when there is no difference to lose.
+  if (upstreamHash === currentHash) {
+    // The reason still distinguishes the two ways of arriving here — nothing moved at
+    // all, versus both sides moving to the same content — so the common case reads
+    // exactly as it always has.
+    return {
+      action: "skip",
+      reason: storedHash === currentHash ? "no changes" : "already up to date",
+    };
+  }
+
   // No stored hash means first update — treat current as user-modified
   if (!storedHash) {
-    if (currentHash === upstreamHash) {
-      return { action: "skip", reason: "already up to date" };
-    }
     return { action: "merge", reason: "no prior hash recorded, merging conservatively" };
   }
 
