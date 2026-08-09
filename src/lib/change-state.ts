@@ -5,6 +5,7 @@ import {
   type Registry,
   type RegistryEntry,
   isSourcePattern,
+  registeredPatterns,
   sourceMatcher,
 } from "./registry.js";
 import {
@@ -16,7 +17,14 @@ import {
 } from "./analyze.js";
 import { resolveOwner, splitAnchorId } from "./ownership.js";
 import { fileContentTransition, type AnchorChange } from "./fingerprint.js";
-import { ackCovers, isFileGrainAck, type Acknowledgment } from "./acknowledgment.js";
+import {
+  ackCovers,
+  ackCoversTree,
+  isFileGrainAck,
+  isTreeGrainAck,
+  type Acknowledgment,
+  type CoveredFile,
+} from "./acknowledgment.js";
 import { movesOnly, type RenamePair } from "./git.js";
 import { extractStatus, isApproved } from "./plan-steps.js";
 
@@ -816,6 +824,86 @@ export function resolveFileGrainAcked(
     if (fileAcks.some((a) => ackCovers(a, file, from, to))) covered.push(file);
   }
   return covered.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+// ── Tree-grain acknowledgment resolution ────────────────────────────────
+
+/** What a pattern currently governs inside one change. */
+export interface TreeCoverage {
+  /** Every touched file the pattern matches, with the transition an ack would bind. */
+  files: CoveredFile[];
+  /** Matched paths with NO transition: added in this change, or gone from the tree.
+   *  Either makes the tree unackable — a new governed unit and a removal both owe
+   *  the doc a line (ADR 012), and adding a language is the change most worth
+   *  seeing. Named rather than skipped, so the refusal can say which files. */
+  unresolvable: string[];
+}
+
+// What a pattern governs in THIS change: the touched files it matches (the exclusion
+// spec still winning, as it does everywhere), each with its content transition. The
+// caller passes the touched set INCLUDING deletions, so a removal inside the tree
+// surfaces as unresolvable instead of quietly sitting outside the vouch.
+export function treeCoverage(
+  root: string,
+  base: string,
+  pattern: string,
+  touchedFiles: string[],
+  exclusion: ExclusionSpec = DEFAULT_EXCLUSION_SPEC,
+  renamedFrom?: ReadonlyMap<string, string>,
+): TreeCoverage {
+  const re = sourceMatcher(pattern);
+  const files: CoveredFile[] = [];
+  const unresolvable: string[] = [];
+  for (const f of sortStrings(touchedFiles)) {
+    const posix = toPosix(f);
+    if (!re.test(posix) || isExcluded(f, exclusion)) continue;
+    const { from, to } = fileContentTransition(root, base, f, renamedFrom?.get(f) ?? f);
+    if (from === null || to === null) unresolvable.push(posix);
+    else files.push({ path: posix, from, to });
+  }
+  return { files, unresolvable };
+}
+
+// The tree acknowledgments whose vouch stands against THIS change, each mapped to
+// the files it covers — folded by the caller into the `fileGrainAcked` set the pure
+// analyzer consumes, because "this file's current content owes no doc change" is the
+// same judgment whether it was made one file or one tree at a time. Impure (git +
+// disk) for the same reason its file-grain twin is, and it costs nothing until a tree
+// ack exists. Resolved once per pattern and read by both the gate and the audit card,
+// so the two can never disagree about what a tree ack covered.
+//
+// Only a pattern some entry DECLARES in `primary_sources` is honored. The width is
+// the point of the grain and also its danger: an unregistered glob typed at the
+// command line would vouch for whatever it happened to sweep, so the thing that
+// earns a wide vouch is a committed declaration (ADR 017), not the argument.
+export function standingTreeAcks(
+  root: string,
+  base: string,
+  touchedFiles: string[],
+  acks: Acknowledgment[],
+  registry: Registry,
+  exclusion: ExclusionSpec = DEFAULT_EXCLUSION_SPEC,
+  renamedFrom?: ReadonlyMap<string, string>,
+): Map<Acknowledgment, string[]> {
+  const standing = new Map<Acknowledgment, string[]>();
+  const treeAcks = acks.filter(isTreeGrainAck);
+  if (treeAcks.length === 0) return standing;
+  const governed = new Set(registeredPatterns(registry));
+  const seen = new Map<string, TreeCoverage>();
+  for (const ack of treeAcks) {
+    if (!governed.has(ack.anchorId)) continue;
+    let now = seen.get(ack.anchorId);
+    if (now === undefined) {
+      now = treeCoverage(root, base, ack.anchorId, touchedFiles, exclusion, renamedFrom);
+      seen.set(ack.anchorId, now);
+    }
+    if (now.unresolvable.length > 0 || !ackCoversTree(ack, now.files)) continue;
+    standing.set(
+      ack,
+      now.files.map((c) => c.path),
+    );
+  }
+  return standing;
 }
 
 // ── Approved-plan detection ─────────────────────────────────────────────

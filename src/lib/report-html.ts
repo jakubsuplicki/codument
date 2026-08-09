@@ -528,9 +528,11 @@ function renderAcks(acks: CoveringAck[] | undefined, requireIndependentAck = fal
           ? `<span class="akb ignored">self &middot; not counted</span>`
           : `<span class="akb self">self</span>`;
       const target =
-        a.grain === "file"
-          ? `<code>${esc(a.anchorId)}</code> <span class="akg">file</span>`
-          : `<code>${esc(a.symbol ?? a.anchorId)}</code>`;
+        a.grain === "tree"
+          ? `<code>${esc(a.anchorId)}</code> <span class="akg">tree &middot; ${a.covers ?? 0} files</span>`
+          : a.grain === "file"
+            ? `<code>${esc(a.anchorId)}</code> <span class="akg">file</span>`
+            : `<code>${esc(a.symbol ?? a.anchorId)}</code>`;
       return `<div class="akrow">${target} ${badge} <span class="aksig">${esc(a.signer)}</span> <span class="akrs">${esc(a.reason)}</span></div>`;
     })
     .join("\n    ");

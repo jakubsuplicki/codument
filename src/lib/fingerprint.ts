@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { type Acknowledgment, isFileGrainAck } from "./acknowledgment.js";
+import { type Acknowledgment, isFileGrainAck, isTreeGrainAck } from "./acknowledgment.js";
 import { getWorkingTreeChanges, listTrackedFiles } from "./git.js";
 import { allSources, readRegistrySync } from "./registry.js";
 import { csharpAdapter } from "./csharp-adapter.js";
@@ -590,6 +590,24 @@ export function contentChangedFiles(
 export type AckValidity = "covering" | "invalidated" | "indeterminate";
 
 export function ackValidity(root: string, ack: Acknowledgment): AckValidity {
+  if (isTreeGrainAck(ack)) {
+    // A tree ack binds each member's coarse fingerprint, so the list asks the same
+    // question of every one of them: does the file still hash to what was vouched
+    // for? One member moving (or vanishing) invalidates the whole record, because
+    // the set is judged whole. A file that has since APPEARED under the pattern is
+    // invisible here — this surface carries no change set to compare against — and
+    // is caught by the gate, which does the full set comparison.
+    for (const c of ack.covered ?? []) {
+      let content: string;
+      try {
+        content = readFileSync(join(root, c.path), "utf-8");
+      } catch {
+        return "invalidated"; // a file the ack vouched for is gone from the tree
+      }
+      if (coarseAdapter.anchors(c.path, content)[0].fingerprint !== c.to) return "invalidated";
+    }
+    return "covering";
+  }
   if (isFileGrainAck(ack)) {
     // A file-grain ack binds the whole-file COARSE fingerprint (as
     // `fileContentTransition` records it), so recompute that same coarse hash.

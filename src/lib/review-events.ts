@@ -179,6 +179,10 @@ export interface AckEvent {
   reason: string;
   signer: string;
   kind: "self" | "independent";
+  /** Tree grain only: how many files this one exemption covered. The log is the
+   *  record of who exempted what, so a vouch that covered a whole tree must not read
+   *  there as a vouch over one path. */
+  covers?: number;
 }
 
 /** Append an `ack` event when an acknowledgment is recorded — full identity, not

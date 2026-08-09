@@ -8,10 +8,14 @@ import {
   ackFileName,
   isFileGrainAck,
   isIndependent,
+  isTreeGrainAck,
   readAcks,
   shellArg,
+  treeSetHash,
   writeAck,
 } from "../lib/acknowledgment.js";
+import { resolveScopeSync } from "../lib/analyze.js";
+import { treeCoverage } from "../lib/change-state.js";
 import {
   type AckValidity,
   type AnchorChange,
@@ -24,14 +28,26 @@ import {
 import {
   getGitAuthor,
   getWorkingTreeChanges,
+  getWorkingTreeDeletions,
   getWorkingTreeRenames,
   renamedFromMap,
   resolveWorkspace,
 } from "../lib/git.js";
 import { resolveOwner, splitAnchorId } from "../lib/ownership.js";
-import { type Registry, readRegistrySync } from "../lib/registry.js";
+import {
+  isSourcePattern,
+  normalizeRelPath,
+  type Registry,
+  readRegistrySync,
+  registeredPatterns,
+} from "../lib/registry.js";
 import { emitAck, emitAckRemove } from "../lib/review-events.js";
-import { resolveBase, worktreeChangesSince, worktreeRenamesSince } from "../lib/two-ref.js";
+import {
+  resolveBase,
+  worktreeChangesSince,
+  worktreeDeletionsSince,
+  worktreeRenamesSince,
+} from "../lib/two-ref.js";
 
 // `codument ack` — the reachable surface for the agent-judge loop. When a review
 // finding is a pure-internal refactor that owes no doc change, the agent records a
@@ -77,13 +93,18 @@ export interface AckCliOptions {
 export interface AckJson {
   /** The stable handle (`--remove <handle>`), the ack file's digest stem. */
   handle: string;
-  /** The full anchor id: `<path>::<descriptor>` (symbol) or `<path>` (file-grain). */
+  /** The full anchor id: `<path>::<descriptor>` (symbol), `<path>` (file-grain), or
+   *  the registered pattern (tree-grain). */
   anchorId: string;
-  /** The file the ack vouches for. */
+  /** The file the ack vouches for; the pattern itself at tree grain. */
   path: string;
-  /** The symbol descriptor for a per-symbol ack; null for a file-grain ack. */
+  /** The symbol descriptor for a per-symbol ack; null for a file- or tree-grain ack. */
   symbol: string | null;
-  grain: "symbol" | "file";
+  grain: "symbol" | "file" | "tree";
+  /** Tree grain only: every path this one vouch covered. The width is the trade the
+   *  grain makes, so the record is readable rather than a bare digest — an
+   *  acknowledgment nobody can audit afterwards is a signature on a blank page. */
+  covers?: string[];
   /** The fingerprint transition the ack is bound to. */
   from: string;
   to: string;
@@ -152,10 +173,13 @@ export async function ackCommand(anchor: string | undefined, options: AckCliOpti
   }
   const sep = anchor.indexOf("::");
   if (sep === -1) {
-    // A bare path (no `::descriptor`) is a file-grain ack: it vouches for the whole
-    // file's current content, clearing additive / concept / coarse staleness a
-    // per-symbol ack cannot reach — while never masking a moved symbol.
-    ackFile(root, anchor, options);
+    // A glob or trailing-slash directory is a TREE ack: one judgment over every file
+    // a registered pattern governs. A bare path (no `::descriptor`) is a file-grain
+    // ack: it vouches for the whole file's current content, clearing additive /
+    // concept / coarse staleness a per-symbol ack cannot reach — while never masking
+    // a moved symbol.
+    if (isSourcePattern(anchor)) ackTree(root, anchor, options);
+    else ackFile(root, anchor, options);
     return;
   }
   const file = anchor.slice(0, sep);
@@ -434,6 +458,162 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
   console.log(pc.dim("  Re-run `codument review` to confirm the finding cleared."));
 }
 
+// `codument ack <pattern>` — the tree-grain surface. A registry entry that governs a
+// tree answers for it in ONE line: the ack records every file the pattern matched in
+// this change, each with the transition it was bound to, and stands only while that
+// whole set is unchanged. The alternative was never "many careful judgments" — it was
+// a 380-file locale tree nobody registered, because answering for it cost 380
+// signatures. The width is real, so it is disclosed rather than hidden: the count is
+// stated as it writes, and one file moving again (or a new one appearing) decays it.
+function ackTree(root: string, pattern: string, options: AckCliOptions): void {
+  const baseLabel = options.base ? `merge-base with ${options.base}` : "HEAD";
+  let baseRef = "HEAD";
+  if (options.base) {
+    try {
+      baseRef = resolveBase(root, options.base, "HEAD").sha;
+    } catch (err) {
+      fail((err as Error).message);
+      return;
+    }
+  }
+
+  // Only a pattern some entry DECLARES is ackable. A wide vouch is earned by a
+  // committed declaration (ADR 017), never by the argument typed at the prompt —
+  // otherwise `codument ack "src/**"` would clear every coarse wake in the repo.
+  let registry: Registry | null = null;
+  try {
+    registry = readRegistrySync(join(root, "docs", ".registry.json"));
+  } catch {
+    registry = null;
+  }
+  const governed = registry ? registeredPatterns(registry) : [];
+  const tree = normalizeRelPath(pattern);
+  if (!governed.includes(tree)) {
+    fail(
+      `no registry entry declares ${tree} in primary_sources, so a tree ack over it would vouch for files nothing governs — register the tree first, then ack it` +
+        (governed.length > 0 ? `. Governed trees: ${governed.join(", ")}` : ""),
+    );
+    return;
+  }
+  const owners = Object.values(registry?.features ?? {})
+    .filter((e) => e.primary_sources.some((s) => normalizeRelPath(s) === tree))
+    .map((e) => e.doc);
+
+  const changes = options.base
+    ? worktreeChangesSince(root, options.base)
+    : getWorkingTreeChanges(root);
+  const deletions = options.base
+    ? worktreeDeletionsSince(root, options.base)
+    : getWorkingTreeDeletions(root);
+  const renamedFrom = renamedFromFor(root, options.base);
+  const { files, unresolvable } = treeCoverage(
+    root,
+    baseRef,
+    tree,
+    [...changes, ...deletions],
+    resolveScopeSync(root).spec,
+    renamedFrom,
+  );
+  if (files.length === 0 && unresolvable.length === 0) {
+    fail(`no changed file under ${tree} against ${baseLabel} — nothing to ack`);
+    return;
+  }
+  if (unresolvable.length > 0) {
+    // A file that APPEARED in the tree is a new governed unit and a file that left it
+    // is a removal: neither has a transition to bind, and both owe the doc a line.
+    // Adding a language is the single change in a locale tree most worth seeing, so
+    // it is the one thing this grain must never wave through.
+    const shown = unresolvable.slice(0, 5).join(", ");
+    const rest = unresolvable.length > 5 ? `, +${unresolvable.length - 5} more` : "";
+    fail(
+      `${unresolvable.length} file(s) under ${tree} were added or removed, not changed — no ack of any grain binds that: ` +
+        `update ${owners.join(", ") || "the owning doc"} at intent altitude (${shown}${rest})`,
+    );
+    return;
+  }
+
+  const author = getGitAuthor(root) ?? "agent";
+  const signer = options.signer ?? author;
+  const ack: Acknowledgment = {
+    anchorId: tree,
+    fromHash: treeSetHash(files, "from"),
+    toHash: treeSetHash(files, "to"),
+    reason: options.reason!.trim(),
+    signer,
+    covered: files,
+  };
+  writeAck(root, ack);
+  const kind = isIndependent(ack, author) ? "independent" : "self";
+  emitAck(root, {
+    anchorId: ack.anchorId,
+    fromHash: ack.fromHash,
+    toHash: ack.toHash,
+    reason: ack.reason,
+    signer,
+    kind,
+    covers: files.length,
+  });
+
+  console.log(
+    `${pc.green("✓")} acknowledged tree ${pc.bold(tree)} ${pc.dim(
+      `(${files.length} file${files.length === 1 ? "" : "s"}, ${short(ack.fromHash)}→${short(ack.toHash)}, ${kind})`,
+    )}`,
+  );
+  console.log(`  ${pc.dim("reason:")} ${ack.reason}`);
+  console.log(`  ${pc.dim(`signer: ${signer} · handle ${handleOf(ack)}`)}`);
+  console.log(
+    pc.dim(
+      `  This one judgment vouches for all ${files.length} — it expires the moment any of them changes again, or a file appears under ${tree}.`,
+    ),
+  );
+
+  // A tree ack is a file-grain judgment made wholesale, so it clears exactly what a
+  // file ack clears and no more: a moved OWNED symbol inside the tree stays flagged.
+  // Say so here, or a `src/**` tree would read as having settled a contract change it
+  // never touched. Only precise files carry anchors, so a locale tree pays nothing.
+  const acks = readAcks(root);
+  const stillMoved = !registry
+    ? []
+    : Object.values(
+        gatherAnchorChanges(
+          root,
+          baseRef,
+          files.map((f) => f.path),
+          renamedFrom,
+        ).anchorChanges,
+      )
+        .flat()
+        .filter(
+          (ch) =>
+            ch.kind === "changed" &&
+            ch.from !== undefined &&
+            ch.to !== undefined &&
+            resolveOwner(registry as Registry, ch.id).kind === "owned" &&
+            !acks.some((a) => ackCovers(a, ch.id, ch.from as string, ch.to as string)),
+        );
+  if (stillMoved.length > 0) {
+    console.log();
+    console.log(
+      pc.yellow(
+        `  ⚠ the ack above stands; ${stillMoved.length} moved symbol(s) inside this tree are NOT cleared by it:`,
+      ),
+    );
+    for (const ch of stillMoved.slice(0, 10)) {
+      const sig = isSignatureMove(ch);
+      console.log(`      ${pc.dim("•")} ${ch.id}${sig ? pc.dim(" (signature changed)") : ""}`);
+      if (!sig) {
+        console.log(
+          `          ${pc.dim("internal only →")} ${pc.cyan(`codument ack ${shellArg(ch.id)} --reason "..."`)}`,
+        );
+      }
+    }
+    if (stillMoved.length > 10) {
+      console.log(`      ${pc.dim(`• +${stillMoved.length - 10} more — \`codument review\` lists them all`)}`);
+    }
+  }
+  console.log(pc.dim("  Re-run `codument review` to confirm the finding cleared."));
+}
+
 type Resolved = { ok: true; change: AnchorChange } | { ok: false; error: string };
 
 // Resolve which moved anchor an `ack` argument refers to. The canonical path is the
@@ -463,13 +643,16 @@ function resolveAnchor(fullId: string, symbol: string, changes: AnchorChange[]):
 // can never disagree about validity.
 function ackToJson(root: string, ack: Acknowledgment): AckJson {
   const sep = ack.anchorId.indexOf("::");
+  const tree = isTreeGrainAck(ack);
   const fileGrain = isFileGrainAck(ack);
+  const bare = tree || fileGrain;
   return {
     handle: handleOf(ack),
     anchorId: ack.anchorId,
-    path: fileGrain ? ack.anchorId : ack.anchorId.slice(0, sep),
-    symbol: fileGrain ? null : ack.anchorId.slice(sep + 2),
-    grain: fileGrain ? "file" : "symbol",
+    path: bare ? ack.anchorId : ack.anchorId.slice(0, sep),
+    symbol: bare ? null : ack.anchorId.slice(sep + 2),
+    grain: tree ? "tree" : fileGrain ? "file" : "symbol",
+    ...(tree ? { covers: ack.covered?.map((c) => c.path) ?? [] } : {}),
     from: ack.fromHash,
     to: ack.toHash,
     reason: ack.reason,
@@ -499,8 +682,13 @@ function listAcks(root: string): void {
   for (const a of acks) {
     const validity = ackValidity(root, a);
     if (validity === "invalidated") invalidated += 1;
+    // A tree ack's width is stated wherever it is shown: "one line, 120 files" is the
+    // whole trade, and a reader who has to open the record to learn it will not.
+    const covers = isTreeGrainAck(a)
+      ? ` ${pc.dim(`(tree, ${a.covered?.length ?? 0} files)`)}`
+      : "";
     console.log(
-      `  ${pc.bold(handleOf(a))}  ${a.anchorId} ${pc.dim(
+      `  ${pc.bold(handleOf(a))}  ${a.anchorId}${covers} ${pc.dim(
         `(${short(a.fromHash)}→${short(a.toHash)})`,
       )}${validityTag(validity)}`,
     );

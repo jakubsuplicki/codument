@@ -1,7 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import pc from "picocolors";
-import { ackCovers, isFileGrainAck, normalizeIdentity, readAcks, shellArg } from "../lib/acknowledgment.js";
+import {
+  ackCovers,
+  type Acknowledgment,
+  isFileGrainAck,
+  normalizeIdentity,
+  readAcks,
+  shellArg,
+} from "../lib/acknowledgment.js";
 import { isExcluded, resolveScopeSync, type ExclusionSpec } from "../lib/analyze.js";
 import {
   type ApprovedPlan,
@@ -12,6 +19,7 @@ import {
   detectApprovedPlanScope,
   type OwnershipLint,
   resolveFileGrainAcked,
+  standingTreeAcks,
   type UngatedRegisteredChange,
 } from "../lib/change-state.js";
 import { computeDrift, type DriftFinding } from "../lib/drift.js";
@@ -181,9 +189,13 @@ export interface ReviewReport {
  *  from the signer vs the current change author (never a stored flag). */
 export interface CoveringAck {
   anchorId: string;
-  grain: "symbol" | "file";
-  /** The symbol name for a per-symbol ack; null for a file-grain ack. */
+  grain: "symbol" | "file" | "tree";
+  /** The symbol name for a per-symbol ack; null for a file- or tree-grain ack. */
   symbol: string | null;
+  /** Tree grain only: how many files this one vouch covered. The widening is the
+   *  trade a tree ack makes, so it is stated wherever the ack is shown rather than
+   *  left to be discovered by opening the record. */
+  covers?: number;
   signer: string;
   reason: string;
   /** The signer differs from the change author (a second-party sign-off). */
@@ -332,14 +344,27 @@ export function buildReview(
   // File-grain acks (`codument ack <path>`): a bare-path ack covering a file's
   // current content clears its additive/concept/coarse staleness (never a moved
   // symbol). Resolved here (git+disk) and passed to the pure analyzer.
-  const fileGrainAcked = resolveFileGrainAcked(
+  // A tree ack (`codument ack <registered pattern>`) folds into the same set: the
+  // judgment is identical, made once for a tree that is governed as one thing. The
+  // touched set carries deletions too, so a removal inside the tree refuses the vouch
+  // instead of sitting outside it.
+  const standingTrees = standingTreeAcks(
     root,
     baseRef,
-    changes,
-    honoredAcks,
-    unevaluable,
+    [...changes, ...deletions],
+    acks,
+    registry,
+    exclusion,
     renamedFrom,
   );
+  const resolveAcked = (set: Acknowledgment[]): string[] =>
+    [
+      ...new Set([
+        ...resolveFileGrainAcked(root, baseRef, changes, set, unevaluable, renamedFrom),
+        ...set.flatMap((a) => standingTrees.get(a) ?? []),
+      ]),
+    ].sort();
+  const fileGrainAcked = resolveAcked(honoredAcks);
   // Rename destinations whose content did not actually move. The precise grain says
   // this for itself with an empty anchor diff; coarse and governed-registered files
   // have no per-symbol view to say it with, so it is computed once here — from the
@@ -399,9 +424,24 @@ export function buildReview(
   }
   // File-grain coverage for the card uses the FULL ack set too (a self file-ack stays
   // visible under the flag), so resolve it independently of the honored gate set.
-  const cardFileGrainAcked = requireIndependentAck
-    ? resolveFileGrainAcked(root, baseRef, changes, acks, unevaluable, renamedFrom)
-    : fileGrainAcked;
+  const cardFileGrainAcked = requireIndependentAck ? resolveAcked(acks) : fileGrainAcked;
+  // A tree ack is ONE judgment over many files, so the card shows it once, named as
+  // the tree with what it covered. Listing its members as 120 file acks would report
+  // the opposite of what happened — a wide vouch is the thing an audit card exists to
+  // make loud, and a hundred rows is how it would get skipped instead.
+  for (const [ack, covered] of standingTrees) {
+    coveringAcks.push({
+      anchorId: ack.anchorId,
+      grain: "tree",
+      symbol: null,
+      covers: covered.length,
+      signer: ack.signer,
+      reason: ack.reason,
+      independent: independentOf(ack.signer),
+    });
+  }
+  // A tree-covered file carries no file-grain ack of its own, so the loop below never
+  // doubles it — the tree row above is the only thing that speaks for it.
   for (const file of cardFileGrainAcked) {
     const { from, to } = fileContentTransition(root, baseRef, file, renamedFrom.get(file) ?? file);
     if (from === null || to === null) continue;
@@ -1357,9 +1397,32 @@ function printHuman(report: ReviewReport): void {
         (f) =>
           !ownsUnresolvedMove(f, d.feature) && !unevaluableFiles.has(f) && !ackBlocked(f, d.feature),
       );
+      // A tree answers in one line or the route is not worth printing. Where every
+      // file a pattern woke is ackable, the pattern IS the command — 120 file routes
+      // for one translation drop is the same unreadable surface as the 120 paths in
+      // the change list, one line further down. A pattern with any member that a file
+      // ack could not clear falls back to its files, so the collapse never hides a
+      // symbol-drift or ownership resolution behind a tree. A tree whose files were
+      // all ADDED still prints here and `ack` refuses it by name — the doc-update
+      // route above it is the right one for a new language pack, and one refusal that
+      // says so beats a hundred.
+      const collapsed = new Map<string, string[]>();
+      for (const p of d.viaPatterns) {
+        const re = sourceMatcher(p.pattern);
+        const matched = d.changedSources.filter((f) => re.test(f));
+        const ackable = matched.filter((f) => coarse.includes(f));
+        if (matched.length > 1 && ackable.length === matched.length) {
+          collapsed.set(p.pattern, matched);
+        }
+      }
+      const collapsedFiles = new Set([...collapsed.values()].flat());
+      const perFile = coarse.filter((f) => !collapsedFiles.has(f));
       if (coarse.length > 0) {
         line += `\n        ${pc.dim("doc impact    →")} update ${d.doc} ${pc.dim("at intent altitude")}`;
-        for (const f of coarse) {
+        for (const [pattern, matched] of collapsed) {
+          line += `\n        ${pc.dim("no doc impact →")} ${pc.cyan(`codument ack ${shellArg(pattern)} --reason "..."`)} ${pc.dim(`(tree-grain, ${matched.length} files; expires when any of them changes again)`)}`;
+        }
+        for (const f of perFile) {
           line += `\n        ${pc.dim("no doc impact →")} ${pc.cyan(`codument ack ${shellArg(f)} --reason "..."`)} ${pc.dim("(file-grain; expires when the file changes again)")}`;
         }
       }

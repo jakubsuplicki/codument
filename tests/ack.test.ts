@@ -1,14 +1,24 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { rmSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { ackCommand } from "../src/commands/ack.js";
-import { buildReview } from "../src/commands/review.js";
-import { ackFileName, readAcks, shellArg, writeAck } from "../src/lib/acknowledgment.js";
-import { adapterFor } from "../src/lib/fingerprint.js";
+import { buildReview, review } from "../src/commands/review.js";
+import {
+  ackFileName,
+  isFileGrainAck,
+  isTreeGrainAck,
+  parseAck,
+  readAcks,
+  shellArg,
+  treeSetHash,
+  writeAck,
+} from "../src/lib/acknowledgment.js";
+import { adapterFor, fileContentTransition } from "../src/lib/fingerprint.js";
 import { readAllEvents } from "../src/lib/events.js";
 import { getGitAuthor } from "../src/lib/git.js";
 
@@ -1209,5 +1219,245 @@ describe("signature/body split — the ack acceptance table", async () => {
       /codument ack src\/a\.ts::foo/,
       "never a per-symbol ack for a sig move",
     );
+  });
+});
+
+// Plan 43 step 3: a tree that one registry line governs is answered for by one
+// signature. The field's shape — six language packs, 120 files, one judgment — and
+// the properties that keep the width honest: it decays on the next move, a file
+// appearing under the pattern refuses it, and only a DECLARED tree is ackable.
+describe("codument ack <pattern> — one signature for a governed tree (plan 43)", () => {
+  const TREE = "i18n/locales/**/*.json";
+  const TREE_REGISTRY = {
+    features: {
+      i18n: {
+        doc: "docs/concepts/i18n.md",
+        type: "concept",
+        primary_sources: [TREE],
+        status: "current",
+      },
+    },
+  };
+  const locales = (n: number, value: string): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (let i = 0; i < n; i++) {
+      out[`i18n/locales/l${i}/common.json`] = `${JSON.stringify({ greeting: value })}\n`;
+    }
+    return out;
+  };
+  const stale = (): string[] => buildReview(tmp).state.staleDocs.map((d) => d.feature);
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-tree-ack-"));
+    await scaffold({
+      "docs/.registry.json": JSON.stringify(TREE_REGISTRY, null, 2),
+      "docs/concepts/i18n.md": "# i18n\n\nEvery user-visible string ships once per locale.\n",
+      ...locales(4, "hei"),
+    });
+    gitInit(tmp);
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("the field's shape: 120 files move, one acknowledgment answers, and it decays on the next move", async () => {
+    // 116 more packs on top of the 4 committed at baseline, all committed, then all
+    // corrected in one pass — the 27-file correction that cost 27 signatures.
+    await scaffold(locales(120, "hei"));
+    execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "six packs"], { cwd: tmp, stdio: "ignore" });
+    await scaffold(locales(120, "moi"));
+    assert.deepStrictEqual(stale(), ["i18n"], "120 files inside a governed tree wake it");
+
+    const r = await capture(() =>
+      ackCommand(TREE, { reason: "wording pass; no new keys and no locale added", root: tmp }),
+    );
+    assert.equal(r.code, undefined, r.err);
+    assert.match(r.out, /acknowledged tree i18n\/locales\/\*\*\/\*\.json/);
+    assert.match(r.out, /120 files/, "the width is disclosed as it writes");
+
+    const acks = readAcks(tmp);
+    assert.equal(acks.length, 1, "one signature, not 120");
+    assert.equal(acks[0].covered?.length, 120, "and the record says what it vouched for");
+    assert.deepStrictEqual(stale(), [], "the tree's wake is cleared");
+
+    // ...and it is not a ride-forever exemption: one file moving again decays it.
+    await scaffold({ "i18n/locales/l7/common.json": `${JSON.stringify({ greeting: "terve" })}\n` });
+    assert.deepStrictEqual(stale(), ["i18n"], "one file moved → the whole vouch is spent");
+  });
+
+  it("a file appearing under the tree AFTER the ack decays it — a new locale is not residue", async () => {
+    // The half a set comparison alone would miss: the vouched files still hash to
+    // what was recorded, so only the arrival itself can spend the ack. ADR 012 lets a
+    // file ack sweep up additive residue inside a file it vouched for; a new file
+    // under a governed tree is a new governed unit, and adding a language is the
+    // change in a locale tree most worth seeing.
+    await scaffold(locales(4, "moi"));
+    await capture(() => ackCommand(TREE, { reason: "wording pass", root: tmp }));
+    assert.deepStrictEqual(stale(), []);
+
+    await scaffold({ "i18n/locales/l9/common.json": `${JSON.stringify({ greeting: "hallo" })}\n` });
+    assert.deepStrictEqual(stale(), ["i18n"], "a new pack wakes the doc despite the ack");
+    assert.deepStrictEqual(
+      buildReview(tmp).coveringAcks,
+      [],
+      "and the vouch stands for nothing — a card still calling the tree adjudicated is the false green",
+    );
+  });
+
+  it("a file APPEARING under the tree is refused, never waved through", async () => {
+    await scaffold({
+      ...locales(4, "moi"),
+      "i18n/locales/l9/common.json": `${JSON.stringify({ greeting: "hallo" })}\n`,
+    });
+    const r = await capture(() => ackCommand(TREE, { reason: "wording pass", root: tmp }));
+    assert.equal(r.code, 1);
+    assert.match(r.err, /added or removed, not changed/);
+    assert.match(r.err, /docs\/concepts\/i18n\.md/, "the refusal names the doc that owes the line");
+    assert.match(r.err, /i18n\/locales\/l9\/common\.json/, "and which file it was");
+    assert.deepStrictEqual(readAcks(tmp), [], "nothing is recorded");
+  });
+
+  it("a deletion inside the tree is refused too — a removal owes its doc a line", async () => {
+    await scaffold(locales(3, "moi"));
+    rmSync(join(tmp, "i18n/locales/l3/common.json"));
+    const r = await capture(() => ackCommand(TREE, { reason: "wording pass", root: tmp }));
+    assert.equal(r.code, 1);
+    assert.match(r.err, /added or removed, not changed/);
+    assert.deepStrictEqual(readAcks(tmp), []);
+  });
+
+  it("only a DECLARED tree is ackable — an ad-hoc glob vouches for nothing", async () => {
+    await scaffold(locales(4, "moi"));
+    const r = await capture(() => ackCommand("i18n/**", { reason: "wording pass", root: tmp }));
+    assert.equal(r.code, 1);
+    assert.match(r.err, /no registry entry declares i18n\/\*\*/);
+    assert.match(r.err, /Governed trees: i18n\/locales\/\*\*\/\*\.json/, "and names the real one");
+    assert.deepStrictEqual(readAcks(tmp), [], "an unregistered glob records nothing");
+    assert.deepStrictEqual(stale(), ["i18n"], "and clears nothing");
+  });
+
+  it("a hand-written tree ack over an undeclared pattern is inert at the gate", async () => {
+    // The file-on-disk path, not the command path: a merged/forged ack naming a glob
+    // nobody registered must not sweep the repo's coarse wakes.
+    await scaffold(locales(4, "moi"));
+    // Real transitions, so the ONLY thing standing between this record and a swept
+    // gate is the registration check.
+    const covered = ["l0", "l1", "l2", "l3"].map((l) => {
+      const path = `i18n/locales/${l}/common.json`;
+      const t = fileContentTransition(tmp, "HEAD", path);
+      return { path, from: t.from as string, to: t.to as string };
+    });
+    writeAck(tmp, {
+      anchorId: "i18n/**",
+      fromHash: treeSetHash(covered, "from"),
+      toHash: treeSetHash(covered, "to"),
+      reason: "an undeclared tree",
+      signer: "someone",
+      covered,
+    });
+    assert.deepStrictEqual(stale(), ["i18n"], "an undeclared tree clears nothing");
+    assert.deepStrictEqual(buildReview(tmp).coveringAcks, [], "and adjudicates nothing");
+  });
+
+  it("the set is judged whole: one file leaving the change spends the vouch", async () => {
+    // Not a moved file — a REVERTED one. Every remaining member still hashes to what
+    // was vouched for, so only judging the set whole catches it. Fails closed: the
+    // cost is one re-ack, and the alternative is a record that outlives the change it
+    // was written about.
+    await scaffold(locales(4, "moi"));
+    await capture(() => ackCommand(TREE, { reason: "wording pass", root: tmp }));
+    assert.deepStrictEqual(stale(), []);
+
+    await scaffold({ "i18n/locales/l0/common.json": `${JSON.stringify({ greeting: "hei" })}\n` });
+    assert.deepStrictEqual(stale(), ["i18n"], "3 of the 4 still match, and that is not the set");
+  });
+
+  it("review prints the tree as the route — one line, not one per file", async () => {
+    await scaffold(locales(4, "moi"));
+    const r = await capture(() => review({ root: tmp }));
+    const routes = r.out.match(/codument ack \S+ --reason/g) ?? [];
+    assert.deepStrictEqual(
+      routes,
+      ['codument ack "i18n/locales/**/*.json" --reason'],
+      "one tree route, and no per-file route beside it",
+    );
+    assert.match(r.out, /tree-grain, 4 files/, "and it says how wide the vouch would be");
+  });
+
+  it("the audit card names the tree once, with what it covered", async () => {
+    await scaffold(locales(4, "moi"));
+    await capture(() => ackCommand(TREE, { reason: "wording pass", root: tmp }));
+    const card = buildReview(tmp).coveringAcks;
+    assert.equal(card.length, 1, "one row for one judgment, not four");
+    assert.equal(card[0].grain, "tree");
+    assert.equal(card[0].anchorId, TREE);
+    assert.equal(card[0].covers, 4);
+  });
+
+  it("`ack --list` states the width, and the record decays with the tree", async () => {
+    await scaffold(locales(4, "moi"));
+    await capture(() => ackCommand(TREE, { reason: "wording pass", root: tmp }));
+    const listed = await capture(() => ackCommand(undefined, { list: true, root: tmp }));
+    assert.match(listed.out, /i18n\/locales\/\*\*\/\*\.json \(tree, 4 files\)/);
+    assert.doesNotMatch(listed.out, /auto-invalidated/);
+
+    await scaffold({ "i18n/locales/l1/common.json": `${JSON.stringify({ greeting: "terve" })}\n` });
+    const after = await capture(() => ackCommand(undefined, { list: true, root: tmp }));
+    assert.match(after.out, /auto-invalidated/, "one member moving invalidates the whole record");
+  });
+});
+
+// The three grains partition the anchor-id space: symbol, file, tree. They are told
+// apart by SHAPE alone and every consumer branches on these predicates, so an overlap
+// is not a tidiness point — whichever branch happened to run first would decide what a
+// record means.
+describe("ack grains are mutually exclusive (plan 43)", () => {
+  const ids = {
+    symbol: { anchorId: "src/a.ts::foo().", covered: undefined },
+    file: { anchorId: "src/a.ts", covered: undefined },
+    tree: {
+      anchorId: "i18n/locales/**/*.json",
+      covered: [{ path: "i18n/locales/en.json", from: "a", to: "b" }],
+    },
+    dir: {
+      anchorId: "i18n/locales/",
+      covered: [{ path: "i18n/locales/en.json", from: "a", to: "b" }],
+    },
+  };
+  const ack = (k: keyof typeof ids) => ({
+    fromHash: "a",
+    toHash: "b",
+    reason: "r",
+    signer: "s",
+    ...ids[k],
+  });
+
+  it("a pattern is a tree and never a file; a path is a file and never a tree", () => {
+    assert.equal(isTreeGrainAck(ack("tree")), true);
+    assert.equal(isFileGrainAck(ack("tree")), false);
+    assert.equal(isTreeGrainAck(ack("dir")), true, "a trailing-slash directory is a tree");
+    assert.equal(isFileGrainAck(ack("file")), true);
+    assert.equal(isTreeGrainAck(ack("file")), false);
+    assert.equal(isFileGrainAck(ack("symbol")), false);
+    assert.equal(isTreeGrainAck(ack("symbol")), false);
+  });
+
+  it("a tree ack without its set is malformed, and a set on a file ack is too", () => {
+    assert.equal(parseAck({ ...ack("tree"), covered: undefined }), null);
+    assert.equal(parseAck({ ...ack("tree"), covered: [] }), null);
+    assert.equal(parseAck({ ...ack("file"), covered: ids.tree.covered }), null);
+    assert.equal(parseAck({ ...ack("tree"), covered: [{ path: "x" }] }), null);
+    assert.notEqual(parseAck(ack("tree")), null);
+    assert.notEqual(parseAck(ack("file")), null);
+  });
+
+  it("a symbol whose descriptor carries a glob character is still a symbol ack", () => {
+    // `export * from "./x"` anchors to a descriptor with a `*` in it. Reading the id
+    // as a glob would condemn a recorded judgment as malformed and drop it silently.
+    const star = { ...ack("symbol"), anchorId: "src/index.ts::*." };
+    assert.equal(isTreeGrainAck(star), false);
+    assert.equal(isFileGrainAck(star), false);
+    assert.notEqual(parseAck(star), null, "and it survives a read");
   });
 });

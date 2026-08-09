@@ -54,7 +54,8 @@ Verified mechanisms, each checked against source:
   doc once and is named as a tree
 - `src/lib/fingerprint.ts`, `src/lib/acknowledgment.ts`, `src/commands/ack.ts` —
   tree-grain acknowledgment over the matched set's fingerprint
-- `src/commands/review.ts` — the tree wake, its route, and the strict epilogue
+- `src/commands/review.ts`, `src/lib/report-html.ts` — the tree wake, its route, the
+  strict epilogue, and the audit card that names a tree vouch once
 - `src/commands/map.ts` — `materialize` refuses a file a tree already governs, and
   says which entry governs it
 - `src/lib/analyze.ts` — lints for a pattern matching nothing and a pattern shadowing
@@ -144,7 +145,7 @@ Status: approved.
 - [x] Step 2: Ownership resolves patterns, and a governed tree wakes its doc once —
       named as the tree with the count of what moved inside it, never one wake per file.
       Test: the field's shape — a six-pack translation drop wakes one doc with one line.
-- [ ] Step 3: Tree-grain acknowledgment over the matched set's fingerprint, auto-
+- [x] Step 3: Tree-grain acknowledgment over the matched set's fingerprint, auto-
       invalidating like a file ack; `ack <pattern>` records it, `review` prints it as the
       route, and the output says how many files it covered. Test: 120 changed files, one
       acknowledgment, and it decays the moment one of them moves again.

@@ -112,6 +112,24 @@ export function patternPrefix(pattern: string): string {
   return head.replace(/\/[^/]*$/, "").replace(/\/$/, "");
 }
 
+/**
+ * Every tree an entry declares it governs — the pattern sources across the whole
+ * registry, deduped and sorted. A tree-grain acknowledgment is honored only for a
+ * pattern in this set: the vouch is wide by construction, and the thing that earns
+ * it that width is a declaration someone committed (ADR 017), not a glob typed at
+ * the command line. Without the check, `codument ack "src/**"` would clear every
+ * coarse and additive wake in one line.
+ */
+export function registeredPatterns(registry: Registry): string[] {
+  const out = new Set<string>();
+  for (const entry of Object.values(registry.features)) {
+    for (const src of entry.primary_sources) {
+      if (isSourcePattern(src)) out.add(normalizeRelPath(src));
+    }
+  }
+  return uniqSort([...out]);
+}
+
 // True when the entry represents real, built work: it owns at least one source
 // and its status is not a planned/draft placeholder.
 export function isMatureEntry(entry: RegistryEntry): boolean {
@@ -381,7 +399,7 @@ function uniqSort(values: string[]): string[] {
 }
 
 // Canonical repo-relative shape: forward slashes, no leading "./" or "/".
-function normalizeRelPath(path: string): string {
+export function normalizeRelPath(path: string): string {
   return path
     .trim()
     .replace(/\\/g, "/")

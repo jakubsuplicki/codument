@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWriteFileSync } from "./events.js";
+import { isSourcePattern } from "./registry.js";
 
 // A recorded, attributed, fingerprint-bound decision that a moved anchor needs no
 // doc change (a refactor / behavior-preserving move). The gate NEVER verifies the
@@ -23,6 +24,19 @@ export interface Acknowledgment {
   reason: string;
   /** Who attested. An identity; independence (signer != author) is an opt-in check. */
   signer: string;
+  /** Tree grain only, and required there: the matched set this ack vouched for,
+   *  path by path. A combined digest would be cheaper and would leave the record
+   *  unreadable — a signature on a blank page — so the set is written out and
+   *  judged whole. */
+  covered?: CoveredFile[];
+}
+
+/** One file inside a tree acknowledgment's vouched set, with the transition it was
+ *  bound to — the same `from`->`to` a file-grain ack binds, recorded per member. */
+export interface CoveredFile {
+  path: string;
+  from: string;
+  to: string;
 }
 
 export const ACKS_DIR = ".codument/acks";
@@ -40,7 +54,35 @@ export function parseAck(value: unknown): Acknowledgment | null {
   const reason = str("reason");
   const signer = str("signer");
   if (!anchorId || !fromHash || !toHash || !reason || !signer) return null;
-  return { anchorId, fromHash, toHash, reason, signer };
+  // A tree ack without its set is unreadable, and an unreadable vouch is exactly
+  // what the explicit-set decision refuses — so it is malformed, not trusted-with-
+  // less. A set on a symbol or file ack is equally malformed: two grains disagreeing
+  // about what one record covers is worse than either.
+  // Asked of the ID SHAPE exactly as the grain predicates ask it — a `::descriptor`
+  // is never a pattern however it is spelled. Reading the whole id as a glob would
+  // condemn a symbol ack whose descriptor happens to carry a `*` (an `export *`
+  // barrel) as malformed, silently dropping a recorded judgment.
+  const wantsSet = !anchorId.includes("::") && isSourcePattern(anchorId);
+  const covered = parseCovered(v.covered);
+  if (wantsSet !== (covered !== null && covered.length > 0)) return null;
+  return covered ? { anchorId, fromHash, toHash, reason, signer, covered } : { anchorId, fromHash, toHash, reason, signer };
+}
+
+function parseCovered(value: unknown): CoveredFile[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: CoveredFile[] = [];
+  const seen = new Set<string>();
+  for (const raw of value) {
+    if (typeof raw !== "object" || raw === null) return null;
+    const c = raw as Record<string, unknown>;
+    const ok = (k: string): boolean => typeof c[k] === "string" && (c[k] as string).length > 0;
+    if (!ok("path") || !ok("from") || !ok("to")) return null;
+    const path = c.path as string;
+    if (seen.has(path)) return null; // a path vouched for twice has two answers
+    seen.add(path);
+    out.push({ path, from: c.from as string, to: c.to as string });
+  }
+  return out;
 }
 
 /**
@@ -79,7 +121,48 @@ export function ackCovers(
 // told apart from a symbol ack purely by the anchorId shape: a symbol ack's id is
 // always `<path>::<descriptor>`.
 export function isFileGrainAck(ack: Acknowledgment): boolean {
-  return !ack.anchorId.includes("::");
+  return !ack.anchorId.includes("::") && !isSourcePattern(ack.anchorId);
+}
+
+// A tree-grain acknowledgment vouches for every file a REGISTERED pattern source
+// matched at the moment it was recorded: its `anchorId` is that pattern, and its
+// `covered` set names each matched path with the transition it was bound to. It is
+// the same judgment a file ack makes, made once for a tree that is governed as one
+// thing — because a grain that only ever answers for one file makes answering for a
+// 380-file locale drop cost 380 signatures, which is how the largest surface in the
+// field repo came to be governed by nothing at all. It is told apart from a file ack
+// purely by the anchorId's shape, exactly as a symbol ack is.
+export function isTreeGrainAck(ack: Acknowledgment): boolean {
+  return !ack.anchorId.includes("::") && isSourcePattern(ack.anchorId);
+}
+
+// The digest of one side of a vouched set — path and hash, sorted, so the record's
+// `from`/`to` summarize the whole tree the way a file ack's summarize one file.
+// Order-independent by construction: the same set recorded twice hashes the same,
+// which is what keeps the ack filename idempotent.
+export function treeSetHash(covered: readonly CoveredFile[], side: "from" | "to"): string {
+  const h = createHash("sha256");
+  for (const c of [...covered].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))) {
+    h.update(`${c.path}\u0000${side === "from" ? c.from : c.to}\n`, "utf8");
+  }
+  return h.digest("hex");
+}
+
+// Whether a tree ack vouches for exactly the set in front of it now: same paths,
+// same transitions, nothing more and nothing less. Judged WHOLE, never per member —
+// the wake it answers is all-or-nothing at the tree, and coverage that disagreed
+// with the wake would leave files reading "covered" under a doc that is stale
+// anyway. So one file moving again decays it, and a file APPEARING in the tree
+// decays it too: a new file under a pattern is a new governed unit, not the
+// additive residue a file ack is allowed to sweep up.
+export function ackCoversTree(ack: Acknowledgment, current: readonly CoveredFile[]): boolean {
+  const covered = ack.covered;
+  if (!covered || covered.length === 0 || covered.length !== current.length) return false;
+  const byPath = new Map(covered.map((c) => [c.path, c]));
+  return current.every((c) => {
+    const recorded = byPath.get(c.path);
+    return recorded !== undefined && recorded.from === c.from && recorded.to === c.to;
+  });
 }
 
 // A deterministic filename for an ack (no clock / no randomness): a short digest
