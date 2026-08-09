@@ -57,7 +57,10 @@ Verified mechanisms:
 - `src/commands/update.ts` — a backup is written only when something would be lost
 - `src/lib/analyze.ts` — the shipped-scaffolding finding
 - `src/lib/prose-altitude.ts` — the evidence-free Decisions note
-- `src/commands/context.ts` — the lean ownership answer
+- `src/commands/context.ts`, `src/lib/context-pack.ts` — the lean ownership answer, and the
+  ownership resolution behind it routed through the shared source matcher (a file a registered
+  tree pattern governs is owned, not unmapped); `src/cli.ts` and `src/index.ts` carry the flag
+  and the export
 - `docs/features/registry-health.md`, `docs/features/agent-delivery-workflow.md`,
   `docs/concepts/doc-audience-layers.md`, `CHANGELOG.md`
 
@@ -91,7 +94,7 @@ Status: approved.
 - [x] Step 3: A `## Decisions` entry that cites nothing is an info-only altitude note.
       Test: a bare conclusion fires; an entry pointing at an ADR, a test, or another
       doc does not; `--strict` exit codes are unchanged.
-- [ ] Step 4: `context --file` answers ownership in one line under `--owner`. Test: the
+- [x] Step 4: `context --file` answers ownership in one line under `--owner`. Test: the
       lean answer names the owning doc for a single-owner file, every candidate for a
       shared one, and says plainly when nothing owns it.
 - [ ] Step 5: Docs at intent altitude across registry-health, the delivery workflow and

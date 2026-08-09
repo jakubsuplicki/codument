@@ -11,6 +11,7 @@ import {
   estimateTokens,
   gatherContextPack,
   ownersOfFile,
+  ownershipOfFile,
   selectedFromPlanRows,
   type ContextPackInput,
 } from "../src/lib/context-pack.js";
@@ -174,6 +175,48 @@ describe("ownersOfFile — file selector resolves through primary ownership", ()
 
   it("returns nothing for a file no entry owns", () => {
     assert.deepEqual(ownersOfFile(registry, "src/lib/nobody.ts"), []);
+  });
+});
+
+describe("ownershipOfFile — ownership through the same matcher the gate uses", () => {
+  // Declared out of alphabetical order on purpose: the answer must be sorted by
+  // the resolver, not inherited from however the registry file happens to read.
+  const registry = registryOf({
+    lib: { type: "concept", primary_sources: ["src/lib/drift.ts", "src/lib/other.ts"] },
+    drift: { primary_sources: ["src/lib/drift.ts"] },
+    reviewer: { related_sources: ["src/lib/drift.ts"] },
+    locales: { primary_sources: ["i18n/locales/**/*.json"] },
+    // declares BOTH a literal and a pattern that cover the same file
+    both: { primary_sources: ["src/both/**", "src/both/one.ts"] },
+  });
+
+  it("names a file governed by a registered pattern, not just a literal source", () => {
+    // The tree grain made a pattern a legitimate way to own a file. An ownership
+    // answer that only reads literals tells an agent "nothing owns this" about a
+    // correctly-registered file — the worst possible answer to this question.
+    assert.deepEqual(ownershipOfFile(registry, "i18n/locales/en/common.json"), [
+      { feature: "locales", doc: "docs/features/locales.md", via: "i18n/locales/**/*.json" },
+    ]);
+  });
+
+  it("carries the literal when an entry declares both, so the answer is the specific claim", () => {
+    assert.deepEqual(ownershipOfFile(registry, "src/both/one.ts")[0].via, "src/both/one.ts");
+    assert.deepEqual(ownershipOfFile(registry, "src/both/two.ts")[0].via, "src/both/**");
+  });
+
+  it("returns every primary owner incl. concept umbrellas, never a related-only toucher", () => {
+    assert.deepEqual(
+      ownershipOfFile(registry, "src/lib/drift.ts").map((o) => o.feature),
+      ["drift", "lib"],
+    );
+  });
+
+  it("resolves a Windows-shaped path the same as its posix form", () => {
+    assert.deepEqual(ownersOfFile(registry, "src\\lib\\drift.ts"), ["drift", "lib"]);
+  });
+
+  it("returns nothing for a file no entry owns", () => {
+    assert.deepEqual(ownershipOfFile(registry, "src/lib/nobody.ts"), []);
   });
 });
 
@@ -445,6 +488,127 @@ describe("codument context — end-to-end through the real CLI", () => {
     // EISDIR — the command must fail cleanly, not crash.
     const out = runFail(["context", "--plan", "docs/plans"]);
     assert.match(out, /could not read plan/);
+  });
+});
+
+describe("codument context --owner — the ownership lookup priced at a line", () => {
+  let root: string;
+  const env = { ...process.env, NO_COLOR: "1" };
+  const run = (args: string[]) => execFileSync("node", [CLI, ...args], { cwd: root, encoding: "utf-8", env });
+  const runFail = (args: string[]): string => {
+    try {
+      run(args);
+    } catch (err) {
+      const e = err as { status?: number | null; stdout?: string };
+      assert.notEqual(e.status ?? 0, 0);
+      return e.stdout ?? "";
+    }
+    return assert.fail("expected a nonzero exit");
+  };
+  const lines = (out: string): string[] => out.split(/\r?\n/).filter((l) => l.trim() !== "");
+
+  before(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-owner-"));
+    const registry = registryOf({
+      store: { type: "concept", primary_sources: ["src/shared.ts"] },
+      gate: { primary_sources: ["src/gate.ts", "src/shared.ts"], depends_on: ["store"], risk: ["data-loss"] },
+      locales: { primary_sources: ["i18n/locales/**/*.json"] },
+    });
+    await write(root, "docs/.registry.json", JSON.stringify(registry, null, 2));
+    await write(root, "docs/features/gate.md", doc("The gate decides safety.", "- Fail closed. *(test: `gate.test.ts` x)*"));
+    await write(root, "docs/features/store.md", doc("Owns the registry file."));
+    await write(root, "docs/features/locales.md", doc("Every user-visible string."));
+  });
+
+  after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("answers a single-owner file in one line naming the owning doc", () => {
+    const out = run(["context", "--file", "src/gate.ts", "--owner"]);
+    assert.equal(lines(out).length, 1, out);
+    assert.match(out, /src\/gate\.ts/);
+    assert.match(out, /docs\/features\/gate\.md/);
+  });
+
+  it("names every candidate for a shared file, still in one line", () => {
+    const out = run(["context", "--file", "src/shared.ts", "--owner"]);
+    assert.equal(lines(out).length, 1, out);
+    assert.match(out, /docs\/features\/gate\.md/);
+    assert.match(out, /docs\/features\/store\.md/);
+  });
+
+  it("says plainly when nothing owns the file, and still exits 0", () => {
+    // Unowned is a fact about the repository, not a bad invocation — a lookup
+    // that fails the shell is a lookup nobody puts in a hook.
+    const out = run(["context", "--file", "src/orphan.ts", "--owner"]);
+    assert.equal(lines(out).length, 1, out);
+    assert.match(out, /no feature owns src\/orphan\.ts/);
+  });
+
+  it("answers for a file a registered pattern governs, naming the tree it came through", () => {
+    const out = run(["context", "--file", "i18n/locales/en/common.json", "--owner"]);
+    assert.equal(lines(out).length, 1, out);
+    assert.match(out, /docs\/features\/locales\.md/);
+    assert.match(out, /via i18n\/locales\/\*\*\/\*\.json/);
+  });
+
+  it("costs a fraction of the pack it replaces", () => {
+    const lean = run(["context", "--file", "src/gate.ts", "--owner"]).length;
+    const pack = run(["context", "--file", "src/gate.ts"]).length;
+    assert.ok(lean * 4 < pack, `lean ${lean} vs pack ${pack}`);
+  });
+
+  it("leaves the full pack untouched when the flag is absent", () => {
+    // The lean answer is an additional door, never a change to the existing one.
+    const parsed = JSON.parse(run(["context", "--file", "src/gate.ts", "--json"]));
+    assert.deepEqual(parsed.selector, { kind: "file", value: "src/gate.ts" });
+    assert.equal(parsed.entries[0].feature, "gate");
+    assert.ok(parsed.entries[0].invariants.includes("Fail closed"));
+  });
+
+  it("the pack and the lean answer resolve a pattern-owned file the same way", () => {
+    // The claim is that the two doors cannot disagree. A file governed by a
+    // registered tree is the case where they used to: the pack called it
+    // unmapped while the registry plainly owned it.
+    const parsed = JSON.parse(run(["context", "--file", "i18n/locales/en/common.json", "--json"]));
+    assert.equal(parsed.unmappedFile, null);
+    assert.deepEqual(
+      parsed.entries.map((e: { feature: string }) => e.feature),
+      ["locales"],
+    );
+    const owners = JSON.parse(
+      run(["context", "--file", "i18n/locales/en/common.json", "--owner", "--json"]),
+    ).owners;
+    assert.deepEqual(owners.map((o: { feature: string }) => o.feature), ["locales"]);
+  });
+
+  it("still rejects a malformed --budget alongside --owner rather than ignoring the flag", () => {
+    // The lean route short-circuits the pack; it must not short-circuit the
+    // validation of a flag the caller actually typed.
+    assert.match(
+      runFail(["context", "--file", "src/gate.ts", "--owner", "--budget", "0"]),
+      /whole number of tokens/,
+    );
+  });
+
+  it("emits a version-tagged contract under --json, byte-identical across runs", () => {
+    const a = run(["context", "--file", "src/shared.ts", "--owner", "--json"]);
+    assert.equal(a, run(["context", "--file", "src/shared.ts", "--owner", "--json"]));
+    const parsed = JSON.parse(a);
+    assert.equal(parsed.version, 1);
+    assert.equal(parsed.file, "src/shared.ts");
+    assert.deepEqual(
+      parsed.owners.map((o: { feature: string }) => o.feature),
+      ["gate", "store"],
+    );
+    assert.deepEqual(JSON.parse(run(["context", "--file", "src/orphan.ts", "--owner", "--json"])).owners, []);
+  });
+
+  it("refuses --owner without --file, and alongside another selector", () => {
+    assert.match(runFail(["context", "--owner"]), /use it with --file/);
+    assert.match(runFail(["context", "--owner", "--feature", "gate"]), /use it with --file/);
+    assert.match(runFail(["context", "--owner", "--file", "src/gate.ts", "--plan", "p.md"]), /use it with --file/);
   });
 });
 

@@ -118,6 +118,7 @@ export {
   gatherContextPack,
   applyBudget,
   ownersOfFile,
+  ownershipOfFile,
   selectedFromPlanRows,
   estimateTokens,
 } from "./lib/context-pack.js";
@@ -128,6 +129,7 @@ export type {
   ContextResolution,
   ContextPackInput,
   BudgetResult,
+  FileOwner,
 } from "./lib/context-pack.js";
 export {
   ackCovers,

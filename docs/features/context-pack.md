@@ -28,10 +28,22 @@ read, never a summarized or re-scored payload.
 The three selectors resolve to the same shape by different routes. A feature names itself; a file
 resolves through *primary* ownership only (the same rule the staleness gate uses — related sources
 are impact, never ownership), which naturally includes any concept umbrellas that own it; a plan
-routes through its Feature Map exactly as `map check` does. From the selected features it walks one
+routes through its Feature Map exactly as `map check` does. A file's ownership runs through the one
+source matcher the gate and the health surface use, so a file governed by a registered tree pattern
+is owned exactly as a literally-named one is — "who owns this file" cannot come back different
+depending on which surface you ask. From the selected features it walks one
 dependency hop — a dependency is a signpost ("you may also need this"), so it is rendered as a
 lightweight pointer (doc path plus the first sentence of its orientation), not an inlined contract,
 and the walk stops at one hop so the pack stays a minimal working set rather than the whole graph.
+
+The pack is the expensive answer to a broad question, and the loop's most frequent question is not
+broad: before touching a file an agent needs one fact — which doc owns it. Charging a full pack for
+that is why the cheap habit is to skip the lookup and guess, so a file selector also has a lean door
+that answers ownership in a single line and nothing else. It is the same resolution the pack runs, so
+the two can never disagree; it names *every* candidate for a shared file rather than picking one,
+because which feature owns the symbol you are about to move is a decision, not something a lookup may
+quietly make for you; and it names the tree a file was owned through when a pattern governs it,
+because that is the difference between owing the doc an update and acking the tree.
 
 A budget trims the pack toward a token target tail-first, in the settled priority order, and the
 selected feature's orientation and invariants — the thing the caller actually asked for — are the
@@ -46,9 +58,17 @@ cost ledger and the benchmark use, and are labelled an estimate everywhere they 
   all sorted. No clock, no git, no model. *(tests: `context-pack.test.ts` "is deterministic —
   byte-identical across runs" / "--json is version-tagged and byte-identical across runs")*
 - A file selector resolves through primary ownership only — every feature and concept umbrella whose
-  `primary_sources` carries the file, never a related-only toucher — and a file no entry owns is
-  surfaced, never guessed at. *(tests: `context-pack.test.ts` "returns every primary owner incl.
-  concept umbrellas, never a related-only toucher" / "surfaces an unmapped --file")*
+  `primary_sources` names the file, never a related-only toucher — and a file no entry owns is
+  surfaced, never guessed at. Naming runs through the shared source matcher, so a registered tree
+  pattern owns the files under it exactly as a literal path owns one. *(tests: `context-pack.test.ts`
+  "returns every primary owner incl. concept umbrellas, never a related-only toucher" / "names a file
+  governed by a registered pattern" / "surfaces an unmapped --file")*
+- The lean ownership answer is one line in every case — one owner, several, or none — and an unowned
+  file is a fact reported at exit zero, not a failed invocation, so the lookup is safe to run from a
+  hook or a loop. It is an additional door onto the same resolution: the pack it sits beside is
+  unchanged when the flag is absent. *(tests: `context-pack.test.ts` "answers a single-owner file in
+  one line" / "names every candidate for a shared file" / "says plainly when nothing owns the file,
+  and still exits 0" / "leaves the full pack untouched when the flag is absent")*
 - Dependencies are followed exactly one hop and rendered as pointers (doc + first sentence), never
   inlined with their own invariants or sources, so the pack cannot balloon into the whole graph.
   *(tests: `context-pack.test.ts` "follows one-hop deps as lightweight pointers" / "does not
@@ -82,6 +102,7 @@ cost ledger and the benchmark use, and are labelled an estimate everywhere they 
 
 ## Key files
 
-- `src/lib/context-pack.ts` — the pure projection, the selector resolvers (`ownersOfFile`,
-  `selectedFromPlanRows`), and the budget trimmer.
-- `src/commands/context.ts` — the CLI: selector validation, budget parsing, human + `--json` rendering.
+- `src/lib/context-pack.ts` — the pure projection, the selector and ownership resolvers, and the
+  budget trimmer.
+- `src/commands/context.ts` — the CLI: selector validation, budget parsing, the lean ownership
+  answer, human + `--json` rendering.

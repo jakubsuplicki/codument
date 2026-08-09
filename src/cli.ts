@@ -152,6 +152,10 @@ program
   .option("--file <path>", "pack the feature(s) that own a source file")
   .option("--plan <path>", "pack every feature a plan's Feature Map routes to")
   .option(
+    "--owner",
+    "with --file: answer ownership in one line (which doc owns this file) instead of packing it",
+  )
+  .option(
     "--budget <tokens>",
     "trim the pack tail-first toward an estimated token budget (reports what it dropped)",
   )

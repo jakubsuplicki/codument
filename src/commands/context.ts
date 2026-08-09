@@ -3,14 +3,17 @@ import { join } from "node:path";
 import pc from "picocolors";
 import { readRegistrySync } from "../lib/registry.js";
 import { parseFeatureMap } from "../lib/feature-map.js";
+import { normalizeRelPath } from "../lib/registry.js";
 import {
   applyBudget,
   gatherContextPack,
   ownersOfFile,
+  ownershipOfFile,
   selectedFromPlanRows,
   type ContextEntry,
   type ContextPack,
   type ContextResolution,
+  type FileOwner,
 } from "../lib/context-pack.js";
 
 // `codument context` — the pull-based context oracle. Given a feature, a file,
@@ -27,6 +30,7 @@ interface ContextCliOptions {
   file?: string;
   plan?: string;
   budget?: string;
+  owner?: boolean;
   json?: boolean;
   root?: string;
   dir?: string;
@@ -43,6 +47,14 @@ interface ContextJson {
   budget: number | null;
   trimmed: string[];
   overBudget: boolean;
+}
+
+/** The `--owner` contract: the file as resolved, and every feature that owns it
+ *  (empty when none does — a fact, not an error, so the exit code stays 0). */
+interface OwnerJson {
+  version: 1;
+  file: string;
+  owners: FileOwner[];
 }
 
 function fail(message: string): void {
@@ -126,6 +138,23 @@ function resolve(
   };
 }
 
+// The lean ownership answer. Before editing a file an agent needs one fact —
+// which doc owns it — and charging a whole context pack for it is why the cheap
+// habit is to skip the lookup and guess. One line, every case, so it is worth
+// running every time.
+function renderOwner(file: string, owners: FileOwner[]): string {
+  if (owners.length === 0) {
+    return pc.yellow(`  no feature owns ${file} — map it into a feature's primary_sources`);
+  }
+  const parts = owners.map(
+    (o) => `${pc.bold(o.feature)} — ${o.doc}${o.via === file ? "" : pc.dim(` (via ${o.via})`)}`,
+  );
+  // Several owners is the shared-file case, and every candidate is named: which
+  // one owns the symbol you are about to move is a decision, not something this
+  // lookup may quietly pick for you.
+  return `  ${file}: ${parts.join(pc.dim("  |  "))}`;
+}
+
 function renderEntry(entry: ContextEntry): string[] {
   const out: string[] = [];
   if (entry.relation === "dependency") {
@@ -161,9 +190,8 @@ export function contextCommand(options: ContextCliOptions = {}): void {
   const root = options.root ?? options.dir ?? process.cwd();
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
 
-  const resolution = resolve(root, registry, options);
-  if (resolution === null) return;
-
+  // A flag's own value is validated before the command is interpreted, so no
+  // route can quietly accept a malformed `--budget` by not reaching the check.
   let budget: number | null = null;
   if (options.budget !== undefined) {
     const n = Number(options.budget);
@@ -176,6 +204,29 @@ export function contextCommand(options: ContextCliOptions = {}): void {
     }
     budget = Math.floor(n);
   }
+
+  // `--owner` short-circuits the pack: it is the same ownership resolution the
+  // `--file` selector runs, rendered as the answer instead of as the doorway to
+  // thousands of tokens of orientation nobody asked for. A budget has nothing to
+  // act on here — the answer IS the head, and the head is never trimmed.
+  if (options.owner) {
+    if (options.file === undefined || options.feature !== undefined || options.plan !== undefined) {
+      fail("--owner answers a file's ownership — use it with --file <path> alone");
+      return;
+    }
+    const file = normalizeRelPath(options.file);
+    const owners = ownershipOfFile(registry, file);
+    if (options.json) {
+      const payload: OwnerJson = { version: 1, file, owners };
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+    console.log(renderOwner(file, owners));
+    return;
+  }
+
+  const resolution = resolve(root, registry, options);
+  if (resolution === null) return;
 
   let pack = gatherContextPack(root, registry, resolution);
   let trimmed: string[] = [];

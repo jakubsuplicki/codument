@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { extractDocSection, extractTestPointers } from "./review-bundle.js";
 import type { FeatureMapRow } from "./feature-map.js";
-import type { Registry } from "./registry.js";
+import { isSourcePattern, normalizeRelPath, sourceNames, type Registry } from "./registry.js";
 
 // The third projection over the registry, after the plan grounding (for the plan
 // adversary) and the review bundle (for the review adversary). Where those serve
@@ -266,16 +266,43 @@ export function applyBudget(pack: ContextPack, budget: number): BudgetResult {
   };
 }
 
-// Resolve a `--file` path to the features that OWN it: every entry (feature or
-// concept umbrella) carrying the path in `primary_sources`. Related-source
-// membership is impact, not ownership, so it never selects — the same
-// primary-only rule the staleness gate uses.
-export function ownersOfFile(registry: Registry, file: string): string[] {
-  const owners: string[] = [];
+/** One feature that owns a file, with the source entry through which it does —
+ *  a literal path, or the pattern whose tree governs it. `via` is the difference
+ *  between owing that doc an update and acking the tree, so the answer carries
+ *  it rather than making the caller re-derive it from the registry. */
+export interface FileOwner {
+  feature: string;
+  doc: string;
+  via: string;
+}
+
+// Resolve a file path to the features that OWN it: every entry (feature or
+// concept umbrella) whose `primary_sources` NAMES the path — literally, or
+// through a pattern that governs its tree. Related-source membership is impact,
+// not ownership, so it never selects — the same primary-only rule the staleness
+// gate uses. Ownership runs through the one matcher the gate and the health
+// surface use, so "who owns this file" cannot get two answers depending on which
+// surface is asked.
+export function ownershipOfFile(registry: Registry, file: string): FileOwner[] {
+  const owners: FileOwner[] = [];
   for (const [slug, entry] of Object.entries(registry.features)) {
-    if (entry.primary_sources.includes(file)) owners.push(slug);
+    const matched = entry.primary_sources
+      .filter((src) => sourceNames(src, file))
+      .map(normalizeRelPath)
+      .sort();
+    if (matched.length === 0) continue;
+    // A literal wins over a covering pattern: it is the more specific claim, and
+    // it keeps the answer stable when an entry declares both (which the
+    // `shadowed-source` lint exists to name).
+    const via = matched.find((m) => !isSourcePattern(m)) ?? matched[0];
+    owners.push({ feature: slug, doc: entry.doc, via });
   }
-  return owners.sort();
+  return owners.sort((a, b) => (a.feature < b.feature ? -1 : a.feature > b.feature ? 1 : 0));
+}
+
+/** The owning feature slugs alone — the selector's view of the same resolution. */
+export function ownersOfFile(registry: Registry, file: string): string[] {
+  return ownershipOfFile(registry, file).map((o) => o.feature);
 }
 
 // The feature slugs a plan's Feature Map routes to: every row's primary owner
