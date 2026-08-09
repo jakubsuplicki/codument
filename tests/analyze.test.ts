@@ -1663,3 +1663,58 @@ describe("a declared tree is a registration, not a missing path (plan 43)", () =
     );
   });
 });
+
+// Plan 45 step 2: the standard requires a shipped doc to carry only its durable
+// layers — the checklist compacts out when the last step lands, and what survived
+// moves to Decisions or an ADR. Nothing checked it, so the rule held only where
+// somebody remembered, which is the enforcement gap the tool exists to close.
+describe("a shipped doc that still carries its checklist is named (plan 45)", () => {
+  async function lintFor(body: string, status = "current") {
+    const tmp = await mkdtemp(join(tmpdir(), "codument-scaffold-lint-"));
+    try {
+      await mkdir(join(tmp, "docs", "features"), { recursive: true });
+      await mkdir(join(tmp, "src"), { recursive: true });
+      await writeFile(
+        join(tmp, "docs", ".registry.json"),
+        JSON.stringify({
+          features: {
+            alpha: {
+              doc: "docs/features/alpha.md",
+              type: "feature",
+              primary_sources: ["src/a.ts"],
+              depends_on: ["beta"],
+              status,
+            },
+          },
+        }),
+      );
+      await writeFile(join(tmp, "docs", "features", "alpha.md"), body);
+      await writeFile(join(tmp, "src", "a.ts"), "export const a = 1;\n");
+      const registry = await readRegistry(join(tmp, "docs", ".registry.json"));
+      return analyze({ root: tmp, registry, srcDir: "src" }).lint.filter(
+        (f) => f.id === "shipped-scaffolding",
+      );
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  }
+  const doc = (steps: string) =>
+    `# alpha\n\n## In plain terms\n\nWhat it is.\n\n## Delivery Plan\n\nStatus: approved.\n\n${steps}\n`;
+
+  it("fires when every step is done", async () => {
+    const found = await lintFor(doc("- [x] Step 1: one\n- [x] Step 2: two"));
+    assert.equal(found.length, 1);
+    assert.match(found[0].message, /2 steps, all done/);
+  });
+
+  it("stays silent while the plan is in flight — that checklist is doing its job", async () => {
+    assert.deepStrictEqual(await lintFor(doc("- [x] Step 1: one\n- [ ] Step 2: two")), []);
+  });
+
+  it("stays silent on a doc that compacted properly", async () => {
+    assert.deepStrictEqual(
+      await lintFor("# alpha\n\n## In plain terms\n\nWhat it is.\n\n## Decisions\n\n- see ADR 1.\n"),
+      [],
+    );
+  });
+});

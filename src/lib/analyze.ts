@@ -13,6 +13,7 @@ import {
 } from "./exclusion-spec.js";
 import { adapterFor, isPreciseFile } from "./fingerprint.js";
 import { listIgnoredPaths } from "./git.js";
+import { parseDeliveryPlan } from "./plan-steps.js";
 import { analyzeProseAltitude } from "./prose-altitude.js";
 import {
   allSources,
@@ -867,6 +868,25 @@ function computeLint(
           message: `${key}: doc has no narrated orientation layer (no "In plain terms"/"Summary" content — a stub passed as ${entry.status})`,
         });
       }
+      // Delivery scaffolding that outlived the work. The standard requires a doc to
+      // carry only its durable layers once the last step lands — the checklist,
+      // acceptance criteria and verification strategy compact out, and any decision
+      // that survived moves to Decisions or an ADR. Nothing checked it, so the rule
+      // held only where somebody remembered, which is the enforcement gap this whole
+      // tool exists to close. Fires only when every step is checked: an in-flight plan
+      // is the checklist doing its job, and a doc that shipped one effort and started
+      // another is still working. The finding names the doc; what survives compaction
+      // is a judgment, and it stays the author's.
+      const steps = parseDeliveryPlan(content);
+      if (steps.length > 0 && steps.every((s) => s.done)) {
+        findings.push({
+          id: "shipped-scaffolding",
+          severity: "warn",
+          feature: key,
+          file: entry.doc,
+          message: `${key}: doc still carries a completed delivery checklist (${steps.length} steps, all done) — compact it: lift what outlived the work into Decisions or an ADR, then drop the scaffolding`,
+        });
+      }
     }
     for (const doc of entry.docs) {
       if (!existsSync(join(root, doc))) {
@@ -1343,6 +1363,7 @@ export const FINDING_ORDER = [
   "missing-source",
   "unmatched-pattern",
   "shadowed-source",
+  "shipped-scaffolding",
   "missing-doc",
   "generated-leakage",
   "high-fanout",

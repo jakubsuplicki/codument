@@ -115,132 +115,31 @@ detection, no install-gating, no per-repo selection, no merge/retire.**
 - No new source *files* — only edits to existing `src/lib` + `src/commands`, plus skill markdown
   (SKILL.md + new `references/*.md` assets).
 
-## Delivery Plan
+## Decisions
 
-Status: implemented (2026-06-24).
+- **Skills are triaged, not flat-broadened.** A judgment-dominant skill broadens inline
+  and reads correctly for any stack; a mechanics-dominant one becomes a judgment-first
+  router whose per-stack detail loads on demand. Broadening everything inline was the
+  alternative, and it dilutes exactly the load-bearing detail that made the skill worth
+  having.
+- **Every description carries an exclusion clause.** Firing is the host matcher's
+  decision and nothing forces it, so the lever is a description tight enough that the
+  matching skill fires and its siblings stay silent. Closing the skipped gap without
+  that clause would have traded no invocations for over-triggering.
+- **A stack is named only where reference content backs it.** `senior-frontend` claims
+  React web and React Native because both have authored references; Vue, Svelte and
+  SwiftUI are not named until they do. A description that claims an unbacked stack is a
+  promise the skill cannot keep at the moment it fires.
+- **`review-work` remains the only in-loop reviewer.** Domain skills inform an
+  implementation or a review and never replace a gate — the shadow-review framing they
+  once carried put two reviewers in one loop.
+- **Skills install as directories, not files.** The copy is recursive across the whole
+  skill directory, because a router whose references do not ship is a skill that reads
+  as broken at exactly the moment its detail is needed.
 
-- [x] Step 1 (Bucket A descriptions + cleanup): Rewrite the descriptions of `senior-backend`,
-      `senior-architect`, `frontend-design`, `code-reviewer` to the formula (third-person capability
-      + pushy "Use when" + per-stack keywords + the matrix exclusion clause); remove the
-      "reviewing X code" shadow-review framing but **keep** the registry Definition-of-Done line
-      (research rubric: a skill that can fire standalone must carry it); keep bodies inline and
-      under 500 lines. (`senior-backend` keeps its light stack tokens inline.)
-- [x] Step 2 (Bucket B — `motion-craft` refactor, the template): Split the stack-specific sections
-      (web impl, native impl, setup, examples, bridges) into `references/web.md`,
-      `references/react-native.md`, `references/examples.md`, `references/bridges.md` (each with a
-      TOC + a body pointer); keep the shared core + translation table + review format in `SKILL.md`
-      (target ~250 lines). This becomes the canonical Bucket-B shape.
-- [x] Step 3 (Bucket B — `senior-frontend` router): Extract platform-neutral frontend judgment
-      (component sizing, state-decision order, "measure before memo", a11y, error/loading pairing,
-      the `motion-craft` delegation) into a judgment-first `SKILL.md`; move the existing
-      React/Next/Tailwind specifics verbatim into `references/react.md` (React **web**); **author a
-      focused `references/react-native.md`** covering the RN divergences (StyleSheet/NativeWind, list
-      virtualization, navigation, Hermes/perf, platform + a11y APIs) — RN *motion* still defers to
-      `motion-craft`. Description names React web + React Native (both backed) with exclusions
-      against `frontend-design` and `motion-craft`.
-- [x] Step 4 (Bucket C — `review-codebase`): Sharpen only the description boundary (single diff →
-      `code-reviewer`; whole project → here, `/review-codebase`). No structural change.
-- [x] Step 5 (rubric + structure validation, all seven): Verify each against the rubric — body
-      <500 lines, references one level deep, TOC on >100-line references, forward-slash paths, the
-      registry Definition-of-Done line preserved, exclusion clauses present and non-circular per the
-      matrix, and every description stack-keyword backed by real content.
-- [x] Step 6 (trigger evals, all touched skills): For each, run ≥3 should-trigger prompts (one per
-      claimed stack/scenario) and ≥3 should-NOT-trigger look-alike prompts that must route to a
-      sibling; keep a broadened description only if it triggers on the first set and stays silent on
-      the second.
-- [x] Step 7 (source — install pipeline): Add a flat `DOMAIN_SKILLS` list (all seven) to
-      `agent-profiles.ts` and a single `resolveSkills(profile)` helper; **change the install/update
-      copy from single `SKILL.md` to recursive whole-skill-directory** (SKILL.md + `references/*`)
-      for both `installProfile` (`init.ts`) and `getManagedFiles` (`update.ts`), and
-      `benchmark-quality.ts`; fix the install count log in `init.ts`. No `detect.ts` change.
-- [x] Step 8 (source — nudge): Add one conditional, domain-keyed consult bullet to the Intent-routing
-      block in `scaffold.ts` `buildManagedSection()` (re-emitted to AGENTS.md + CLAUDE.md).
-- [x] Step 9 (docs/registry): Register the domain skills + their `references/*` under a
-      `domain-skills` entry; bump `last_updated` on the features owning the modified source files.
+## Known limitations
 
-## Feature Map
-
-No new **source files** (Steps 7–8 extend existing registered files). New `references/*.md` are skill
-markdown assets, registered via the `domain-skills` entry in Step 9. No `feature-map` block required.
-
-## Outcome
-
-What is true once all nine steps land:
-
-- **Distribution fixed.** Today zero domain skills reach a consumer repo; after, all seven (with
-  their reference files) install into every repo, both profiles, on `init`/`update`. The recursive
-  copy means Bucket-B reference files actually ship.
-- **Portable, the right way.** Judgment-dominant skills broaden inline and read correctly for any
-  stack; mechanics-dominant skills become judgment-first routers whose per-stack detail loads on
-  demand — no skill exceeds the 500-line budget or dilutes its load-bearing detail. `motion-craft`
-  drops from 430 to ~250 lines.
-- **Fires where relevant, and only there.** Every description gains an exclusion clause, so the
-  matching skill fires and siblings stay silent — closing both the "skipped" gap (0 invocations in
-  31 past sessions) and the over-trigger/token-burn risk, validated by trigger evals before ship.
-- **Loop conflicts gone.** `review-work` stays sole reviewer; `senior-architect` feeds grill/charter
-  instead of competing; "reviewing X code" framing removed (registry DoD line kept); the transform/opacity
-  rule lives only in `motion-craft`.
-- **codument's own repo.** Stops carrying frontend skills scoped to a frontend-less CLI; gets the
-  base skills, generalized.
-
-Where it lands: every consumer repo that runs `init`/`update` (both profiles), and codument's own
-repo. No user-facing CLI or workflow change.
-
-What it deliberately does NOT do:
-
-- **Not deterministic firing.** The host's matcher still chooses; tight descriptions + exclusions +
-  the nudge bias selection, evals confirm it, but nothing forces a fire.
-- **Not curated per repo.** A backend repo carries the UI skills on disk (lazy; only the description
-  is ever in context). The `codument skills` selection layer is a deferred future feature.
-- **No new domain skills**, and **frontend reference content is React web + React Native only** —
-  Vue / Svelte / SwiftUI deferred until authored (we will not claim unbacked stacks).
-
-## Registry impact
-
-New `domain-skills` entry → `docs/features/domain-skills.md`; `docs:` = the seven `skills/*/SKILL.md`
-plus any new `skills/*/references/*.md`; `related_sources` = `src/lib/agent-profiles.ts`,
-`src/lib/scaffold.ts`, `src/commands/init.ts`, `src/commands/update.ts`,
-`src/lib/benchmark-quality.ts`; `depends_on` = `agent-delivery-workflow`. Bump `last_updated` on
-features owning the touched source files.
-
-## Acceptance criteria
-
-- After `codument init`/`update` in any repo, all seven domain skills **and their reference files**
-  are installed for every resolved profile (verifies the recursive copy).
-- Each skill follows its bucket: A/C bodies <500 lines inline; B skills are judgment-first routers
-  with per-stack mechanics in `references/<stack>.md` one level deep (TOC if >100 lines); no body
-  exceeds 500 lines (`motion-craft` ~250).
-- Every description is third-person, leads with capability, has a pushy "Use when" with concrete
-  keywords, and an exclusion clause consistent with the sibling matrix (non-circular); no stack
-  keyword lacks backing content.
-- Trigger evals pass: each touched skill fires on its should-trigger prompts and stays silent on the
-  should-NOT-trigger look-alikes.
-- No "reviewing X code" shadow-review framing, and the registry Definition-of-Done line preserved in
-  every skill; `review-work` remains the only
-  in-loop reviewer; the transform/opacity rule lives only in `motion-craft`.
-- Exactly one info-only domain-consult bullet in the Intent-routing block; no new CLI / approval gate
-  / `detect.ts` gating. `codument doctor` clean; `domain-skills` registered with `last_updated` set;
-  existing tests pass plus a new install test asserting the directory (SKILL.md + references) lands.
-
-## Verification strategy
-
-- Steps 1–4 (content): re-read each skill against the rubric (bucket fit, description formula +
-  exclusion, body structure). `codument doctor` clean.
-- Step 5 (structure): mechanical checks — `wc -l SKILL.md` < 500 each; references one level deep;
-  TOC on >100-line references; forward-slash paths; DoD line preserved; exclusion matrix consistent.
-- Step 6 (evals): the should-trigger / should-NOT-trigger prompt sets above, per claimed stack.
-- Step 7: unit test `resolveSkills` (all seven for any profile) and the recursive copy (a fixture
-  skill with a `references/` subdir lands fully). Integration: `init` into a temp fixture, assert
-  SKILL.md + references exist under each profile's skillsDir; assert the count log.
-- Step 8: assert exactly one domain-consult bullet rendered into both instruction files.
-- Step 9: registry validation / `codument doctor` passes; the new entry resolves.
-
-## Open questions
-
-None blocking.
-
-**Resolved (2026-06-24):** ship `code-reviewer` as a skill (Yes); nudge = single soft conditional
-bullet, no hard invoke; generalize via triage not flat-broadening; **`senior-frontend` scope = React
-web (`references/react.md`) + React Native (`references/react-native.md`), both backed and named in
-the description; Vue / Svelte / SwiftUI deferred until real reference content exists** (do not claim
-unbacked stacks).
+- Firing is not deterministic: descriptions, exclusions and the nudge bias the host's
+  selection, and nothing forces a skill to run.
+- Skills are not curated per repository — a backend repo carries the UI skills on disk,
+  lazily, with only the description ever in context.

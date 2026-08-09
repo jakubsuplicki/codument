@@ -85,40 +85,19 @@ The **symbol carries the meaning**; color only reinforces (survives screenshots,
 - **Clean ≠ empty tree** — a `✓ CLEAN` verdict means nothing codument *governs* (source or docs) changed, not that the working tree is empty. When only config/asset files change (e.g. `app.json`, an image), the gloss reads `"N files changed · not source or docs"` — never "working tree clean". The partition is `sources ∪ docs ∪ other ∪ excluded`, so the verdict cannot silently imply an empty tree while real files sit uncommitted — including the last bucket, which is the same false-clean one step further out: a step that edited only its tests has a working tree that is not clean, and the change set had no name for those files until the buckets were made to add up. (Caught dogfooding the verdict frame against a real repo, 2026-06-19; the excluded half a field session later.)
 - **Clean ≠ passing, either** — the severity ladder grades whether the DOCS are behind the code, which is a narrower question than whether the gate will let the change through. A finding that blocks `--strict` without being doc drift therefore stays off the ladder and stays *in the gloss*: `unmapped` set that shape, and a registry entry left naming a path the change removed follows it. The verdict model must carry every blocking finding for the same reason the tree partition is exhaustive — a summary omits by nature, so anything it can drop, it eventually will. The costly shape is the quiet one: a deletion whose owning doc was updated leaves nothing else to narrate, so the frame reads as a tidy little change over a tree the gate is refusing. (Caught by the adversarial pass on plan 41, 2026-08-08 — one analyzer is what keeps `review` and `watch` agreeing, but only if the projection carries what the analyzer found.)
 
-## Delivery plan
+## Decisions
 
-Status: delivered (2026-06-19).
-
-- [x] Step 1: Live completeness — the feed pumps **all** repo-matching transcripts (not just newest) via `resolveSessionLogs` (per-file `cwd` cache), each from its own byte offset. Fixes the jumping figure and the under-count.
-- [x] Step 2: Historical completeness — `backfillFeed` (`codument feed --backfill`) ingests every matching transcript from offset 0, idempotent by turn `uuid` (a `parseSession` skip hook), preserving manual emits and review notes; `--reset` now also discovers all matching sessions. Fixes no-retroactive-pickup.
-- [x] Step 3: Verdict model — `src/lib/verdict.ts`: a pure, fully unit-tested `classifyVerdict` mapping `ChangeState` into a verdict + findings per the grammar above (severity selection, the four thresholds, blast-radius vs coverage), plus `costProvenance`/`formatCost`/`isTestFile`.
-- [x] Step 4: Verdict-led frame — `renderFrame` in `watch.ts` renders the locked mockup from the verdict model (headline + gloss, all-sessions total + `this session` delta, Now, Touched + blast radius, named findings, where-it-went bars, footer); the cryptic strip and total-first block are gone.
-- [x] Step 5: Docs + registry — `token-cost-tracking` updated, `verdict.ts` registered, `last_updated` set, status flipped.
-
-## Acceptance criteria
-
-- With N concurrent sessions in one repo, the total reflects all N and does not change with which window was last active.
-- A repo with never-watched historical transcripts can be backfilled to a complete picture in one pass; re-running never double-counts (idempotent by `uuid`).
-- No token count is altered relative to the source transcript (verbatim).
-- `watch` leads with a plain-words verdict: the highest-severity status as headline, every active finding enumerated in the gloss, named nouns (which docs, which features).
-- Cost is a true all-sessions total with provenance (`N sessions · Hh`) and a separate `this session` delta.
-- Blast radius (touched / total) renders distinctly from coverage (`docs %`).
-- Every verdict is legible from the symbol alone, independent of color.
-
-## Verification strategy
-
-- Unit: multi-transcript discovery + per-file offset advancement (fixture transcripts).
-- Unit: idempotency — pumping the same turns twice yields one event per `uuid`.
-- Unit: verdict model — each threshold (drift, risk-always, fanout > 5, off-plan), max-severity headline selection, blast-radius vs coverage.
-- Unit/snapshot: frame render for clean / drift / risk / off-plan states.
-- Integration: fixture project with two+ overlapping-time transcripts → correct aggregated totals.
-- Manual: backfill the dogfood repo, confirm the total matches a hand-computed per-session sum.
-
-## Resolved decisions
-
-- Frame layout, verdict grammar, and the four thresholds — defaults chosen (2026-06-19), revisable.
-- Backfill trigger → an explicit `codument feed --backfill` (additive, idempotent by uuid); `--reset` rebuilds from all matching sessions and supersedes `--backfill` when both are passed.
-- Live discovery → `resolveSessionLogs` re-scans every pump, with a per-file `cwd` cache so idle ticks stay cheap.
+- Frame layout, the verdict grammar, and the four severity thresholds were chosen as
+  defaults on 2026-06-19 and remain revisable — none of them is load-bearing enough to
+  freeze, and the ladder is calibrated from live use rather than argued from first
+  principles.
+- Backfill is an explicit act (`codument feed --backfill`), additive and idempotent by
+  turn `uuid`; `--reset` rebuilds from every matching session and supersedes
+  `--backfill` when both are passed. Making it explicit is what keeps a re-ingest from
+  looking like new activity.
+- Live discovery re-scans on every pump, with a per-file `cwd` cache so an idle tick
+  stays cheap. Trusting the newest transcript is what produced the jumping figure the
+  whole feature exists to fix.
 
 ## Known limitations
 

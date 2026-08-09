@@ -85,7 +85,7 @@ Status: approved.
       upstream one actually differ; converged content is a skip, not a merge. Test: an
       upgrade whose upstream matches the local file writes no backup and reports a
       skip; a genuine divergence still backs up and still overwrites.
-- [ ] Step 2: `doctor` names a registered doc that still carries delivery scaffolding
+- [x] Step 2: `doctor` names a registered doc that still carries delivery scaffolding
       after its plan shipped. Test: a doc whose checklist is fully checked fires; one
       with unchecked steps does not; a doc with no scaffolding is silent.
 - [ ] Step 3: A `## Decisions` entry that cites nothing is an info-only altitude note.
