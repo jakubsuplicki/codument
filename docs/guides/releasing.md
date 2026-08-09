@@ -39,8 +39,8 @@ Nothing here is automated. Run it top to bottom.
    check.
 
    Two of those have a **recorded baseline**, and the bar is *no movement against it*, not zero:
-   the suite carries 31 known Windows path-separator failures, and `doctor --strict` exits 1 on four
-   long-standing `bloated-doc` findings (`domain-skills.md` and three `SKILL.md` preambles). Say
+   the suite carries 31 known Windows path-separator failures, and `doctor --strict` exits 1 on
+   three long-standing `bloated-doc` findings (`SKILL.md` preambles). Say
    what the baseline is when you check it, and treat any change to either number as a blocker. This
    step used to demand a green `doctor --strict`, which no release has ever met — a bar nobody can
    clear is not a bar, it is a step people learn to skip.

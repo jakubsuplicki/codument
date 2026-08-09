@@ -1,5 +1,5 @@
 {
-  "version": "0.15.0",
+  "version": "0.16.0",
   "initialized": "2026-03-29",
   "project": {
     "language": "typescript",
@@ -23,7 +23,7 @@
     ".agents/skills/grill-with-docs/SKILL.md": "fc4abf58325811ad",
     ".agents/skills/plan-with-docs/SKILL.md": "a044b9937c3ee78b",
     ".agents/skills/tdd/SKILL.md": "121de0703b9f0f25",
-    ".agents/skills/work-step/SKILL.md": "14004ee9da3c3003",
+    ".agents/skills/work-step/SKILL.md": "202b136a50e6c907",
     ".agents/skills/review-work/SKILL.md": "f06ca05e78c5cf44",
     ".agents/skills/commit-work/SKILL.md": "9e9b69ec2c960ff3",
     ".agents/skills/update-docs/SKILL.md": "568ab7711ded2b41",
