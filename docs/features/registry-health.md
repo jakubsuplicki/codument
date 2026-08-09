@@ -68,6 +68,7 @@ The badge is a coverage figure, not a quality or correctness score, and absolute
 
 - The registry v2 model that coverage and lint read directly, with no migration path: [001-registry-v2-model-no-migration](../architecture/decisions/001-registry-v2-model-no-migration.md).
 - `doctor` is documentation coverage — the two-axis split and the opt-in `--strict` gate: [002-doctor-is-documentation-coverage](../architecture/decisions/002-doctor-is-documentation-coverage.md).
+- A registry entry can govern a tree, so a source is a path or a pattern: [018-a-registry-entry-can-govern-a-tree](../architecture/decisions/018-a-registry-entry-can-govern-a-tree.md).
 
 ## Key files
 

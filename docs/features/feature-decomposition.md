@@ -36,6 +36,7 @@ The path is forward-only: make new work decompose correctly rather than auto-hea
 ## Decisions
 
 - An approvable Feature Map routed by a deterministic consumer, forward-only: [007-feature-map-approvable-decomposition](../architecture/decisions/007-feature-map-approvable-decomposition.md).
+- A registry entry can govern a tree, so a source is a path or a pattern: [018-a-registry-entry-can-govern-a-tree](../architecture/decisions/018-a-registry-entry-can-govern-a-tree.md).
 
 ## Key files
 

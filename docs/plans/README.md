@@ -274,10 +274,27 @@ could not see it because the agent quoted the anchor reflexively and never notic
 the tool's job. The lesson generalises the one from 41: a report tells you where it hurt, and the
 worst defects are in what the reporter silently worked around.
 
-Still to plan, ranked by value: locale trees and other content directories can only be governed
-file by file (the field's 5,400 new user-facing strings landed ungoverned because enumerating them
-meant 380 registry lines); acknowledgments expire on the next touch, so a file worked across steps
-is re-acked each time (345 acks in one field repo); `review`'s changed-file headline does not sum,
+**43 is shipped.** The other half of the same report, and the largest ungoverned surface it
+produced: six language packs — 120 files, about 5,400 user-visible strings — landed reporting as
+`60 other`, exit 0. Not a false green in ADR 017's sense, because nothing claimed those files.
+They were unclaimed because claiming them meant typing 380 paths by hand, and answering for a
+correction pass across them meant 27 signatures. The 380 registry lines and the field repo's 345
+acknowledgments are the same missing unit: there was no way to say "this tree is one governed
+thing".
+
+A `primary_sources` entry may now name a tree, it wakes once with a count, and one `ack <pattern>`
+answers for it — judged whole, so one file moving or a new file appearing spends it, and honored
+only for a tree some entry actually declares. ADR 018 records it.
+
+Two of the four steps' defects came from attacking the work rather than from the report, and the
+larger one was not in the new code: `doctor` had never learned that a source can be a pattern, so
+a correctly-registered tree scored 0% ownership and produced a false finding per file. A lint
+about trees shipping beside three findings denying trees are registrations would have been worse
+than shipping neither. The other was a literal NUL byte written as a hash separator, which made
+git classify the acknowledgment module as binary — the central file of the change had no
+reviewable diff at all, in that review or any later one.
+
+Still to plan, ranked by value: `review`'s changed-file headline does not sum,
 because excluded files are counted in the total and named by no bucket; shipped delivery
 scaffolding is never compacted out of docs (the
 standard says it should be; nothing enforces it); the Decisions layer states conclusions without

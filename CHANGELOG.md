@@ -66,6 +66,44 @@ content by design.
   in a test file that the project's typecheck never sees, and three ids had already
   slipped past it.
 
+### Governing a tree
+
+The second half of that report, and the largest ungoverned surface it produced. Six
+language packs — 120 files, about 5,400 user-visible strings — landed under the gate
+reporting as `60 other`, exit 0. Nothing claimed them, because claiming them meant
+typing 380 paths into `docs/.registry.json` by hand. Registration is governance
+(ADR 017); a grain that only registers one file at a time made governance
+unaffordable exactly where the file count is highest and the per-file judgement is
+lowest. See ADR 018.
+
+- A `primary_sources` entry may name a **tree**: a glob, or a directory written with
+  a trailing slash. It resolves through the same globber the exclusion spec and a
+  plan's Feature Map already use, so what a pattern matches has one answer
+  everywhere. The exclusion spec still wins: a pattern aimed into an excluded tree,
+  one restating a spec glob, and one written in `related_sources` (where nothing
+  would ever resolve it) are refused at authoring, by name. Whether a pattern matches
+  anything is `doctor`'s question, since it is the surface that holds the file list.
+- A governed tree wakes its doc **once**, named as the tree with a count of what
+  moved inside it. The machine view keeps every path; a section that always prints
+  120 lines is one readers learn to skip.
+- `codument ack <pattern>` answers for the whole tree in one line. The record names
+  every path it vouched for with that path's transition, and stands only while that
+  set is unchanged: one file moving spends it, a file *appearing* under the pattern
+  spends it, and a file leaving the change spends it too. Only a tree some entry
+  DECLARES is ackable — the width is earned by a committed registration, never by
+  the glob typed at the prompt. The count is stated as it writes, in `ack --list`,
+  in the audit card, and in the event log.
+- `map materialize` refuses a file a declared tree already governs and names the
+  entry. Registering the tree is what makes the per-file line unnecessary; writing
+  it back would grow those lines again one routine call at a time.
+- `doctor` reads a pattern as a registration rather than as a vanished path. It
+  never had: a correctly-registered tree scored 0% ownership and produced a finding
+  per file, all of them false. Two lints replace the question a path check cannot
+  ask — `unmatched-pattern` (a declared tree that names nothing governs nothing) and
+  `shadowed-source` (a path an entry's own tree already covers). A pattern still
+  does not change what the ownership ratio counts: it resolves against the same
+  discovered source set, so a locale tree governs the gate and never the score.
+
 ## [0.15.0] - 2026-08-08
 
 The dogfood release. An Expo app was built end to end under the gate by an agent

@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 43: a tree can be governed, and acknowledging one costs one line
@@ -133,72 +133,26 @@ No new source files — no feature map.
   Materializing would write the explicit path the pattern exists to avoid, and the
   refusal is the only moment the user learns the tree is doing its job.
 
-## Delivery Plan
+## How it landed
 
-Status: approved.
+Five steps, five commits. Nothing in the plan was cut; two things grew.
 
-- [x] Step 1: A glob or trailing-slash directory is a legal `primary_sources` entry and
-      resolves through the shared matcher; the authoring guard refuses one that matches
-      nothing or that the exclusion spec covers, naming which rule fired. Tests: a
-      pattern owning a tree, a directory as sugar, an explicit path refining a pattern,
-      a pattern matching nothing refused, the exclusion spec still winning.
-- [x] Step 2: Ownership resolves patterns, and a governed tree wakes its doc once —
-      named as the tree with the count of what moved inside it, never one wake per file.
-      Test: the field's shape — a six-pack translation drop wakes one doc with one line.
-- [x] Step 3: Tree-grain acknowledgment over the matched set's fingerprint, auto-
-      invalidating like a file ack; `ack <pattern>` records it, `review` prints it as the
-      route, and the output says how many files it covered. Test: 120 changed files, one
-      acknowledgment, and it decays the moment one of them moves again.
-- [x] Step 4: `map materialize` refuses a file a tree already governs and names the
-      governing entry; `doctor` lints a pattern that matches nothing and one that shadows
-      an explicitly-listed file. Test: the refusal names the entry, both lints fire.
-      (Grew in flight: the analyzer had never learned that a source can be a pattern, so
-      a correctly-registered tree scored 0% and produced a false finding per file. Fixed
-      here — a lint about trees beside three findings denying they are registrations
-      would have been worse than either.)
-- [ ] Step 5: ADR 018 for tree-grain governance, docs at intent altitude across the gate,
-      registry-health and feature-decomposition, and CHANGELOG.
+**Step 4 grew in flight.** Probing the new lints showed the analyzer had never learned that a
+source can be a pattern at all: a glob is not a path on disk, so a correctly-registered tree
+scored 0% ownership and produced three findings, every one of them false. Shipping lints about
+trees beside three findings denying trees are registrations would have been worse than shipping
+neither, so ownership resolution in the health surface was fixed in the same step. It also
+confirmed the plan's own decision without a special case: resolution is against the discovered
+source set, so a locale tree — never in that denominator — governs the gate and never the score.
 
-## Outcome
+**Two defects came from attacking the work, not from the field report.** A literal NUL byte
+written as the tree-hash separator made git classify the acknowledgment module as binary, so the
+central file of the change had no reviewable diff at all — in that review or any later one. And
+`parseAck` asked "is this a glob?" of the whole anchor id, which condemned a per-symbol
+acknowledgment whose descriptor carries a `*` — the anchor an `export *` barrel produces — as
+malformed, silently dropping a recorded judgment and reopening its finding.
 
-Once every step lands:
-
-- **A tree can be governed for the price of one line.** Registering
-  `i18n/locales/**/*.json` puts 380 files under the gate; a translation drop that
-  rewrites what the app says to its users stops reporting as `60 other` and exit 0.
-- **Answering for one costs one acknowledgment, not one per file.** The 27-file
-  correction pass that produced 27 acknowledgments produces one, and it still decays
-  the moment anything in the tree moves again.
-- **The tool stops charging most where judgement is lowest.** The per-file grain is
-  right where per-file judgement exists and wrong where it does not, and registration
-  being unaffordable is the reason the largest surface in the field repo went
-  ungoverned.
-
-What this deliberately does not do:
-
-- It does not judge a locale file's contents. A tree is governed at file grain because
-  no adapter can read these files, exactly as ADR 017 already settles.
-- It does not migrate anything. An existing registry of explicit paths keeps working;
-  collapsing it is the user's call.
-- It does not make an acknowledgment safer, only cheaper. One tree acknowledgment
-  vouches for everything the pattern matched at that moment, and that widening is the
-  trade the declaration makes — disclosed in the output, never hidden.
-
-## Acceptance criteria
-
-- A single `primary_sources` entry can govern a directory tree, and a change anywhere
-  in that tree fails `codument review --strict` until it is resolved.
-- That resolution costs one command, and the command printed is the one that works.
-- A governed tree produces one wake and one route however many files moved inside it.
-- A tree acknowledgment auto-invalidates on the next change to any file it covered, and
-  its output states how many files it covered.
-- An existing registry naming explicit paths behaves exactly as it does today —
-  byte-identical output on this repo.
-
-## Verification strategy
-
-- Red-green per step, with a mutation check on each new test.
-- Replay the field's shape end to end: a six-pack, 120-file translation drop against a
-  registry with one pattern entry — red, one route, one acknowledgment, green.
-- Full suite on Windows against the known 31 pre-existing failures; `codument review
-  --strict` green before each commit, and `doctor --strict` unchanged at plan close.
+The durable decisions are in [ADR 018](../architecture/decisions/018-a-registry-entry-can-govern-a-tree.md);
+the contracts are in [change-control-gate](../features/change-control-gate.md),
+[registry-health](../features/registry-health.md) and
+[feature-decomposition](../features/feature-decomposition.md).
