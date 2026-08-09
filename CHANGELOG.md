@@ -7,15 +7,52 @@ remains pre-1.0.
 
 ## [Unreleased]
 
-The second field report, answered. The same interrogation run against the same
-Expo app after 0.15.0 shipped produced a confession the first one never reached:
-asked which prose it had written mainly to make the gate go green, the agent named
-a type union it had been maintaining **by hand, verbatim, inside a code fence** in
-a concept doc — a symbol mirror the documentation standard forbids writing, kept
-fresh because the gate went red and no acknowledgment was available. The tool was
-compelling in one surface exactly the rot it forbids in another, and the lint that
-names that smell could not see it, because all three prose heuristics skip fenced
-content by design.
+## [0.16.0] - 2026-08-09
+
+The second field report, answered — plans 42 through 45.
+
+The same Expo app was interrogated again after 0.15.0 shipped, and this time the
+answer went somewhere the first report never reached. Asked which prose it had
+written mainly to make the gate go green, the agent named a type union it had been
+maintaining **by hand, verbatim, inside a code fence** in a concept doc: a symbol
+mirror the documentation standard forbids writing, kept fresh because the gate went
+red and no acknowledgment was available. The tool was compelling in one surface
+exactly the rot it forbids in another, and the lint that names that smell could not
+see it, because all three prose heuristics skip fenced content by design.
+
+That is this release's theme, and it runs wider than one fence. **Where the gate was
+noise, it was not the timing that was wrong — it was the price.** Every red the
+field session hit was genuine drift; what it asked for in return was a hand edit to
+a doc that had nothing durable in it. So the payload changed. A fence that
+reproduces a declaration is judged. A stale doc offers the route that actually
+clears it, per doc rather than per file. A signature move names the registry escape
+instead of leaving prose as the only exit. And every acknowledgment command the tool
+prints is quoted, because for its whole history every per-symbol one was a shell
+syntax error the reader silently repaired.
+
+The larger half is **what a registration costs**. Six language packs — 120 files,
+about 5,400 user-visible strings — landed under the gate reporting as `60 other`,
+exit 0. Nothing claimed them, because claiming them meant typing 380 paths by hand,
+and answering for a correction pass across them meant 27 signatures. A registry entry
+can now govern a tree, it wakes once with a count, and one acknowledgment answers for
+it — judged whole, so a single file moving or a new language appearing spends it
+(ADR 018).
+
+The tail is codument failing rules codument enforces. It left litter it would call
+generated leakage, it never checked the compaction its own standard is most explicit
+about, it accepted a Decisions layer it tells authors not to write, and it priced the
+loop's most frequent question — which doc owns this file — at a full context pack,
+which is how that lookup turns into a guess.
+
+Finally, three surfaces that disagreed with each other: a changed-file headline that
+did not add up, plan discovery that could not see the directory the gate reads, and a
+registry naming files that do not exist which only `doctor` ever knew about.
+
+Seven of the defects in this release came from attacking the work rather than from the
+report — including a literal NUL byte that made the acknowledgment module unreviewable
+to git, an analyzer that had never learned a source can be a pattern, and a heading
+match that had never worked on a Windows checkout, so an altitude lint was firing on
+docs *because* they complied.
 
 ### Added
 
@@ -127,6 +164,44 @@ lowest. See ADR 018.
   `shadowed-source` (a path an entry's own tree already covers). A pattern still
   does not change what the ownership ratio counts: it resolves against the same
   discovered source set, so a locale tree governs the gate and never the score.
+
+### Holding the tool to its own standard
+
+Four places where codument applied a rule outward and not inward.
+
+- **`codument update` leaves the repository as clean as it found it.** The merge
+  decision called an upgrade "both sides changed" whenever neither matched the hash
+  recorded at install — including the case where upstream and local had *converged*,
+  so the file was backed up and then overwritten with content identical to what was
+  already there. One upgrade during this release left 21 untracked `.backup` files
+  and not one tracked modification; nothing gitignores them and nothing sweeps them.
+  A genuine local divergence is still preserved, unchanged.
+- **`doctor` checks the compaction the standard mandates.** A registered doc whose
+  delivery checklist is fully complete still carrying its scaffolding is named. The
+  rule — when the last step lands, the Delivery Plan block compacts out and surviving
+  decisions move to Decisions or an ADR — is the one the standard states most
+  plainly, and nothing read it: this repository obeyed it only because it was done by
+  hand, every time. The finding names the doc and compacts nothing, because deciding
+  what survives is the judgement compaction *is*.
+- **A `## Decisions` layer that cites nothing is named**, info-only. The standard says
+  that layer is pointers — the durable why, referenced, never restated — and a bullet
+  asserting a conclusion with no link, ADR, or test behind it records reasoning nobody
+  can re-derive or contest, which is how a wrong recorded decision outlives two
+  attempts to fix what it was wrong about. Judged per layer rather than per bullet: a
+  small decision legitimately has no ADR. Alongside it, a fix worth its own line —
+  **section awareness had never worked on a CRLF checkout.** A carriage return
+  terminates a line in JavaScript, so every heading read as not-a-heading and every
+  doc was scored as one undifferentiated block. That silently disabled the exemptions
+  the calibration depends on, and `path-enumeration` was firing on Key files sections
+  *because* they comply. A heuristic that fires on compliance is worse than one that
+  misses, and it was invisible because each finding still read as plausible.
+- **`codument context --file <path> --owner` answers ownership in a line.** Before
+  editing a file an agent needs one fact — which doc owns it — and that answer only
+  existed inside a full pack of orientation and invariants, expensive enough that the
+  cheap habit is to skip the lookup and guess. It names every candidate for a shared
+  file rather than picking one, and reports an unowned file at exit zero, so it is
+  safe in a hook. Behind it, ownership now resolves through the shared source matcher:
+  a file a registered tree governs was previously reported as owned by nobody.
 
 ## [0.15.0] - 2026-08-08
 

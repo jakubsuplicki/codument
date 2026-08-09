@@ -308,13 +308,22 @@ failing on state the change did not create is how a gate gets bypassed.
 Fixing the headline surfaced its sibling: `watch` called a tests-only change "working tree clean",
 the same false-clean the gloss already guarded against for config and asset files.
 
-Still to plan, ranked by value: shipped delivery
-scaffolding is never compacted out of docs (the
-standard says it should be; nothing enforces it); the Decisions layer states conclusions without
-naming evidence, which is how a wrong recorded decision survived two fix attempts; unmapped prose
-pages are uncoverable by the gate (`orphan-doc` is scoped to `docs/features|concepts` and lives in
-`doctor`, which `review --strict` never calls); an ADR named as an entry `doc` silently becomes a
-`type:"concept"` umbrella and demands acks about cadence it does not describe; `context --feature`
-has no lean "which doc owns this file" mode; and the field report's claim that a review-bundle
-delta named a file that did not move could not be reproduced from the code — it stays open, named
-as unreproduced rather than fixed on a guess.
+**45 is shipped.** The tail of the same report, and one theme: codument failing rules codument
+enforces. `update` wrote a backup on an upgrade where the two sides had converged, so every upgrade
+layered untracked litter into a repository from the tool whose subject is not leaving mess in one.
+Nothing checked the compaction the standard is most explicit about, so this repo obeyed it only by
+hand. A Decisions layer could assert a conclusion citing nothing — the shape that let a wrong
+recorded decision survive two attempts to fix what it was wrong about. And the loop's most frequent
+question, which doc owns this file, cost a full context pack, which is how it becomes a guess.
+
+Fixing the third surfaced the worst defect of the release: section awareness in the altitude lint
+had never worked on a CRLF checkout, so the exemptions the calibration depends on were dead and
+`path-enumeration` was firing on Key files sections *because* they comply.
+
+Still to plan, ranked by value: unmapped prose pages are uncoverable by the gate (`orphan-doc` is
+scoped to `docs/features|concepts` and lives in `doctor`, which `review --strict` never calls, and
+widening it needs a decision about which trees are expected to be owned); an ADR named as an entry
+`doc` silently becomes a `type:"concept"` umbrella and demands acks about cadence it does not
+describe; and the field report's claim that a review-bundle delta named a file that did not move
+could not be reproduced from the code — it stays open, named as unreproduced rather than fixed on a
+guess.

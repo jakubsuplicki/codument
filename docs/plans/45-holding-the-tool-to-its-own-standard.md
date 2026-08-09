@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 45: hold the tool to the standard it enforces
@@ -80,60 +80,28 @@ Verified mechanisms:
 - **Not the unreproduced bundle-delta claim.** It needs a session to reproduce from,
   not code.
 
-## Delivery Plan
 
-Status: approved.
+## How it landed
 
-- [x] Step 1: `codument update` writes a backup only when the local file and the
-      upstream one actually differ; converged content is a skip, not a merge. Test: an
-      upgrade whose upstream matches the local file writes no backup and reports a
-      skip; a genuine divergence still backs up and still overwrites.
-- [x] Step 2: `doctor` names a registered doc that still carries delivery scaffolding
-      after its plan shipped. Test: a doc whose checklist is fully checked fires; one
-      with unchecked steps does not; a doc with no scaffolding is silent.
-- [x] Step 3: A `## Decisions` entry that cites nothing is an info-only altitude note.
-      Test: a bare conclusion fires; an entry pointing at an ADR, a test, or another
-      doc does not; `--strict` exit codes are unchanged.
-- [x] Step 4: `context --file` answers ownership in one line under `--owner`. Test: the
-      lean answer names the owning doc for a single-owner file, every candidate for a
-      shared one, and says plainly when nothing owns it.
-- [ ] Step 5: Docs at intent altitude across registry-health, the delivery workflow and
-      the audience-layers concept, and CHANGELOG folded into the 0.16.0 section.
+Five steps, five commits, in the order written. Two things are worth keeping.
 
-## Outcome
+The third step's finding was not the one the step was for. Building the Decisions
+note meant reading how sections are scoped, which is how the heading match turned out
+never to have worked on a CRLF checkout: a carriage return terminates a line in
+JavaScript, so every heading in every doc read as not-a-heading and the whole file was
+scored as one block. Section awareness had therefore been dead on Windows since it
+shipped — and because it also carries the Key files exemption, `path-enumeration` was
+firing on sections *because* they comply. A heuristic that fires on compliance is worse
+than one that misses, and this one was invisible: each finding still read as plausible.
 
-Once every step lands:
+The fourth step widened past its own scope for the same reason the third did. The lean
+answer is only worth having if it is right, and ownership was resolved by comparing
+literal strings — so a file a registered tree governs came back owned by nobody, which
+is the worst available answer about a correctly-registered file. It is the same
+literal-only assumption plan 43 had already found in the health surface; one lookup
+now runs through the matcher every other surface uses.
 
-- **An upgrade leaves the repository as clean as it found it.** No `.backup` file
-  unless a local edit genuinely would have been lost.
-- **The compaction rule is checked, not merely written down.** A shipped doc still
-  carrying its delivery checklist is named by the surface that reads every doc.
-- **A recorded decision has to point at something.** The layer meant to be a set of
-  pointers stops accepting bare assertions, info-only until its false-fire rate is
-  known.
-- **The ownership lookup costs a line.** The thing an agent needs before every edit is
-  cheap enough to actually run.
-
-What this deliberately does not do:
-
-- It does not judge whether a Decisions entry's evidence is *good* — only that there
-  is some. Citation is checkable; sufficiency is not.
-- It does not compact anything automatically. The finding names the doc; a human or an
-  agent decides what survives, because that judgment is the whole point of compaction.
-
-## Acceptance criteria
-
-- A no-op `codument update` on this repository leaves `git status` clean.
-- `doctor` fires on a shipped doc carrying a completed checklist and stays silent on an
-  in-flight one.
-- The Decisions note rides Notes and `doctor --strict` still exits on the same four
-  findings as before.
-- `context --file --owner` answers in one line, and the full pack is unchanged without
-  the flag.
-
-## Verification strategy
-
-- Red-green per step with a mutation check on each new test.
-- The `--strict`-unchanged and pack-unchanged claims are pinned by test, not asserted.
-- Full suite on Windows against the known 31 pre-existing failures; `codument review
-  --strict` green before each commit.
+Left standing, deliberately: five docs in this repository now carry an
+`unsourced-decision` note, including one edited in the final step. The note is
+info-only and unsoaked by design, and answering it properly means deciding which of
+those decisions deserve an ADR — a pass of its own, not a tail on this one.
