@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { atomicWriteFileSync } from "./events.js";
-import { DEFAULT_EXCLUSION_SPEC, isExcluded } from "./exclusion-spec.js";
+import { DEFAULT_EXCLUSION_SPEC, globToRegExp, isExcluded, toPosix } from "./exclusion-spec.js";
 import type { ExclusionSpec } from "./exclusion-spec.js";
 
 // The registry entry is THE model the analyzers read. It splits ownership into
@@ -71,6 +71,47 @@ export function allSources(entry: RegistryEntry): string[] {
   return uniqSort([...entry.primary_sources, ...entry.related_sources]);
 }
 
+/**
+ * A source entry that names a SET rather than one file: a glob, or a directory
+ * written with a trailing slash. Registration is governance (ADR 017), and a grain
+ * that only ever registers one file makes governance cost one line per file —
+ * which is why a field repo left 5,400 user-visible strings ungoverned rather than
+ * type 380 registry lines for them.
+ */
+export function isSourcePattern(entry: string): boolean {
+  return entry.includes("*") || entry.endsWith("/");
+}
+
+/**
+ * The matcher for a pattern entry, through the SAME globber the exclusion spec and
+ * the Feature Map router already use — one globber, so "what does this pattern
+ * match" cannot get two answers. A trailing-slash directory is sugar for `dir/**`:
+ * people write `i18n/locales/` and mean the tree, and refusing that to insist on a
+ * glob is ceremony.
+ */
+export function sourceMatcher(entry: string): RegExp {
+  return globToRegExp(entry.endsWith("/") ? `${entry}**` : entry);
+}
+
+/** Whether a source entry — literal path or pattern — names this path. */
+export function sourceNames(entry: string, path: string): boolean {
+  const stored = normalizeRelPath(entry);
+  const posix = toPosix(path);
+  return isSourcePattern(stored) ? sourceMatcher(stored).test(posix) : stored === posix;
+}
+
+/**
+ * The literal directory prefix of a pattern: everything before its first wildcard,
+ * with a partial trailing segment dropped. `dist/**` prefixes to `dist`, which is
+ * what lets the authoring guard refuse a pattern aimed into an excluded tree
+ * without walking the filesystem.
+ */
+export function patternPrefix(pattern: string): string {
+  const star = pattern.indexOf("*");
+  const head = star < 0 ? pattern : pattern.slice(0, star);
+  return head.replace(/\/[^/]*$/, "").replace(/\/$/, "");
+}
+
 // True when the entry represents real, built work: it owns at least one source
 // and its status is not a planned/draft placeholder.
 export function isMatureEntry(entry: RegistryEntry): boolean {
@@ -129,6 +170,25 @@ export function updateRegistryEntry(
 }
 
 /**
+ * A pattern was written where nothing resolves one. Only `primary_sources` is read
+ * through the matcher, because impact-only registration already costs nothing to
+ * skip — so a pattern in `related_sources` would name a tree no surface consults.
+ */
+export class PatternFieldError extends Error {
+  constructor(
+    readonly key: string,
+    readonly pattern: string,
+  ) {
+    super(
+      `${key}: "${pattern}" is a pattern, and only primary_sources resolves one — a ` +
+        `pattern in related_sources would name a tree nothing consults. List the ` +
+        `impacted paths, or make the tree an owned source.`,
+    );
+    this.name = "PatternFieldError";
+  }
+}
+
+/**
  * An entry tried to name a source the exclusion spec covers. The spec filters
  * these paths out of every analysis, so an entry naming one documents nothing
  * while appearing to document something — and no read path can undo that.
@@ -182,7 +242,30 @@ function assertNoExcludedSource(
       // walked past with a separator or prefix the normalizer would have
       // rewritten — and the excluded path lands in the registry anyway.
       const stored = normalizeRelPath(source);
-      if (!already.has(stored) && isExcluded(stored, spec)) {
+      if (already.has(stored)) continue;
+      // A pattern cannot be handed to `isExcluded` — the spec asks about a path, and
+      // a pattern is a set. What IS decidable without walking the filesystem is where
+      // the pattern is aimed: its literal prefix, and whether it restates a rule the
+      // spec already owns. A pattern that resolves to nothing in scope is the other
+      // half of this guard and lives in `doctor`, which is the surface that holds the
+      // file list; refusing it here would mean walking the tree on every registry
+      // write.
+      if (isSourcePattern(stored)) {
+        // Ownership is the only path that resolves patterns, so one accepted here
+        // would sit in the registry naming a tree that nothing ever consults —
+        // accepted and inert, which is the same lie as a green gate over an
+        // unread file, just smaller. Refuse it where it cannot work.
+        if (field === "related_sources") {
+          throw new PatternFieldError(key, stored);
+        }
+        const prefix = patternPrefix(stored);
+        const aimedIntoExcluded = prefix !== "" && isExcluded(`${prefix}/x`, spec);
+        if (aimedIntoExcluded || spec.globs.includes(stored)) {
+          throw new ExcludedSourceError(key, stored, field);
+        }
+        continue;
+      }
+      if (isExcluded(stored, spec)) {
         // Carry the STORED path, not the typed one. It is the path that was
         // actually tested, so a consumer that re-matches it — to name which rule
         // fired — reaches the same verdict instead of quietly disagreeing with

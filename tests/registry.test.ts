@@ -14,6 +14,9 @@ import {
   updateRegistryEntry,
   RegistryError,
   ExcludedSourceError,
+  isSourcePattern,
+  sourceNames,
+  patternPrefix,
 } from "../src/lib/registry.js";
 import type { Registry, RegistryEntry } from "../src/lib/registry.js";
 import { DEFAULT_EXCLUSION_SPEC } from "../src/lib/exclusion-spec.js";
@@ -487,5 +490,98 @@ describe("atomic state writes", () => {
     );
     const siblings = await readdir(tmp);
     assert.ok(!siblings.some((f) => f.includes(".tmp-")), "no temp file left behind");
+  });
+});
+
+// Plan 43 / the 2026-08-09 field report, finding 4. Six new language packs — 120
+// files, ~5,400 user-visible strings — landed reporting as `60 other` and exit 0,
+// because registering them meant typing 380 paths into the registry by hand. A source
+// entry can now name a set.
+describe("a source entry can name a tree (plan 43)", () => {
+  it("recognises a glob and a trailing-slash directory as patterns, a path as a path", () => {
+    assert.equal(isSourcePattern("i18n/locales/**/*.json"), true);
+    assert.equal(isSourcePattern("i18n/locales/"), true);
+    assert.equal(isSourcePattern("i18n/locales/en/common.json"), false);
+    assert.equal(isSourcePattern("src/a.ts"), false);
+  });
+
+  it("matches through the same globber the exclusion spec uses", () => {
+    const p = "i18n/locales/**/*.json";
+    assert.equal(sourceNames(p, "i18n/locales/en/common.json"), true);
+    assert.equal(sourceNames(p, "i18n/locales/fi/deep/nested.json"), true);
+    assert.equal(sourceNames(p, "i18n/locales/en/common.ts"), false, "extension still bites");
+    assert.equal(sourceNames(p, "i18n/config.json"), false, "outside the tree");
+  });
+
+  it("treats a trailing-slash directory as sugar for its whole tree", () => {
+    assert.equal(sourceNames("i18n/locales/", "i18n/locales/en/common.json"), true);
+    assert.equal(sourceNames("i18n/locales/", "i18n/locales/en/deep/x.json"), true);
+    assert.equal(sourceNames("i18n/locales/", "i18n/localesX/en.json"), false);
+  });
+
+  it("still matches a literal path exactly, and normalizes the way storage does", () => {
+    assert.equal(sourceNames("src/a.ts", "src/a.ts"), true);
+    assert.equal(sourceNames("./src/a.ts", "src/a.ts"), true);
+    assert.equal(sourceNames(String.raw`src\a.ts`, "src/a.ts"), true, "a Windows separator");
+    assert.equal(sourceNames("src/a.ts", "src/ab.ts"), false);
+  });
+
+  it("reduces a pattern to the literal tree it is aimed at", () => {
+    assert.equal(patternPrefix("dist/**"), "dist");
+    assert.equal(patternPrefix("i18n/locales/**/*.json"), "i18n/locales");
+    assert.equal(patternPrefix("src/foo*.ts"), "src");
+    assert.equal(patternPrefix("i18n/locales/"), "i18n/locales");
+    assert.equal(patternPrefix("**/*.json"), "");
+  });
+});
+
+describe("the authoring guard refuses a pattern aimed where the spec already looks", () => {
+  let dir: string;
+  let registryPath: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "codument-pattern-"));
+    registryPath = join(dir, "registry.json");
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const write = (sources: string[]) =>
+    updateRegistryEntry(registryPath, "i18n", {
+      doc: "docs/concepts/i18n.md",
+      type: "concept",
+      primary_sources: sources,
+    });
+
+  it("accepts a pattern over a governable tree", () => {
+    const r = write(["i18n/locales/**/*.json"]);
+    assert.deepEqual(r.features.i18n.primary_sources, ["i18n/locales/**/*.json"]);
+  });
+
+  it("refuses one aimed into an excluded tree", () => {
+    assert.throws(() => write(["dist/**/*.json"]), /cannot be listed in primary_sources/);
+    assert.throws(() => write(["node_modules/**"]), /cannot be listed in primary_sources/);
+  });
+
+  it("refuses one that just restates a rule the spec already owns", () => {
+    assert.throws(() => write(["**/*.test.*"]), /cannot be listed in primary_sources/);
+  });
+
+  it("refuses a pattern in related_sources, where nothing would resolve it", () => {
+    assert.throws(
+      () =>
+        updateRegistryEntry(registryPath, "i18n", {
+          doc: "docs/concepts/i18n.md",
+          type: "concept",
+          primary_sources: ["src/a.ts"],
+          related_sources: ["i18n/locales/**/*.json"],
+        }),
+      /only primary_sources resolves one/,
+    );
+  });
+
+  it("still refuses a literal excluded path, and still accepts a literal source", () => {
+    assert.throws(() => write(["src/a.test.ts"]), /built-in exclusion rule/);
+    assert.deepEqual(write(["src/a.ts"]).features.i18n.primary_sources, ["src/a.ts"]);
   });
 });
