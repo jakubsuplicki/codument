@@ -505,6 +505,18 @@ describe("a source entry can name a tree (plan 43)", () => {
     assert.equal(isSourcePattern("src/a.ts"), false);
   });
 
+  it("the two sides of a source match normalize by different rules", () => {
+    // The stored side is repo data and is normalized unconditionally; the input
+    // side follows the running platform. What is safe on BOTH sides everywhere is
+    // a `./` or a leading slash, which names the same relative path on every
+    // system — and a caller who tab-completed one must not be told nothing owns it.
+    assert.equal(sourceNames("./src/gate.ts", "src/gate.ts"), true, "stored ./ is normalized");
+    assert.equal(sourceNames("src/gate.ts", "./src/gate.ts"), true, "input ./ is normalized");
+    assert.equal(sourceNames("src/gate.ts", "/src/gate.ts"), true, "input leading slash too");
+    assert.equal(sourceNames("./i18n/locales/", "i18n/locales/en/x.json"), true, "patterns too");
+    assert.equal(sourceNames("src/gate.ts", "src/other.ts"), false, "still an exact question");
+  });
+
   it("matches through the same globber the exclusion spec uses", () => {
     const p = "i18n/locales/**/*.json";
     assert.equal(sourceNames(p, "i18n/locales/en/common.json"), true);

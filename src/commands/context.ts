@@ -3,7 +3,7 @@ import { join } from "node:path";
 import pc from "picocolors";
 import { readRegistrySync } from "../lib/registry.js";
 import { parseFeatureMap } from "../lib/feature-map.js";
-import { normalizeRelPath } from "../lib/registry.js";
+import { isSourcePattern } from "../lib/registry.js";
 import {
   applyBudget,
   gatherContextPack,
@@ -146,8 +146,12 @@ function renderOwner(file: string, owners: FileOwner[]): string {
   if (owners.length === 0) {
     return pc.yellow(`  no feature owns ${file} — map it into a feature's primary_sources`);
   }
+  // The tree is named only when ownership came THROUGH one. That is the fact that
+  // changes what you do next — update the doc, or ack the tree — where a literal
+  // source differing from the typed path by a `./` is noise.
   const parts = owners.map(
-    (o) => `${pc.bold(o.feature)} — ${o.doc}${o.via === file ? "" : pc.dim(` (via ${o.via})`)}`,
+    (o) =>
+      `${pc.bold(o.feature)} — ${o.doc}${isSourcePattern(o.via) ? pc.dim(` (via ${o.via})`) : ""}`,
   );
   // Several owners is the shared-file case, and every candidate is named: which
   // one owns the symbol you are about to move is a decision, not something this
@@ -214,7 +218,11 @@ export function contextCommand(options: ContextCliOptions = {}): void {
       fail("--owner answers a file's ownership — use it with --file <path> alone");
       return;
     }
-    const file = normalizeRelPath(options.file);
+    // The path reaches the resolver exactly as the pack selector hands it over —
+    // unmassaged. Normalizing it here would make the lean route match a separator
+    // the pack route does not, and "the two doors cannot disagree" is the whole
+    // claim. It is also echoed as typed, like every other selector.
+    const file = options.file;
     const owners = ownershipOfFile(registry, file);
     if (options.json) {
       const payload: OwnerJson = { version: 1, file, owners };

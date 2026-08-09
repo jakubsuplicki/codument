@@ -65,10 +65,17 @@ cost ledger and the benchmark use, and are labelled an estimate everywhere they 
   governed by a registered pattern" / "surfaces an unmapped --file")*
 - The lean ownership answer is one line in every case — one owner, several, or none — and an unowned
   file is a fact reported at exit zero, not a failed invocation, so the lookup is safe to run from a
-  hook or a loop. It is an additional door onto the same resolution: the pack it sits beside is
-  unchanged when the flag is absent. *(tests: `context-pack.test.ts` "answers a single-owner file in
-  one line" / "names every candidate for a shared file" / "says plainly when nothing owns the file,
-  and still exits 0" / "leaves the full pack untouched when the flag is absent")*
+  hook or a loop. It names the tree only where ownership came *through* one, since that is the
+  ack-or-update decision, and a literal source that differs from the typed path by a `./` is noise.
+  *(tests: `context-pack.test.ts` "answers a single-owner file in one line" / "names every candidate
+  for a shared file" / "says plainly when nothing owns the file, and still exits 0")*
+- It is an additional door onto the same resolution, and the path reaches that resolution
+  unmassaged: whatever spelling either route accepts, both accept. A normalization applied on one
+  side only is how two surfaces begin answering the same question differently — and it shows up
+  first on the platform the author is not running. The pack beside it is unchanged when the flag is
+  absent. *(tests: `context-pack.test.ts` "hands the path to the resolver unmassaged, exactly as the
+  pack route does" / "the pack and the lean answer resolve a pattern-owned file the same way" /
+  "leaves the full pack untouched when the flag is absent")*
 - Dependencies are followed exactly one hop and rendered as pointers (doc + first sentence), never
   inlined with their own invariants or sources, so the pack cannot balloon into the whole graph.
   *(tests: `context-pack.test.ts` "follows one-hop deps as lightweight pointers" / "does not

@@ -93,10 +93,24 @@ export function sourceMatcher(entry: string): RegExp {
   return globToRegExp(entry.endsWith("/") ? `${entry}**` : entry);
 }
 
+/**
+ * The input side of a source match: a relative path as the running platform spells
+ * it. Separator conversion is the platform's own — a backslash is a legal character
+ * in a POSIX filename, and rewriting one there would invent a path the caller never
+ * named — but a `./` or a leading `/` means the same thing everywhere and is
+ * stripped, because a tab-completed `./src/x.ts` is the file `src/x.ts` and telling
+ * someone nothing owns it is a wrong answer, not a strict one.
+ */
+export function normalizeInputPath(path: string): string {
+  return toPosix(path.trim())
+    .replace(/^(\.\/)+/, "")
+    .replace(/^\/+/, "");
+}
+
 /** Whether a source entry — literal path or pattern — names this path. */
 export function sourceNames(entry: string, path: string): boolean {
   const stored = normalizeRelPath(entry);
-  const posix = toPosix(path);
+  const posix = normalizeInputPath(path);
   return isSourcePattern(stored) ? sourceMatcher(stored).test(posix) : stored === posix;
 }
 

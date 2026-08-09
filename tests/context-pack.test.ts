@@ -211,8 +211,15 @@ describe("ownershipOfFile — ownership through the same matcher the gate uses",
     );
   });
 
-  it("resolves a Windows-shaped path the same as its posix form", () => {
-    assert.deepEqual(ownersOfFile(registry, "src\\lib\\drift.ts"), ["drift", "lib"]);
+  it("resolves an entry however the registry file happens to spell it", () => {
+    // The STORED side is normalized unconditionally, because a registry is repo
+    // data that may have been hand-edited on any platform. The INPUT side is not:
+    // a backslash is a legal character in a POSIX filename, so splitting on one
+    // there would invent a path the caller never named. Asserting the input side
+    // cross-platform is asserting the platform, which is what this test used to do.
+    const spelled = registryOf({ drift: { primary_sources: ["./src/lib/drift.ts"] } });
+    assert.deepEqual(ownersOfFile(spelled, "src/lib/drift.ts"), ["drift"]);
+    assert.equal(ownershipOfFile(spelled, "src/lib/drift.ts")[0].via, "src/lib/drift.ts");
   });
 
   it("returns nothing for a file no entry owns", () => {
@@ -529,6 +536,9 @@ describe("codument context --owner — the ownership lookup priced at a line", (
     assert.equal(lines(out).length, 1, out);
     assert.match(out, /src\/gate\.ts/);
     assert.match(out, /docs\/features\/gate\.md/);
+    // A literal source names no tree — "via" is reserved for ownership that came
+    // through a pattern, because that is the ack-or-update decision.
+    assert.doesNotMatch(out, /via/);
   });
 
   it("names every candidate for a shared file, still in one line", () => {
@@ -581,6 +591,28 @@ describe("codument context --owner — the ownership lookup priced at a line", (
       run(["context", "--file", "i18n/locales/en/common.json", "--owner", "--json"]),
     ).owners;
     assert.deepEqual(owners.map((o: { feature: string }) => o.feature), ["locales"]);
+  });
+
+  it("hands the path to the resolver unmassaged, exactly as the pack route does", () => {
+    // Whatever either route accepts, both must accept — a normalization applied on
+    // one side only is how the two doors start disagreeing, and it would show up
+    // first on the platform the author is not running.
+    const spelling = "./src/gate.ts";
+    const lean = JSON.parse(run(["context", "--file", spelling, "--owner", "--json"]));
+    const pack = JSON.parse(run(["context", "--file", spelling, "--json"]));
+    assert.equal(lean.file, spelling, "the selector is echoed as typed");
+    // Non-vacuous on purpose: a tab-completed path must actually resolve, or the
+    // two routes would agree only by both being wrong.
+    assert.deepEqual(
+      lean.owners.map((o: { feature: string }) => o.feature),
+      ["gate"],
+    );
+    assert.deepEqual(
+      pack.entries
+        .filter((e: { relation: string }) => e.relation === "selected")
+        .map((e: { feature: string }) => e.feature),
+      ["gate"],
+    );
   });
 
   it("still rejects a malformed --budget alongside --owner rather than ignoring the flag", () => {
