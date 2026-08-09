@@ -144,6 +144,97 @@ describe("prose-altitude: path-enumeration", () => {
   });
 });
 
+describe("prose-altitude: fenced-mirror", () => {
+  // The field shape: docs/concepts/types.md carried a union verbatim in a fence, and
+  // the change-control gate demanded a hand-edit every time the union gained a member.
+  // The three prose smells all skip fences by design, so nothing judged the purest
+  // mirror in the corpus.
+  it("fires on a fenced declaration of a symbol the entry owns", () => {
+    const content = [
+      "## Design approach",
+      "```ts",
+      "export type AppLanguage = 'en' | 'es' | 'fi';",
+      "```",
+    ].join("\n");
+    const f = run(content, { exportedSymbols: ["AppLanguage"] });
+    assert.deepEqual(
+      f.map((x) => x.id),
+      ["fenced-mirror"],
+    );
+    assert.equal(f[0].line, 3, "points at the declaration, not the fence marker");
+    assert.equal(f[0].evidence, "AppLanguage");
+  });
+
+  it("fires on a shape declaration with no export marker (Python/Go mark visibility by convention)", () => {
+    assert.deepEqual(ids(["```py", "class State:", "```"].join("\n")), ["fenced-mirror"]);
+    assert.deepEqual(ids(["```go", "type State struct {", "```"].join("\n")), ["fenced-mirror"]);
+  });
+
+  it("does NOT fire on a bare value declaration — that is how every usage example opens", () => {
+    assert.deepEqual(ids(["```ts", "const State = readRegistry();", "```"].join("\n")), []);
+    assert.deepEqual(ids(["```ts", "let readRegistry = mock();", "```"].join("\n")), []);
+  });
+
+  it("fires on a value declaration that carries an explicit export marker", () => {
+    assert.deepEqual(ids(["```ts", "export const readRegistry = () => 1;", "```"].join("\n")), [
+      "fenced-mirror",
+    ]);
+  });
+
+  it("does NOT fire when the declared name is not a symbol this entry owns", () => {
+    assert.deepEqual(ids(["```ts", "export type Unrelated = 'a' | 'b';", "```"].join("\n")), []);
+  });
+
+  it("does NOT fire on an illustrative fence — CLI output, a command, or a config sample", () => {
+    assert.deepEqual(
+      ids(["```text", "codument review: BLOCKED — 2 stale doc(s)", "```"].join("\n")),
+      [],
+    );
+    assert.deepEqual(ids(["```bash", "codument ack src/a.ts --reason \"...\"", "```"].join("\n")), []);
+    assert.deepEqual(ids(["```json", '{ "State": { "doc": "docs/x.md" } }', "```"].join("\n")), []);
+  });
+
+  it("does NOT fire on a shell export, which is not a declaration keyword", () => {
+    assert.deepEqual(ids(["```bash", "export State=1", "```"].join("\n")), []);
+  });
+
+  it("does NOT fire on a fence that only CALLS the symbol", () => {
+    assert.deepEqual(ids(["```ts", "const r = readRegistry(path);", "```"].join("\n")), []);
+  });
+
+  it("reports one finding per fence, anchored on the first declaration in it", () => {
+    const content = [
+      "```ts",
+      "export type State = 'a' | 'b';",
+      "export const readRegistry = () => 1;",
+      "```",
+    ].join("\n");
+    const f = run(content);
+    assert.deepEqual(
+      f.map((x) => x.id),
+      ["fenced-mirror"],
+    );
+    // Anchored on the FIRST declaration: the reader deletes the fence, so the finding
+    // should point at where it starts rather than wherever it happens to end.
+    assert.equal(f[0].line, 2);
+    assert.equal(f[0].evidence, "State");
+  });
+
+  it("fires in a ~~~ fence, and in a fence left unclosed at end of file", () => {
+    assert.deepEqual(ids(["~~~ts", "export type State = 'a';", "~~~"].join("\n")), [
+      "fenced-mirror",
+    ]);
+    assert.deepEqual(ids(["```ts", "export type State = 'a';"].join("\n")), ["fenced-mirror"]);
+  });
+
+  it("stays silent when the entry owns no symbols at all", () => {
+    assert.deepEqual(
+      ids(["```ts", "export type State = 'a';", "```"].join("\n"), { exportedSymbols: [] }),
+      [],
+    );
+  });
+});
+
 describe("prose-altitude: a clean doc reads clean", () => {
   it("produces no findings for intent-altitude prose", () => {
     const content = [
@@ -198,6 +289,9 @@ describe("prose-altitude: doctor wiring (Notes channel, never a --strict fail)",
         "The auth feature signs a user in and keeps the session honest across requests.",
         "## Design approach",
         "See login.ts:42 for the exact hand-off (this is a deliberate line-anchor smell).",
+        "```ts",
+        "export const login = () => 1;",
+        "```",
         "## Key files",
         "- `src/auth/login.ts` — the sign-in entry point that issues the session.",
       ].join("\n"),
@@ -231,9 +325,12 @@ describe("prose-altitude: doctor wiring (Notes channel, never a --strict fail)",
     );
     assert.ok(anchor, "the line-anchor smell rides the Notes channel");
     assert.equal(anchor.severity, "info");
+    const mirror = json.lint.notes.find((n: { id: string }) => n.id === "fenced-mirror");
+    assert.ok(mirror, "a fence reproducing an owned declaration rides the same channel");
+    assert.equal(mirror.severity, "info");
     assert.equal(json.lint.count, 0, "info notes are excluded from the actionable count");
     assert.ok(
-      !("line-anchor" in json.lint.byId),
+      !("line-anchor" in json.lint.byId) && !("fenced-mirror" in json.lint.byId),
       "byId stays warn-only, so the existing contract is untouched",
     );
   });

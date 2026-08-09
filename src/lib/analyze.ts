@@ -229,24 +229,14 @@ export interface CoverageReport {
 
 // ── Lint findings ───────────────────────────────────────────────────────
 
-export type LintFindingId =
-  | "missing-registry"
-  | "missing-source"
-  | "missing-doc"
-  | "generated-leakage"
-  | "high-fanout"
-  | "empty-depends-on"
-  | "dangling-depends-on"
-  | "bloated-doc"
-  | "unmapped-source"
-  | "under-decomposed"
-  | "over-decomposed"
-  | "thin-doc"
-  | "link-rot"
-  | "orphan-doc"
-  | "symbol-mirror"
-  | "line-anchor"
-  | "path-enumeration";
+// Derived from FINDING_ORDER rather than written twice. A hand-kept union beside a
+// hand-kept order array is a pair that must agree and cannot be made to: the array is
+// read through `indexOf`, so an id missing from it sorts to -1 and silently leads the
+// output. The guard against that was a `Record<LintFindingId, true>` in a test, which
+// only bites under `tsc` — and this project's typecheck covers `src` while its tests
+// run under a stripper that never type-checks, so the guard had been dead long enough
+// for three ids to slip past it. One list, and the disagreement is unrepresentable.
+export type LintFindingId = (typeof FINDING_ORDER)[number];
 
 // Bloat is measured by three independent signals, never one line count.
 // Conservative defaults, calibrated against fixtures/benchmarks/doc-bloat;
@@ -1213,7 +1203,10 @@ function largestSection(lines: string[]): {
   return { maxSectionLines, maxSectionTitle };
 }
 
-export const FINDING_ORDER: LintFindingId[] = [
+// The one list: render/sort order AND the id universe (LintFindingId is its member
+// type). `as const` is what makes the second true — widen it back to string[] and the
+// union silently becomes `string`.
+export const FINDING_ORDER = [
   "missing-registry",
   "missing-source",
   "missing-doc",
@@ -1231,7 +1224,8 @@ export const FINDING_ORDER: LintFindingId[] = [
   "symbol-mirror",
   "line-anchor",
   "path-enumeration",
-];
+  "fenced-mirror",
+] as const;
 
 function sortFindings(findings: LintFinding[]): LintFinding[] {
   return [...findings].sort((a, b) => {

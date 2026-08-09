@@ -11,8 +11,20 @@
 //                     every edit above it.
 //   path-enumeration — a prose section that restates the file list (> N literal source
 //                     paths), or a Key files entry that lists a path with no role text.
+//   fenced-mirror   — a code fence reproducing the DECLARATION of a symbol the entry
+//                     owns. The other three read prose and skip fences, which is right
+//                     for the illustrative examples docs are full of and leaves the
+//                     purest mirror there is unjudged: a doc carrying a declaration
+//                     verbatim owes a hand-edit every time that declaration moves, and
+//                     the change-control gate will demand one. Judged by the same
+//                     exported-symbol list symbol-mirror uses, so "a symbol this entry
+//                     owns" has one definition and no second source of truth.
 
-export type ProseAltitudeId = "symbol-mirror" | "line-anchor" | "path-enumeration";
+export type ProseAltitudeId =
+  | "symbol-mirror"
+  | "line-anchor"
+  | "path-enumeration"
+  | "fenced-mirror";
 
 export interface ProseAltitudeFinding {
   id: ProseAltitudeId;
@@ -83,6 +95,22 @@ const LINE_ANCHOR =
 // source extension contains a digit, so nothing real is lost.
 const SOURCE_PATH = /\bsrc\/[\w/-]+(?:\.[A-Za-z]+)+\b/g;
 
+// A declaration SITE inside a fence: an optional visibility/export prefix, then a
+// declaring keyword, then the name. Deliberately not a general "mentions the symbol"
+// test — a fence showing a symbol being CALLED is usage, and usage is what an
+// illustrative example is made of.
+const FENCED_DECLARATION =
+  /^\s*(?:(export|pub(?:\([^)]*\))?|public|private|protected|internal|declare)\s+)?(?:default\s+)?(?:async\s+)?(type|interface|class|enum|struct|trait|record|func|fn|def|function|const|let|var)\s+([A-Za-z_$][\w$]*)/;
+
+// Keywords that declare a NAMED SHAPE. These fire without an export marker because a
+// shape declaration is a mirror whoever wrote it — and the languages that mark
+// visibility by convention rather than keyword (Python, Go) have no prefix to find.
+// The value keywords (const/let/var/function/…) need an explicit export marker,
+// because bare ones are how every usage example opens.
+const SHAPE_KEYWORDS = new Set([
+  "type", "interface", "class", "enum", "struct", "trait", "record",
+]);
+
 /** Strip leading markdown list/quote/emphasis/backtick markers to reach the prose. */
 function stripLeadMarkers(line: string): string {
   return line
@@ -116,6 +144,9 @@ export function analyzeProseAltitude(
   const lines = input.content.split("\n");
 
   let inFence = false;
+  // At most ONE fenced-mirror per fence: a mirrored union or interface is one doc
+  // defect the reader fixes with one deletion, not a finding per declared line.
+  let fenceHit: { line: number; name: string } | null = null;
   let sectionTitle = "";
   let sectionHeadingLine = 0;
   let sectionIsKeyFiles = false;
@@ -136,6 +167,17 @@ export function analyzeProseAltitude(
     }
   };
 
+  const emitFenceHit = () => {
+    if (!fenceHit) return;
+    emit(
+      "fenced-mirror",
+      fenceHit.line,
+      `code fence reproduces the declaration of "${fenceHit.name}", a symbol this entry owns — the fence owes a hand-edit every time that declaration moves; state the contract, not the declaration`,
+      fenceHit.name,
+    );
+    fenceHit = null;
+  };
+
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     const lineNo = i + 1;
@@ -143,10 +185,21 @@ export function analyzeProseAltitude(
     // Both CommonMark fence markers (``` and ~~~) open/close a code block; neither's
     // contents are prose.
     if (/^\s*(?:```|~~~)/.test(raw)) {
+      if (inFence) {
+        emitFenceHit();
+      }
       inFence = !inFence;
       continue;
     }
-    if (inFence) continue;
+    if (inFence) {
+      if (!fenceHit && exported.size > 0) {
+        const m = FENCED_DECLARATION.exec(raw);
+        if (m && exported.has(m[3]) && (m[1] !== undefined || SHAPE_KEYWORDS.has(m[2]))) {
+          fenceHit = { line: lineNo, name: m[3] };
+        }
+      }
+      continue;
+    }
 
     const heading = headingText(raw);
     if (heading !== null) {
@@ -209,6 +262,10 @@ export function analyzeProseAltitude(
       }
     }
   }
+  // An unclosed fence runs to end of file in CommonMark, so its contents were read
+  // as fenced and its finding is owed here — silence would make "forgot the closing
+  // fence" a way to hide a mirror.
+  emitFenceHit();
   flushSection();
 
   return findings;

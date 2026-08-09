@@ -141,27 +141,17 @@ describe("decomposition shape findings", () => {
 // ── Step 6: every finding id is registered for stable ordering ───────────────
 
 describe("FINDING_ORDER", () => {
-  it("contains every LintFindingId (a half-done union edit would break sort order)", () => {
-    // The Record forces the compiler to list every member; if a new id is added
-    // to LintFindingId without updating this map, this file fails to typecheck.
-    const ALL: Record<LintFindingId, true> = {
-      "missing-registry": true,
-      "missing-source": true,
-      "missing-doc": true,
-      "generated-leakage": true,
-      "high-fanout": true,
-      "empty-depends-on": true,
-      "bloated-doc": true,
-      "unmapped-source": true,
-      "under-decomposed": true,
-      "over-decomposed": true,
-      "thin-doc": true,
-      "link-rot": true,
-      "dangling-depends-on": true,
-      "orphan-doc": true,
-    };
-    for (const id of Object.keys(ALL) as LintFindingId[]) {
-      assert.ok(FINDING_ORDER.includes(id), `FINDING_ORDER missing "${id}"`);
-    }
+  // "Every id is in the order array" is no longer assertable, because it is no longer
+  // deniable: LintFindingId IS the array's member type. This previously lived here as a
+  // `Record<LintFindingId, true>` whose exhaustiveness only bites under `tsc`, which
+  // never runs over tests/ — so it sat dead while three ids slipped past it.
+  //
+  // What the derivation cannot catch is a DUPLICATE: a repeated literal collapses in
+  // the union and survives in the array, and `sortFindings` resolves ties by `indexOf`,
+  // so the later copy is dead weight that reads as a deliberate rank.
+  it("lists each id exactly once (a duplicate is invisible to the derived union)", () => {
+    const seen = new Set<LintFindingId>();
+    const dupes = FINDING_ORDER.filter((id) => (seen.has(id) ? true : (seen.add(id), false)));
+    assert.deepEqual(dupes, [], `FINDING_ORDER repeats: ${dupes.join(", ")}`);
   });
 });
