@@ -1050,3 +1050,87 @@ describe("a non-test module under a test directory is governed like any source",
     assert.equal(s.unmapped.includes("tests/adapter-conformance.ts"), false);
   });
 });
+
+// Plan 43 / the 2026-08-09 field report, finding 4. A source entry can name a tree,
+// so governing 380 locale files costs one registry line instead of 380.
+describe("a pattern source governs a tree (plan 43)", () => {
+  const TREE = "i18n/locales/**/*.json";
+  const registry = (sources: string[]): Registry => ({
+    features: {
+      i18n: {
+        doc: "docs/concepts/i18n.md",
+        type: "concept",
+        primary_sources: sources,
+        related_sources: [],
+        docs: [],
+        depends_on: [],
+        risk: [],
+        status: "current",
+      },
+    },
+  });
+
+  const state = (sources: string[], changedFiles: string[]) =>
+    computeChangeState({ registry: registry(sources), changedFiles });
+
+  it("wakes the owning doc ONCE however many files inside it moved", () => {
+    const s = state([TREE], [
+      "i18n/locales/en/common.json",
+      "i18n/locales/fi/common.json",
+      "i18n/locales/fi/settings.json",
+    ]);
+    assert.equal(s.staleDocs.length, 1, "one wake, not one per file");
+    assert.equal(s.staleDocs[0].feature, "i18n");
+    assert.equal(s.staleDocs[0].changedSources.length, 3, "the machine view keeps every path");
+    assert.deepEqual(
+      s.staleDocs[0].viaPatterns,
+      [{ pattern: TREE, count: 3 }],
+      "and the human view has the tree with its count",
+    );
+  });
+
+  it("does not claim a file outside the tree", () => {
+    const s = state([TREE], ["i18n/config.json", "i18n/locales/en/common.json"]);
+    assert.deepEqual(s.staleDocs[0].changedSources, ["i18n/locales/en/common.json"]);
+    assert.deepEqual(s.unmapped, [], "a non-source file is not an unmapped source");
+  });
+
+  it("cannot re-admit what the exclusion spec drops", () => {
+    // The authoring guard is deliberately syntactic and cannot see the file list, so
+    // THIS is the surface where the spec wins over a pattern that reaches too far.
+    const s = state(["**/*.json"], [
+      "i18n/locales/en/common.json",
+      "node_modules/pkg/package.json",
+      "dist/build.json",
+    ]);
+    assert.deepEqual(s.staleDocs[0].changedSources, ["i18n/locales/en/common.json"]);
+    // And it does not manufacture the excluded-yet-registered CONTRADICTION for them
+    // either. That finding means "you claimed a path the spec drops" and asks the user
+    // to fix it; a pattern that merely swept past node_modules has nothing to fix, so
+    // reporting it would be an unfixable finding invented by the expansion.
+    assert.deepEqual(s.ungatedRegistered, []);
+  });
+
+  it("partitions overlapping trees rather than counting a file twice", () => {
+    const s = state(["i18n/locales/**/*.json", "i18n/**/*.json"], [
+      "i18n/locales/en/common.json",
+      "i18n/other/x.json",
+    ]);
+    assert.deepEqual(s.staleDocs[0].viaPatterns, [
+      { pattern: "i18n/locales/**/*.json", count: 1 },
+      { pattern: "i18n/**/*.json", count: 1 },
+    ]);
+  });
+
+  it("leaves a registry of literal paths rendering exactly as before", () => {
+    const s = state(["i18n/locales/en/common.json"], ["i18n/locales/en/common.json"]);
+    assert.deepEqual(s.staleDocs[0].viaPatterns, [], "no pattern, no collapsing");
+    assert.deepEqual(s.staleDocs[0].changedSources, ["i18n/locales/en/common.json"]);
+  });
+
+  it("treats a trailing-slash directory the same way", () => {
+    const s = state(["i18n/locales/"], ["i18n/locales/fi/common.json"]);
+    assert.equal(s.staleDocs.length, 1);
+    assert.deepEqual(s.staleDocs[0].viaPatterns, [{ pattern: "i18n/locales/", count: 1 }]);
+  });
+});

@@ -141,7 +141,7 @@ Status: approved.
       nothing or that the exclusion spec covers, naming which rule fired. Tests: a
       pattern owning a tree, a directory as sugar, an explicit path refining a pattern,
       a pattern matching nothing refused, the exclusion spec still winning.
-- [ ] Step 2: Ownership resolves patterns, and a governed tree wakes its doc once —
+- [x] Step 2: Ownership resolves patterns, and a governed tree wakes its doc once —
       named as the tree with the count of what moved inside it, never one wake per file.
       Test: the field's shape — a six-pack translation drop wakes one doc with one line.
 - [ ] Step 3: Tree-grain acknowledgment over the matched set's fingerprint, auto-

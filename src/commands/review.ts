@@ -35,7 +35,12 @@ import {
   isGitRepo,
   type RenamePair,
 } from "../lib/git.js";
-import { parseRegistryOrThrow, type Registry, readRegistrySync } from "../lib/registry.js";
+import {
+  parseRegistryOrThrow,
+  type Registry,
+  readRegistrySync,
+  sourceMatcher,
+} from "../lib/registry.js";
 import {
   findCoveringReview,
   findLatestReviewForBase,
@@ -1333,7 +1338,21 @@ function printHuman(report: ReviewReport): void {
   section(
     pc.yellow("Stale docs (source changed, mapped doc did not)"),
     state.staleDocs.map((d) => {
-      let line = `${pc.yellow("⚠")} ${d.feature}: ${d.doc} (changed: ${d.changedSources.join(", ")})`;
+      // A governed tree is named as the tree, with what moved inside it as a count.
+      // Listing 120 locale paths is the same failure as listing none: a section that
+      // always prints 120 lines is one readers learn to skip, and the file names were
+      // never the information — the tree is.
+      const claimed = new Set(
+        d.viaPatterns.flatMap((p) => {
+          const re = sourceMatcher(p.pattern);
+          return d.changedSources.filter((f) => re.test(f));
+        }),
+      );
+      const named = [
+        ...d.changedSources.filter((f) => !claimed.has(f)),
+        ...d.viaPatterns.map((p) => `${p.pattern} (${p.count} file${p.count === 1 ? "" : "s"})`),
+      ];
+      let line = `${pc.yellow("⚠")} ${d.feature}: ${d.doc} (changed: ${named.join(", ")})`;
       const coarse = d.changedSources.filter(
         (f) =>
           !ownsUnresolvedMove(f, d.feature) && !unevaluableFiles.has(f) && !ackBlocked(f, d.feature),

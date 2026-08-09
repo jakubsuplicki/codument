@@ -4,11 +4,14 @@ import {
   allSources,
   type Registry,
   type RegistryEntry,
+  isSourcePattern,
+  sourceMatcher,
 } from "./registry.js";
 import {
   DEFAULT_EXCLUSION_SPEC,
   isExcluded,
   isSourceFile,
+  toPosix,
   type ExclusionSpec,
 } from "./analyze.js";
 import { resolveOwner, splitAnchorId } from "./ownership.js";
@@ -100,6 +103,15 @@ export interface StaleDoc {
   feature: string;
   doc: string;
   changedSources: string[];
+  /**
+   * The pattern entries among this feature's sources that woke it, each with how
+   * many of `changedSources` it accounts for. `changedSources` stays complete —
+   * a machine consumer wants every path — while a human surface prints the tree
+   * and its count, because a locale drop lists 120 paths and a section that always
+   * prints 120 paths is a section readers learn to skip. Empty when no pattern
+   * was involved, so a registry of literal paths renders exactly as before.
+   */
+  viaPatterns: Array<{ pattern: string; count: number }>;
 }
 
 export interface HighFanoutChange {
@@ -278,10 +290,34 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     a < b ? -1 : a > b ? 1 : 0,
   );
 
+  // A pattern entry names a set, so every index below wants the paths it resolves
+  // to. Expanded ONCE, against the paths this change actually touches — those are
+  // the only paths any index is ever asked about, and expanding against the whole
+  // tree would walk the filesystem to answer a question nobody asked. The exclusion
+  // spec still wins here, not only at authoring time: the authoring guard is
+  // deliberately syntactic (it cannot see the file list), so this is the surface
+  // where a pattern is stopped from re-admitting what the spec drops.
+  const touched = sortStrings([...changed, ...(input.deletedFiles ?? [])]);
+  const expandSources = (sources: string[]): string[] => {
+    if (!sources.some(isSourcePattern)) return sources;
+    const out: string[] = [];
+    for (const src of sources) {
+      if (!isSourcePattern(src)) {
+        out.push(src);
+        continue;
+      }
+      const re = sourceMatcher(src);
+      for (const f of touched) {
+        if (re.test(toPosix(f)) && !isExcluded(f, exclusion) && !out.includes(f)) out.push(f);
+      }
+    }
+    return out;
+  };
+
   // Index: source path -> owning features, and feature -> its doc paths.
   const fileToFeatures = new Map<string, string[]>();
   for (const [key, entry] of entries) {
-    for (const source of allSources(entry)) {
+    for (const source of expandSources(allSources(entry))) {
       const list = fileToFeatures.get(source) ?? [];
       if (!list.includes(key)) list.push(key);
       fileToFeatures.set(source, list);
@@ -349,7 +385,7 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   const conceptPrimary = new Map<string, string[]>();
   for (const [key, entry] of entries) {
     const idx = entry.type === "concept" ? conceptPrimary : featurePrimary;
-    for (const src of entry.primary_sources) {
+    for (const src of expandSources(entry.primary_sources)) {
       const list = idx.get(src) ?? [];
       if (!list.includes(key)) list.push(key);
       idx.set(src, list);
@@ -542,6 +578,31 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
           : 0,
   );
 
+  // Which of an entry's pattern sources account for the files that woke it, and how
+  // many each. A path can only be claimed once — by the first pattern that names it,
+  // in the entry's own order — so the counts partition the woken set rather than
+  // double-counting a file two overlapping trees both match.
+  const patternsCovering = (
+    entry: RegistryEntry,
+    files: string[],
+  ): Array<{ pattern: string; count: number }> => {
+    const patterns = entry.primary_sources.filter(isSourcePattern);
+    if (patterns.length === 0) return [];
+    const claimed = new Set<string>();
+    const out: Array<{ pattern: string; count: number }> = [];
+    for (const pattern of patterns) {
+      const re = sourceMatcher(pattern);
+      let count = 0;
+      for (const f of files) {
+        if (claimed.has(f) || !re.test(toPosix(f))) continue;
+        claimed.add(f);
+        count++;
+      }
+      if (count > 0) out.push({ pattern, count });
+    }
+    return out;
+  };
+
   // stale docs: a feature/concept whose OWNED source changed but whose docs did
   // not (symbol-grained for features, file-grain for concepts and the fallback).
   const staleDocs: StaleDoc[] = [];
@@ -554,10 +615,12 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     const sourceChanged = woken !== undefined && woken.size > 0;
 
     if (sourceChanged && !aDocChanged) {
+      const files = sortStrings(woken);
       staleDocs.push({
         feature: key,
         doc: entry.doc,
-        changedSources: sortStrings(woken),
+        changedSources: files,
+        viaPatterns: patternsCovering(entry, files),
       });
     }
     if (aDocChanged && !sourceChanged) {
@@ -571,7 +634,14 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   // unless that doc itself got attention (updated or removed with it).
   for (const [key, w] of removedEntryWakes) {
     if (w.docs.some((d) => docChangedSet.has(d))) continue;
-    staleDocs.push({ feature: key, doc: w.doc, changedSources: sortStrings(w.files) });
+    // A removed entry has no sources left to consult, so nothing here came via a
+    // pattern by construction.
+    staleDocs.push({
+      feature: key,
+      doc: w.doc,
+      changedSources: sortStrings(w.files),
+      viaPatterns: [],
+    });
   }
   staleDocs.sort((a, b) => (a.feature < b.feature ? -1 : a.feature > b.feature ? 1 : 0));
 
