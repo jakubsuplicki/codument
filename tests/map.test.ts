@@ -370,3 +370,76 @@ describe("shapeWarnings", () => {
     assert.deepEqual(shapeWarnings(parseFeatureMap(MAP_MD)), []);
   });
 });
+
+// Plan 43 step 4: registering a tree is what makes the per-file line unnecessary.
+// Materializing a file the tree already covers would grow those lines back one
+// accidental call at a time — and the refusal is the only moment anyone learns the
+// registration is doing its job.
+describe("materialize refuses a file a tree already governs (plan 43)", () => {
+  let root: string;
+  const TREE = "i18n/locales/**/*.json";
+  const FILE = "i18n/locales/fi/common.json";
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-map-tree-"));
+    await mkdir(join(root, "docs", "concepts"), { recursive: true });
+    await writeFile(
+      join(root, "docs", ".registry.json"),
+      JSON.stringify(
+        {
+          features: {
+            i18n: {
+              doc: "docs/concepts/i18n.md",
+              type: "concept",
+              primary_sources: [TREE],
+              status: "current",
+            },
+            other: {
+              doc: "docs/concepts/other.md",
+              type: "concept",
+              primary_sources: ["src/other.ts"],
+              status: "current",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const sources = (key: string): string[] =>
+    readRegistrySync(join(root, "docs", ".registry.json")).features[key].primary_sources;
+
+  it("names the governing entry and writes nothing, on the explicit route", () => {
+    const r = materializeFileTo(root, FILE, "other");
+    assert.equal(r.status, "governed");
+    assert.deepEqual(r.governedBy, { feature: "i18n", pattern: TREE });
+    assert.deepEqual(sources("other"), ["src/other.ts"], "no second claim was written");
+    assert.deepEqual(sources("i18n"), [TREE], "and the tree did not grow a path");
+  });
+
+  it("refuses the tree's OWN entry too — the line would only restate the pattern", () => {
+    const r = materializeFileTo(root, FILE, "i18n");
+    assert.equal(r.status, "governed");
+    assert.deepEqual(sources("i18n"), [TREE]);
+  });
+
+  it("refuses on the Map route as well, before any write", () => {
+    const mapRows = parseFeatureMap(
+      "```feature-map\ni18n/locales/** | i18n | concept | translations\n```",
+    ).rows;
+    const r = materializeFile(root, mapRows, FILE);
+    assert.equal(r.status, "governed");
+    assert.deepEqual(r.governedBy, { feature: "i18n", pattern: TREE });
+    assert.deepEqual(sources("i18n"), [TREE]);
+  });
+
+  it("a file OUTSIDE the tree materializes normally", () => {
+    const r = materializeFileTo(root, "src/elsewhere.ts", "other");
+    assert.equal(r.status, "updated");
+    assert.deepEqual(sources("other").sort(), ["src/elsewhere.ts", "src/other.ts"]);
+  });
+});

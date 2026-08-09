@@ -9,7 +9,13 @@ import {
   type FeatureMapRow,
 } from "../lib/feature-map.js";
 import { findActivePlans } from "../lib/plan-steps.js";
-import { readRegistrySync, updateRegistryEntry, ExcludedSourceError } from "../lib/registry.js";
+import {
+  ExcludedSourceError,
+  isSourcePattern,
+  readRegistrySync,
+  sourceNames,
+  updateRegistryEntry,
+} from "../lib/registry.js";
 import { resolveScopeSync, declaredRuleFor } from "../lib/analyze.js";
 import { gatherPlanGrounding } from "../lib/plan-grounding.js";
 import { ensureDir } from "../lib/scaffold.js";
@@ -73,7 +79,8 @@ export type MaterializeStatus =
   | "noop"
   | "unmapped"
   | "ambiguous"
-  | "unknown-feature";
+  | "unknown-feature"
+  | "governed";
 
 export interface MaterializeResult {
   file: string;
@@ -88,6 +95,28 @@ export interface MaterializeResult {
    *  silence, so the cost was only ever met later, at a red gate, by someone who
    *  had no idea a second claim had been added. */
   sharedPrimary?: string[];
+  /** Set with `status: "governed"`: the entry and the pattern already covering this
+   *  file. Writing the explicit path would restate what the tree already says, and
+   *  the refusal is the only moment anyone learns the tree is doing its job. */
+  governedBy?: { feature: string; pattern: string };
+}
+
+/**
+ * The entry whose declared tree already covers `file`, if any — sorted by key so
+ * two entries covering the same path always name the same one. Registering a tree
+ * is what makes the per-file line unnecessary; materializing it anyway would grow
+ * back the 380 lines the pattern exists to replace, one accidental call at a time.
+ */
+function governingTree(root: string, file: string): { feature: string; pattern: string } | null {
+  const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+  for (const key of Object.keys(registry.features).sort()) {
+    for (const source of registry.features[key].primary_sources) {
+      if (isSourcePattern(source) && sourceNames(source, file)) {
+        return { feature: key, pattern: source };
+      }
+    }
+  }
+  return null;
 }
 
 /** The FEATURES claiming `file` as primary with no per-symbol claim anywhere among
@@ -164,6 +193,8 @@ export function materializeFileTo(
   if (!existing) return { file, feature: null, status: "unknown-feature", secondaryUpdated: [] };
   if (existing.primary_sources.includes(file))
     return { file, feature: featureKey, status: "noop", docPath: existing.doc, secondaryUpdated: [] };
+  const tree = governingTree(root, file);
+  if (tree) return { file, feature: tree.feature, status: "governed", governedBy: tree, secondaryUpdated: [] };
 
   const scope = resolveScopeSync(root);
   try {
@@ -205,6 +236,12 @@ export function materializeFile(root: string, rows: FeatureMapRow[], file: strin
   if (route.ambiguous) return { file, feature: null, status: "ambiguous", secondaryUpdated: [] };
   if (!route.feature || !route.row)
     return { file, feature: null, status: "unmapped", secondaryUpdated: [] };
+  // A tree already governs it, so there is nothing to materialize — whether the Map
+  // routes it to that same entry (the line would be a restatement) or another one (a
+  // second claim, which is a decision to make by hand, not a side effect of a routing
+  // call). Checked before any write, so the refusal never half-lands.
+  const tree = governingTree(root, file);
+  if (tree) return { file, feature: tree.feature, status: "governed", governedBy: tree, secondaryUpdated: [] };
 
   const registryPath = join(root, "docs", ".registry.json");
   const today = new Date().toISOString().split("T")[0];
@@ -453,6 +490,7 @@ export function mapMaterialize(options: MapCliOptions = {}): void {
       process.exitCode = 1;
       return;
     }
+    if (printGoverned(direct)) return;
     console.log(
       `  ✓ ${file} ${direct.status === "updated" ? "added to" : "already in"} ${pc.bold(direct.feature!)}`,
     );
@@ -485,9 +523,32 @@ export function mapMaterialize(options: MapCliOptions = {}): void {
     process.exitCode = 1;
     return;
   }
+  if (printGoverned(result)) return;
   const verb = result.status === "created" ? "created" : result.status === "updated" ? "added to" : "already in";
   console.log(`  ✓ ${file} ${verb} ${pc.bold(result.feature!)}${result.secondaryUpdated.length ? pc.dim(` (+secondary ${result.secondaryUpdated.join(", ")})`) : ""}`);
   printSharedPrimaryWarning(result);
+}
+
+/**
+ * The tree refusal, and the moment the user learns their registration is working.
+ * It is not a dead end: the file IS governed, so the only thing left to decide is
+ * whether it deserves an owner of its own — which is a registry edit someone makes
+ * deliberately, and the one case where an explicit path beside a covering pattern
+ * is a refinement rather than a restatement. Returns true when it handled the result.
+ */
+function printGoverned(result: MaterializeResult): boolean {
+  if (result.status !== "governed" || !result.governedBy) return false;
+  const { feature, pattern } = result.governedBy;
+  console.log(`  ✓ ${result.file} is already governed by ${pc.bold(feature)} ${pc.dim(`(${pattern})`)}`);
+  console.log(
+    pc.dim("    A tree registration is what makes the per-file line unnecessary — nothing to add."),
+  );
+  console.log(
+    pc.dim(
+      `    If this file should have an owner of its own instead, add it to that entry by hand; the tree keeps the rest.`,
+    ),
+  );
+  return true;
 }
 
 /**

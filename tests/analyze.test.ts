@@ -1563,3 +1563,103 @@ describe("empty-depends-on carries the derived edges as evidence", () => {
     assert.equal(finding.message, "lonely: mature entry has empty depends_on");
   });
 });
+
+// Plan 43 step 4: a pattern source is a registration like any other, so every
+// question the analyzer asks of a source has to be asked correctly of a tree. It
+// was not: a glob is not a path on disk, so "does this source still exist" answered
+// no for every declared tree, and the files inside one read as unmapped — a
+// correctly-registered tree scored 0% and produced three findings, all false.
+describe("a declared tree is a registration, not a missing path (plan 43)", () => {
+  async function lintFor(entries: Record<string, unknown>, files: string[]) {
+    const tmp = await mkdtemp(join(tmpdir(), "codument-tree-lint-"));
+    try {
+      await mkdir(join(tmp, "docs", "features"), { recursive: true });
+      await writeFile(join(tmp, "docs", ".registry.json"), JSON.stringify({ features: entries }));
+      for (const key of Object.keys(entries)) {
+        await writeFile(join(tmp, "docs", "features", `${key}.md`), `# ${key}\n\nWhat it is.\n`);
+      }
+      for (const f of files) {
+        await mkdir(dirname(join(tmp, f)), { recursive: true });
+        await writeFile(join(tmp, f), "export const x = 1;\n");
+      }
+      const registry = await readRegistry(join(tmp, "docs", ".registry.json"));
+      const result = analyze({ root: tmp, registry, srcDir: "src" });
+      return { lint: result.lint, coverage: result.coverage };
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  }
+  const entry = (sources: string[], extra: Record<string, unknown> = {}) => ({
+    adapters: {
+      doc: "docs/features/adapters.md",
+      type: "feature",
+      primary_sources: sources,
+      depends_on: ["core"],
+      status: "current",
+      ...extra,
+    },
+  });
+
+  it("owns the files it matches, so a tree registration is not an unmapped tree", async () => {
+    const { lint, coverage } = await lintFor(entry(["src/adapters/**/*.ts"]), [
+      "src/adapters/a.ts",
+      "src/adapters/b.ts",
+    ]);
+    assert.deepStrictEqual(
+      lint.filter((f) => f.id === "unmapped-source"),
+      [],
+      "the tree claims its files",
+    );
+    assert.deepStrictEqual(
+      lint.filter((f) => f.id === "missing-source"),
+      [],
+      "and the glob is never read as a vanished path",
+    );
+    assert.equal(coverage.ratios.find((r) => r.id === "ownership")?.ratio, 1);
+  });
+
+  it("a declared tree that matches nothing is named as governing nothing", async () => {
+    const { lint } = await lintFor(entry(["src/adapters/**/*.ts", "i18n/locales/**/*.json"]), [
+      "src/adapters/a.ts",
+    ]);
+    const found = lint.filter((f) => f.id === "unmatched-pattern");
+    assert.equal(found.length, 1);
+    assert.equal(found[0].file, "i18n/locales/**/*.json");
+    assert.match(found[0].message, /governs nothing/);
+  });
+
+  it("a path an entry's OWN tree already covers is a line that adds nothing", async () => {
+    const { lint } = await lintFor(
+      entry(["src/adapters/**/*.ts", "src/adapters/a.ts"], {
+        related_sources: ["src/adapters/b.ts"],
+      }),
+      ["src/adapters/a.ts", "src/adapters/b.ts"],
+    );
+    assert.deepStrictEqual(
+      lint.filter((f) => f.id === "shadowed-source").map((f) => f.file),
+      ["src/adapters/a.ts", "src/adapters/b.ts"],
+      "primary and related alike — one restates the tree, the other contradicts it",
+    );
+  });
+
+  it("an explicit path in ANOTHER entry is a refinement, and stays silent", async () => {
+    // The sanctioned way to promote one file out of a tree without dismantling it.
+    const { lint } = await lintFor(
+      {
+        ...entry(["src/adapters/**/*.ts"]),
+        special: {
+          doc: "docs/features/special.md",
+          type: "feature",
+          primary_sources: ["src/adapters/a.ts"],
+          depends_on: ["adapters"],
+          status: "current",
+        },
+      },
+      ["src/adapters/a.ts", "src/adapters/b.ts"],
+    );
+    assert.deepStrictEqual(
+      lint.filter((f) => f.id === "shadowed-source"),
+      [],
+    );
+  });
+});

@@ -17,8 +17,11 @@ import { analyzeProseAltitude } from "./prose-altitude.js";
 import {
   allSources,
   isMatureEntry,
+  isSourcePattern,
+  patternPrefix,
   type Registry,
   type RegistryEntry,
+  sourceMatcher,
 } from "./registry.js";
 import { StateFileError } from "./state-io.js";
 import { TreeSitterError } from "./tree-sitter.js";
@@ -437,12 +440,25 @@ export function analyze(input: AnalyzeInput): AnalysisResult {
   const inScopeFiles = discovery.paths;
 
   // Map every source path to the entries that claim it (for ownership + fanout).
+  // A pattern source claims the in-scope files it matches, so a tree registered as
+  // one line owns its files here exactly as N literal lines would have. Resolving it
+  // against the discovered set is also what keeps the plan-43 decision true without a
+  // special case: a locale tree is not in scope to begin with, so governing it moves
+  // the gate and never the score.
   const fileToFeatures = new Map<string, string[]>();
+  const claim = (file: string, key: string): void => {
+    const list = fileToFeatures.get(file) ?? [];
+    if (!list.includes(key)) list.push(key);
+    fileToFeatures.set(file, list);
+  };
   for (const [key, entry] of entries) {
     for (const source of allSources(entry)) {
-      const list = fileToFeatures.get(source) ?? [];
-      if (!list.includes(key)) list.push(key);
-      fileToFeatures.set(source, list);
+      if (!isSourcePattern(source)) {
+        claim(source, key);
+        continue;
+      }
+      const re = sourceMatcher(source);
+      for (const file of inScopeFiles) if (re.test(toPosix(file))) claim(file, key);
     }
   }
 
@@ -680,6 +696,37 @@ export function declaredRuleFor(relPath: string, declared: ExcludeConfig | null)
   return glob ? `globs: ${glob}` : null;
 }
 
+// Whether a declared tree names anything at all. Walked from the pattern's own
+// literal prefix rather than asked of git or of the coverage denominator: the trees
+// worth registering are mostly OUTSIDE the source scope (a locale pack, a content
+// tree), so both of those oracles would answer "nothing" for a tree that is doing
+// its job. Short-circuits on the first match, and an unreadable directory is skipped
+// rather than read as empty — the finding is "you declared a tree that names
+// nothing", which only a completed walk can claim.
+function patternMatchesAny(root: string, pattern: string, spec: ExclusionSpec): boolean {
+  const base = join(root, patternPrefix(pattern));
+  if (!existsSync(base)) return false;
+  const re = sourceMatcher(pattern);
+  const stack = [base];
+  while (stack.length > 0) {
+    const dir = stack.pop() as string;
+    try {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, e.name);
+        // The same directory skips the source walk applies. A pattern with no
+        // literal prefix (`**/*.json`) prefixes to the repo root, so without this
+        // the check for one declared tree would walk `node_modules` and `.git`.
+        if (e.isDirectory()) {
+          if (!spec.dirs.includes(e.name)) stack.push(full);
+        } else if (re.test(toPosix(relative(root, full)))) return true;
+      }
+    } catch {
+      // unreadable directory — skipped, never read as empty
+    }
+  }
+  return false;
+}
+
 function computeLint(
   root: string,
   entries: [string, RegistryEntry][],
@@ -697,8 +744,23 @@ function computeLint(
   const entryKeys = new Set(entries.map(([key]) => key));
 
   for (const [key, entry] of entries) {
-    // missing mapped source files
+    // missing mapped source files — and the pattern form of the same question. A
+    // tree is not a path, so asking whether the glob exists on disk is asking the
+    // wrong thing (it never does); what makes a declared tree false is matching
+    // nothing. Same finding class, different question.
     for (const source of allSources(entry)) {
+      if (isSourcePattern(source)) {
+        if (!patternMatchesAny(root, source, exclusion)) {
+          findings.push({
+            id: "unmatched-pattern",
+            severity: "warn",
+            feature: key,
+            file: source,
+            message: `${key}: declared tree matches no file: ${source} — it governs nothing, so every file under it is ungoverned`,
+          });
+        }
+        continue;
+      }
       if (!existsSync(join(root, source))) {
         findings.push({
           id: "missing-source",
@@ -707,6 +769,29 @@ function computeLint(
           file: source,
           message: `${key}: mapped source no longer exists: ${source}`,
         });
+      }
+    }
+
+    // A path this entry's OWN tree already covers. Scoped to the entry on purpose:
+    // an explicit path in ANOTHER entry beside a covering pattern is the sanctioned
+    // refinement — that entry owns the file, the tree owns the rest — while a second
+    // claim inside the same entry only restates what the pattern already said, and a
+    // `related_sources` line under a covering pattern claims impact-only for a file
+    // the same entry owns outright.
+    const ownPatterns = entry.primary_sources.filter(isSourcePattern);
+    if (ownPatterns.length > 0) {
+      for (const source of allSources(entry)) {
+        if (isSourcePattern(source)) continue;
+        const covering = ownPatterns.find((p) => sourceMatcher(p).test(toPosix(source)));
+        if (covering) {
+          findings.push({
+            id: "shadowed-source",
+            severity: "warn",
+            feature: key,
+            file: source,
+            message: `${key}: ${source} is already governed by this entry's own ${covering} — the line adds nothing; drop it, or narrow the tree if this file should sit outside it`,
+          });
+        }
       }
     }
 
@@ -1256,6 +1341,8 @@ function largestSection(lines: string[]): {
 export const FINDING_ORDER = [
   "missing-registry",
   "missing-source",
+  "unmatched-pattern",
+  "shadowed-source",
   "missing-doc",
   "generated-leakage",
   "high-fanout",

@@ -149,9 +149,13 @@ Status: approved.
       invalidating like a file ack; `ack <pattern>` records it, `review` prints it as the
       route, and the output says how many files it covered. Test: 120 changed files, one
       acknowledgment, and it decays the moment one of them moves again.
-- [ ] Step 4: `map materialize` refuses a file a tree already governs and names the
+- [x] Step 4: `map materialize` refuses a file a tree already governs and names the
       governing entry; `doctor` lints a pattern that matches nothing and one that shadows
       an explicitly-listed file. Test: the refusal names the entry, both lints fire.
+      (Grew in flight: the analyzer had never learned that a source can be a pattern, so
+      a correctly-registered tree scored 0% and produced a false finding per file. Fixed
+      here — a lint about trees beside three findings denying they are registrations
+      would have been worse than either.)
 - [ ] Step 5: ADR 018 for tree-grain governance, docs at intent altitude across the gate,
       registry-health and feature-decomposition, and CHANGELOG.
 
