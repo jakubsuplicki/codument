@@ -938,13 +938,34 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       routes.push(
         "    Settle the shared file's per-symbol ownership in `docs/.registry.json` — a registry edit, not a doc edit; the exact one is printed with each stale doc above.",
       );
-    // Offered only while some stale doc can actually be settled that way. Where
-    // every one of them traces to an unclaimed shared symbol, an ack is refused and
-    // a doc edit is prose written to buy green — so naming either here would be the
-    // dead end this line exists to stop printing.
-    if (report.state.staleDocs.length > ownershipOnly.length)
+    // Offered only while some stale doc can actually be settled that way. There are
+    // two ways a stale doc cannot be: every source that woke it is a shared file whose
+    // ownership does not resolve (above), or this feature owns a signature move, which
+    // ADR 006 gives no ack at any grain — one unresolved one keeps the doc stale
+    // however many other moves are acked, so it is asked about the feature, not the
+    // file. Naming the ack route over either is the dead end this line exists to stop
+    // printing, and the signature half went on printing it after plan 36 fixed the
+    // ownership half.
+    const unackable = report.state.staleDocs.filter(
+      (d) =>
+        report.drift.some((m) => m.feature === d.feature && !m.acknowledged && m.signatureChanged) ||
+        (d.changedSources.length > 0 && d.changedSources.every((f) => contestedFor(f, d.feature))),
+    );
+    // Withholding the dead route must not take the live one with it. These two share a
+    // line, and a signature move keeps the doc-update half while losing the ack half —
+    // dropping the whole sentence would leave the reader with no route at all, which is
+    // the same failure this rule is about, arrived at from the other side. An
+    // ownership-contested doc keeps neither (a doc edit there is the mirror prose), and
+    // its registry route is already printed above.
+    const ackable = report.state.staleDocs.length - unackable.length;
+    const contractOnly = unackable.length - ownershipOnly.length;
+    if (ackable > 0)
       routes.push(
         "    Resolve each stale doc: update it at intent altitude, or acknowledge a change that owes no doc line (`codument ack <path>` / `codument ack <path>::<symbol>`).",
+      );
+    else if (contractOnly > 0)
+      routes.push(
+        "    Resolve each stale doc by updating it at intent altitude: a signature moved, and no ack of any grain clears a contract change.",
       );
     for (const line of routes) console.log(pc.dim(line));
     console.log(pc.dim("    Then re-run."));
@@ -1268,7 +1289,19 @@ function printHuman(report: ReviewReport): void {
   // with the Symbol drift block. A precisely-evaluated file resolves per symbol
   // below and gets no line; an unevaluable file is excluded because `ack`
   // refuses it (fix the parse instead).
-  const driftFiles = new Set(report.drift.map((d) => d.anchorId.split("::")[0]));
+  // "Would a file-grain ack clear this?" is a question about the DOC, and it used to
+  // be asked about the file: any file carrying resolved drift was excluded from the
+  // route under every doc it woke. That is wrong in both directions, and the field hit
+  // both. A concept umbrella is never a per-symbol owner, so a file ack does clear ITS
+  // wake even while a sibling feature owns the symbols that moved — and the global test
+  // left the umbrella's stale doc with no resolution at all. The other direction is the
+  // reported one: the route printed under a doc whose own symbol had moved, and the ack
+  // the reader pasted came back "NOT cleared by a file ack". An acknowledged move no
+  // longer drives the wake, so it does not withhold the route either.
+  const ownsUnresolvedMove = (f: string, feature: string): boolean =>
+    report.drift.some(
+      (d) => d.feature === feature && !d.acknowledged && d.anchorId.split("::")[0] === f,
+    );
   const unevaluableFiles = new Set(state.unevaluable);
   // Ownership lints, indexed by the file that carries them. The resolution used to
   // print as its own ⚠ section BELOW the blocking line, among genuinely advisory
@@ -1302,7 +1335,8 @@ function printHuman(report: ReviewReport): void {
     state.staleDocs.map((d) => {
       let line = `${pc.yellow("⚠")} ${d.feature}: ${d.doc} (changed: ${d.changedSources.join(", ")})`;
       const coarse = d.changedSources.filter(
-        (f) => !driftFiles.has(f) && !unevaluableFiles.has(f) && !ackBlocked(f, d.feature),
+        (f) =>
+          !ownsUnresolvedMove(f, d.feature) && !unevaluableFiles.has(f) && !ackBlocked(f, d.feature),
       );
       if (coarse.length > 0) {
         line += `\n        ${pc.dim("doc impact    →")} update ${d.doc} ${pc.dim("at intent altitude")}`;

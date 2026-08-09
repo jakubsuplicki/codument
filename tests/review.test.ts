@@ -1935,6 +1935,168 @@ describe("an unclaimed shared file says how to stop being one (plan 36)", () => 
   });
 });
 
+// Plan 42 / the 2026-08-09 field report. "Would a file-grain ack clear this?" was
+// asked about the FILE and answered once for every doc the file woke. The question
+// belongs to the doc. A concept umbrella is never a per-symbol owner, so a file ack
+// genuinely clears ITS wake even while a sibling feature owns the symbols that moved
+// — and the global test withheld the route from it, leaving the umbrella's stale doc
+// with no resolution at all. The same global test failed the other way in the field:
+// it printed the file route under a doc whose own symbol had moved, and the ack the
+// reader pasted came back "1 moved symbol(s) here are NOT cleared by a file ack".
+describe("the file-ack route is decided per doc, not per file (plan 42)", () => {
+  function runReview(): { code: number; out: string } {
+    try {
+      return {
+        code: 0,
+        out: execFileSync("node", [CLI, "review", "--strict"], {
+          cwd: tmp,
+          encoding: "utf-8",
+          env: { ...process.env, NO_COLOR: "1" },
+        }),
+      };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { code: e.status ?? 1, out: e.stdout ?? "" };
+    }
+  }
+
+  /** The `⚠ <feature>: …` block for one stale doc, with the routes printed under it. */
+  function staleEntry(out: string, feature: string): string {
+    const section = out.split("Stale docs (source changed, mapped doc did not)")[1] ?? "";
+    const entries = section.split(/^\s*⚠ /m).slice(1);
+    const hit = entries.find((e) => e.startsWith(`${feature}:`));
+    assert.ok(hit, `no stale-doc entry for ${feature}`);
+    return hit;
+  }
+
+  const SRC = "src/engine.ts";
+
+  /** One precise source, owned per-symbol by a feature and file-grain by an umbrella. */
+  async function sharedWithUmbrella(): Promise<void> {
+    await scaffold({
+      "docs/features/engine.md": "# engine\n\n## In plain terms\nThe engine.\n",
+      "docs/concepts/toolkit.md": "# toolkit\n\n## In plain terms\nShared toolkit.\n",
+      [SRC]: "export function compute(x: number) {\n  return x + 1;\n}\n",
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            engine: {
+              doc: "docs/features/engine.md",
+              type: "feature",
+              primary_sources: [SRC],
+              status: "current",
+            },
+            toolkit: {
+              doc: "docs/concepts/toolkit.md",
+              type: "concept",
+              primary_sources: [SRC],
+              status: "current",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    gitInit(tmp);
+    // A BODY-only move: ackable in principle, so the routes are the whole question.
+    await scaffold({ [SRC]: "export function compute(x: number) {\n  return x + 2;\n}\n" });
+  }
+
+  it("offers the file ack to the umbrella a file ack actually clears", async () => {
+    await sharedWithUmbrella();
+    const r = runReview();
+    assert.equal(r.code, 1, "both docs are stale, so --strict blocks");
+
+    const umbrella = staleEntry(r.out, "toolkit");
+    assert.match(
+      umbrella,
+      /no doc impact →\s*codument ack src\/engine\.ts --reason/,
+      "a concept owns no symbol here, so the file ack clears its wake and must be offered",
+    );
+    assert.match(umbrella, /doc impact {4}→/, "and the doc-update route beside it");
+  });
+
+  it("withholds it from the feature whose own symbol moved", async () => {
+    await sharedWithUmbrella();
+    const r = runReview();
+
+    const owner = staleEntry(r.out, "engine");
+    assert.doesNotMatch(
+      owner,
+      /codument ack src\/engine\.ts --reason/,
+      "the file ack cannot clear a wake this feature's own moved symbol is driving",
+    );
+    // Its resolution is the per-symbol one, and that is printed where it belongs.
+    assert.match(r.out, /• compute \(changed\) in engine/);
+    assert.match(r.out, /codument ack src\/engine\.ts::compute\(\)\. --reason/);
+  });
+
+  it("the epilogue withholds the ack route when the only stale doc is a signature move", async () => {
+    // Same rule, applied to the blocking summary. ADR 006 gives a signature move no
+    // ack at any grain, so a stale doc driven by one cannot be settled that way — and
+    // the epilogue was still printing `codument ack <path>` under it. Plan 36 taught
+    // this line to withhold the route for an unclaimed shared symbol and left the
+    // signature move, which is just as unackable, still being offered one.
+    await scaffold({
+      "docs/features/engine.md": "# engine\n\n## In plain terms\nThe engine.\n",
+      "src/engine.ts": "export function compute(x: number) {\n  return x + 1;\n}\n",
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            engine: {
+              doc: "docs/features/engine.md",
+              type: "feature",
+              primary_sources: ["src/engine.ts"],
+              status: "current",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    gitInit(tmp);
+    await scaffold({
+      "src/engine.ts": "export function compute(x: number, y: number) {\n  return x + y;\n}\n",
+    });
+    const r = runReview();
+    assert.equal(r.code, 1);
+    const epilogue = r.out.split("--strict:")[1] ?? "";
+    assert.match(epilogue, /1 stale doc\(s\)/, "the epilogue is the block under test");
+    assert.doesNotMatch(
+      epilogue,
+      /codument ack/,
+      "no ack of any grain clears a signature move, so none is offered",
+    );
+    // Withholding the dead route must not take the live one with it: the two shared a
+    // sentence, so dropping it wholesale left the reader with no route at all.
+    assert.match(
+      epilogue,
+      /Resolve each stale doc by updating it at intent altitude/,
+      "the doc-update route survives the ack route's withdrawal",
+    );
+  });
+
+  it("the offered file ack really does clear the umbrella's wake", async () => {
+    await sharedWithUmbrella();
+    // Paste exactly what the gate printed. The field's complaint was that this step
+    // came back with a warning, so run the command and re-gate rather than trusting
+    // the text.
+    execFileSync("node", [CLI, "ack", SRC, "--reason", "body-only move; the toolkit's shared contract is unchanged"], {
+      cwd: tmp,
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    const after = runReview();
+    const section = after.out.split("Stale docs (source changed, mapped doc did not)")[1] ?? "";
+    assert.ok(
+      !/^\s*⚠ toolkit:/m.test(section),
+      "the umbrella's stale doc is gone once the printed ack is run",
+    );
+  });
+});
+
 // ADR 017 SUPERSEDES the plan-17 info-only stance for OWNED unjudgeable files.
 // This suite used to assert that a changed registered .css left `--strict` green
 // with a grey advisory — which is exactly the false green a field probe caught on

@@ -132,7 +132,7 @@ Status: approved.
       wired into doctor's Notes channel. Tests: fires on the field's verbatim-union shape, silent
       on an illustrative fence, silent on a CLI-output fence, silent on a fence whose content
       matches nothing the entry owns, and `--strict` exit unchanged.
-- [ ] Step 2: One shared "a file ack cannot clear this" predicate over drift; the stale-doc
+- [x] Step 2: One shared "a file ack cannot clear this" predicate over drift; the stale-doc
       `no doc impact` route consults it and prints the per-symbol commands instead of the file one
       when it applies. Test: the field's exact shape — a body-only module move under a stale doc —
       no longer prints a file ack, and the printed command clears the finding.

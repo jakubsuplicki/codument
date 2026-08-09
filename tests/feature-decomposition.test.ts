@@ -151,7 +151,11 @@ describe("FINDING_ORDER", () => {
   // so the later copy is dead weight that reads as a deliberate rank.
   it("lists each id exactly once (a duplicate is invisible to the derived union)", () => {
     const seen = new Set<LintFindingId>();
-    const dupes = FINDING_ORDER.filter((id) => (seen.has(id) ? true : (seen.add(id), false)));
+    const dupes: LintFindingId[] = [];
+    for (const id of FINDING_ORDER) {
+      if (seen.has(id)) dupes.push(id);
+      seen.add(id);
+    }
     assert.deepEqual(dupes, [], `FINDING_ORDER repeats: ${dupes.join(", ")}`);
   });
 });
