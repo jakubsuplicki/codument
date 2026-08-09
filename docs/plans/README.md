@@ -254,7 +254,32 @@ the most safety-critical code here. Every defect it caught was introduced by a f
 worst were introduced by the fix for the plan's own headline finding — which is the argument for
 the gate stated as plainly as it gets.
 
-Still to plan, ranked by value: shipped delivery scaffolding is never compacted out of docs (the
+**42 is shipped** (`caa058f`, `be48c31`, `1a822a5`, `81c8d35`, `a64801b`, and this doc pass). The
+second interrogation of the same Expo app, run after 0.15.0, got the answer the first one never
+reached: asked which prose it wrote mainly to clear the gate, the agent named a type union it had
+been maintaining by hand inside a code fence — a symbol mirror the standard forbids, kept fresh
+because the gate went red and no ack existed. The tool was compelling in one surface what it
+forbids in another, and the lint that names that smell skips fences by design.
+
+Six steps closed that and three neighbours: the file-ack route is now decided per doc rather than
+per file (it was wrong in both directions at once — withheld from an umbrella it would clear,
+offered to the owner it cannot), a signature-move denial names the registry escape instead of
+leaving prose as the only exit, `doctor` reports a `fenced-mirror` smell and discloses scaffolds
+the tree has moved past, and `commit-work` runs `doctor` once per plan.
+
+Three of the defects fixed here came from attacking the work, not from the report — and the
+sharpest was that **every per-symbol ack command codument has ever printed is a shell syntax
+error**: `foo().` bare is a bash parse failure and `<module>` is a redirection. The field report
+could not see it because the agent quoted the anchor reflexively and never noticed it was doing
+the tool's job. The lesson generalises the one from 41: a report tells you where it hurt, and the
+worst defects are in what the reporter silently worked around.
+
+Still to plan, ranked by value: locale trees and other content directories can only be governed
+file by file (the field's 5,400 new user-facing strings landed ungoverned because enumerating them
+meant 380 registry lines); acknowledgments expire on the next touch, so a file worked across steps
+is re-acked each time (345 acks in one field repo); `review`'s changed-file headline does not sum,
+because excluded files are counted in the total and named by no bucket; shipped delivery
+scaffolding is never compacted out of docs (the
 standard says it should be; nothing enforces it); the Decisions layer states conclusions without
 naming evidence, which is how a wrong recorded decision survived two fix attempts; unmapped prose
 pages are uncoverable by the gate (`orphan-doc` is scoped to `docs/features|concepts` and lives in

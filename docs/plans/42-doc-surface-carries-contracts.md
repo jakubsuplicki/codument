@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 42: the doc surface carries contracts — stop compelling the mirror, then flag it
@@ -145,9 +145,35 @@ Status: approved.
       disclosure below, not a write);
       `doctor` discloses long-stale `needs-review` entries as info beside the headline. Test: the
       first-run-ends-green invariant holds byte-for-byte.
-- [ ] Step 6: Docs at intent altitude — `change-control-gate` (the resolution invariant extended to
+- [x] Step 6: Docs at intent altitude — `change-control-gate` (the resolution invariant extended to
       the ack surface), `registry-health` (the new smell and the disclosure), `doc-audience-layers`
       (fenced mechanism is mechanism), `agent-delivery-workflow` (doctor's cadence) — and CHANGELOG.
+
+## How the open questions resolved
+
+1. **A type alias or interface changing.** The denial stayed; the message grew the
+   registry escape. The fingerprint was left alone, so no algoStamp bump and no
+   acknowledgment was invalidated. The field's harm came from the denial being the
+   whole message, and that is what changed.
+2. **`fenced-mirror` inside plan docs.** Free by construction: the lint only ever reads
+   docs a registry entry points at, and no entry points at a plan.
+3. **Making a stale scaffold visible.** Disclosed, not scored — and keyed on the scan's
+   own recorded file count rather than a date, because a clock would have broken the
+   determinism invariant while fixing the noise. Zero at parity, so a first run is
+   unchanged to the byte.
+
+Two things this plan asked for turned out not to exist. `scan` already refreshes
+`lastScan` — the stamp was stale because nothing re-ran scan, not because scan fails
+to write it. And `symbol-mirror`'s blindness to fences is a tested, deliberate
+near-miss, not an oversight, so the fix had to be a fourth smell beside it rather
+than a change to it.
+
+Three defects were found by attacking the work rather than by the field report: the
+dead `LintFindingId` exhaustiveness guard, the epilogue offering an acknowledgment
+for a signature move, and every printed per-symbol ack command being a shell syntax
+error. The last is the sharpest — it had been true of every release, and the field
+report could not see it because the agent quoted the anchor reflexively and never
+noticed it was doing the tool's job.
 
 ## Outcome
 

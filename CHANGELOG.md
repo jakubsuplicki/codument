@@ -7,6 +7,65 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+The second field report, answered. The same interrogation run against the same
+Expo app after 0.15.0 shipped produced a confession the first one never reached:
+asked which prose it had written mainly to make the gate go green, the agent named
+a type union it had been maintaining **by hand, verbatim, inside a code fence** in
+a concept doc — a symbol mirror the documentation standard forbids writing, kept
+fresh because the gate went red and no acknowledgment was available. The tool was
+compelling in one surface exactly the rot it forbids in another, and the lint that
+names that smell could not see it, because all three prose heuristics skip fenced
+content by design.
+
+### Added
+
+- `doctor` reports a fourth altitude smell, `fenced-mirror`: a code fence in a
+  registered doc that reproduces the declaration of a symbol that entry owns. It
+  requires a declaration site, so a fence that calls the symbol, shows CLI output,
+  or declares a name from elsewhere stays silent. Info-only in the Notes channel
+  like its three siblings — no exit code moves, and its false-fire rate can be
+  soaked before anyone argues for promotion.
+- `doctor` discloses how many registry entries are still `needs-review` scaffolds,
+  but only once the tree has moved past the scan that wrote them — measured against
+  that scan's own recorded file count, never a clock, so a fresh scan's output is
+  unchanged to the byte. The exemption that keeps a first run from opening at 0%
+  reasons about "seconds old" and was implemented as "forever": a field registry
+  sat outside every ratio for four months, reading as in-flight.
+- `commit-work` runs `codument doctor --strict` once, when a plan's last step
+  lands. It reports; it does not gate. A field session made 37 review-family calls
+  across five commits without ever learning its own health surface stood at 140
+  findings, one of them on a doc that session had just edited.
+
+### Changed
+
+- Whether to offer the file-grain acknowledgment under a stale doc is now decided
+  per doc rather than per file. One answer for the whole file was wrong in both
+  directions at once: it withheld the route from a concept umbrella whose wake a
+  file ack genuinely clears, leaving that doc with no resolution at all, and it
+  printed the route under the feature whose own moved symbol refuses it — the
+  command a field agent pasted twice and was warned about both times.
+- The blocking summary no longer offers an acknowledgment when every stale doc is
+  driven by a signature move, which no ack of any grain clears. The doc-update
+  route, which had shared that sentence, now survives on its own.
+- A signature-move denial names the registry escape beside the doc update wherever
+  another entry also claims the file. The denial was correct and it was the whole
+  message, so prose was the only exit a reader could see — and where the doc's
+  contract does not turn on the symbol, that prose is the mirror edit.
+- What `ack` prints about symbols its file grain could not reach are now commands
+  carrying the real anchor, sitting with the symbol each resolves. It printed a
+  shape to assemble, dim and last under a warning, and a field agent read past it
+  in one step and only obeyed it in the next. It also leads with the fact that the
+  acknowledgment just written stands, rather than reading as a failure of a command
+  that did exactly what it was asked.
+- Every printed `codument ack` command is quoted where a shell would otherwise
+  choke. Descriptors are not shell-safe: `foo().` bare is a bash syntax error and
+  `<module>` is a redirection, so every per-symbol acknowledgment this tool has ever
+  printed was one the reader had to repair before it would run.
+- `LintFindingId` is derived from the finding-order array rather than written beside
+  it. The two had to agree and nothing made them: the guard was a compile-time trick
+  in a test file that the project's typecheck never sees, and three ids had already
+  slipped past it.
+
 ## [0.15.0] - 2026-08-08
 
 The dogfood release. An Expo app was built end to end under the gate by an agent
