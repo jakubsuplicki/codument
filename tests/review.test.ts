@@ -2034,6 +2034,78 @@ describe("the file-ack route is decided per doc, not per file (plan 42)", () => 
     assert.match(r.out, /codument ack "src\/engine\.ts::compute\(\)\." --reason/);
   });
 
+  it("a signature move on a contested file names the registry escape, not just the denial", async () => {
+    // The field's shape: a union in a shared types file gained three members. The
+    // signature-move denial was correct and it was the WHOLE message, so the only
+    // exit left was prose — and the feature it billed documented first-run seeding,
+    // whose contract that union does not turn on. The agent rewrote the line and said
+    // so when asked. Where a rival claim exists, the registry is the real fix.
+    await scaffold({
+      "docs/features/seeding.md": "# seeding\n\n## In plain terms\nFirst-run seeding.\n",
+      "docs/concepts/kinds.md": "# kinds\n\n## In plain terms\nShared type vocabulary.\n",
+      "src/kinds.ts": "export type Lang = 'en' | 'es';\n",
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            seeding: {
+              doc: "docs/features/seeding.md",
+              type: "feature",
+              primary_sources: ["src/kinds.ts"],
+              status: "current",
+            },
+            kinds: {
+              doc: "docs/concepts/kinds.md",
+              type: "concept",
+              primary_sources: ["src/kinds.ts"],
+              status: "current",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    gitInit(tmp);
+    await scaffold({ "src/kinds.ts": "export type Lang = 'en' | 'es' | 'fi';\n" });
+
+    const r = runReview();
+    assert.equal(r.code, 1);
+    assert.match(r.out, /\[signature changed\]/, "a type alias is all signature");
+    assert.match(
+      r.out,
+      /not its contract →.*2 entries claim src\/kinds\.ts/,
+      "the registry escape is named where a rival claim exists",
+    );
+    assert.match(r.out, /rather than writing prose/);
+  });
+
+  it("does not offer the registry escape to a sole owner (that would unown the file)", async () => {
+    await scaffold({
+      "docs/features/engine.md": "# engine\n\n## In plain terms\nThe engine.\n",
+      "src/only.ts": "export type Lang = 'en' | 'es';\n",
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            engine: {
+              doc: "docs/features/engine.md",
+              type: "feature",
+              primary_sources: ["src/only.ts"],
+              status: "current",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    gitInit(tmp);
+    await scaffold({ "src/only.ts": "export type Lang = 'en' | 'es' | 'fi';\n" });
+
+    const r = runReview();
+    assert.match(r.out, /\[signature changed\]/);
+    assert.doesNotMatch(r.out, /not its contract →/, "demoting a sole owner unowns the file");
+  });
+
   it("the epilogue withholds the ack route when the only stale doc is a signature move", async () => {
     // Same rule, applied to the blocking summary. ADR 006 gives a signature move no
     // ack at any grain, so a stale doc driven by one cannot be settled that way — and

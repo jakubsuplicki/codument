@@ -1434,6 +1434,19 @@ function printHuman(report: ReviewReport): void {
         console.log(
           `        ${pc.dim("signature move  →")} ${pc.dim("the symbol's signature changed — the doc's contract needs an update, not an ack")}`,
         );
+        // The denial is right and it was the whole message, which left prose as the
+        // only exit — and where the doc's contract does not turn on the symbol at
+        // all, prose is the mirror edit. In the field a union gaining three members
+        // billed a feature whose documented contract was first-run seeding, and the
+        // agent rewrote a line it had no reason to touch. Offered only where a rival
+        // claim exists, because demoting a sole owner would leave the file unowned.
+        const file = d.anchorId.split("::")[0];
+        const claimants = state.byFeature.filter((g) => g.files.includes(file)).length;
+        if (claimants > 1) {
+          console.log(
+            `        ${pc.dim("not its contract →")} ${pc.dim(`${claimants} entries claim ${file}; if ${d.feature}'s contract does not turn on this symbol, demote it there in`)} ${pc.cyan("docs/.registry.json")} ${pc.dim("rather than writing prose")}`,
+          );
+        }
       } else if (d.kind === "changed") {
         console.log(
           `        ${pc.dim("internal only   →")} ${pc.cyan(`codument ack ${shellArg(d.anchorId)} --reason "..."`)}`,

@@ -138,7 +138,7 @@ Status: approved.
       no longer prints a file ack, and the printed command clears the finding.
 - [x] Step 3: `ack` prints paste-ready per-symbol commands above the warning, not a dim pattern
       below it. Test: every command in the output runs as printed and clears what it names.
-- [ ] Step 4: The signature-denial names the two real fixes (per open question 1). Test: a type
+- [x] Step 4: The signature-denial names the two real fixes (per open question 1). Test: a type
       alias change under two owning entries prints a route that resolves without prose.
 - [ ] Step 5: `doctor --strict` at plan completion in `commit-work`; `scan` refreshes `lastScan`;
       `doctor` discloses long-stale `needs-review` entries as info beside the headline. Test: the
