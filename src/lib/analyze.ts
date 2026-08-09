@@ -1380,6 +1380,7 @@ export const FINDING_ORDER = [
   "line-anchor",
   "path-enumeration",
   "fenced-mirror",
+  "unsourced-decision",
 ] as const;
 
 function sortFindings(findings: LintFinding[]): LintFinding[] {

@@ -24,7 +24,8 @@ export type ProseAltitudeId =
   | "symbol-mirror"
   | "line-anchor"
   | "path-enumeration"
-  | "fenced-mirror";
+  | "fenced-mirror"
+  | "unsourced-decision";
 
 export interface ProseAltitudeFinding {
   id: ProseAltitudeId;
@@ -111,6 +112,18 @@ const SHAPE_KEYWORDS = new Set([
   "type", "interface", "class", "enum", "struct", "trait", "record",
 ]);
 
+/**
+ * What counts as naming your evidence in a Decisions layer: a link (markdown or wiki),
+ * an ADR by number, or a test citation. The standard says Decisions are pointers — "the
+ * durable why; reference, never restate" — and a layer that points at nothing records a
+ * conclusion nobody can re-derive or contest, which is how a wrong recorded decision
+ * survives the attempts to fix what it was wrong about. Judged per SECTION rather than
+ * per bullet: an individual small decision legitimately has no ADR, and a per-bullet
+ * rule would pressure authors to decorate every line. A whole layer citing nothing is
+ * the signal.
+ */
+const DECISION_EVIDENCE = /\]\(|\[\[|ADR[- ]?\d|\((?:tests?|structural boundary)[:)]/i;
+
 /** Strip leading markdown list/quote/emphasis/backtick markers to reach the prose. */
 function stripLeadMarkers(line: string): string {
   return line
@@ -141,7 +154,13 @@ export function analyzeProseAltitude(
   const isTestPath = options.isTestPath ?? (() => false);
   const findings: ProseAltitudeFinding[] = [];
   const exported = new Set(input.exportedSymbols);
-  const lines = input.content.split("\n");
+  // Split on either line ending. A CRLF checkout leaves a trailing carriage return on
+  // every line, and `.` does not match one in JavaScript — so the heading regex
+  // returned null for every heading in the file, and section awareness was silently
+  // dead on Windows: `path-enumeration` reported every doc against section "" at line
+  // 0 (the whole-document flush), and nothing that reads a section could fire at all.
+  // One split fixes every smell at once.
+  const lines = input.content.split(/\r?\n/);
 
   let inFence = false;
   // At most ONE fenced-mirror per fence: a mirrored union or interface is one doc
@@ -150,6 +169,9 @@ export function analyzeProseAltitude(
   let sectionTitle = "";
   let sectionHeadingLine = 0;
   let sectionIsKeyFiles = false;
+  let sectionIsDecisions = false;
+  let sectionHasEvidence = false;
+  let sectionHasEntries = false;
   // DISTINCT non-test paths, not mentions: three invariants pinned by one spec
   // file are one file being cited three times, not a three-file enumeration.
   const sectionPaths = new Set<string>();
@@ -157,6 +179,14 @@ export function analyzeProseAltitude(
     findings.push({ id, feature: input.feature, doc: input.doc, line, message, evidence });
 
   const flushSection = () => {
+    if (sectionIsDecisions && sectionHasEntries && !sectionHasEvidence) {
+      emit(
+        "unsourced-decision",
+        sectionHeadingLine,
+        `section "${sectionTitle}" records decisions that point at nothing — the layer is meant to be pointers (an ADR, a test, a linked doc), and a conclusion nobody can re-derive is one nobody can contest`,
+        sectionTitle,
+      );
+    }
     if (!sectionIsKeyFiles && sectionPaths.size > maxPaths) {
       emit(
         "path-enumeration",
@@ -207,8 +237,16 @@ export function analyzeProseAltitude(
       sectionTitle = heading;
       sectionHeadingLine = lineNo;
       sectionIsKeyFiles = /key files/i.test(heading);
+      sectionIsDecisions = /decisions?$/i.test(heading.trim());
+      sectionHasEvidence = false;
+      sectionHasEntries = false;
       sectionPaths.clear();
       continue;
+    }
+
+    if (sectionIsDecisions) {
+      if (/^\s*[-*]\s+\S/.test(raw)) sectionHasEntries = true;
+      if (DECISION_EVIDENCE.test(raw)) sectionHasEvidence = true;
     }
 
     if (isTableRow(raw)) continue; // a table is not prose

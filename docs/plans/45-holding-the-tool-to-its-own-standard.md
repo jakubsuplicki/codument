@@ -88,7 +88,7 @@ Status: approved.
 - [x] Step 2: `doctor` names a registered doc that still carries delivery scaffolding
       after its plan shipped. Test: a doc whose checklist is fully checked fires; one
       with unchecked steps does not; a doc with no scaffolding is silent.
-- [ ] Step 3: A `## Decisions` entry that cites nothing is an info-only altitude note.
+- [x] Step 3: A `## Decisions` entry that cites nothing is an info-only altitude note.
       Test: a bare conclusion fires; an entry pointing at an ADR, a test, or another
       doc does not; `--strict` exit codes are unchanged.
 - [ ] Step 4: `context --file` answers ownership in one line under `--owner`. Test: the

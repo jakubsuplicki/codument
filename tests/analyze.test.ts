@@ -1718,3 +1718,40 @@ describe("a shipped doc that still carries its checklist is named (plan 45)", ()
     );
   });
 });
+
+// A stray control byte in source has cost this project twice in one release: a NUL
+// written as a hash separator made git classify a module as binary, so the central
+// file of a change had no reviewable diff at all; and a backspace inside a regex
+// literal made a pattern silently unmatchable. Both compiled, both passed the
+// typechecker, and neither is visible in an editor. One cheap sweep closes the class.
+describe("no source file carries an invisible control character", () => {
+  // Scoped to `src/`: a test tree legitimately holds control bytes as fixture data (a
+  // binary-file probe, an ANSI escape in a strip regex), and an escape hatch nobody
+  // can forget is worth more than covering a tree where a stray byte is only a test's
+  // own problem. Both real defects were in `src/`, where nothing needs one.
+  it("sweeps src/ for control bytes other than tab, LF and CR", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    const offenders: string[] = [];
+    const walk = (dir: string): void => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, e.name);
+        if (e.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!/\.(ts|tsx|js|mjs|cjs|json)$/.test(e.name)) continue;
+        const bytes = readFileSync(full);
+        for (let i = 0; i < bytes.length; i++) {
+          const b = bytes[i];
+          if (b < 0x20 && b !== 0x09 && b !== 0x0a && b !== 0x0d) {
+            offenders.push(`${e.name}: byte 0x${b.toString(16)} at offset ${i}`);
+            break;
+          }
+        }
+      }
+    };
+    walk(join(root, "src"));
+    assert.deepStrictEqual(offenders, []);
+  });
+});

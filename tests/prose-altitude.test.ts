@@ -533,3 +533,90 @@ describe("prose-altitude: path-enumeration counts distinct non-test paths", () =
     assert.deepEqual(withTests("## Invariants\n- See src/a.spec.ts:42."), ["line-anchor"]);
   });
 });
+
+// Plan 45 step 3. Two findings that arrived together: the Decisions layer is meant to
+// be pointers, and section awareness had never worked on a CRLF checkout — `.` does
+// not match a carriage return in JavaScript, so the heading regex returned null for
+// every heading in the file.
+describe("prose-altitude: section awareness survives CRLF (plan 45)", () => {
+  // A section that genuinely enumerates, a section that is exempt, and a Decisions
+  // layer that points at nothing — so a reading with no section awareness disagrees
+  // with a correct one on all three counts, not merely on where it points.
+  const doc = [
+    "# x",
+    "",
+    "## Design approach",
+    "",
+    "It wires `src/a.ts`, `src/b.ts`, `src/c.ts`, `src/d.ts` and `src/e.ts` together.",
+    "",
+    "## Decisions",
+    "",
+    "- We chose A over B because it is simpler.",
+    "",
+    "## Key files",
+    "",
+    "- `src/f.ts` — one",
+    "- `src/g.ts` — two",
+  ];
+  const LF = String.fromCharCode(10);
+  const CRLF = String.fromCharCode(13, 10);
+  const run = (content: string) =>
+    analyzeProseAltitude({ feature: "x", doc: "docs/features/x.md", content, exportedSymbols: [] });
+
+  it("reads the same sections whichever line ending the checkout used", () => {
+    const lf = run(doc.join(LF));
+    const crlf = run(doc.join(CRLF));
+    assert.deepStrictEqual(crlf, lf);
+  });
+
+  it("names the section that enumerates, on CRLF too", () => {
+    const found = run(doc.join(CRLF)).filter((f) => f.id === "path-enumeration");
+    assert.equal(found.length, 1);
+    assert.match(found[0].message, /section "Design approach"/);
+    assert.match(found[0].message, /5 source paths/, "the Key files entries stay exempt");
+  });
+
+  it("a section-scoped smell can fire at all on CRLF, where none could before", () => {
+    assert.equal(
+      run(doc.join(CRLF)).filter((f) => f.id === "unsourced-decision").length,
+      1,
+    );
+  });
+});
+
+describe("prose-altitude: a decisions layer that points at nothing (plan 45)", () => {
+  const withDecisions = (body: string) =>
+    analyzeProseAltitude({
+      feature: "x",
+      doc: "docs/features/x.md",
+      content: `# x\n\n## In plain terms\n\nThing.\n\n## Decisions\n\n${body}\n\n## Key files\n\n- \`src/a.ts\` — one\n`,
+      exportedSymbols: [],
+    }).filter((f) => f.id === "unsourced-decision");
+
+  it("fires on a layer of bare conclusions", () => {
+    const found = withDecisions("- We chose A over B because it is simpler.\n- And C, for speed.");
+    assert.equal(found.length, 1, "one finding for the layer, never one per bullet");
+    assert.match(found[0].message, /point at nothing/);
+  });
+
+  it("stays silent when the layer points at an ADR, a link, or a test", () => {
+    assert.deepStrictEqual(withDecisions("- Deterministic verdict — ADR 003."), []);
+    assert.deepStrictEqual(withDecisions("- See [the decision](../architecture/decisions/003-x.md)."), []);
+    assert.deepStrictEqual(withDecisions("- Ownership is derived-first, see [[change-control-gate]]."), []);
+    assert.deepStrictEqual(withDecisions("- One analyzer feeds every surface. *(test: `analyze.test.ts`)*"), []);
+  });
+
+  it("stays silent on a decisions layer with no entries at all", () => {
+    assert.deepStrictEqual(withDecisions("<!-- pointers to ADRs -->"), []);
+  });
+
+  it("judges the layer, not the doc — another section citing nothing is not its business", () => {
+    const found = analyzeProseAltitude({
+      feature: "x",
+      doc: "docs/features/x.md",
+      content: "# x\n\n## In plain terms\n\nA bare claim with no citation anywhere.\n",
+      exportedSymbols: [],
+    }).filter((f) => f.id === "unsourced-decision");
+    assert.deepStrictEqual(found, []);
+  });
+});
