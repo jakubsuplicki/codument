@@ -136,7 +136,7 @@ Status: approved.
       `no doc impact` route consults it and prints the per-symbol commands instead of the file one
       when it applies. Test: the field's exact shape — a body-only module move under a stale doc —
       no longer prints a file ack, and the printed command clears the finding.
-- [ ] Step 3: `ack` prints paste-ready per-symbol commands above the warning, not a dim pattern
+- [x] Step 3: `ack` prints paste-ready per-symbol commands above the warning, not a dim pattern
       below it. Test: every command in the output runs as printed and clears what it names.
 - [ ] Step 4: The signature-denial names the two real fixes (per open question 1). Test: a type
       alias change under two owning entries prints a route that resolves without prose.

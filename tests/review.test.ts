@@ -2029,7 +2029,9 @@ describe("the file-ack route is decided per doc, not per file (plan 42)", () => 
     );
     // Its resolution is the per-symbol one, and that is printed where it belongs.
     assert.match(r.out, /• compute \(changed\) in engine/);
-    assert.match(r.out, /codument ack src\/engine\.ts::compute\(\)\. --reason/);
+    // Quoted: `compute().` is a bash syntax error pasted bare, so a "paste-ready"
+    // command that does not survive a shell is not one.
+    assert.match(r.out, /codument ack "src\/engine\.ts::compute\(\)\." --reason/);
   });
 
   it("the epilogue withholds the ack route when the only stale doc is a signature move", async () => {

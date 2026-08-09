@@ -43,6 +43,21 @@ export function parseAck(value: unknown): Acknowledgment | null {
   return { anchorId, fromHash, toHash, reason, signer };
 }
 
+/**
+ * An anchor or path as it has to be written on a command line. Descriptors are not
+ * shell-safe: `foo().` and `<module>` are a syntax error and a redirection pasted
+ * bare, so every per-symbol ack command this tool printed was a command the reader
+ * had to repair before it would run — the same class of defect as printing one that
+ * cannot clear the finding, arrived at one layer further out. Left bare where a shell
+ * would not touch it, because a quoted token the reader must strip is its own
+ * friction, and quoted with the four characters double quotes still interpret escaped.
+ */
+export function shellArg(token: string): string {
+  return /^[A-Za-z0-9_.:@/+-]+$/.test(token)
+    ? token
+    : `"${token.replace(/(["\\$`])/g, "\\$1")}"`;
+}
+
 // Whether an ack covers a specific moved anchor: it must name the same anchor AND
 // the exact `from`->`to` fingerprint transition. The `to` match is what makes it
 // auto-invalidate on the next move (a new `to` won't match a recorded one); the

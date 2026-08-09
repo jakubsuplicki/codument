@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import pc from "picocolors";
-import { ackCovers, isFileGrainAck, normalizeIdentity, readAcks } from "../lib/acknowledgment.js";
+import { ackCovers, isFileGrainAck, normalizeIdentity, readAcks, shellArg } from "../lib/acknowledgment.js";
 import { isExcluded, resolveScopeSync, type ExclusionSpec } from "../lib/analyze.js";
 import {
   type ApprovedPlan,
@@ -1341,7 +1341,7 @@ function printHuman(report: ReviewReport): void {
       if (coarse.length > 0) {
         line += `\n        ${pc.dim("doc impact    →")} update ${d.doc} ${pc.dim("at intent altitude")}`;
         for (const f of coarse) {
-          line += `\n        ${pc.dim("no doc impact →")} ${pc.cyan(`codument ack ${f} --reason "..."`)} ${pc.dim("(file-grain; expires when the file changes again)")}`;
+          line += `\n        ${pc.dim("no doc impact →")} ${pc.cyan(`codument ack ${shellArg(f)} --reason "..."`)} ${pc.dim("(file-grain; expires when the file changes again)")}`;
         }
       }
       for (const f of d.changedSources) {
@@ -1436,7 +1436,7 @@ function printHuman(report: ReviewReport): void {
         );
       } else if (d.kind === "changed") {
         console.log(
-          `        ${pc.dim("internal only   →")} ${pc.cyan(`codument ack ${d.anchorId} --reason "..."`)}`,
+          `        ${pc.dim("internal only   →")} ${pc.cyan(`codument ack ${shellArg(d.anchorId)} --reason "..."`)}`,
         );
       } else {
         // An added/removed symbol has no per-symbol ack (ack rejects it: new or
@@ -1444,7 +1444,7 @@ function printHuman(report: ReviewReport): void {
         // FILE-grain form — suggest the command that actually works when pasted.
         const file = d.anchorId.split("::")[0];
         console.log(
-          `        ${pc.dim("additive only   →")} ${pc.cyan(`codument ack ${file} --reason "..."`)} ${pc.dim("(file-grain; a per-symbol ack does not apply to added/removed)")}`,
+          `        ${pc.dim("additive only   →")} ${pc.cyan(`codument ack ${shellArg(file)} --reason "..."`)} ${pc.dim("(file-grain; a per-symbol ack does not apply to added/removed)")}`,
         );
       }
     }

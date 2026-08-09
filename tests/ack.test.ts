@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { ackCommand } from "../src/commands/ack.js";
 import { buildReview } from "../src/commands/review.js";
-import { ackFileName, readAcks, writeAck } from "../src/lib/acknowledgment.js";
+import { ackFileName, readAcks, shellArg, writeAck } from "../src/lib/acknowledgment.js";
 import { adapterFor } from "../src/lib/fingerprint.js";
 import { readAllEvents } from "../src/lib/events.js";
 import { getGitAuthor } from "../src/lib/git.js";
@@ -264,7 +264,7 @@ describe("ack loop end-to-end through the real CLI (the headline ergonomics)", a
 
     // 1. review prints the exact ack command to clear it (no fingerprint copying)
     const review1 = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
-    const m = review1.match(/codument ack (\S+) --reason/);
+    const m = review1.match(/codument ack "?([^"]+?)"? --reason/);
     assert.ok(m, "review printed a runnable ack command");
     const anchorArg = m![1];
     assert.equal(anchorArg, "src/a.ts::foo().");
@@ -477,7 +477,7 @@ describe("a MOVED file is judged the same way by review and by ack", async () =>
     // The move is judged as a move: the symbol reads `changed`, not `added` — so a
     // per-symbol ack is offered at all.
     const review = run(["review"]);
-    const m = review.out.match(/codument ack (\S+) --reason/);
+    const m = review.out.match(/codument ack "?([^"]+?)"? --reason/);
     assert.ok(m, `review must offer a per-symbol ack for a moved symbol:\n${review.out}`);
     assert.equal(m![1], "src/b.ts::foo().");
 
@@ -533,7 +533,7 @@ describe("a MOVED file is judged the same way by review and by ack", async () =>
 
     const r = run(["review", "--strict"]);
     assert.equal(r.code, 1, `a moved-AND-edited file still owes its doc:\n${r.out}`);
-    const m = r.out.match(/codument ack (\S+) --reason/);
+    const m = r.out.match(/codument ack "?([^"]+?)"? --reason/);
     assert.ok(m, `the file-grain route must be offered:\n${r.out}`);
     assert.equal(m![1], "app/style.css");
 
@@ -643,7 +643,7 @@ describe("codument ack <path> — the file-grain surface", async () => {
     // File ack: records, but names the still-flagged moved owned symbol.
     const r = await capture(() => ackCommand("src/a.ts", { reason: "additive helper only", root: tmp }));
     assert.equal(r.code, undefined, r.err);
-    assert.match(r.out, /1 moved symbol\(s\) here are NOT cleared/);
+    assert.match(r.out, /1 moved symbol\(s\) in this file are NOT cleared by a file ack/);
     assert.match(r.out, /src\/a\.ts::foo/);
     assert.deepStrictEqual(staleFeatures(tmp), ["alpha"], "the moved foo() keeps alpha flagged");
 
@@ -1043,6 +1043,29 @@ describe("getGitAuthor", async () => {
   });
 });
 
+describe("shellArg — a printed command has to survive the shell it is pasted into", () => {
+  it("leaves a token a shell would not touch alone", () => {
+    assert.equal(shellArg("src/a.ts"), "src/a.ts");
+    assert.equal(shellArg("src/a.ts::foo."), "src/a.ts::foo.");
+    assert.equal(shellArg("app/Button.tsx::default."), "app/Button.tsx::default.");
+  });
+
+  it("quotes the descriptors a shell would choke on", () => {
+    // `foo().` is a syntax error in bash and `<module>` is a redirection — both are
+    // anchors codument prints in the command it asks the reader to run.
+    assert.equal(shellArg("src/a.ts::foo()."), '"src/a.ts::foo()."');
+    assert.equal(shellArg("app/_layout.tsx::<module>"), '"app/_layout.tsx::<module>"');
+    assert.equal(shellArg("src/my file.ts"), '"src/my file.ts"');
+  });
+
+  it("escapes what double quotes still interpret", () => {
+    assert.equal(shellArg('a"b'), '"a\\"b"');
+    assert.equal(shellArg("a$b"), '"a\\$b"');
+    assert.equal(shellArg("a`b"), '"a\\`b"');
+    assert.equal(shellArg("a\\b"), '"a\\\\b"');
+  });
+});
+
 describe("signature/body split — the ack acceptance table", async () => {
   // base: a zero-arg exported function; its doc narrates the contract.
   const SIG_REG = {
@@ -1083,6 +1106,55 @@ describe("signature/body split — the ack acceptance table", async () => {
     assert.deepStrictEqual(buildReview(tmp).state.staleDocs, []);
   });
 
+  // Plan 42 / the 2026-08-09 field report, C3 and C4. The line that would have worked
+  // was `codument ack <path>::<symbol>` — a shape to fill in, printed dim and last,
+  // below the warning and below the "Re-run" advice. The agent read past it in one
+  // step, rewrote a doc instead, and only obeyed it in the next.
+  it("names the exact per-symbol command, and it clears what it names", async () => {
+    await scaffold({ "src/a.ts": BODY_MOVED });
+    const r = await capture(() =>
+      ackCommand("src/a.ts", { reason: "file-level: trust me", root: tmp }),
+    );
+    assert.equal(r.code, undefined, r.err);
+
+    assert.match(
+      r.out,
+      /codument ack "src\/a\.ts::foo\(\)\." --reason/,
+      "the anchor is filled in, not left as a placeholder",
+    );
+    assert.doesNotMatch(r.out, /<path>::<symbol>/, "a shape to assemble is not a command");
+    // And it has to survive the shell it will be pasted into: `foo().` bare is a
+    // syntax error in bash, and `<module>` is a redirection. Every per-symbol ack
+    // command this tool printed had to be repaired by the reader before it would run.
+    assert.match(r.out, /codument ack "src\/a\.ts::foo\(\)\."/, "shell-safe as printed");
+    // The resolution sits inside the finding it resolves, above the closing advice.
+    const warn = r.out.indexOf("NOT cleared by a file ack");
+    const cmd = r.out.indexOf('codument ack "src/a.ts::foo()."');
+    assert.ok(warn >= 0 && cmd > warn, "the command belongs with the symbol it resolves");
+
+    // The whole point: run exactly what was printed and the finding clears.
+    const printed = /codument ack "?([^"]+?)"? --reason/.exec(r.out);
+    assert.ok(printed, "a runnable command was printed");
+    const second = await capture(() =>
+      ackCommand(printed[1], { reason: "same return shape", root: tmp }),
+    );
+    assert.equal(second.code, undefined, second.err);
+    assert.deepStrictEqual(buildReview(tmp).state.staleDocs, []);
+  });
+
+  it("does not read as a failure of the ack that just succeeded", async () => {
+    await scaffold({ "src/a.ts": BODY_MOVED });
+    const r = await capture(() =>
+      ackCommand("src/a.ts", { reason: "file-level: trust me", root: tmp }),
+    );
+    assert.match(
+      r.out,
+      /the ack above stands/,
+      "the file ack did what it was asked; the remaining symbols were never in its reach",
+    );
+    assert.equal(readAcks(tmp).length, 1, "and it really was written");
+  });
+
   it("a signature move is classified, stays stale, and a per-symbol ack is refused", async () => {
     await scaffold({ "src/a.ts": SIG_MOVED });
     const finding = buildReview(tmp).drift.find((d) => d.symbol === "foo");
@@ -1110,7 +1182,8 @@ describe("signature/body split — the ack acceptance table", async () => {
     assert.match(r.out, /NOT cleared by a file ack/);
     assert.match(r.out, /\(signature changed\)/, "the moved symbol is tagged as a signature move");
     // and the file-ack guidance routes a signature move to the doc, never to an ack.
-    assert.match(r.out, /Signature moves: update the owning doc/);
+    assert.match(r.out, /contract changed → update docs\/features\/alpha\.md/);
+    assert.match(r.out, /no ack of any grain clears a signature move/);
     assert.doesNotMatch(r.out, /codument ack src\/a\.ts::foo/, "no per-symbol ack is suggested");
     assert.deepStrictEqual(
       buildReview(tmp).state.staleDocs.map((d) => d.feature),

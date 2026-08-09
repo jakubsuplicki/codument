@@ -9,6 +9,7 @@ import {
   isFileGrainAck,
   isIndependent,
   readAcks,
+  shellArg,
   writeAck,
 } from "../lib/acknowledgment.js";
 import {
@@ -198,7 +199,7 @@ export async function ackCommand(anchor: string | undefined, options: AckCliOpti
     fail(
       `${ch.id} was ${ch.kind}, not changed — an added or removed symbol needs doc attention: ` +
         `update the owning doc, or acknowledge the file's additive residue with ` +
-        `\`codument ack ${file} --reason "..."\``,
+        `\`codument ack ${shellArg(file)} --reason "..."\``,
     );
     return;
   }
@@ -228,8 +229,8 @@ export async function ackCommand(anchor: string | undefined, options: AckCliOpti
     );
     fail(
       concept
-        ? `no feature owns ${ch.id} — it is narrated at file grain by a concept umbrella, which a per-symbol ack never clears: \`codument ack ${file} --reason "..."\``
-        : `no feature owns ${ch.id}, so nothing gates it and an ack would clear nothing. If it should be governed, map the file first: \`codument map materialize ${file}\``,
+        ? `no feature owns ${ch.id} — it is narrated at file grain by a concept umbrella, which a per-symbol ack never clears: \`codument ack ${shellArg(file)} --reason "..."\``
+        : `no feature owns ${ch.id}, so nothing gates it and an ack would clear nothing. If it should be governed, map the file first: \`codument map materialize ${shellArg(file)}\``,
     );
     return;
   }
@@ -324,7 +325,7 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
     // its doc an update — or the doc's own removal — never an ack (ADR-012).
     fail(
       from === null
-        ? `${file} was added, not changed — a new file needs an owner and doc attention: \`codument map materialize ${file}\`, then narrate it (no ack applies)`
+        ? `${file} was added, not changed — a new file needs an owner and doc attention: \`codument map materialize ${shellArg(file)}\`, then narrate it (no ack applies)`
         : `${file} was deleted, not changed — a removal owes its owning doc an update (or remove the doc with its feature); no acknowledgment clears a deletion`,
     );
     return;
@@ -378,33 +379,39 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
           !acks.some((a) => ackCovers(a, ch.id, ch.from as string, ch.to as string)),
       );
   if (stillMoved.length > 0) {
-    const sigMoved = stillMoved.filter((ch) => isSignatureMove(ch));
-    const bodyMoved = stillMoved.filter((ch) => !isSignatureMove(ch));
     console.log();
+    // The ack that was just written DID what it was asked to do; these symbols were
+    // never in its reach. Leading with the failure made a command that fully worked
+    // read as a half-failure — and where the remaining symbols belong to a different
+    // doc, the reader had already finished the job they came to do.
     console.log(
-      pc.yellow(`  ⚠ ${stillMoved.length} moved symbol(s) here are NOT cleared by a file ack:`),
+      pc.yellow(
+        `  ⚠ the ack above stands; ${stillMoved.length} moved symbol(s) in this file are NOT cleared by a file ack:`,
+      ),
     );
+    // The resolution belongs INSIDE the finding it resolves, and it has to be a
+    // command rather than a shape to fill in: `codument ack <path>::<symbol>`, dim
+    // and last under the warning, was read past twice in one field session before it
+    // was acted on. A body-only move keeps the ack route if it changed no contract;
+    // a signature move owes a contract update and gets no ack offered at any grain.
     for (const ch of stillMoved) {
-      const tag = isSignatureMove(ch) ? pc.dim(" (signature changed)") : "";
-      console.log(`      ${pc.dim("•")} ${ch.id}${tag}`);
-    }
-    // Route each class to the resolution that actually applies. A body-only move
-    // can be a per-symbol ack if it changed no contract; a signature move owes a
-    // doc-contract update — no ack (per-symbol or file-grain) clears it, so never
-    // suggest one for it.
-    if (bodyMoved.length > 0) {
+      const owner = resolveOwner(registry as Registry, ch.id);
+      const doc =
+        owner.kind === "owned"
+          ? ((registry as Registry).features[owner.feature]?.doc ?? "the owning doc")
+          : "the owning doc";
+      const sig = isSignatureMove(ch);
+      console.log(`      ${pc.dim("•")} ${ch.id}${sig ? pc.dim(" (signature changed)") : ""}`);
       console.log(
-        pc.dim(
-          "    Body-only moves: update the owning doc, or codument ack <path>::<symbol> each.",
-        ),
+        `          ${pc.dim("contract changed →")} update ${doc} ${pc.dim(
+          sig ? "at intent altitude — no ack of any grain clears a signature move" : "at intent altitude",
+        )}`,
       );
-    }
-    if (sigMoved.length > 0) {
-      console.log(
-        pc.dim(
-          "    Signature moves: update the owning doc's contract at intent altitude (no ack applies).",
-        ),
-      );
+      if (!sig) {
+        console.log(
+          `          ${pc.dim("internal only   →")} ${pc.cyan(`codument ack ${shellArg(ch.id)} --reason "..."`)}`,
+        );
+      }
     }
   }
   // Make the API growth visible: an added/removed OWNED export IS cleared by this
