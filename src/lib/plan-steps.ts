@@ -147,7 +147,14 @@ export function todoStatus(plan: ActivePlan, step: PlanStep): TodoStatus {
 
 // ── Discovery (fs) ───────────────────────────────────────────────────────
 
-const PLAN_DIRS = ["docs/features", "docs/concepts"];
+// Where a plan may live. `docs/plans` is here because the gate already reads it:
+// approved-plan SCOPE detection resolves over that directory, so a repository that
+// keeps its plans there had `review` reporting the plan's scope in its headline while
+// `steps` and `map materialize` refused with "no approved plan" on the line before —
+// two halves of one loop disagreeing about where plans live, with both refusals
+// reachable straight from the documented workflow. No directory is blessed; all three
+// are read, and an approved plan in any of them is the same plan.
+const PLAN_DIRS = ["docs/features", "docs/concepts", "docs/plans"];
 
 function toActivePlan(root: string, abs: string): ActivePlan | null {
   let md: string;

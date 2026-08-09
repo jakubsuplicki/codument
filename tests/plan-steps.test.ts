@@ -272,6 +272,7 @@ describe("watch tape integration", () => {
         riskTouches: [],
         unmapped: [],
         otherChanged: [],
+    excludedChanged: [],
         outOfPlan: [],
         highFanout: [],
         dependents: [],
@@ -383,5 +384,50 @@ describe("parseDeliveryPlan across multiple plan sections", () => {
   it("still reads a single-section plan unchanged", () => {
     const steps = parseDeliveryPlan(PLAN);
     assert.ok(steps.length > 0);
+  });
+});
+
+// Plan 44 step 2: the gate's approved-plan SCOPE detection reads `docs/plans`, so a
+// repository that keeps its plans there had `review` reporting the plan in its
+// headline while `steps` and `map materialize` refused with "no approved plan" on the
+// line before. Both refusals are reachable straight from the documented workflow.
+describe("plan discovery reads every directory a plan may live in (plan 44)", () => {
+  let tmp: string;
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-plandir-"));
+    await mkdir(join(tmp, "docs", "features"), { recursive: true });
+    await mkdir(join(tmp, "docs", "concepts"), { recursive: true });
+    await mkdir(join(tmp, "docs", "plans"), { recursive: true });
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("finds an approved plan under docs/plans, where the gate already looks", async () => {
+    await writeFile(join(tmp, "docs", "plans", "44-thing.md"), PLAN);
+    const plans = findActivePlans(tmp);
+    assert.equal(plans.length, 1);
+    assert.equal(plans[0].path, "docs/plans/44-thing.md");
+    assert.equal(plans[0].active?.n, 3);
+  });
+
+  it("still finds the other two, and names every contender when they overlap", async () => {
+    await writeFile(join(tmp, "docs", "features", "a.md"), PLAN);
+    await writeFile(join(tmp, "docs", "concepts", "b.md"), PLAN);
+    await writeFile(join(tmp, "docs", "plans", "c.md"), PLAN);
+    assert.deepEqual(
+      findActivePlans(tmp).map((p) => p.path),
+      ["docs/concepts/b.md", "docs/features/a.md", "docs/plans/c.md"],
+      "no directory is blessed — ambiguity is surfaced, never resolved by precedence",
+    );
+  });
+
+  it("a repository with no plans directory is unaffected", async () => {
+    await rm(join(tmp, "docs", "plans"), { recursive: true, force: true });
+    await writeFile(join(tmp, "docs", "features", "a.md"), PLAN);
+    assert.deepEqual(
+      findActivePlans(tmp).map((p) => p.path),
+      ["docs/features/a.md"],
+    );
   });
 });

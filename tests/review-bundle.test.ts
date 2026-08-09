@@ -77,6 +77,7 @@ function cs(partial: Partial<ChangeState>): ChangeState {
     byFeature: [],
     unmapped: [],
     otherChanged: [],
+    excludedChanged: [],
     staleDocs: [],
     docsChangedWithoutSource: [],
     highFanout: [],

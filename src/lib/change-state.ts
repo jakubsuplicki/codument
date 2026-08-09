@@ -211,6 +211,13 @@ export interface ChangeState {
    *  real working-tree changes outside codument's source↔doc governance. Kept so
    *  a clean verdict never claims "working tree clean" while they sit uncommitted. */
   otherChanged: string[];
+  /** Changed files the exclusion spec drops — tests, build output, generated
+   *  artifacts. They govern nothing and are judged by nothing, which is exactly
+   *  why they need a name: every other bucket filters them out while the headline
+   *  total counts them, so the most ordinary change a step makes (editing a test)
+   *  printed a total that did not add up, with no bucket accounting for the
+   *  remainder. Reported so the counts sum; never an input to any verdict. */
+  excludedChanged: string[];
   /** Features whose source changed but whose mapped doc did not (drift). */
   staleDocs: StaleDoc[];
   /** Docs that changed while their feature's source did not. */
@@ -353,6 +360,13 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     [...changed].filter(
       (f) => !isDoc(f) && !isSourceFile(f, exclusion) && !isExcluded(f, exclusion),
     ),
+  );
+  // The remainder every other bucket drops. Scoped to EXTANT changes only: a
+  // deletion is already counted whole in its own bucket, so folding excluded
+  // deletions in here would trade a total that does not add up for one that adds
+  // up twice — the same defect wearing the fix's clothes.
+  const excludedChanged = sortStrings(
+    [...changed].filter((f) => !isDoc(f) && isExcluded(f, exclusion)),
   );
 
   const entryByKey = new Map(entries);
@@ -773,6 +787,7 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     byFeature,
     unmapped: sortStrings(unmapped),
     otherChanged,
+    excludedChanged,
     staleDocs,
     docsChangedWithoutSource: sortStrings(docsChangedWithoutSource),
     highFanout,

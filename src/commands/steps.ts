@@ -36,7 +36,7 @@ function resolvePlan(
   if (found.length === 0)
     return {
       error:
-        "no approved plan with an unchecked step under docs/features or docs/concepts — pass --plan <path>",
+        "no approved plan with an unchecked step under docs/features, docs/concepts or docs/plans — pass --plan <path>",
     };
   if (found.length > 1)
     return {

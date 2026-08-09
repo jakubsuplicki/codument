@@ -26,6 +26,7 @@ const EVERY_FINDING_REPORT: ReviewReport = {
     byFeature: [],
     unmapped: ["src/lib/cache.ts"],
     otherChanged: [],
+    excludedChanged: [],
     staleDocs: [
       { feature: "auth", doc: "docs/features/auth.md", changedSources: ["src/auth/login.ts"] },
       { feature: "billing", doc: "docs/features/billing.md", changedSources: ["src/billing/charge.ts"] },

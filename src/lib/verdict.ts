@@ -217,6 +217,14 @@ function buildGloss(v: Verdict, state: ChangeState): string {
     if (other > 0) {
       return withPointers(`${plural(other, "file")} changed · not source or docs`);
     }
+    // The same false-clean this branch already guards against, one bucket further
+    // out: a step that edited only its tests has a working tree that is not clean,
+    // and saying so is the whole job of a live verdict line.
+    if (state.excludedChanged.length > 0) {
+      return withPointers(
+        `${plural(state.excludedChanged.length, "excluded file")} changed · nothing codument governs`,
+      );
+    }
     return pointers || "working tree clean";
   }
   // Non-clean: enumerate active findings in descending severity.

@@ -18,6 +18,7 @@ function mkState(p: Partial<ChangeState> = {}): ChangeState {
     byFeature: [],
     unmapped: [],
     otherChanged: [],
+    excludedChanged: [],
     staleDocs: [],
     docsChangedWithoutSource: [],
     highFanout: [],
@@ -349,5 +350,20 @@ describe("isTestFile", () => {
     for (const p of ["src/auth/login.ts", "src/contest.ts", "src/latest.ts", "src/manifest.ts", "docs/features/a.md"]) {
       assert.equal(isTestFile(p), false, p);
     }
+  });
+});
+
+// Plan 44: the same false-clean this branch already guards against, one bucket
+// further out. A step that edited only its tests has a working tree that is not
+// clean, and saying so is the whole job of a live verdict line.
+describe("a change of only excluded files is not a clean tree (plan 44)", () => {
+  it("names it rather than claiming the tree is clean", () => {
+    const v = classifyVerdict(mkState({ excludedChanged: ["tests/a.test.ts"] }), OPTS);
+    assert.equal(v.status, "clean");
+    assert.equal(v.gloss, "1 excluded file changed · nothing codument governs");
+  });
+
+  it("an empty tree still reads clean", () => {
+    assert.equal(classifyVerdict(mkState(), OPTS).gloss, "working tree clean");
   });
 });

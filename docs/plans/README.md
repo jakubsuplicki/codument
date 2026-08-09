@@ -294,14 +294,27 @@ than shipping neither. The other was a literal NUL byte written as a hash separa
 git classify the acknowledgment module as binary — the central file of the change had no
 reviewable diff at all, in that review or any later one.
 
-Still to plan, ranked by value: `review`'s changed-file headline does not sum,
-because excluded files are counted in the total and named by no bucket; shipped delivery
+**44 is shipped.** The remainder, and one shape seen three times: two surfaces of the same tool
+answering the same question differently, with the user finding out. The changed-file headline
+counted every path while every bucket beside it filtered the exclusion spec out, so editing a test
+file printed a line that did not add up. `steps` and `map materialize` discovered plans under
+`docs/features|concepts` while the gate read `docs/plans`, so on this very repository both refused
+with "no approved plan" on the line before `review` reported that plan's scope — from instructions
+the documented workflow gives. And a registry naming a file that does not exist was known only to
+`doctor`, never to the surface the loop runs every step, though every ownership answer and every
+adversary grounding is derived from it; it is now reported and deliberately never gated, because
+failing on state the change did not create is how a gate gets bypassed.
+
+Fixing the headline surfaced its sibling: `watch` called a tests-only change "working tree clean",
+the same false-clean the gloss already guarded against for config and asset files.
+
+Still to plan, ranked by value: shipped delivery
 scaffolding is never compacted out of docs (the
 standard says it should be; nothing enforces it); the Decisions layer states conclusions without
 naming evidence, which is how a wrong recorded decision survived two fix attempts; unmapped prose
 pages are uncoverable by the gate (`orphan-doc` is scoped to `docs/features|concepts` and lives in
 `doctor`, which `review --strict` never calls); an ADR named as an entry `doc` silently becomes a
-`type:"concept"` umbrella and demands acks about cadence it does not describe; `steps` resolves
-plans over `docs/features`+`docs/concepts` while `review` resolves them over `docs/plans`, so a plan
-visible to one is invisible to the other; `context --feature` has no lean "which doc owns this file"
-mode.
+`type:"concept"` umbrella and demands acks about cadence it does not describe; `context --feature`
+has no lean "which doc owns this file" mode; and the field report's claim that a review-bundle
+delta named a file that did not move could not be reproduced from the code — it stays open, named
+as unreproduced rather than fixed on a guess.

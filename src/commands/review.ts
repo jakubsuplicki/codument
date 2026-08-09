@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import pc from "picocolors";
 import {
@@ -44,6 +44,8 @@ import {
   type RenamePair,
 } from "../lib/git.js";
 import {
+  allSources,
+  isSourcePattern,
   parseRegistryOrThrow,
   type Registry,
   readRegistrySync,
@@ -161,6 +163,13 @@ export interface ReviewReport {
    *  the resolution summary shows a file-ack AS an ack, never laundered as a doc
    *  update (over-acking stays visible). */
   fileGrainAcked: string[];
+  /** Registry entries naming a source path that does not exist — rot this change did
+   *  NOT create (that case is `state.registryPointers`, which does gate). Reported so
+   *  the surface the loop runs every step stops being silent about a corrupt control
+   *  plane; never a strict input, because failing a gate over inherited state is how a
+   *  gate gets bypassed. Empty when the registry is clean, so the common case is
+   *  byte-identical. */
+  registryRot: Array<{ file: string; features: string[] }>;
   /** Every acknowledgment covering this change set (per-symbol and file-grain), with
    *  its signer and whether that signer is independent of the change author. Rendered
    *  as the "Acknowledgments in this change" card wherever the human already looks, so
@@ -247,6 +256,32 @@ function readRegistryAtRef(root: string, ref: string): Registry | undefined {
  * the repo state (git changes + registry + approved plan). The same diff always
  * produces the same report — no clock, no randomness, sorted throughout.
  */
+// Registry sources that are not on disk, minus the ones THIS change removed (those
+// gate, and reporting them twice under two headings reads as two problems). A pattern
+// is skipped: a glob is not a path, and asking whether it exists is the wrong
+// question — `doctor` answers the right one (does it match anything) because it is
+// the surface that holds the file list.
+function registryRot(
+  root: string,
+  registry: Registry,
+  gated: readonly { file: string }[],
+): Array<{ file: string; features: string[] }> {
+  const gatedSet = new Set(gated.map((p) => p.file));
+  const byFile = new Map<string, string[]>();
+  for (const key of Object.keys(registry.features).sort()) {
+    for (const source of allSources(registry.features[key])) {
+      if (isSourcePattern(source) || gatedSet.has(source)) continue;
+      if (existsSync(join(root, source))) continue;
+      const list = byFile.get(source) ?? [];
+      list.push(key);
+      byFile.set(source, list);
+    }
+  }
+  return [...byFile.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([file, features]) => ({ file, features }));
+}
+
 export function buildReview(
   root: string,
   changedFiles?: string[],
@@ -470,6 +505,7 @@ export function buildReview(
     state,
     drift,
     fileGrainAcked,
+    registryRot: registryRot(root, registry, state.registryPointers),
     coveringAcks,
     requireIndependentAck,
     independenceUnverifiable,
@@ -1285,6 +1321,11 @@ function printHuman(report: ReviewReport): void {
     `  ${report.changedFileCount} changed file(s): ${state.changedSources.length} source, ${state.changedDocs.length} docs` +
       (governedCount > 0 ? `, ${governedCount} governed` : "") +
       (otherCount > 0 ? `, ${otherCount} other` : "") +
+      // The remainder that used to be silent. Every other bucket filters the
+      // exclusion spec out while the total counts it, so the most ordinary change a
+      // step makes — editing a test — printed a line that did not add up, and a
+      // count a reader cannot reconcile is a count they stop reading.
+      (state.excludedChanged.length > 0 ? `, ${state.excludedChanged.length} excluded` : "") +
       (report.deletions.length > 0 ? `, ${report.deletions.length} deleted` : "") +
       (plan ? pc.dim(`  (plan: ${plan.plan})`) : ""),
   );
@@ -1318,6 +1359,31 @@ function printHuman(report: ReviewReport): void {
         : `${pc.yellow("⚠")} ${p.file} ${pc.dim("→ deleted")} ${pc.dim(`· still named by ${where}`)}\n        ${pc.dim("fix →")} remove it from ${where}${pc.dim(" (a doc update for the removal is owed separately)")}`;
     }),
   );
+
+  // Rot the change did not cause, said out loud by the surface that runs every step.
+  // `doctor` has always known this; `review --strict` never mentioned it, so a
+  // registry naming a file nobody has seen in months stayed invisible to the one
+  // command the loop actually runs — and every ownership answer, context pack and
+  // adversary grounding is derived from that registry. Advisory by design: failing a
+  // gate over state this change did not create is how a gate gets bypassed.
+  if (report.registryRot.length > 0) {
+    const shown = report.registryRot.slice(0, DEPENDENT_CAP);
+    console.log(
+      pc.dim(
+        `  Registry names ${report.registryRot.length} path(s) that do not exist (not this change; the gate does not fail on it)`,
+      ),
+    );
+    for (const r of shown) {
+      console.log(pc.dim(`    • ${r.file} — named by ${r.features.join(", ")}`));
+    }
+    if (report.registryRot.length > shown.length) {
+      console.log(pc.dim(`    • +${report.registryRot.length - shown.length} more`));
+    }
+    console.log(
+      pc.dim("    fix → re-point or remove each in docs/.registry.json (`codument doctor` lists them all)"),
+    );
+    console.log();
+  }
 
   section(
     pc.yellow("Deleted sources (a removal owes its doc attention — update it or remove it too)"),

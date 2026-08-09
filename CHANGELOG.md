@@ -66,6 +66,30 @@ content by design.
   in a test file that the project's typecheck never sees, and three ids had already
   slipped past it.
 
+### Surfaces that disagreed with each other
+
+Three places where the tool knew something and did not say it, or where two of its own
+surfaces answered the same question differently.
+
+- `review`'s changed-file headline **adds up**. The total counted every changed path
+  while every bucket beside it filtered out what the exclusion spec drops, so editing
+  a test file — the most ordinary thing a step does — printed `8 changed file(s): 7
+  source, 0 docs`. Excluded paths are now a named bucket; deletions stay counted once,
+  in their own.
+- `codument steps` and `codument map materialize` find a plan under `docs/plans`.
+  The gate's approved-plan scope detection has always read that directory, while plan
+  discovery read only `docs/features` and `docs/concepts` — so on a repository that
+  keeps plans in `docs/plans`, `review` reported the plan's scope in its headline
+  while both other commands refused with "no approved plan" on the line before, from
+  instructions the documented workflow gives. No directory takes precedence; an
+  overlap surfaces as the ambiguity it already was.
+- `review` **reports** a registry entry naming a path that is not on disk. `doctor`
+  has always called it `missing-source`; the surface the loop runs every step said
+  nothing, and every ownership answer, context pack and adversary grounding is derived
+  from that registry. Advisory and never a strict input — this is state the change did
+  not create, and a gate that fails on inherited state is one people learn to bypass.
+  A path the change itself removed already gates and is not reported twice.
+
 ### Governing a tree
 
 The second half of that report, and the largest ungoverned surface it produced. Six

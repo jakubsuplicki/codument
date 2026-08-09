@@ -1134,3 +1134,45 @@ describe("a pattern source governs a tree (plan 43)", () => {
     assert.deepEqual(s.staleDocs[0].viaPatterns, [{ pattern: "i18n/locales/", count: 1 }]);
   });
 });
+
+// Plan 44 step 1: the headline total counts every changed path while every bucket
+// beside it filters the exclusion spec out, so the most ordinary change a step makes
+// — editing a test — printed counts that did not add up, with nothing accounting for
+// the remainder. A count a reader cannot reconcile is a count they stop reading.
+describe("the change buckets partition the change set (plan 44)", () => {
+  const state = (changedFiles: string[], deletedFiles: string[] = []) =>
+    computeChangeState({
+      registry: { features: {} },
+      changedFiles,
+      deletedFiles,
+    });
+
+  it("names what the exclusion spec drops, so the buckets sum to the total", () => {
+    const changed = [
+      "src/a.ts", // source
+      "docs/features/a.md", // doc
+      "app.json", // other
+      "tests/a.test.ts", // excluded — a test, the common case
+      "dist/bundle.js", // excluded — build output
+    ];
+    const s = state(changed);
+    assert.deepStrictEqual(s.excludedChanged, ["dist/bundle.js", "tests/a.test.ts"]);
+    assert.equal(
+      s.changedSources.length + s.changedDocs.length + s.otherChanged.length + s.excludedChanged.length,
+      changed.length,
+      "every changed path lands in exactly one bucket",
+    );
+  });
+
+  it("counts an excluded DELETION once, in the deletions bucket", () => {
+    // The total counts deletions whole, so folding excluded deletions in here would
+    // trade a total that does not add up for one that adds up twice.
+    const s = state(["src/a.ts"], ["tests/gone.test.ts"]);
+    assert.deepStrictEqual(s.excludedChanged, []);
+  });
+
+  it("a change with nothing excluded is unchanged", () => {
+    const s = state(["src/a.ts", "docs/features/a.md", "app.json"]);
+    assert.deepStrictEqual(s.excludedChanged, [], "the common case stays silent");
+  });
+});

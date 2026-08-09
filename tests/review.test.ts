@@ -3043,3 +3043,84 @@ describe("the gate sees changes inside a nested member repository", () => {
     assert.equal(report.workspace, null);
   });
 });
+
+// Plan 44 step 3: the registry is the control plane every other answer derives from —
+// ownership, context packs, the adversary's grounding all read it as truth. `doctor`
+// has always called a pointer at a vanished file `missing-source`; `review --strict`
+// never mentioned it, so on the one surface the loop runs every step it was invisible.
+describe("review names registry rot it did not cause (plan 44)", () => {
+  let tmp: string;
+  const registry = (sources: string[]) => ({
+    features: {
+      alpha: {
+        doc: "docs/features/alpha.md",
+        type: "feature",
+        primary_sources: sources,
+        status: "current",
+      },
+    },
+  });
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-rot-"));
+    await mkdir(join(tmp, "docs", "features"), { recursive: true });
+    await mkdir(join(tmp, "src"), { recursive: true });
+    await writeFile(join(tmp, "docs", "features", "alpha.md"), "# alpha\n\nAlpha.\n");
+    await writeFile(join(tmp, "src", "a.ts"), "export const a = 1;\n");
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+  const commit = () => {
+    const run = (args: string[]) =>
+      execFileSync("git", args, { cwd: tmp, stdio: "ignore", env: { ...process.env } });
+    run(["init"]);
+    run(["config", "user.email", "t@example.com"]);
+    run(["config", "user.name", "T"]);
+    run(["add", "-A"]);
+    run(["commit", "-m", "base"]);
+  };
+
+  it("names a path nobody has seen in months, and does not gate on it", async () => {
+    await writeFile(
+      join(tmp, "docs", ".registry.json"),
+      JSON.stringify(registry(["src/a.ts", "src/gone.ts"])),
+    );
+    commit();
+    const report = buildReview(tmp);
+    assert.deepStrictEqual(report.registryRot, [{ file: "src/gone.ts", features: ["alpha"] }]);
+    // No change at all: the rot is reported, and the verdict is still clean.
+    assert.deepStrictEqual(report.state.staleDocs, []);
+  });
+
+  it("a clean registry reports nothing, so the common case is unchanged", async () => {
+    await writeFile(join(tmp, "docs", ".registry.json"), JSON.stringify(registry(["src/a.ts"])));
+    commit();
+    assert.deepStrictEqual(buildReview(tmp).registryRot, []);
+  });
+
+  it("a pattern is skipped — a glob is not a path, and existence is the wrong question", async () => {
+    await writeFile(
+      join(tmp, "docs", ".registry.json"),
+      JSON.stringify(registry(["src/**/*.ts"])),
+    );
+    commit();
+    assert.deepStrictEqual(buildReview(tmp).registryRot, []);
+  });
+
+  it("a path THIS change removed is not double-reported — that one gates", async () => {
+    await writeFile(
+      join(tmp, "docs", ".registry.json"),
+      JSON.stringify(registry(["src/a.ts", "src/b.ts"])),
+    );
+    await writeFile(join(tmp, "src", "b.ts"), "export const b = 1;\n");
+    commit();
+    rmSync(join(tmp, "src", "b.ts"));
+    const report = buildReview(tmp);
+    assert.deepStrictEqual(
+      report.state.registryPointers.map((p) => p.file),
+      ["src/b.ts"],
+      "the deletion this change made gates, as before",
+    );
+    assert.deepStrictEqual(report.registryRot, [], "and is not also listed as inherited rot");
+  });
+});

@@ -20,6 +20,7 @@ function emptyState(): ChangeState {
     byFeature: [],
     unmapped: [],
     otherChanged: [],
+    excludedChanged: [],
     staleDocs: [],
     docsChangedWithoutSource: [],
     highFanout: [],
