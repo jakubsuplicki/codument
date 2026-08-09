@@ -751,3 +751,111 @@ describe("doctor discloses a directory it could not read", () => {
     assert.equal(json.scope.unreadableDirs, undefined);
   });
 });
+
+// Plan 42 / the 2026-08-09 field report. A `needs-review` entry is exempt from the
+// dependency ratio and two lint rules so a fresh scan does not open at 0%. That
+// reasoning says "seconds old"; the code says "forever". The field registry had sat
+// at `needs-review` since a scan four months earlier, outside every ratio, reading as
+// in-flight — and `lastScan` still recorded 292 source files against 404 on disk.
+describe("a scaffold the tree has moved past is disclosed, never scored (plan 42)", () => {
+  let root: string;
+
+  async function project(opts: { status: string; scannedFiles?: number }): Promise<void> {
+    root = await mkdtemp(join(tmpdir(), "codument-scaffold-"));
+    await mkdir(join(root, "src"), { recursive: true });
+    await mkdir(join(root, "docs", "features"), { recursive: true });
+    await writeFile(join(root, "src", "a.ts"), "export const a = 1;\n");
+    await writeFile(join(root, "src", "b.ts"), "export const b = 2;\n");
+    await writeFile(
+      join(root, "docs", "features", "alpha.md"),
+      "# alpha\n\n## In plain terms\nAlpha does a thing worth narrating.\n",
+    );
+    await writeFile(
+      join(root, "docs", ".registry.json"),
+      JSON.stringify(
+        {
+          features: {
+            alpha: {
+              doc: "docs/features/alpha.md",
+              type: "feature",
+              primary_sources: ["src/a.ts", "src/b.ts"],
+              related_sources: [],
+              docs: [],
+              depends_on: [],
+              risk: [],
+              status: opts.status,
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    if (opts.scannedFiles !== undefined) {
+      await writeFile(
+        join(root, ".codument-meta.json"),
+        JSON.stringify({ version: "0.15.0", lastScan: { sourceFiles: opts.scannedFiles } }, null, 2),
+      );
+    }
+  }
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("says nothing when the scan still describes the tree (a first run stays byte-identical)", async () => {
+    await project({ status: "needs-review", scannedFiles: 2 });
+    const report = buildReport(root);
+    assert.equal(report.coverage.scaffolded, 1, "the entry IS a scaffold");
+    assert.equal(report.coverage.scanLag, 0, "and the scan still describes the tree");
+  });
+
+  it("discloses the count once the tree has moved past the scan", async () => {
+    await project({ status: "needs-review", scannedFiles: 1 });
+    const report = buildReport(root);
+    assert.equal(report.coverage.scaffolded, 1);
+    assert.equal(report.coverage.scanLag, 1, "one source file added since the scan");
+  });
+
+  it("reads a shrinking tree as movement too, not as a negative count", async () => {
+    await project({ status: "needs-review", scannedFiles: 5 });
+    assert.equal(buildReport(root).coverage.scanLag, -3);
+    const out = execFileSync("node", [CLI, "doctor"], {
+      cwd: root,
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    assert.match(out, /3 source file\(s\) removed since/);
+  });
+
+  it("counts no scaffold once the entry is reviewed", async () => {
+    await project({ status: "current", scannedFiles: 1 });
+    assert.equal(buildReport(root).coverage.scaffolded, 0);
+  });
+
+  it("cannot tell without a recorded scan, and says so rather than guessing", async () => {
+    await project({ status: "needs-review" });
+    assert.equal(buildReport(root).coverage.scanLag, null);
+  });
+
+  it("is disclosure only — it never moves the strict exit code", async () => {
+    await project({ status: "needs-review", scannedFiles: 1 });
+    let status = 0;
+    try {
+      execFileSync("node", [CLI, "doctor", "--strict"], {
+        cwd: root,
+        encoding: "utf-8",
+        env: { ...process.env, NO_COLOR: "1" },
+      });
+    } catch (err) {
+      status = (err as { status?: number }).status ?? 1;
+    }
+    const out = execFileSync("node", [CLI, "doctor"], {
+      cwd: root,
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    assert.match(out, /still `needs-review` from a scan the tree has moved past/);
+    assert.equal(status, 0, "a scaffold disclosure is not an actionable finding");
+  });
+});

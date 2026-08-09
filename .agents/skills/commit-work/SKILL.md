@@ -23,7 +23,8 @@ Use this after `review-work` is clean, or after the user has approved/deferred e
    - `test:`
    - `refactor:`
    - `chore:`
-9. Continue directly to `work-step` for the next unchecked step, or report completion if none remain. In gated mode, stop after the commit and offer the next-step gate instead:
+9. **If that was the plan's last step, run `codument doctor --strict` once and report what it says.** It reports; it does not gate — a plan must not be blocked by an adopting repo's pre-existing debt. This is the only moment the loop looks at repo-wide health: `review` answers "is this change in sync", `doctor` answers "is the knowledge base still worth reading", and a field run made 37 review-family calls across five commits without ever learning its own health surface stood at 140 findings, including one on a doc that session had just edited. Once per plan, not once per step.
+10. Continue directly to `work-step` for the next unchecked step, or report completion if none remain. In gated mode, stop after the commit and offer the next-step gate instead:
 
    ```text
    Step N is reviewed and committed. Next options:
@@ -32,7 +33,7 @@ Use this after `review-work` is clean, or after the user has approved/deferred e
    3. Compact context before continuing
    4. Pause here
    ```
-10. If the user chooses compact context, use the active agent's native context-compaction command when one is available. If no native command is available, provide a concise restart note grounded in `AGENTS.md`, the active plan doc, `docs/.registry.json`, and `git status`, then pause.
+11. If the user chooses compact context, use the active agent's native context-compaction command when one is available. If no native command is available, provide a concise restart note grounded in `AGENTS.md`, the active plan doc, `docs/.registry.json`, and `git status`, then pause.
 
 ## Rules
 

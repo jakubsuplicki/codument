@@ -420,6 +420,19 @@ function printHuman(report: DoctorReport, strictFail = false): void {
       ),
     );
   }
+  // A scaffold is exempt from the dependency ratio and two lint rules so a fresh scan
+  // does not open at 0%. That reasoning says "seconds old" and the code says "forever":
+  // a field registry sat at `needs-review` for four months, outside every ratio,
+  // reading as in-flight. Disclosure, never a finding — the exemption is right and the
+  // silence about it was not, and a first run must still end green.
+  if (coverage.scaffolded > 0 && coverage.scanLag !== null && coverage.scanLag !== 0) {
+    const grew = coverage.scanLag > 0;
+    console.log(
+      pc.cyan(
+        `  note: ${coverage.scaffolded} entr${coverage.scaffolded === 1 ? "y is" : "ies are"} still \`needs-review\` from a scan the tree has moved past (${Math.abs(coverage.scanLag)} source file(s) ${grew ? "added" : "removed"} since) — outside the dependency ratio until reviewed and set to \`current\``,
+      ),
+    );
+  }
   // The same manifest the README matrix is parity-tested against — one truth.
   console.log(
     pc.dim(

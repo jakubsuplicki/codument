@@ -140,7 +140,9 @@ Status: approved.
       below it. Test: every command in the output runs as printed and clears what it names.
 - [x] Step 4: The signature-denial names the two real fixes (per open question 1). Test: a type
       alias change under two owning entries prints a route that resolves without prose.
-- [ ] Step 5: `doctor --strict` at plan completion in `commit-work`; `scan` refreshes `lastScan`;
+- [x] Step 5: `doctor --strict` at plan completion in `commit-work`; ~~`scan` refreshes `lastScan`~~
+      (it already does — the stamp was never stale, it was never re-run, so the fix is the
+      disclosure below, not a write);
       `doctor` discloses long-stale `needs-review` entries as info beside the headline. Test: the
       first-run-ends-green invariant holds byte-for-byte.
 - [ ] Step 6: Docs at intent altitude — `change-control-gate` (the resolution invariant extended to

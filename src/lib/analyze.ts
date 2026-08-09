@@ -225,6 +225,23 @@ export interface CoverageReport {
   percent: number | null;
   /** Ids of the ratios that fed the score. */
   applicable: CoverageRatioId[];
+  /**
+   * Entries still carrying the `needs-review` status a fresh scan writes, which the
+   * dependency ratio and two lint rules deliberately step over so a seconds-old
+   * scaffold does not open at 0%. That exemption reasons about "seconds old" and is
+   * implemented as "forever": a field registry sat at `needs-review` for four months,
+   * outside every ratio, reading as in-flight. Disclosed beside the score because it
+   * SHAPED the score — same standing as a declared exclusion — and never as a finding,
+   * because a real fresh scan must still end green.
+   */
+  scaffolded: number;
+  /**
+   * In-scope source files now, minus the count the last `scan` recorded. Zero on a
+   * fresh scan — which is what keeps a first run's output byte-identical — and the
+   * signal that a scaffold has gone stale without reading a clock, since no
+   * wall-clock value may enter this report. Null when there is no recorded scan.
+   */
+  scanLag: number | null;
 }
 
 // ── Lint findings ───────────────────────────────────────────────────────
@@ -361,10 +378,14 @@ function buildRatio(
 }
 
 /** Rolls applicable ratios into the equal-weight-average headline score. */
-export function rollupScore(ratios: CoverageRatio[]): CoverageReport {
+export function rollupScore(
+  ratios: CoverageRatio[],
+  scaffolded = 0,
+  scanLag: number | null = null,
+): CoverageReport {
   const applicableRatios = ratios.filter((r) => r.applicable && r.ratio !== null);
   if (applicableRatios.length === 0) {
-    return { ratios, score: null, percent: null, applicable: [] };
+    return { ratios, score: null, percent: null, applicable: [], scaffolded, scanLag };
   }
   const sum = applicableRatios.reduce((acc, r) => acc + (r.ratio ?? 0), 0);
   const score = round2(sum / applicableRatios.length);
@@ -373,6 +394,8 @@ export function rollupScore(ratios: CoverageRatio[]): CoverageReport {
     score,
     percent: Math.round(score * 100),
     applicable: applicableRatios.map((r) => r.id),
+    scaffolded,
+    scanLag,
   };
 }
 
@@ -561,7 +584,31 @@ function computeCoverage(
   // re-sourced from the unified two-ref signal (the freshness gate); until that
   // lands, coverage scores only the repo-state axes (ownership, dependency, risk).
   const ratios = [ownership, dependency, risk];
-  return rollupScore(ratios);
+  // Counted over the same population the dependency ratio steps over, so the number
+  // disclosed is exactly the number excluded — not every `needs-review` entry in the
+  // file, which would include ones that carry no in-scope source and were never in
+  // the denominator to begin with.
+  const scaffolded = entries.filter(
+    ([, entry]) =>
+      isMatureEntry(entry) &&
+      entry.status === "needs-review" &&
+      allSources(entry).some((s) => isSourceFile(s, exclusion)),
+  ).length;
+  // Clock-free by construction: the scan's own recorded file count against what the
+  // tree holds now. A fresh scan reports zero, so a first run discloses nothing.
+  // A meta file that does not parse says nothing about whether a scan happened, and
+  // this is a disclosure the score does not depend on — so it degrades to "cannot
+  // tell" rather than taking an advisory surface down with it, the same way the
+  // declared-scope resolution does.
+  let scanned: unknown;
+  try {
+    scanned = (readMetaSync(root)?.lastScan as { sourceFiles?: unknown } | undefined)
+      ?.sourceFiles;
+  } catch {
+    scanned = undefined;
+  }
+  const scanLag = typeof scanned === "number" ? inScopeFiles.length - scanned : null;
+  return rollupScore(ratios, scaffolded, scanLag);
 }
 
 /**
