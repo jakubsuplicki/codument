@@ -22,10 +22,12 @@ import {
   ackCoversTree,
   isFileGrainAck,
   isTreeGrainAck,
+  standingHolds,
   type Acknowledgment,
   type CoveredFile,
 } from "./acknowledgment.js";
 import { movesOnly, type RenamePair } from "./git.js";
+import { ownershipOfFile } from "./context-pack.js";
 import { extractStatus, isApproved } from "./plan-steps.js";
 
 // Deterministic diff snapshot over the v2 registry. Pure function of (registry,
@@ -806,6 +808,14 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   };
 }
 
+/** The docs a standing vouch over `file` answers to — the owning set, deduped and
+ *  sorted, through the one ownership resolver every surface uses. Sorted because the
+ *  vouch's hash covers doc paths in order, so two spellings of the same set must
+ *  produce one answer. */
+export function owningDocsOf(registry: Registry, file: string): string[] {
+  return [...new Set(ownershipOfFile(registry, file).map((o) => o.doc))].sort();
+}
+
 // ── File-grain acknowledgment resolution ────────────────────────────────
 //
 // Which of the changed files carry a valid, CURRENT-content file-grain ack — the
@@ -825,9 +835,11 @@ export function resolveFileGrainAcked(
   acks: Acknowledgment[],
   unevaluable: string[] = [],
   renamedFrom?: ReadonlyMap<string, string>,
+  registry?: Registry,
 ): string[] {
   const fileAcks = acks.filter(isFileGrainAck);
   if (fileAcks.length === 0) return [];
+  const standingAcks = fileAcks.filter((a) => a.standing);
   const ackedIds = new Set(fileAcks.map((a) => a.anchorId));
   const unevaluableSet = new Set(unevaluable);
   const covered: string[] = [];
@@ -836,6 +848,21 @@ export function resolveFileGrainAcked(
     if (unevaluableSet.has(file)) continue; // parse-unevaluable is never acked fresh
     const { from, to } = fileContentTransition(root, base, file, renamedFrom?.get(file) ?? file);
     if (from === null || to === null) continue; // added/deleted — no content transition
+    // A standing vouch answers for this file's content whatever it now is, until the
+    // doc whose claims decide it moves — so it is asked of the doc, not the bytes. The
+    // added/deleted guard above still applies to it: a new file owes an owner and a
+    // removal owes its doc attention, and no width of vouch reaches either. The docs
+    // it is asked about are the ones that gate the file NOW, so a vouch cannot outlive
+    // an ownership widening its signer never saw. Resolved only when a standing vouch
+    // actually names this path, so a repo with none pays nothing for the grain.
+    const mine = standingAcks.filter((a) => a.anchorId === file);
+    if (mine.length > 0) {
+      const now = registry ? owningDocsOf(registry, file) : undefined;
+      if (mine.some((a) => standingHolds(root, a, now))) {
+        covered.push(file);
+        continue;
+      }
+    }
     if (fileAcks.some((a) => ackCovers(a, file, from, to))) covered.push(file);
   }
   return covered.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));

@@ -18,7 +18,7 @@ import {
   treeSetHash,
   writeAck,
 } from "../src/lib/acknowledgment.js";
-import { adapterFor, fileContentTransition } from "../src/lib/fingerprint.js";
+import { ackValidity, adapterFor, fileContentTransition } from "../src/lib/fingerprint.js";
 import { readAllEvents } from "../src/lib/events.js";
 import { getGitAuthor } from "../src/lib/git.js";
 
@@ -651,7 +651,9 @@ describe("codument ack <path> — the file-grain surface", async () => {
     assert.deepStrictEqual(staleFeatures(tmp), ["alpha"]);
 
     // File ack: records, but names the still-flagged moved owned symbol.
-    const r = await capture(() => ackCommand("src/a.ts", { reason: "additive helper only", root: tmp }));
+    const r = await capture(() =>
+      ackCommand("src/a.ts", { reason: "additive helper only", root: tmp }),
+    );
     assert.equal(r.code, undefined, r.err);
     assert.match(r.out, /1 moved symbol\(s\) in this file are NOT cleared by a file ack/);
     assert.match(r.out, /src\/a\.ts::foo/);
@@ -886,7 +888,8 @@ describe("codument ack --list --json — the machine audit surface", async () =>
     // the ack's `to` from the LAST one via a Map; ackValidity must resolve the same
     // last-wins anchor, not find-first, or a still-covering ack reads invalidated on
     // an unchanged tree — contradicting the gate's own ackCovers verdict.
-    const MERGED = "export interface Foo {\n  a: number;\n}\nexport interface Foo {\n  b: number;\n}\n";
+    const MERGED =
+      "export interface Foo {\n  a: number;\n}\nexport interface Foo {\n  b: number;\n}\n";
     await scaffold({ "src/x.ts": MERGED });
 
     const anchors = adapterFor("src/x.ts").anchors("src/x.ts", MERGED);
@@ -1024,8 +1027,13 @@ describe("codument ack --prune — sweeping what auto-invalidation left behind",
       "src/b.ts": `${B_SRC}export const K = 2;\n`,
     });
 
-    const list = stripAnsi((await capture(() => ackCommand(undefined, { list: true, root: tmp }))).out);
-    assert.match(list, /2 of these are auto-invalidated and clear nothing — `codument ack --prune`/);
+    const list = stripAnsi(
+      (await capture(() => ackCommand(undefined, { list: true, root: tmp }))).out,
+    );
+    assert.match(
+      list,
+      /2 of these are auto-invalidated and clear nothing — `codument ack --prune`/,
+    );
   });
 });
 
@@ -1186,7 +1194,9 @@ describe("signature/body split — the ack acceptance table", async () => {
 
   it("a file-grain ack does NOT clear a signature move — the verdict persists", async () => {
     await scaffold({ "src/a.ts": SIG_MOVED });
-    const r = await capture(() => ackCommand("src/a.ts", { reason: "file-level: trust me", root: tmp }));
+    const r = await capture(() =>
+      ackCommand("src/a.ts", { reason: "file-level: trust me", root: tmp }),
+    );
     assert.equal(r.code, undefined, r.err); // the file ack is recorded...
     // ...but the sig-moved symbol still wakes: a changed symbol is never file-ack-cleared.
     assert.match(r.out, /NOT cleared by a file ack/);
@@ -1459,5 +1469,264 @@ describe("ack grains are mutually exclusive (plan 43)", () => {
     assert.equal(isTreeGrainAck(star), false);
     assert.equal(isFileGrainAck(star), false);
     assert.notEqual(parseAck(star), null, "and it survives a read");
+  });
+
+  it("a standing record is file grain with a readable binding, or it is malformed", () => {
+    const standing = { ...ack("file"), fromHash: "h", toHash: "h", standing: { docs: ["d.md"] } };
+    assert.notEqual(parseAck(standing), null);
+    assert.equal(parseAck({ ...standing, standing: { docs: [] } }), null, "bound to nothing");
+    assert.equal(parseAck({ ...standing, standing: {} }), null, "no docs field at all");
+    assert.equal(parseAck({ ...standing, standing: { docs: [3] } }), null, "not a doc path");
+    assert.equal(
+      parseAck({ ...standing, fromHash: "a", toHash: "b" }),
+      null,
+      "a standing record claiming a transition it does not have",
+    );
+    assert.equal(
+      parseAck({ ...ack("symbol"), fromHash: "h", toHash: "h", standing: { docs: ["d.md"] } }),
+      null,
+      "a symbol's contract is not decided by a doc's claims",
+    );
+    assert.equal(
+      parseAck({
+        ...ack("tree"),
+        fromHash: "h",
+        toHash: "h",
+        standing: { docs: ["d.md"] },
+      }),
+      null,
+      "a tree's decay on a new member is the guard standing would remove",
+    );
+  });
+});
+
+// The field's own sequence: one locale namespace appended to across four delivery
+// steps, acknowledged four times with four near-identical reasons, three of them
+// already dead. The judgment being re-made ("string additions owe no line to this
+// doc") is true until the doc's claims move, not until the file's bytes move.
+describe("codument ack --standing — a judgment bound to the doc that decides it", () => {
+  const REG = {
+    features: {
+      copy: {
+        doc: "docs/features/copy.md",
+        type: "feature",
+        primary_sources: ["src/locales/en.json", "src/a.ts"],
+        status: "current",
+      },
+    },
+  };
+  const strings = (...keys: string[]) =>
+    `${JSON.stringify(Object.fromEntries(keys.map((k) => [k, k])), null, 2)}\n`;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-standing-"));
+    await scaffold({
+      "docs/.registry.json": JSON.stringify(REG, null, 2),
+      "docs/features/copy.md": "# copy\n\nUser-facing strings live in one namespace.\n",
+      "src/locales/en.json": strings("save"),
+      "src/a.ts": A_SRC,
+    });
+    gitInit(tmp);
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  const standingAck = (file: string, reason: string) =>
+    capture(() => ackCommand(file, { reason, standing: true, root: tmp }));
+
+  it("one signature absorbs every later change to the file, and dies when the doc moves", async () => {
+    await scaffold({ "src/locales/en.json": strings("save", "cancel") });
+    assert.deepStrictEqual(staleFeatures(tmp), ["copy"], "step one wakes the doc");
+
+    const r = await standingAck("src/locales/en.json", "string additions owe no line to this doc");
+    assert.equal(r.code, undefined, r.err);
+    assert.match(r.out, /acknowledged file src\/locales\/en\.json \(standing/);
+    assert.deepStrictEqual(staleFeatures(tmp), [], "the vouch clears the finding it was signed at");
+
+    // Steps two, three and four: the content moves again and again. A content-bound
+    // ack charged a fresh signature for each of these; the standing one answers.
+    for (const keys of [
+      ["save", "cancel", "retry"],
+      ["save", "cancel", "retry", "dismiss"],
+    ]) {
+      await scaffold({ "src/locales/en.json": strings(...keys) });
+      assert.deepStrictEqual(staleFeatures(tmp), [], "a later append rides the standing vouch");
+    }
+    assert.equal(readAcks(tmp).length, 1, "one signature, not four");
+
+    // The doc's claims move → the judgment has to be re-made. This is the binding
+    // doing its job: nothing rides forever, it just rides the right thing.
+    await scaffold({ "docs/features/copy.md": "# copy\n\nStrings are frozen after release.\n" });
+    assert.equal(ackValidity(tmp, readAcks(tmp)[0]), "invalidated", "a doc edit ends the vouch");
+
+    // And the gate feels it: with the doc edit committed, the next append is flagged
+    // exactly as it would have been with no acknowledgment at all.
+    execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "freeze strings"], { cwd: tmp, stdio: "ignore" });
+    await scaffold({
+      "src/locales/en.json": strings("save", "cancel", "retry", "dismiss", "undo"),
+    });
+    assert.deepStrictEqual(staleFeatures(tmp), ["copy"], "the dead vouch clears nothing");
+  });
+
+  it("states the width at signing time, and names the risk surface it spans", async () => {
+    await scaffold({
+      "docs/.registry.json": JSON.stringify(
+        { features: { copy: { ...REG.features.copy, risk: ["data-loss"] } } },
+        null,
+        2,
+      ),
+      "src/locales/en.json": strings("save", "cancel"),
+    });
+    const r = await standingAck("src/locales/en.json", "additions only");
+    assert.equal(r.code, undefined, r.err);
+    assert.match(r.out, /This vouch STANDS/);
+    assert.match(
+      r.out,
+      /every future change to src\/locales\/en\.json until docs\/features\/copy\.md/,
+    );
+    assert.match(r.out, /copy is tagged \[data-loss\]/);
+  });
+
+  it("never clears a moved owned symbol — the file-grain limit is unchanged by standing", async () => {
+    await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
+    const r = await standingAck("src/a.ts", "internals only");
+    assert.equal(r.code, undefined, r.err);
+    assert.match(r.out, /NOT cleared by a file ack/);
+    assert.deepStrictEqual(staleFeatures(tmp), ["copy"], "the moved symbol keeps the doc flagged");
+  });
+
+  it("refuses the grains it is not: a symbol, a tree, and a file nothing owns", async () => {
+    await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
+    const sym = await capture(() =>
+      ackCommand("src/a.ts::foo", { reason: "x", standing: true, root: tmp }),
+    );
+    assert.equal(sym.code, 1);
+    assert.match(sym.err, /--standing is file grain/);
+    assert.match(sym.err, /codument ack src\/a\.ts --standing/, "and routes to the grain that is");
+
+    const tree = await capture(() =>
+      ackCommand("src/locales/**", { reason: "x", standing: true, root: tmp }),
+    );
+    assert.equal(tree.code, 1);
+    assert.match(
+      tree.err,
+      /expires the moment a file appears under the pattern|appears under the pattern/,
+    );
+
+    await scaffold({ "src/loose.ts": "export const a = 1;\n" });
+    execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "loose"], { cwd: tmp, stdio: "ignore" });
+    await scaffold({ "src/loose.ts": "export const a = 2;\n" });
+    const loose = await capture(() =>
+      ackCommand("src/loose.ts", { reason: "x", standing: true, root: tmp }),
+    );
+    assert.equal(loose.code, 1);
+    assert.match(loose.err, /no feature owns src\/loose\.ts/);
+    assert.match(loose.err, /drop --standing/, "and names the ack that would work");
+    assert.equal(readAcks(tmp).length, 0);
+  });
+
+  it("is legible in the record: the list and the JSON contract both name what it is bound to", async () => {
+    await scaffold({ "src/locales/en.json": strings("save", "cancel") });
+    await standingAck("src/locales/en.json", "additions only");
+
+    const list = await capture(() => ackCommand(undefined, { list: true, root: tmp }));
+    assert.match(list.out, /\(standing\)/);
+    assert.match(list.out, /standing on docs\/features\/copy\.md — covers every change until/);
+    assert.doesNotMatch(list.out, /→/, "no transition is claimed, because none is bound");
+
+    const json = await capture(() => ackCommand(undefined, { list: true, json: true, root: tmp }));
+    const parsed = JSON.parse(json.out);
+    assert.deepStrictEqual(parsed.acks[0].standing, { docs: ["docs/features/copy.md"] });
+    assert.equal(parsed.acks[0].grain, "file");
+    assert.equal(parsed.acks[0].validity, "covering");
+    assert.equal(parsed.acks[0].from, parsed.acks[0].to, "the doc set's hash, not a transition");
+  });
+
+  it("the review card says the signature was taken earlier and covers this change too", async () => {
+    await scaffold({ "src/locales/en.json": strings("save", "cancel") });
+    await standingAck("src/locales/en.json", "additions only");
+    await scaffold({ "src/locales/en.json": strings("save", "cancel", "retry") });
+
+    const card = buildReview(tmp).coveringAcks;
+    assert.deepStrictEqual(
+      card.map((a) => [a.anchorId, a.grain, a.standing]),
+      [["src/locales/en.json", "file", ["docs/features/copy.md"]]],
+    );
+    const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
+    assert.match(out, /\(file, standing\)/);
+    assert.match(out, /signed earlier, covers this change too/);
+  });
+
+  it("dies when a second feature claims the file — it never settles a doc its signer never read", async () => {
+    await scaffold({ "src/locales/en.json": strings("save", "cancel") });
+    await standingAck("src/locales/en.json", "additions only");
+    assert.deepStrictEqual(staleFeatures(tmp), []);
+    const commit = (msg: string) => {
+      execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
+      execFileSync("git", ["commit", "-m", msg], { cwd: tmp, stdio: "ignore" });
+    };
+    commit("strings + vouch");
+
+    // Ownership widens after the signature. The vouch was taken against one doc's
+    // claims; a second doc now gates the same file and was never in the room.
+    await scaffold({
+      "docs/features/checkout.md": "# checkout\n\nEvery user-visible label is reviewed here.\n",
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            copy: REG.features.copy,
+            checkout: {
+              doc: "docs/features/checkout.md",
+              type: "feature",
+              primary_sources: ["src/locales/en.json"],
+              status: "current",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    commit("checkout claims the strings too");
+
+    await scaffold({ "src/locales/en.json": strings("save", "cancel", "retry") });
+    assert.deepStrictEqual(staleFeatures(tmp).sort(), ["checkout", "copy"]);
+    assert.deepStrictEqual(buildReview(tmp).coveringAcks, [], "and it is not shown as covering");
+    assert.equal(
+      ackValidity(tmp, readAcks(tmp)[0], [
+        "docs/features/checkout.md",
+        "docs/features/copy.md",
+      ]),
+      "invalidated",
+    );
+  });
+
+  it("records no line list — a standing vouch's covered set is open, and the record says only what it knows", async () => {
+    await scaffold({ "src/locales/en.json": strings("save", "cancel") });
+    const r = await standingAck("src/locales/en.json", "additions only");
+    // The lines are still shown as the signature is taken: what is in front of the
+    // signer now is exactly what the file grain owes them.
+    assert.match(r.out, /covers every change in src\/locales\/en\.json/);
+    assert.equal(readAcks(tmp)[0].coveredLines, undefined, "but naming only the first change would be a lie about the width");
+  });
+
+  it("still refuses what no vouch reaches: an unchanged file, an addition, a removal", async () => {
+    const unchanged = await standingAck("src/locales/en.json", "x");
+    assert.equal(unchanged.code, 1);
+    assert.match(unchanged.err, /unchanged.*nothing to ack/);
+
+    await scaffold({ "src/locales/fr.json": strings("save") });
+    const added = await standingAck("src/locales/fr.json", "x");
+    assert.equal(added.code, 1);
+    assert.match(added.err, /was added, not changed/);
+
+    await rm(join(tmp, "src", "locales", "en.json"));
+    const removed = await standingAck("src/locales/en.json", "x");
+    assert.equal(removed.code, 1);
+    assert.match(removed.err, /was deleted, not changed/);
+    assert.equal(readAcks(tmp).length, 0);
   });
 });

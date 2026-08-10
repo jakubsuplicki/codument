@@ -185,6 +185,10 @@ program
     "--signer <id>",
     "attribution (defaults to the git author; an independent signer is what strict-mode independence checks)",
   )
+  .option(
+    "--standing",
+    "with a bare <path>: bind the judgment to the owning doc's claims instead of the file's bytes — it stands across later content changes and dies when that doc moves (every review it covers names what it swept)",
+  )
   .option("--list", "list recorded acknowledgments with their handles")
   .option(
     "--json",

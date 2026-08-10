@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWriteFileSync } from "./events.js";
 import { isSourcePattern } from "./registry.js";
+import { byteNormalize } from "./two-ref.js";
 
 // A recorded, attributed, fingerprint-bound decision that a moved anchor needs no
 // doc change (a refactor / behavior-preserving move). The gate NEVER verifies the
@@ -35,6 +36,33 @@ export interface Acknowledgment {
    *  unreadable — a signature on a blank page — so the set is written out and
    *  judged whole. */
   covered?: CoveredFile[];
+  /** File grain only: this vouch is bound to the DOC whose claims decide it, not to
+   *  the file's bytes. Present makes the ack STANDING — see `StandingBinding`. When
+   *  present, `fromHash` and `toHash` are both the doc set's hash rather than a
+   *  content transition, because the doc has one state at signing. */
+  standing?: StandingBinding;
+}
+
+/**
+ * What a standing acknowledgment is bound to.
+ *
+ * An ordinary ack binds content on purpose, so nothing rides forever. But some
+ * judgments cannot go stale when content moves: "string additions to this locale
+ * namespace owe no line to this ADR" is true until the ADR's claims move, not until
+ * the file's bytes move — and binding it to bytes charged one field session four
+ * near-identical signatures over one file, three of them already dead. So the same
+ * judgment is bound to the thing that actually decides it.
+ *
+ * The width is real and is paid for elsewhere: it never clears a moved owned symbol
+ * (a file-grain vouch never did), and every review that leans on it names what it
+ * swept, so standing is wide but never silent.
+ */
+export interface StandingBinding {
+  /** Every doc whose claims decide this judgment, sorted — the owning docs of the
+   *  file at signing time. The vouch dies when ANY of them changes at all: a coarser
+   *  rule than "when the claims move", chosen because nothing can tell a claim from a
+   *  typo, and a doc edit is rare beside the source edits this grain exists to absorb. */
+  docs: string[];
 }
 
 /** One file inside a tree acknowledgment's vouched set, with the transition it was
@@ -78,8 +106,80 @@ export function parseAck(value: unknown): Acknowledgment | null {
     Array.isArray(v.coveredLines) && v.coveredLines.every((l: unknown) => typeof l === "string")
       ? { coveredLines: v.coveredLines as string[] }
       : {};
-  const base = { anchorId, fromHash, toHash, reason, signer, ...lines };
+  // A standing vouch is the widest thing this format can record, so a record that
+  // claims one without a readable binding is malformed rather than quietly re-read as
+  // content-bound. Its shape is checked here, once, so nothing downstream has to ask
+  // whether a standing ack it is holding makes sense: file grain only (a symbol's
+  // contract is not a doc's claims, and a tree's decay on a new member is the guard
+  // ADR 018 rests on), at least one doc, and both hashes the doc set's — a standing
+  // record whose two hashes disagree is claiming a transition it does not have.
+  let standing: StandingBinding | undefined;
+  if (v.standing !== undefined) {
+    const s =
+      typeof v.standing === "object" && v.standing !== null
+        ? (v.standing as Record<string, unknown>)
+        : null;
+    const docs = s && Array.isArray(s.docs) ? s.docs : null;
+    if (!docs || docs.length === 0) return null;
+    if (!docs.every((d: unknown) => typeof d === "string" && d.trim().length > 0)) return null;
+    if (anchorId.includes("::") || isSourcePattern(anchorId)) return null;
+    if (fromHash !== toHash) return null;
+    standing = { docs: (docs as string[]).slice().sort() };
+  }
+  const base = {
+    anchorId,
+    fromHash,
+    toHash,
+    reason,
+    signer,
+    ...lines,
+    ...(standing ? { standing } : {}),
+  };
   return covered ? { ...base, covered } : base;
+}
+
+/**
+ * The combined content hash of the docs a standing vouch is bound to.
+ *
+ * Byte-normalized, because the ack record is a committed, merge-friendly artifact
+ * that travels: a doc read CRLF on one checkout and LF on another is the same
+ * claims, and a vouch that died on a line-ending difference would be a gate that
+ * fails on where you cloned. A doc that is absent hashes as absent, so deleting the
+ * doc a judgment rests on kills the judgment.
+ */
+export function docSetHash(root: string, docs: readonly string[]): string {
+  const h = createHash("sha256");
+  for (const doc of [...docs].sort()) {
+    let body: string;
+    try {
+      body = byteNormalize(readFileSync(join(root, doc), "utf8"));
+    } catch {
+      body = "\u0000absent";
+    }
+    h.update(`${doc}\u0000${createHash("sha256").update(body, "utf8").digest("hex")}\n`, "utf8");
+  }
+  return h.digest("hex");
+}
+
+/**
+ * Whether a standing vouch still stands: recomputed on every read, never a stored
+ * status — the same rule the content-bound grains hold, asked of the thing this
+ * grain is actually bound to.
+ *
+ * `docs` is the file's owning set as the registry reads it NOW, passed by any caller
+ * that has the registry in view. Ownership can widen after signing — a second feature
+ * claims the file — and a vouch that kept clearing then would be settling a doc its
+ * signer never read. Because the hash covers each doc's PATH as well as its content,
+ * one comparison catches both: a doc whose claims moved, and a doc that was not in
+ * the room. Omitted, it falls back to the recorded set, which is the honest answer
+ * where no registry is in hand.
+ */
+export function standingHolds(
+  root: string,
+  ack: Acknowledgment,
+  docs?: readonly string[],
+): boolean {
+  return ack.standing !== undefined && docSetHash(root, docs ?? ack.standing.docs) === ack.toHash;
 }
 
 function parseCovered(value: unknown): CoveredFile[] | null {
@@ -122,6 +222,11 @@ export function ackCovers(
   fromHash: string,
   toHash: string,
 ): boolean {
+  // A standing ack is bound to a doc, never to a content transition, and its two
+  // hashes are the doc set's. Answering here would report a standing vouch as a
+  // transition vouch at every surface that tells the two apart — the widest claim in
+  // the format, rendered as the narrowest. It is resolved by `standingHolds`.
+  if (ack.standing) return false;
   return ack.anchorId === anchorId && ack.fromHash === fromHash && ack.toHash === toHash;
 }
 

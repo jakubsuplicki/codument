@@ -402,7 +402,7 @@ The local hook can always be skipped; the **CI check is the authority**. The sca
 
 ### `codument ack` — clear a change that owes no doc change
 
-When a symbol moves but no documented contract changed, you don't paper over the gate with a mirror edit — you **acknowledge** it. An ack records a fingerprint-bound, **auto-invalidating** decision so `review` stops flagging it, and it takes two forms.
+When a symbol moves but no documented contract changed, you don't paper over the gate with a mirror edit — you **acknowledge** it. An ack records a fingerprint-bound, **auto-invalidating** decision so `review` stops flagging it. Pick the grain that matches what you are answering for.
 
 ```bash
 # per-symbol: a moved symbol was a contract-neutral refactor
@@ -410,6 +410,12 @@ npx codument ack src/registry.ts::readRegistry --reason "return shape unchanged"
 
 # file-grain (bare path): a changed source file's current content owes no doc change
 npx codument ack src/registry.ts --reason "added a helper export; no contract change"
+
+# tree-grain (a pattern the registry declares): one judgment for a governed tree
+npx codument ack "i18n/locales/**" --reason "translations only; no contract in the pack"
+
+# standing: bound to the owning doc's claims, so it survives later edits to the file
+npx codument ack src/locales/en.json --standing --reason "string additions owe no line to this doc"
 
 npx codument ack --list                 # list recorded acks with their handles
 npx codument ack --remove <handle>      # remove one by handle
@@ -419,7 +425,9 @@ npx codument ack src/foo.ts::bar --base main --signer alice   # match review --b
 
 - **Per-symbol ack (`<path>::<symbol>`)** is the agent-judge resolution that a **moved** symbol was a contract-neutral refactor owing no doc change. It is bound to the exact `from → to` fingerprint transition, so it **auto-invalidates the next time the anchor moves** — no ride-forever exemption. The gate verifies the ack's **form** only (it exists, is attributed with non-empty fields, and names the exact moved fingerprint), **never its semantic truth** — code/doc equivalence is undecidable, so honesty rests on the visible ack-rate and the durable audit trail, not a truth check.
 - **File-grain ack (bare `<path>`, per ADR 012)** vouches that a changed source file's **current content** owes no doc change. It clears only **additive** (added/removed-symbol), **concept-umbrella**, and **coarse/non-TS** staleness, bound to the file's content fingerprint (auto-invalidating on the next change). It **never masks a moved symbol**: a `changed` (moved) owned symbol still wakes its feature, so a real contract change is never laundered. It **counts as an ack** — a distinct `file-acked` line on the no-doc-change-owed side, never as a doc update — so over-acking stays visible and the friction rate is not deflated. A parse-unevaluable file **cannot** be file-acked into freshness (the fail-loud stance holds).
-- **Flags:** `--reason <text>` names the contract that stayed constant; `--base <ref>` resolves the move against the merge-base with `<ref>` (match the ref `review --base` used; like `review --base` it is refused in a workspace of member repositories, where one ref cannot name several histories); `--signer <id>` sets attribution (defaults to the git author; an independent signer is what strict-mode independence checks); `--list` / `--remove <handle>` manage recorded acks; `--root <dir>` sets the project root.
+- **Tree-grain ack (a pattern the registry declares, per ADR 018)** answers for a whole governed tree in one line. The record names every path it vouched for with that path's transition, and it stands only while that entire set is unchanged — one member moving spends it, and a file *appearing* under the pattern spends it, because a new locale is a new governed unit. Only a tree some entry declares in `primary_sources` is ackable: the width is earned by a committed registration, never by the glob you typed.
+- **Standing ack (`--standing`, per ADR 019)** binds a file-grain judgment to the **owning doc's claims** instead of the file's bytes, so it survives later content changes and dies when that doc moves. Reach for it when the judgment cannot go stale on an edit — "string additions to this namespace owe no line to this doc" is true until the doc says otherwise, and binding it to bytes charges a fresh signature every step for a question whose answer did not change. The width is the trade, so it is never quiet: it states what it spans as you sign it (the file, the doc that ends it, and any risk tag on the owning feature), reads as *standing* in `ack --list` and in the audit card, and every review it covers something names what it swept. It is file grain only — a symbol's contract is decided by its own signature, and a tree's decay on a new member is the guard that keeps a tree vouch honest.
+- **Flags:** `--reason <text>` names the contract that stayed constant; `--standing` binds the vouch to the owning doc instead of the file's content; `--base <ref>` resolves the move against the merge-base with `<ref>` (match the ref `review --base` used; like `review --base` it is refused in a workspace of member repositories, where one ref cannot name several histories); `--signer <id>` sets attribution (defaults to the git author; an independent signer is what strict-mode independence checks); `--list` / `--remove <handle>` manage recorded acks; `--root <dir>` sets the project root.
 
 *Honest limit:* the additive-owes-no-doc judgment (like the per-symbol ack's semantic claim) is **prose-enforced, not test-backed** — the gate checks the ack's form and fingerprint, never whether the human was right that no doc was owed.
 

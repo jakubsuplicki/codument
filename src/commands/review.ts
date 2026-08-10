@@ -8,6 +8,7 @@ import {
   normalizeIdentity,
   readAcks,
   shellArg,
+  standingHolds,
 } from "../lib/acknowledgment.js";
 import { type ExclusionSpec, isExcluded, resolveScopeSync } from "../lib/analyze.js";
 import {
@@ -18,6 +19,7 @@ import {
   type DependentSummary,
   detectApprovedPlanScope,
   type OwnershipLint,
+  owningDocsOf,
   resolveFileGrainAcked,
   standingTreeAcks,
   type UngatedRegisteredChange,
@@ -205,6 +207,11 @@ export interface CoveringAck {
    *  trade a tree ack makes, so it is stated wherever the ack is shown rather than
    *  left to be discovered by opening the record. */
   covers?: number;
+  /** Present when this vouch is STANDING: the docs whose claims decide it. A standing
+   *  ack was signed against some earlier change and answers for this one too, so the
+   *  card names it as standing — a wide vouch that went unremarked here would be
+   *  indistinguishable from a signature taken on the diff in front of the reader. */
+  standing?: string[];
   signer: string;
   reason: string;
   /** The signer differs from the change author (a second-party sign-off). */
@@ -411,7 +418,7 @@ export function buildReview(
   const resolveAcked = (set: Acknowledgment[]): string[] =>
     [
       ...new Set([
-        ...resolveFileGrainAcked(root, baseRef, changes, set, unevaluable, renamedFrom),
+        ...resolveFileGrainAcked(root, baseRef, changes, set, unevaluable, renamedFrom, registry),
         ...set.flatMap((a) => standingTrees.get(a) ?? []),
       ]),
     ].sort();
@@ -496,12 +503,19 @@ export function buildReview(
   for (const file of cardFileGrainAcked) {
     const { from, to } = fileContentTransition(root, baseRef, file, renamedFrom.get(file) ?? file);
     if (from === null || to === null) continue;
-    const ack = acks.find((a) => isFileGrainAck(a) && ackCovers(a, file, from, to));
+    // A standing vouch is looked for first: where both grains would clear the file,
+    // the standing one is the wider claim and the one the card exists to make loud.
+    const mineStanding = acks.filter((a) => a.standing && a.anchorId === file);
+    const now = mineStanding.length > 0 ? owningDocsOf(registry, file) : undefined;
+    const ack =
+      mineStanding.find((a) => standingHolds(root, a, now)) ??
+      acks.find((a) => isFileGrainAck(a) && ackCovers(a, file, from, to));
     if (ack) {
       coveringAcks.push({
         anchorId: file,
         grain: "file",
         symbol: null,
+        ...(ack.standing ? { standing: ack.standing.docs } : {}),
         signer: ack.signer,
         reason: ack.reason,
         independent: independentOf(ack.signer),
@@ -1761,9 +1775,21 @@ function printHuman(report: ReviewReport): void {
           ? pc.red("[self — not counted]")
           : pc.yellow("[self]");
       const target =
-        a.grain === "file" ? pc.dim(`${a.anchorId} (file)`) : pc.bold(a.symbol ?? a.anchorId);
+        a.grain === "file"
+          ? pc.dim(`${a.anchorId} (file${a.standing ? ", standing" : ""})`)
+          : pc.bold(a.symbol ?? a.anchorId);
       const mark = isIgnored ? pc.red("✗") : pc.dim("✓");
       console.log(`    ${mark} ${target} ${badge} ${pc.dim(`${a.signer}:`)} ${a.reason}`);
+      // Signed against an earlier change, not this one. Saying so is the whole
+      // discipline of the grain: a standing vouch nobody is reminded of is exactly the
+      // ride-forever exemption the ack model was built to refuse.
+      if (a.standing) {
+        console.log(
+          pc.yellow(
+            `        standing on ${a.standing.join(", ")} — signed earlier, covers this change too`,
+          ),
+        );
+      }
     }
     if (ignored > 0) {
       console.log(
