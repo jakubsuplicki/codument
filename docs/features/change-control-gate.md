@@ -76,6 +76,26 @@ The gate is split into two parts that must not be confused: a **deterministic en
 - **Every changed path enters the verdict byte-exact, whatever its encoding.** Change listing reads git's machine framing rather than its human display, so a filename outside ASCII or bearing a space (`src/föo.ts`, a CJK name) is matched against the registry as written instead of being escaped, garbled, and silently misread as unmapped while its owning doc reads fresh. The framing also removes the rename-arrow ambiguity, so a rename reports its post-rename path as the change. *(tests: review.test.ts "a changed non-ASCII / CJK registered source is owned and flags its doc stale, never unmapped"; two-ref.test.ts "changedPathsBetween: -z path decoding and rename ordering")*
 - **The showcase never destroys a directory it did not create.** `demo` recreates its target each run, so it refuses any populated directory it cannot prove is its own; an empty, nonexistent, or prior-demo `--dir` proceeds, a real project pointed at `--dir` is left untouched. *(test: demo.test.ts — a populated foreign --dir is refused and left intact; a repeat run against demo's own dir succeeds)*
 
+- **A promise the surface prints is a row in a battery, not a per-case assertion.** Six
+  consecutive releases fixed the same defect in a different surface — a route printed over a
+  finding it cannot clear, a route withheld where it would have worked, an anchor rendered as
+  a command no shell accepts — because each route's promise lived in whichever test its
+  author happened to write, and a promise asserted case by case has gaps exactly where nobody
+  thought to look. The surface battery asks every route the same questions at once: it is
+  pasteable (balanced quoting, no unquoted shell metacharacter a reader must repair first),
+  it is offered only where an acknowledgment can actually reach the finding, and run verbatim
+  it clears what it sat under. The distinction that makes execution possible is that a
+  concrete command is a **route** and a line carrying a placeholder is a **pointer** — prose
+  naming an edit, with no claim that it runs. Two properties keep the battery from becoming
+  scenery: a scenario that fires no finding is a violation rather than a vacuous pass, and a
+  row declared pending that starts passing is a violation too, so an exemption cannot outlive
+  the gap it names. It is proven to bite against a seeded surface that appends a route it
+  cannot honour, on the same terms the adapter battery holds. *(tests:
+  `surface-conformance.test.ts` — the shipped CLI green across the coarse-governed, body-move,
+  signature-move, stranded-pointer and unclaimed-shared-symbol scenarios; a lying surface
+  rejected; a placeholder read as a pointer rather than a route; an anchor a shell would choke
+  on named)*
+
 ## Decisions
 
 - Deterministic, reproducible, LLM-free verdict — [003-deterministic-reproducible-gate.md](../architecture/decisions/003-deterministic-reproducible-gate.md)
@@ -111,6 +131,7 @@ The info-only → blocking flip is **soak-data-dependent and not yet made**: the
 - `src/lib/sfc-adapter.ts` — the single-file-component adapter (`.vue`/`.svelte`/`.astro`): a deterministic block scanner (never a third-party SFC grammar; a file it cannot segment is unevaluable, and block content is an opaque region), script blocks delegated to the TS engine keyed on the SFC path — `<script setup>`, Svelte instance scripts, and Astro frontmatter extract with every top-level declaration public, since the template binds the top level — plus body-grain `template.`/`style.` pseudo-anchors whose markup/CSS trivia folds away, so a markup tweak is one named ackable finding, never a whole-file wake and never silence. Custom blocks ride the module residual, and the generated-code banner is checked on the WHOLE file (the banner rides an HTML comment the delegated script never sees) — one shared banner spec across every adapter's classifier, never per-language copies.
 - `src/lib/jvm-adapter.ts` — the precise JVM adapter, Java and Kotlin under one anchor model with two grammars: types anchor as `Name#` frames and members as `Name#method().`/`Name#field.` with nested chains, mirroring C#. Visibility differs by dialect on purpose — Java anchors `public`/`protected` (a bare package-private default is not yet a declared contract), while Kotlin's default IS public so every non-`private` declaration anchors and `internal` is the repo-audience surface; interface members are implicitly public in both. Annotations are contract (framework wiring like `@GetMapping`), a Kotlin data class's primary-constructor parameters are contract (the equality surface), enums anchor whole, overloads fold per name, and Kotlin top-level declarations key by bare name like Go/Rust. Bound: tree-sitter-kotlin is newline-significant, so a pathologically compact single-line member body classifies unevaluable (fail-loud, never a false-fresh) rather than mis-anchoring — realistic multi-line Kotlin gates per symbol.
 - `tests/adapter-conformance.ts` — the parameterized conformance battery every precise adapter must pass: pure violation-returning checks, so a runner asserts green on a real adapter and red on a seeded mutant.
+- `tests/surface-conformance.ts` — its sibling for guidance: the parameterized battery every printed route must pass, arranged over real repositories and run through the built CLI, with the same pure violation-returning shape so a runner asserts green on the shipped surface and red on a seeded one that lies. Carries the route-versus-pointer rule and the shell-safety check that plan 42's defect class needs.
 - `src/lib/gate-error.ts` — the gate's fail-closed error type, in a leaf module so the git seam and the two-ref plumbing can both raise it without depending on each other.
 - `src/lib/two-ref.ts` — the determinism plumbing: ref-blob reads, byte-normalization, single-base resolution, deletion-first-class path classification, and the algo stamp. Also exposes the merge-base deletion view the [adversarial-review gate](adversarial-review-gate.md) consumes.
 - `src/lib/ownership.ts` — the ownership resolver: maps an anchor to its owning feature, derived-first, fail-loud on unassigned/ambiguous shared symbols.

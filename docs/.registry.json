@@ -438,7 +438,8 @@
         "src/lib/ts-adapter.ts",
         "src/lib/ts-canonicalize.ts",
         "src/lib/two-ref.ts",
-        "tests/adapter-conformance.ts"
+        "tests/adapter-conformance.ts",
+        "tests/surface-conformance.ts"
       ],
       "related_sources": [],
       "docs": [
