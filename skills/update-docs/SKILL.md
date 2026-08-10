@@ -114,7 +114,7 @@ Use your judgment. A `lib.md` covering 6 tightly related utility modules is fine
 ### 4. Updating docs after code changes
 
 For single-feature updates, do this inline (no agent needed):
-1. Read `docs/.registry.json`, find the doc mapped to the changed file
+1. Run `codument context --file <path> --owner` for the doc mapped to the changed file (a flat registry read answers the same question at the cost of the whole map)
 2. Open the doc, compare against your code changes
 3. Make the two-way call:
    - **A documented contract or behavior changed** → update only the now-outdated layers at intent altitude (the standard above — the contract, the design, the why; never a symbol mirror or an export dump). Don't rewrite the whole doc.

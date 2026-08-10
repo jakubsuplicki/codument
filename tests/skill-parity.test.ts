@@ -61,3 +61,50 @@ describe("shipped skills and their tracked mirror stay identical", () => {
     );
   });
 });
+
+// The loop's most frequent question is "which doc owns this file", and roughly a
+// dozen places across the shipped guidance answered it by instructing a flat read of
+// `docs/.registry.json` — a 72KB file in the field repo, read to learn four lines.
+// `context --file --owner` answers it in one line and appeared almost nowhere: the
+// expensive door was the documented one.
+describe("the guidance routes an ownership question through the cheap door", () => {
+  /** Every file whose text is guidance an agent follows, shipped or dogfooded. */
+  const GUIDANCE = [
+    ...filesUnder(SHIPPED).map((f) => join(SHIPPED, f)),
+    ...filesUnder("rules").map((f) => join("rules", f)),
+    "AGENTS.md",
+    "src/lib/scaffold.ts",
+  ];
+
+  it("no instruction says to read the whole registry to find one file's owner", () => {
+    // The shape that was wrong, in the words it was written in. A mention of the
+    // registry is fine — it IS the map, and registering a source means editing it;
+    // what must not survive is an instruction to READ it to answer this question.
+    const banned = [
+      /[Cc]heck `docs\/\.registry\.json` (?:before and after|and update)/,
+      /Read `docs\/\.registry\.json`[,\s]*(?:\n\s*)?(?:and\s+)?[Ff]ind the (?:file )?(?:path|doc)/,
+    ];
+    const offenders: string[] = [];
+    for (const file of GUIDANCE) {
+      if (!existsSync(file)) continue;
+      const text = readFileSync(file, "utf-8");
+      if (banned.some((re) => re.test(text))) offenders.push(file);
+    }
+    assert.deepEqual(
+      offenders,
+      [],
+      "these send an agent to the whole map for one file's owner — route them through " +
+        "`codument context --file <path> --owner`: " + offenders.join(", "),
+    );
+  });
+
+  it("and the command that answers it is actually named in the guidance", () => {
+    const named = GUIDANCE.filter(
+      (f) => existsSync(f) && readFileSync(f, "utf-8").includes("--file <path> --owner"),
+    );
+    assert.ok(
+      named.length >= 5,
+      `the cheap door has to be documented where the question is asked; found it in ${named.length} file(s)`,
+    );
+  });
+});

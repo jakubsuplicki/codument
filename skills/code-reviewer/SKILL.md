@@ -95,4 +95,4 @@ Read all changed files completely before writing any feedback. Understand the in
 - Don't suggest adding features beyond the scope of the change
 - If the code is good, say so — don't manufacture issues
 - One real bug is worth more than ten style comments
-- After making any code changes, check `docs/.registry.json` and update corresponding documentation. This is part of the project's Definition of Done.
+- After making any code changes, run `codument context --file <path> --owner` to find the owning doc — one line, not a read of the whole registry — and update it. This is part of the project's Definition of Done.

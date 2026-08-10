@@ -122,4 +122,4 @@ Parse these from the user's message — they don't need to use exact flags.
 - Report format is consistent across runs so findings can be compared over time
 - Don't manufacture issues — if a feature is clean, say so
 - Focus on things that could actually cause problems in production
-- After making any code changes, check `docs/.registry.json` and update corresponding documentation. This is part of the Definition of Done.
+- After making any code changes, run `codument context --file <path> --owner` to find the owning doc — one line, not a read of the whole registry — and update it. This is part of the Definition of Done.

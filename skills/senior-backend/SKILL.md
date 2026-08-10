@@ -73,4 +73,4 @@ description: >
 - Log structured data (JSON), not strings
 - Keep controllers thin — orchestration only, no business logic
 - Write integration tests for critical paths, unit tests for business logic
-- After making any code changes, check `docs/.registry.json` and update corresponding documentation. This is part of the project's Definition of Done.
+- After making any code changes, run `codument context --file <path> --owner` to find the owning doc — one line, not a read of the whole registry — and update it. This is part of the project's Definition of Done.

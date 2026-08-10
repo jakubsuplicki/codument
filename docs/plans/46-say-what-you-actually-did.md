@@ -208,7 +208,7 @@ Status: draft, awaiting approval before source edits.
       arrived with, and says which is which.
 - [x] Step 11: `doctor --fix` clears the judgment-free subset in one command and prints
       what it deliberately left alone.
-- [ ] Step 12: The workflow routes ownership questions through `codument context --owner`
+- [x] Step 12: The workflow routes ownership questions through `codument context --owner`
       instead of a flat read of `docs/.registry.json`.
 - [x] Step 13: A stale doc woken by a deletion is not offered the file-grain ack, in the
       finding or in the `--strict` epilogue. **Found by step 1's battery on its first run

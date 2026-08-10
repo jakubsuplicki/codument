@@ -202,7 +202,7 @@ The Codument CLI does not run your coding agent. \`codument run\` is only a sign
 A task is NOT complete until:
 1. Code works and tests pass
 2. The approved plan step is complete and no extra scope was added
-3. \`docs/.registry.json\` is checked for affected source files
+3. Every affected source file's owner is known (\`codument context --file <path> --owner\`)
 4. New source files are registered in \`docs/.registry.json\`
 5. Corresponding feature docs are created or updated at intent altitude (contract/why, never a symbol mirror); a contract-neutral symbol move is acknowledged (\`codument ack\`), not papered over with mirror prose
 6. Dependent features are flagged if an interface changed
@@ -213,8 +213,8 @@ A task is NOT complete until:
 Do not move from a rough idea into source edits automatically. First use the docs-backed grilling and planning workflow to resolve scope, non-goals, acceptance criteria, verification strategy, and implementation steps. Begin implementation only after the user approves the plan. Surface the plan's checklist inline in the chat at the approval gate, so the user approves the steps they can see rather than a link they must open.
 
 ### Documentation Registry
-The file \`docs/.registry.json\` maps source files to their documentation.
-Always check it before and after modifying source files.
+The file \`docs/.registry.json\` maps source files to their documentation. It is the whole project's map, so query it rather than read it: \`codument context --file <path> --owner\` answers which doc owns one file in a line, and \`codument context --feature <slug>\` / \`--plan <path>\` project the grounded working set. Read the file itself when you are editing the map — registering a new source, re-pointing an entry — or when the CLI is unavailable.
+
 
 ### Documentation altitude
 Docs follow a fixed standard, not a vibe. Each doc is layered — \`## In plain terms\` -> \`## Design approach\` -> \`## Invariants & boundaries\` -> \`## Decisions\` -> \`## Key files\`, over minimal frontmatter (title/status/type/last_reviewed only; ownership, dependencies, and risk live solely in \`docs/.registry.json\`) — per the \`doc-audience-layers\` concept, the \`update-docs\` skill, and \`templates/feature.md\`/\`templates/concept.md\`. They are the queryable knowledge base the agent reads to link features, estimate work, and understand scope, so every layer earns its place. The line is one rule: keep only what survives a refactor that renames every symbol and reorders every line. Write the contract, the design at guide level, the durable why, and the invariants (what must hold or is forbidden — link each to the test that enforces it, or mark it "untested"). Do NOT write mechanism — identifiers, literal counts, ordered call sequences, or line-number anchors — nor symbol mirrors ("readRegistry reads the registry"), exhaustive export dumps, revision history, glossaries, or vague filler; that is the overload the standard exists to prevent, as bad as staleness, and the agent greps mechanism live from code. When a symbol moves, make the two-way call: a documented contract changed -> update the relevant layer at intent altitude; a pure-internal refactor changed no contract -> \`codument ack <path>::<symbol> --reason "<what stayed constant>"\`, never a mirror edit to clear the gate. Default to updating the doc; ack only when you can name the preserved contract in one clause. A plan's delivery scaffolding (checklist, acceptance criteria, verification) is transient: it compacts out when the work ships — surviving decisions move to Decisions/ADRs — so a shipped doc carries only the durable layers, never a stale checklist.

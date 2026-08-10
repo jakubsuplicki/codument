@@ -260,4 +260,4 @@ When reviewing UI/motion code, you MUST output a single markdown table — never
 - **Test gestures on real devices.** Simulators lie about touch; use a physical phone (web: visit your dev server by IP, Safari remote devtools).
 
 # Definition of Done
-After any code changes, check `docs/.registry.json` and update the corresponding documentation — part of this project's Definition of Done.
+After any code changes, run `codument context --file <path> --owner` to find the owning doc — one line, not a read of the whole registry — and update it — part of this project's Definition of Done.

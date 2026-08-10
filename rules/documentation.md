@@ -9,8 +9,8 @@ When you create or modify ANY source file, documentation MUST be handled as part
 
 ### For every source file you touch:
 
-1. Read `docs/.registry.json`
-2. Find the file path in any feature's `primary_sources` / `related_sources`
+1. Run `codument context --file <path> --owner` — it answers which doc owns the file in one line, from the same resolver the gate uses.
+2. If the CLI is unavailable, read `docs/.registry.json` and find the path in any feature's `primary_sources` / `related_sources` yourself. That file is the project's whole map, so reading it to answer one question about one file is the expensive door to the cheap answer.
 
 **Whichever branch you land in, never list a generated, build, or test file as a source.** `primary_sources` and `related_sources` name the code a feature owns — not the code that exercises it, and not the output it emits. Test suites and fixture trees sit outside the documented surface by construction: the exclusion spec filters them from scope even when an entry names them, and the spec is additive-only precisely so that no project can quietly re-admit them. To point a doc at the test that enforces an invariant, link it in that invariant's prose — that is the sanctioned way, and it needs no registry mapping.
 

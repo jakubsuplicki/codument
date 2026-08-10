@@ -92,4 +92,4 @@ What problem are we solving and why now?
 - Every new component is operational burden — justify it
 - The best architecture is the simplest one that meets the requirements
 - If you can't explain it on a whiteboard in 5 minutes, it's too complex
-- After making any code changes, check `docs/.registry.json` and update corresponding documentation. This is part of the project's Definition of Done.
+- After making any code changes, run `codument context --file <path> --owner` to find the owning doc — one line, not a read of the whole registry — and update it. This is part of the project's Definition of Done.
