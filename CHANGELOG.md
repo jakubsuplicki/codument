@@ -7,6 +7,119 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-08-11
+
+Say what you actually did — plan 46.
+
+Two more field reports on 0.16.0: a session building a collections feature in the same
+Expo app, and eight live probes on a throwaway clone of it. One theme runs through every
+finding. **The tool knew more than it said, or claimed more than it did.**
+
+The worst case is the one that shipped a signature over a security regression. A rules
+file no adapter can read was changed in two places — a comment, and one token that made
+every user's private collections world-readable — and acknowledged with a reason naming
+only the comment. The reason was true. A file-grain acknowledgment on a file with no
+symbols to enumerate printed a hash transition and nothing else, so the signer was
+blindest at exactly the grain where the tool is least able to judge, and the gate went
+clean, exit 0, signed. Every word of it accurate. An acknowledgment now names what it
+covers at every grain: the exports it swept where an adapter reads them, the changed
+lines where none can, before the signature is taken and in the record afterwards.
+
+**Two of the round-2 findings were false, and one mechanism explains both.** The reporter
+piped nearly every invocation because the output exceeded their budget, and `| tail -1`
+delivers the verdict and destroys everything above it. So behaviour the tool has and
+prints — inherited registry rot — was written up as missing across roughly fourteen runs,
+and a version-skew notice printed on every invocation went unseen for five hours. Every
+condition that changes what a reader does next now rides the verdict line itself.
+
+The same overstatement ran through the review gate. Its default runner resolves
+local-only and was unavailable in the field repo, so every adversarial finding across
+five delivery steps was recorded advisory and **not one had its test re-run** — while the
+gate printed `✓ Adversarial review covers this diff` each time. Twelve real bugs were
+fixed that session because the author fixed them, not because anything held.
+
+Behind all of it is a missing invariant class rather than a run of bad luck. Six
+consecutive releases fixed the same defect in a different surface, because each printed
+route's promise lived in whichever test its author happened to write. This release opens
+with a **surfaces conformance battery** — the guidance-to-outcome contract as a
+mutation-proven fixture table, the sibling `adapter-conformance` has had since plan 18 —
+and it found a live defect on its first run: `review` offered an acknowledgment over a
+deletion that `ack` refuses by name, leaving the gate exactly as red as the command
+printed to clear it.
+
+### Added
+
+- **A standing acknowledgment** (`codument ack <path> --standing`, ADR 019) binds a
+  file-grain judgment to the owning doc's claims instead of the file's bytes, so it
+  survives later content changes and dies when that doc moves. One locale namespace was
+  signed for four times in one session with four near-identical reasons, three already
+  dead in a list where 29 of 55 were: the judgment being re-made is true until the doc's
+  claims move, not until the file's bytes move. It answers to the owning set as the
+  registry reads it *now*, so a second feature claiming the file ends it. File grain
+  only — a symbol's contract is decided by its own signature, and a tree's decay when a
+  member appears is the guard ADR 018 rests on.
+- **A surfaces conformance battery** asks every route the tool prints the same questions
+  at once: it is pasteable, it is offered only where an acknowledgment can reach the
+  finding, and run verbatim it clears what it sat under. Proven to bite against a seeded
+  surface that lies, with a scenario that fires no finding counted as a violation rather
+  than a vacuous pass.
+- **`codument doctor --fix`** clears the findings that need no judgment — a registry
+  entry naming a path that is not on disk, a declared tree matching nothing — and names
+  every finding it deliberately left. It only ever removes a claim, never adds or
+  re-points one and never touches a doc, so a wrong guess cannot write corruption into
+  the control plane every other answer derives from.
+- **A doc naming a source path this change removed is a blocking finding**, held to the
+  registry pointer's standard since plan 44. A rename that correctly re-pointed the entry
+  went green with the owning doc's Key files layer still sending its next reader to a
+  path that is not there. Scoped to the docs the registry names — never a plan or an ADR,
+  which record decisions and should not be rewritten because a file later moved.
+- **`doctor` names a manifest or lockfile claimed as an owned source.** Ownership means a
+  wake, and a `bun.lock` line woke an ADR about deferring native voice modules while a
+  `package.json` line woke a getting-started page. Named as the ownership error it is,
+  never rewritten: moving a source between `primary_sources` and `related_sources`
+  changes what wakes, which is the user's call.
+
+### Changed
+
+- **`--require-review` no longer claims to cover a diff it adjudicated nothing in.** A
+  run with a reproduction the gate could not perform says it is *on record for* the diff,
+  names how many of how many went unchecked, and repeats that on the verdict line. A
+  finding that named no test is a judgment call and is deliberately not counted — the
+  gate has always kept those advisory, and warning about them would put the line on
+  nearly every honest review.
+- **The verdict line carries every ungated condition that changes what the reader does
+  next**: inherited registry rot, a scaffold behind the installed version, and a review
+  that reproduced none of its own findings. Nothing about gating moved; `clean` still
+  names the gate's own result.
+- **A file gated at coarse grain says so, once.** The downgrade was always correct —
+  registration widens the gate's scope, never its judgment — and always silent, so the
+  reader inferred it from the per-symbol route that was missing. A reader who believes
+  the gate looked inside a rules file is reading a much stronger claim than the one made.
+- **`doctor` separates what this change produced from what the repo arrived with.**
+  Seventy findings on a maintained repo is upgrade debt, not calibration: every lint
+  added since a project adopted retroactively finds old violations. The split is derived
+  from the working-tree change set, never a baseline file, and is attributed by file
+  rather than by feature so the short list can be trusted. Outside a repository it is
+  absent rather than empty.
+- **The workflow routes ownership questions through `codument context --file <path>
+  --owner`.** Roughly a dozen instructions answered the loop's most frequent question by
+  a flat read of `docs/.registry.json` — 72KB in the field repo to learn four lines —
+  while the one-line command appeared almost nowhere. The expensive door was the
+  documented one.
+
+### Fixed
+
+- `review` no longer offers a file-grain acknowledgment over a stale doc whose source
+  this change removed, in the finding or in the `--strict` epilogue. `ack` has refused a
+  deletion by name from the start, so the command printed to clear the gate was one the
+  tool was always going to refuse. Found by the new battery on its first run.
+- `ack --list --json` carries the lines a file vouch covered. They were written to the
+  record and dropped on read, so the file held the disclosure while every surface that
+  reads one showed nothing.
+- A literal NUL byte no longer reaches a source file through an editing round trip; the
+  line-difference helper both disclosure surfaces need lives at the two-ref seam, so a
+  signature and the review that leans on it cannot describe one change two ways.
+
 ## [0.16.0] - 2026-08-09
 
 The second field report, answered — plans 42 through 45.

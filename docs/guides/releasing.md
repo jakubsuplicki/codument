@@ -2,7 +2,7 @@
 title: Cutting a release
 status: current
 type: guide
-last_reviewed: 2026-08-05
+last_reviewed: 2026-08-11
 ---
 
 # Cutting a release
@@ -39,11 +39,17 @@ Nothing here is automated. Run it top to bottom.
    check.
 
    Two of those have a **recorded baseline**, and the bar is *no movement against it*, not zero:
-   the suite carries 31 known Windows path-separator failures, and `doctor --strict` exits 1 on
-   three long-standing `bloated-doc` findings (`SKILL.md` preambles). Say
-   what the baseline is when you check it, and treat any change to either number as a blocker. This
-   step used to demand a green `doctor --strict`, which no release has ever met — a bar nobody can
-   clear is not a bar, it is a step people learn to skip.
+   as of 0.17.0 the suite carries **27** known Windows path-separator failures across 14 suites,
+   and `doctor --strict` exits 1 on **2** long-standing `bloated-doc` findings (`SKILL.md`
+   preambles). Say what the baseline is when you check it, and treat any change to either number
+   as a blocker. This step used to demand a green `doctor --strict`, which no release has ever
+   met — a bar nobody can clear is not a bar, it is a step people learn to skip.
+
+   **Re-measure both numbers and write what you measured back here.** They were 31 and 3 when
+   this guide was written and neither had been touched since; a baseline nobody re-measures is
+   exactly the recorded-state rot the tool exists to catch, sitting in the runbook that tells
+   you to check it. The direction matters too — a stale HIGH baseline hides a real regression
+   underneath it.
 
 5. **Commit** as `chore(release): X.Y.Z`, with a body that says what the release is for.
 

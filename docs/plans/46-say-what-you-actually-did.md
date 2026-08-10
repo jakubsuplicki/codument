@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 46: say what you actually did
@@ -161,100 +161,45 @@ What it deliberately does not do:
 - **It changes no wake, no fingerprint, and no exit code that is already correct.** Every
   existing gate-wiring and drift assertion should pass unmodified.
 
-## Decisions (pre-settled — adjust at approval, not mid-run)
 
-- **The battery goes first and is expected to go red.** It pins the properties this release
-  then satisfies, exactly as plan 18's conformance battery preceded the language adapters.
-  A row that fails on landing is the plan working; a row nobody wrote is how mechanism 8
-  keeps recurring.
-- **"New" in `doctor` is derived, never a baseline file.** A finding is this change's when
-  its subject is in the working-tree change set; everything else is inherited. No recorded
-  baseline, so there is no second source of truth to rot — the same derived-first stance as
-  ADR 001 and ADR 004, and the same scope rule `review` already uses.
-- **A standing acknowledgment dies on any content change to its doc**, not only on a move
-  in the layers it could be about. Coarser, and a doc edit is rare enough that the extra
-  re-signing is small beside four signatures per feature.
-- **`doctor --fix` applies only judgment-free, reversible edits** — unmapping a registered
-  test or generated file, dropping a registry pointer to a path that does not exist — and
-  *prints* rather than writes anything that needs a decision, the `exclude` block included.
-- **The lockfile lint names, never rewrites.** Moving a source between `primary_sources`
-  and `related_sources` changes what wakes; that is the user's call, and the lint's job is
-  to make an accidental claim visible.
+## How it landed
 
-## Delivery Plan
+Thirteen steps, thirteen commits, in the order written. Four things are worth keeping.
 
-Status: draft, awaiting approval before source edits.
+**The battery paid for itself before the release it was written for had started.** Step 1
+pinned the guidance-to-outcome contract as a fixture table, and on its first run it found
+a live defect nobody had reported: `review` printed `codument ack <path>` over a stale doc
+whose source this change had deleted, while `ack` refuses a deletion by name — so the gate
+was left exactly as red by the command printed to clear it. Plans 36 and 42 had closed
+that shape for unclaimed symbols and for signature moves; deletions were never covered,
+because until something asked every route the same question at once, each route's promise
+lived in whichever test its author happened to write. Fixing it found two more, and
+attacking the battery found three against itself.
 
-- [x] Step 1: A surfaces conformance battery — the guidance-to-outcome contract as a
-      fixture table over every route the tool prints, mutation-proven against a seeded
-      surface that lies. Rows this release will turn green are expected to land red.
-- [x] Step 2: Nothing that changes the reader's next action lives only above the verdict
-      line, so a piped `tail -1` is sufficient rather than merely honest.
-- [x] Step 3: A file acknowledgment names what it vouched for at every grain. Where no
-      adapter can enumerate symbols, it names the changed hunks — at signing time, in the
-      record, in the acks card and in `ack --list`.
-- [x] Step 4: A standing acknowledgment, bound to the owning doc rather than to file
-      content — it survives a content change and dies when the doc's claims move.
-- [x] Step 5: Every review a standing acknowledgment covers something names what it swept,
-      so width is never silent.
-- [x] Step 6: `--require-review` never claims to cover a diff it adjudicated nothing in.
-- [x] Step 7: A governed file gated coarse says so once, so a lost precision is a stated
-      fact rather than an inference from which routes were offered.
-- [x] Step 8: A doc naming a source path this change removed is a finding, held to the
-      registry pointer's standard.
-- [x] Step 9: A manifest or lockfile claimed as a `primary_sources` entry is a lint —
-      named as an ownership error, never rewritten.
-- [x] Step 10: `doctor` separates the findings this change produced from the debt the repo
-      arrived with, and says which is which.
-- [x] Step 11: `doctor --fix` clears the judgment-free subset in one command and prints
-      what it deliberately left alone.
-- [x] Step 12: The workflow routes ownership questions through `codument context --owner`
-      instead of a flat read of `docs/.registry.json`.
-- [x] Step 13: A stale doc woken by a deletion is not offered the file-grain ack, in the
-      finding or in the `--strict` epilogue. **Found by step 1's battery on its first run
-      and reproduced by hand** — `review` prints `codument ack <path>` and `ack` refuses it
-      with "no acknowledgment clears a deletion", so the gate is left exactly as red by the
-      command printed to clear it. Plans 36 and 42 closed this shape for unclaimed symbols
-      and for signature moves; deletions were never covered, because until the battery
-      existed nothing asked every route the same question at once. Run immediately after
-      step 1; the battery carries the scenario marked pending until it lands.
+**Two of the round-2 findings were false, and one mechanism explains both.** `review`
+does report inherited registry rot, and `ack`'s ownership refusal does exit nonzero. Both
+were written up as defects by a careful reporter because they print above a verdict line
+that `| tail -1` destroys. That is why the fix for mechanism 4 went in second rather than
+last: an output surface a reader cannot reach manufactures false bug reports, and one of
+them nearly cost a working feature a rewrite.
 
-## Acceptance criteria
+**Dogfooding caught the fix for mechanism 3 over-firing.** Counting every unreproduced
+finding as unadjudicated made codument's own gate warn on this very release, because a
+judgment call names no test and never could — which would put the line on nearly every
+honest review and teach the reader to skip it. Narrowed to a reproduction the gate could
+not perform, which is the field's actual shape and the only one the reader can act on.
+The cries-wolf failure arrived through the fix for a different one, which is worth
+remembering: this release fixed two surfaces for crying wolf and briefly built a third.
 
-- The battery fails against a seeded surface that prints a route which does not clear its
-  finding, and every route the shipped CLI prints is a green row.
-- The probe-1 sequence cannot be completed blind: acking a rules file carrying both a
-  comment edit and a rule change prints the rule change before the signature is taken, and
-  the recorded acknowledgment names it.
-- A locale file appended to across four steps is acknowledged once, and each of the four
-  reviews names what that acknowledgment swept.
-- `--require-review` with no resolvable runner does not print a covering verdict.
-- `codument review --strict | tail -1` on a tree with inherited registry rot and a stale
-  scaffold names both.
-- A registered `.js` source and a registered rules file each state their grain.
-- A rename that re-points the registry but leaves the old path in the owning doc's Key
-  files is red until the doc is corrected.
-- A lockfile in `primary_sources` is linted; the same lockfile in `related_sources` is not.
-- `doctor` on the field repo's shape reports its inherited count separately from findings
-  the current change produced, and `--fix` clears the mechanical ones without touching a
-  doc.
+**The standing acknowledgment turned out to be self-limiting, which is the design
+working.** It binds to *every* doc that owns the file, so on a file co-owned by a feature
+whose contract really does move with it — most of this repository's `src/lib` — a standing
+vouch would die immediately and buy nothing. It is attractive exactly where the field
+needed it (a locale namespace whose changes are homogeneous with respect to its doc) and
+unattractive everywhere else, without a rule saying so. The hole worth naming is the one
+the adversarial pass found: a vouch signed under one owner outliving a second feature's
+claim on the same file. It answers to the owning set as the registry reads it *now*.
 
-## Verification strategy
-
-Red-green per step, with each new test mutation-tested to prove it bites. The field
-sequences are the fixtures: probe 1's comment-plus-rule edit, the four-step locale append,
-the runner-less `--require-review`, probe 3's rename, and the field repo's registry shape
-for steps 9 through 11. Step 2 additionally asserts the piped shape (`tail -1`) rather than
-the full render, since that is the surface the field actually reads. Step 1's battery is
-itself verified the way plan 18's was — against a seeded mutant surface, so a vacuous green
-is impossible.
-
-## Open questions
-
-1. **May a standing acknowledgment cover a file whose owning feature carries a risk tag?**
-   Recommendation: yes, but rendered as its own line in the acks card, on the same argument
-   as the self-versus-independent badge — width over a risk surface should be loud rather
-   than forbidden.
-2. **No independent plan pass ran.** This plan introduces no new source files, so it
-   carries no Feature Map and routes to no documented invariant an adversary could attack
-   — the grounded pass is skipped by the skill's own rule, not by omission.
+Left standing, deliberately: the open question about a standing vouch over a risk-tagged
+feature was answered as recommended — allowed, and rendered loudly at signing rather than
+forbidden.
