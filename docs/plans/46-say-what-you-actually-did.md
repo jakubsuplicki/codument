@@ -193,7 +193,7 @@ Status: draft, awaiting approval before source edits.
 - [x] Step 3: A file acknowledgment names what it vouched for at every grain. Where no
       adapter can enumerate symbols, it names the changed hunks — at signing time, in the
       record, in the acks card and in `ack --list`.
-- [ ] Step 4: A standing acknowledgment, bound to the owning doc rather than to file
+- [x] Step 4: A standing acknowledgment, bound to the owning doc rather than to file
       content — it survives a content change and dies when the doc's claims move.
 - [ ] Step 5: Every review a standing acknowledgment covers something names what it swept,
       so width is never silent.
