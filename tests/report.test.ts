@@ -155,6 +155,40 @@ describe("renderReviewReportHtml", () => {
     assert.match(html, /src\/b\.ts/); // the file-grain ack names its path
   });
 
+  it("a standing vouch reads as standing here too, with what it swept — the page and the CLI cannot disagree", () => {
+    const html = renderReviewReportHtml({
+      review: {
+        version: 2,
+        gate: "ok",
+        isGitRepo: true,
+        changedFileCount: 1,
+        deletions: [],
+        plan: null,
+        state: emptyState(),
+        drift: [],
+        fileGrainAcked: ["src/locales/en.json"],
+        coveringAcks: [
+          {
+            anchorId: "src/locales/en.json",
+            grain: "file",
+            symbol: null,
+            standing: ["docs/features/copy.md"],
+            swept: ['+ "retry": "retry"'],
+            signer: "alice",
+            reason: "string additions owe no line to this doc",
+            independent: false,
+          },
+        ],
+      },
+      coveragePercent: 90,
+      generatedAt: "t",
+    });
+    assert.match(html, /file &middot; standing/, "the grain says it is standing");
+    assert.match(html, /signed earlier, covers this change too/);
+    assert.match(html, /docs\/features\/copy\.md/, "and names what ends it");
+    assert.match(html, /\+ &quot;retry&quot;: &quot;retry&quot;/, "and what it took this time");
+  });
+
   it("omits the acknowledgments card when the change carries no covering ack", () => {
     const html = renderReviewReportHtml({
       review: {

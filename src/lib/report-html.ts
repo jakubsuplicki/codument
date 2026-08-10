@@ -1,4 +1,4 @@
-import type { CoveringAck, ReviewReport } from "../commands/review.js";
+import { type CoveringAck, type ReviewReport, SWEPT_CAP } from "../commands/review.js";
 import { DEPENDENT_CAP } from "./change-state.js";
 import type { ImpactLedger } from "./impact-ledger.js";
 
@@ -396,6 +396,8 @@ export function renderReviewReportHtml(data: ReportData): string {
   .akb.ignored{color:var(--risk);background:var(--risk-bg);border:1px solid var(--risk-ln)}
   .aksig{font-family:var(--mono);font-size:11px;color:var(--ink3)}
   .akrs{color:var(--ink2);flex:1 1 240px;min-width:0}
+  .akstand{flex:1 1 100%;color:var(--warn);font-size:12px;padding-top:4px}
+  .akswept{font-family:var(--mono);font-size:11px;color:var(--ink3);padding-left:12px;overflow-x:auto}
 
   /* collapsible detail blocks */
   details.block{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:12px;overflow:hidden}
@@ -531,9 +533,22 @@ function renderAcks(acks: CoveringAck[] | undefined, requireIndependentAck = fal
         a.grain === "tree"
           ? `<code>${esc(a.anchorId)}</code> <span class="akg">tree &middot; ${a.covers ?? 0} files</span>`
           : a.grain === "file"
-            ? `<code>${esc(a.anchorId)}</code> <span class="akg">file</span>`
+            ? `<code>${esc(a.anchorId)}</code> <span class="akg">file${a.standing ? " &middot; standing" : ""}</span>`
             : `<code>${esc(a.symbol ?? a.anchorId)}</code>`;
-      return `<div class="akrow">${target} ${badge} <span class="aksig">${esc(a.signer)}</span> <span class="akrs">${esc(a.reason)}</span></div>`;
+      // A standing vouch was signed against a change that is not on this page, so the
+      // page has to say what it took from the one that is — the same disclosure the
+      // CLI card makes, from the same projection, so the two cannot disagree.
+      const standing = a.standing
+        ? `<div class="akstand">standing on ${a.standing.map((d) => `<code>${esc(d)}</code>`).join(", ")} &mdash; signed earlier, covers this change too${(a.swept ?? [])
+            .slice(0, SWEPT_CAP)
+            .map((s) => `<div class="akswept">${esc(s)}</div>`)
+            .join("")}${
+            (a.swept?.length ?? 0) > SWEPT_CAP
+              ? `<div class="akswept">&hellip; +${(a.swept as string[]).length - SWEPT_CAP} more</div>`
+              : ""
+          }</div>`
+        : "";
+      return `<div class="akrow">${target} ${badge} <span class="aksig">${esc(a.signer)}</span> <span class="akrs">${esc(a.reason)}</span>${standing}</div>`;
     })
     .join("\n    ");
   const head =

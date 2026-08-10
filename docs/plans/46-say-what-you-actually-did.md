@@ -195,7 +195,7 @@ Status: draft, awaiting approval before source edits.
       record, in the acks card and in `ack --list`.
 - [x] Step 4: A standing acknowledgment, bound to the owning doc rather than to file
       content — it survives a content change and dies when the doc's claims move.
-- [ ] Step 5: Every review a standing acknowledgment covers something names what it swept,
+- [x] Step 5: Every review a standing acknowledgment covers something names what it swept,
       so width is never silent.
 - [ ] Step 6: `--require-review` never claims to cover a diff it adjudicated nothing in.
 - [ ] Step 7: A governed file gated coarse says so once, so a lost precision is a stated

@@ -1645,9 +1645,11 @@ describe("codument ack --standing — a judgment bound to the doc that decides i
     assert.equal(parsed.acks[0].from, parsed.acks[0].to, "the doc set's hash, not a transition");
   });
 
-  it("the review card says the signature was taken earlier and covers this change too", async () => {
+  it("the review card says the signature was taken earlier and names what it swept THIS time", async () => {
     await scaffold({ "src/locales/en.json": strings("save", "cancel") });
     await standingAck("src/locales/en.json", "additions only");
+    execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "step one"], { cwd: tmp, stdio: "ignore" });
     await scaffold({ "src/locales/en.json": strings("save", "cancel", "retry") });
 
     const card = buildReview(tmp).coveringAcks;
@@ -1655,9 +1657,81 @@ describe("codument ack --standing — a judgment bound to the doc that decides i
       card.map((a) => [a.anchorId, a.grain, a.standing]),
       [["src/locales/en.json", "file", ["docs/features/copy.md"]]],
     );
+    // The sweep is THIS change's, not the one the signature was taken against — a
+    // vouch signed earlier covers a diff the reader cannot infer it from. Every line
+    // that really moved is named, punctuation included: the disclosure is a line
+    // difference over the file's own bytes, not a structural read of one format.
+    assert.deepStrictEqual(card[0].swept, [
+      '+ "cancel": "cancel",',
+      '+ "retry": "retry"',
+      '- "cancel": "cancel"',
+    ]);
+
     const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
     assert.match(out, /\(file, standing\)/);
     assert.match(out, /signed earlier, covers this change too/);
+    assert.match(out, /\+ "retry": "retry"/);
+  });
+
+  it("names the sweep in the shape the file can be named: exports where an adapter reads them", async () => {
+    // A precise file: the only thing a file vouch sweeps there is an added or removed
+    // export, since a moved symbol is never cleared at this grain.
+    await scaffold({ "src/a.ts": A_SRC + "export function bar() {\n  return 2;\n}\n" });
+    const r = await standingAck("src/a.ts", "internal helper; no contract added");
+    assert.equal(r.code, undefined, r.err);
+    await scaffold({
+      "src/a.ts": A_SRC + "export function bar() {\n  return 2;\n}\nexport const K = 3;\n",
+    });
+
+    const card = buildReview(tmp).coveringAcks;
+    assert.deepStrictEqual(card[0].swept, ["+ K (added export)", "+ bar (added export)"]);
+    assert.deepStrictEqual(staleFeatures(tmp), [], "and the vouch still stands over both");
+  });
+
+  it("a vouch that cleared a whole-file wake with no export moving says exactly that", async () => {
+    // The umbrella case: the file's content moved but every anchor is `changed`, so
+    // there is no added or removed export to name. Printing nothing would read as a
+    // vouch covering nothing, which is the opposite of what happened.
+    await scaffold({
+      "docs/concepts/shared.md": "# shared\n\nThe util layer.\n",
+      "docs/.registry.json": JSON.stringify(
+        {
+          features: {
+            copy: REG.features.copy,
+            shared: {
+              doc: "docs/concepts/shared.md",
+              type: "concept",
+              primary_sources: ["src/a.ts"],
+              status: "current",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "umbrella"], { cwd: tmp, stdio: "ignore" });
+
+    await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
+    const r = await standingAck("src/a.ts", "body only; the layer's contract is unchanged");
+    assert.equal(r.code, undefined, r.err);
+    const card = buildReview(tmp).coveringAcks;
+    assert.deepStrictEqual(card[0].swept, [
+      "this file's whole-file wake — no export was added or removed",
+    ]);
+  });
+
+  it("says it in the grain's own words — a coarse file has no exports to report as unmoved", async () => {
+    // A re-indent moves the coarse fingerprint (it hashes bytes) but no line survives
+    // the trim, so there is nothing nameable to show. Telling a locale file's reader
+    // that no export moved is answering a question nobody asked.
+    await scaffold({ "src/locales/en.json": strings("save").replace(/\n {2}/g, "\n    ") });
+    const r = await standingAck("src/locales/en.json", "formatting only");
+    assert.equal(r.code, undefined, r.err);
+    assert.deepStrictEqual(buildReview(tmp).coveringAcks[0].swept, [
+      "this file's whole-file wake — no line changed outside formatting",
+    ]);
   });
 
   it("dies when a second feature claims the file — it never settles a doc its signer never read", async () => {

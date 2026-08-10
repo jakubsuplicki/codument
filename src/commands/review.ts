@@ -26,6 +26,7 @@ import {
 } from "../lib/change-state.js";
 import { computeDrift, type DriftFinding } from "../lib/drift.js";
 import {
+  type AnchorChange,
   fileContentTransition,
   gatherAnchorChanges,
   warmAdaptersForRepo,
@@ -82,6 +83,7 @@ import { gateUnavailableSarif, reviewReportToSarif } from "../lib/sarif.js";
 import { MODULE_ANCHOR_NAME } from "../lib/ts-adapter.js";
 import {
   blobExistsAtRef,
+  changedLinesAgainst,
   EMPTY_TREE_SHA,
   GateError,
   readBlobAtRef,
@@ -212,6 +214,12 @@ export interface CoveringAck {
    *  card names it as standing — a wide vouch that went unremarked here would be
    *  indistinguishable from a signature taken on the diff in front of the reader. */
   standing?: string[];
+  /** Standing vouches only: what this one absorbed in THIS change — the exports it
+   *  swept where an adapter can name them, the changed lines where none can. Every
+   *  other grain's coverage is visible in the diff the reader is already looking at;
+   *  a standing vouch's is not, because the signature was taken against a change that
+   *  is no longer in front of them. Never empty while the vouch cleared something. */
+  swept?: string[];
   signer: string;
   reason: string;
   /** The signer differs from the change author (a second-party sign-off). */
@@ -282,6 +290,52 @@ function deletedInChange(state: {
   governedDeleted: readonly string[];
 }): Set<string> {
   return new Set([...state.deletedSources, ...state.governedDeleted]);
+}
+
+/** How much of a standing vouch's sweep any surface shows before counting the rest.
+ *  Enough to recognise what was taken; a wall of diff is the unreadable surface this
+ *  disclosure exists to replace. */
+export const SWEPT_CAP = 6;
+
+/**
+ * What a standing vouch absorbed in the change in front of the reader.
+ *
+ * Every other grain is self-disclosing: a signature taken on this diff covers what
+ * the reader is already looking at, and a tree vouch writes its set into the record.
+ * A standing vouch is neither — it was signed against a change that has scrolled
+ * away, and it answers for this one silently. Naming the sweep per review is what
+ * keeps the width honest, so it is computed wherever the card is built rather than
+ * recorded once at signing, where the covered set was not yet known.
+ *
+ * Named the way the file itself can be named: exports where an adapter reads them —
+ * the only thing a file vouch sweeps on a precise file, since a moved symbol is
+ * never cleared — and changed lines where none can. A vouch that cleared a
+ * whole-file (umbrella) wake with no export moving says exactly that, rather than
+ * printing nothing and reading as covering nothing.
+ */
+function sweptBy(
+  root: string,
+  baseRef: string,
+  file: string,
+  anchorChanges: Record<string, AnchorChange[]>,
+  renamedFrom: ReadonlyMap<string, string>,
+): string[] {
+  const precise = (anchorChanges[file] ?? []).length > 0;
+  const anchors = anchorChanges[file] ?? [];
+  const swept = precise
+    ? anchors
+        .filter((c) => c.kind !== "changed")
+        .map((c) => `${c.kind === "added" ? "+" : "-"} ${c.name} (${c.kind} export)`)
+    : changedLinesAgainst(root, baseRef, file, renamedFrom.get(file) ?? file);
+  if (swept.length > 0) return swept.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  // Nothing nameable moved, but the vouch still cleared a wake — the file's whole-file
+  // flag. Said in the grain's own words: a coarse file has no exports to have moved,
+  // and telling its reader none did would be answering a question nobody asked.
+  return [
+    precise
+      ? "this file's whole-file wake — no export was added or removed"
+      : "this file's whole-file wake — no line changed outside formatting",
+  ];
 }
 
 function registryRot(
@@ -515,7 +569,9 @@ export function buildReview(
         anchorId: file,
         grain: "file",
         symbol: null,
-        ...(ack.standing ? { standing: ack.standing.docs } : {}),
+        ...(ack.standing
+          ? { standing: ack.standing.docs, swept: sweptBy(root, baseRef, file, anchorChanges, renamedFrom) }
+          : {}),
         signer: ack.signer,
         reason: ack.reason,
         independent: independentOf(ack.signer),
@@ -1782,13 +1838,18 @@ function printHuman(report: ReviewReport): void {
       console.log(`    ${mark} ${target} ${badge} ${pc.dim(`${a.signer}:`)} ${a.reason}`);
       // Signed against an earlier change, not this one. Saying so is the whole
       // discipline of the grain: a standing vouch nobody is reminded of is exactly the
-      // ride-forever exemption the ack model was built to refuse.
+      // ride-forever exemption the ack model was built to refuse — so the width is
+      // named AND what it took this time is named under it, every run.
       if (a.standing) {
         console.log(
           pc.yellow(
             `        standing on ${a.standing.join(", ")} — signed earlier, covers this change too`,
           ),
         );
+        for (const s of (a.swept ?? []).slice(0, SWEPT_CAP)) console.log(`          ${pc.dim(s)}`);
+        if ((a.swept?.length ?? 0) > SWEPT_CAP) {
+          console.log(pc.dim(`          … +${(a.swept as string[]).length - SWEPT_CAP} more`));
+        }
       }
     }
     if (ignored > 0) {

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import pc from "picocolors";
 import {
@@ -45,7 +45,7 @@ import {
 } from "../lib/registry.js";
 import { emitAck, emitAckRemove } from "../lib/review-events.js";
 import {
-  readBlobAtRef,
+  changedLinesAgainst,
   resolveBase,
   worktreeChangesSince,
   worktreeDeletionsSince,
@@ -139,50 +139,6 @@ const handleOf = (ack: Acknowledgment): string => ackFileName(ack).replace(/\.js
 /** Enough to see what was signed for; a wall of diff is the unreadable surface this
  *  disclosure exists to replace, so the rest is counted rather than printed. */
 const COVERED_LINE_CAP = 20;
-
-/**
- * The lines this file ack vouches for, as `- was` / `+ is`.
- *
- * A multiset difference, not a positional diff: the question a signer needs
- * answered is "what content am I speaking for", and re-ordering the same lines
- * changes no content. Reading whole blobs is affordable because this runs once, at
- * signing time, on one file — never on the verdict path.
- */
-function changedLines(
-  root: string,
-  baseRef: string,
-  file: string,
-  renamedFrom: Map<string, string>,
-): string[] {
-  const was = readBlobAtRef(root, baseRef, renamedFrom.get(file) ?? file);
-  let is: string;
-  try {
-    is = readFileSync(join(root, file), "utf8");
-  } catch {
-    return [];
-  }
-  if (was === null) return [];
-  const count = (text: string): Map<string, number> => {
-    const m = new Map<string, number>();
-    for (const line of text.split(/\r?\n/)) {
-      const t = line.trim();
-      if (t !== "") m.set(t, (m.get(t) ?? 0) + 1);
-    }
-    return m;
-  };
-  const a = count(was);
-  const b = count(is);
-  const out: string[] = [];
-  for (const [line, n] of a) {
-    const left = n - (b.get(line) ?? 0);
-    for (let i = 0; i < left; i++) out.push(`- ${line}`);
-  }
-  for (const [line, n] of b) {
-    const left = n - (a.get(line) ?? 0);
-    for (let i = 0; i < left; i++) out.push(`+ ${line}`);
-  }
-  return out;
-}
 
 function fail(message: string): void {
   console.error(`codument ack: ${message}`);
@@ -455,7 +411,9 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
   // principle tree grain already holds: an acknowledgment nobody can read
   // afterwards is a signature on a blank page.
   const symbolic = (anchorChanges[file] ?? []).length > 0;
-  const coveredLines = symbolic ? undefined : changedLines(root, baseRef, file, renamedFrom);
+  const coveredLines = symbolic
+    ? undefined
+    : changedLinesAgainst(root, baseRef, file, renamedFrom.get(file) ?? file);
   if (coveredLines && coveredLines.length > 0) {
     console.log(
       pc.yellow(`  This ack covers every change in ${file} — ${coveredLines.length} line(s):`),

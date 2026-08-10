@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import ts from "typescript";
 import { GateError, type GateErrorKind } from "./gate-error.js";
 import { resolveWorkspace, repoFor } from "./git.js";
@@ -152,6 +154,52 @@ export function readBlobAtRef(
     // ref is reachable but the path is absent in it → not an error.
     return null;
   }
+}
+
+/**
+ * The lines that differ between a file at `ref` and the file in the working tree,
+ * as `- was` / `+ is`. `wasAt` is where the content lived at the base, which is the
+ * origin path for a moved file and the path itself otherwise.
+ *
+ * A multiset difference, not a positional diff: the question this answers is "what
+ * content is being spoken for", and re-ordering the same lines changes no content.
+ * Plumbing, not a verdict — it exists so the two surfaces that disclose what a
+ * file-grain vouch covers (the signature, and every review that vouch clears) can
+ * never describe the same change differently. Absent on either side is an empty
+ * answer: an added or removed file has no vouch to describe.
+ */
+export function changedLinesAgainst(
+  root: string,
+  ref: string,
+  file: string,
+  wasAt: string = file,
+): string[] {
+  const was = readBlobAtRef(root, ref, wasAt);
+  if (was === null) return [];
+  let is: string;
+  try {
+    is = readFileSync(join(root, file), "utf8");
+  } catch {
+    return [];
+  }
+  const count = (text: string): Map<string, number> => {
+    const m = new Map<string, number>();
+    for (const line of text.split(/\r?\n/)) {
+      const t = line.trim();
+      if (t !== "") m.set(t, (m.get(t) ?? 0) + 1);
+    }
+    return m;
+  };
+  const a = count(was);
+  const b = count(is);
+  const out: string[] = [];
+  for (const [line, n] of a) {
+    for (let i = 0; i < n - (b.get(line) ?? 0); i++) out.push(`- ${line}`);
+  }
+  for (const [line, n] of b) {
+    for (let i = 0; i < n - (a.get(line) ?? 0); i++) out.push(`+ ${line}`);
+  }
+  return out;
 }
 
 // Best-effort shallow-clone recovery: a shallow CI checkout may not reach the
