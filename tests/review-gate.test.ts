@@ -7,6 +7,7 @@ import {
   type ReviewGateInput,
 } from "../src/lib/review-gate.js";
 import type { ReviewFinding, ReviewFindingStatus } from "../src/lib/review-artifact.js";
+import type { TestOutcome } from "../src/lib/review-confirm.js";
 
 // Default: a single changed source resolved as exactly one moved symbol — the one
 // genuinely-trivial shape.
@@ -139,5 +140,56 @@ describe("evaluateReviewGate — verdict over re-derived findings", () => {
     assert.equal(res.passed, true);
     assert.equal(res.blockingFindings.length, 0);
     assert.equal(res.advisoryFindings.length, 1);
+  });
+});
+
+// "Does a review exist for this diff" and "was anything in it checked" are two
+// questions, and the gate used to give one answer to both. In the field they came
+// apart completely: five delivery steps of findings recorded with named tests, a
+// runner that resolved to nothing, and a passing verdict every time.
+describe("evaluateReviewGate — what it adjudicated is not what it covers", () => {
+  const required = input({ realChangeCount: 3, changedSourceCount: 3 });
+  const judged = (status: ReviewFindingStatus, testOutcome: TestOutcome | null) => ({
+    ...finding(status, testOutcome === null ? null : "some.test.ts"),
+    testOutcome,
+  });
+
+  it("a test that ran is adjudicated; one that could not be run is not", () => {
+    const res = evaluateReviewGate(required, [
+      judged("resolved", "passed"),
+      judged("advisory", "unrunnable"),
+    ]);
+    assert.equal(res.passed, true, "an unrunnable claim still never blocks");
+    assert.equal(res.adjudicated, 1);
+    assert.equal(res.unjudged, 1);
+  });
+
+  it("a finding that named NO test is a judgment call, not a broken toolchain", () => {
+    // Counting it as unadjudicated would fire the warning on every honest review that
+    // reported judgment calls — the cries-wolf failure, arriving through the fix for
+    // a different one. The gate has always kept a non-testable finding advisory by
+    // design; nothing was ever going to reproduce it, and the reader has no next move.
+    const res = evaluateReviewGate(required, [judged("advisory", null)]);
+    assert.equal(res.adjudicated, 0);
+    assert.equal(res.unjudged, 0);
+    assert.equal(res.passed, true);
+  });
+
+  it("the field's shape: every finding recorded, not one of them run", () => {
+    const res = evaluateReviewGate(required, [
+      judged("advisory", "unrunnable"),
+      judged("advisory", "unrunnable"),
+      judged("advisory", "unrunnable"),
+    ]);
+    assert.equal(res.covered, true, "a review does exist for this diff");
+    assert.equal(res.adjudicated, 0, "and nothing in it was checked");
+    assert.equal(res.unjudged, 3);
+  });
+
+  it("a review that found nothing has nothing to adjudicate, and claims nothing", () => {
+    const res = evaluateReviewGate(required, []);
+    assert.equal(res.passed, true);
+    assert.equal(res.adjudicated, 0);
+    assert.equal(res.unjudged, 0, "zero of zero is not an unjudged claim");
   });
 });

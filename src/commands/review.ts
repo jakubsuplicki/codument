@@ -1208,6 +1208,12 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       `${report.registryRot.length} registry path(s) missing (not this change; ungated)`,
     );
   if (versionSkewNotice(root)) alsoTrue.push("scaffold behind the installed version");
+  // A review that passed without reproducing anything is the sharpest case this line
+  // exists for: the gate exits 0, so nothing else can carry it, and the honest
+  // condition printed above the verdict is precisely what a `| tail -1` destroys.
+  if (reviewGate?.passed && reviewGate.unjudged > 0) {
+    alsoTrue.push(`${reviewGate.unjudged} review finding(s) unadjudicated`);
+  }
   const also = alsoTrue.length > 0 ? pc.dim(` · ${alsoTrue.join(" · ")}`) : "";
 
   const blocking = strictFail ? [...gateable] : [];
@@ -1271,12 +1277,27 @@ function printReviewGate(
     console.log(pc.yellow(`  ⚠ ${confirmUnavailable}`));
   }
   if (gate.passed) {
-    console.log(
-      `  ${pc.green("✓")} Adversarial review covers this diff` +
-        (gate.advisoryFindings.length > 0
-          ? pc.dim(` (${gate.advisoryFindings.length} advisory)`)
-          : ""),
-    );
+    const advisory =
+      gate.advisoryFindings.length > 0 ? pc.dim(` (${gate.advisoryFindings.length} advisory)`) : "";
+    if (gate.unjudged > 0) {
+      // "Covers this diff" is a claim about ADJUDICATION, and the reader hears it as
+      // one. Where nothing was reproduced it is a claim about a ritual instead — the
+      // artifact exists, its fingerprint matches, and not one thing in it was checked.
+      // In the field that read as a green gate over five delivery steps of unrun
+      // findings, and the twelve real bugs fixed that session were fixed because the
+      // author fixed them, not because anything held. The condition above says why;
+      // this says what, in the words the reader was going to quote.
+      const total = gate.unjudged + gate.adjudicated;
+      console.log(
+        `  ${pc.yellow("✓")} Adversarial review is on record for this diff — ` +
+          pc.yellow(
+            `${gate.unjudged} of ${total} reproducible finding(s) unadjudicated (their tests could not be run)`,
+          ) +
+          advisory,
+      );
+    } else {
+      console.log(`  ${pc.green("✓")} Adversarial review covers this diff` + advisory);
+    }
   } else {
     console.log(pc.red(`  ✗ --require-review: ${gate.reason}.`));
     if (!gate.covered) {

@@ -727,6 +727,71 @@ describe("codument review (CLI)", () => {
     assert.match(after.out, /no current adversarial review/);
   });
 
+  it("a review that adjudicated nothing says so — in the verdict AND on the line a pipe keeps", async () => {
+    // The field's shape: findings recorded WITH named tests, no runner able to reach
+    // them. The condition line above the verdict was always correct; the verdict
+    // beneath it said the review covered the diff, and the verdict is what gets read.
+    await scaffold({ "src/auth/login.ts": "export const login = () => { return 3; };\n" });
+    await writeFile(
+      join(tmp, "findings.json"),
+      JSON.stringify({
+        invariantsChecked: ["login returns a constant"],
+        findings: [
+          {
+            citation: "src/auth/login.ts:1",
+            detail: "the constant is wrong",
+            status: "advisory",
+            failingTest: "nowhere.test.ts",
+          },
+          {
+            citation: "src/auth/login.ts:1",
+            detail: "and so is this one",
+            status: "advisory",
+            failingTest: "also-nowhere.test.ts",
+          },
+        ],
+        signer: "test",
+      }),
+    );
+    execFileSync("node", [CLI, "review", "--record", "findings.json"], { cwd: tmp });
+
+    const out = execFileSync("node", [CLI, "review", "--require-review"], {
+      cwd: tmp,
+      encoding: "utf-8",
+    });
+    assert.doesNotMatch(out, /covers this diff/, "it did not cover what it never checked");
+    assert.match(out, /is on record for this diff/);
+    assert.match(out, /2 of 2 reproducible finding\(s\) unadjudicated/);
+    // And it survives the habit the field actually has.
+    const last = out.trimEnd().split("\n").at(-1) ?? "";
+    assert.match(last, /2 review finding\(s\) unadjudicated/, `last line was: ${last}`);
+  });
+
+  it("a review of judgment calls alone still covers the diff — the warning is for a broken runner", async () => {
+    // The mirror-image failure: making every untestable finding fire the unadjudicated
+    // warning would put it on nearly every honest review, which is how a line stops
+    // being read. A judgment call has no reproduction to perform and no next move.
+    await scaffold({ "src/auth/login.ts": "export const login = () => { return 4; };\n" });
+    await writeFile(
+      join(tmp, "findings.json"),
+      JSON.stringify({
+        invariantsChecked: ["login returns a constant"],
+        findings: [
+          { citation: "src/auth/login.ts:1", detail: "naming could be clearer", status: "advisory" },
+        ],
+        signer: "test",
+      }),
+    );
+    execFileSync("node", [CLI, "review", "--record", "findings.json"], { cwd: tmp });
+
+    const out = execFileSync("node", [CLI, "review", "--require-review"], {
+      cwd: tmp,
+      encoding: "utf-8",
+    });
+    assert.match(out, /covers this diff/);
+    assert.doesNotMatch(out, /unadjudicated/);
+  });
+
   it("--bundle scopes to what moved since the last recording; --full forces the whole set", async () => {
     await scaffold({
       "src/auth/login.ts": "export const login = () => { return 3; };\n",

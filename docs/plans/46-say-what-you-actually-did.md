@@ -197,7 +197,7 @@ Status: draft, awaiting approval before source edits.
       content — it survives a content change and dies when the doc's claims move.
 - [x] Step 5: Every review a standing acknowledgment covers something names what it swept,
       so width is never silent.
-- [ ] Step 6: `--require-review` never claims to cover a diff it adjudicated nothing in.
+- [x] Step 6: `--require-review` never claims to cover a diff it adjudicated nothing in.
 - [ ] Step 7: A governed file gated coarse says so once, so a lost precision is a stated
       fact rather than an inference from which routes were offered.
 - [ ] Step 8: A doc naming a source path this change removed is a finding, held to the

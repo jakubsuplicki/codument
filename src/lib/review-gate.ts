@@ -1,4 +1,5 @@
 import type { ReviewFinding } from "./review-artifact.js";
+import type { TestOutcome } from "./review-confirm.js";
 import { MODULE_ANCHOR_NAME } from "./ts-adapter.js";
 
 // The adversarial-review gate decision, kept pure and separate from the `review`
@@ -96,7 +97,28 @@ export interface ReviewGateResult {
   passed: boolean;
   /** Why the gate failed, or null when it passed. */
   reason: string | null;
+  /** Findings the gate actually adjudicated — a named test was located and run, so
+   *  the status came from a reproduction rather than from the artifact's claim. */
+  adjudicated: number;
+  /** Findings that OFFERED a reproduction the gate could not perform: a test was
+   *  named and running it failed at the toolchain. `covered` answers whether a review
+   *  EXISTS for this diff; this answers whether its checkable claims were checked, and
+   *  the two are different questions the verdict used to give one answer to. In the
+   *  field they diverged completely — five delivery steps of findings recorded with
+   *  named tests, a runner that resolved to nothing, and a verdict that said the
+   *  review covered the diff every time.
+   *
+   *  A finding that named NO test is deliberately not counted here. It is a judgment
+   *  call, which the gate has always kept advisory by design, and nothing was ever
+   *  going to reproduce it — so warning about it would fire on every honest review
+   *  and teach the reader to skip the line. This counts a broken toolchain, which is
+   *  actionable, not an untestable claim, which is not. */
+  unjudged: number;
 }
+
+/** A finding as the gate sees it: the artifact's record plus, where the caller ran
+ *  the confirm step, what running its named test produced. */
+type JudgedFinding = ReviewFinding & { testOutcome?: TestOutcome | null };
 
 // The verdict. `findings` are the covering artifact's findings AFTER the caller
 // re-derived their statuses by running each named test (null when no artifact
@@ -105,7 +127,7 @@ export interface ReviewGateResult {
 // unresolved confirmed (test-red) finding.
 export function evaluateReviewGate(
   input: ReviewGateInput,
-  findings: readonly ReviewFinding[] | null,
+  findings: readonly JudgedFinding[] | null,
 ): ReviewGateResult {
   if (!requiresAdversarialReview(input)) {
     return {
@@ -115,6 +137,8 @@ export function evaluateReviewGate(
       advisoryFindings: [],
       passed: true,
       reason: null,
+      adjudicated: 0,
+      unjudged: 0,
     };
   }
   if (findings === null) {
@@ -125,8 +149,14 @@ export function evaluateReviewGate(
       advisoryFindings: [],
       passed: false,
       reason: "no current adversarial review covers this diff",
+      adjudicated: 0,
+      unjudged: 0,
     };
   }
+  const adjudicated = findings.filter(
+    (f) => f.testOutcome === "failed" || f.testOutcome === "passed",
+  ).length;
+  const unjudged = findings.filter((f) => f.testOutcome === "unrunnable").length;
   const blockingFindings = findings.filter((f) => f.status === "confirmed");
   const advisoryFindings = findings.filter((f) => f.status === "advisory");
   if (blockingFindings.length > 0) {
@@ -137,6 +167,8 @@ export function evaluateReviewGate(
       advisoryFindings,
       passed: false,
       reason: `${blockingFindings.length} confirmed finding(s) unresolved`,
+      adjudicated,
+      unjudged,
     };
   }
   return {
@@ -146,5 +178,7 @@ export function evaluateReviewGate(
     advisoryFindings,
     passed: true,
     reason: null,
+    adjudicated,
+    unjudged,
   };
 }
