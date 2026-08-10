@@ -202,7 +202,7 @@ Status: draft, awaiting approval before source edits.
       fact rather than an inference from which routes were offered.
 - [x] Step 8: A doc naming a source path this change removed is a finding, held to the
       registry pointer's standard.
-- [ ] Step 9: A manifest or lockfile claimed as a `primary_sources` entry is a lint —
+- [x] Step 9: A manifest or lockfile claimed as a `primary_sources` entry is a lint —
       named as an ownership error, never rewritten.
 - [ ] Step 10: `doctor` separates the findings this change produced from the debt the repo
       arrived with, and says which is which.

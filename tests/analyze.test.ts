@@ -22,6 +22,7 @@ import {
   type CoverageRatio,
   type LintFinding,
   deriveDependencyEdges,
+  isDependencyManifest,
 } from "../src/lib/analyze.js";
 import type { RegistryEntry } from "../src/lib/registry.js";
 import { listIgnoredPaths } from "../src/lib/git.js";
@@ -1661,6 +1662,99 @@ describe("a declared tree is a registration, not a missing path (plan 43)", () =
       lint.filter((f) => f.id === "shadowed-source"),
       [],
     );
+  });
+});
+
+// The field: `bun.lock` and `package.json` sat in `primary_sources`, so a dependency
+// bump woke an ADR about deferring native voice modules and a getting-started page —
+// on a change neither document could possibly be wrong about. `related_sources` is
+// the concept that already fits, and nothing anywhere said so.
+describe("a manifest claimed as an owned source", () => {
+  async function lintFor(sources: Record<string, string[]>, files: string[]) {
+    const tmp = await mkdtemp(join(tmpdir(), "codument-manifest-lint-"));
+    try {
+      await mkdir(join(tmp, "docs", "features"), { recursive: true });
+      const features = Object.fromEntries(
+        Object.entries(sources).map(([key, list]) => [
+          key,
+          {
+            doc: `docs/features/${key}.md`,
+            type: "feature",
+            primary_sources: list.filter((s) => !s.startsWith("~")),
+            related_sources: list.filter((s) => s.startsWith("~")).map((s) => s.slice(1)),
+            depends_on: ["core"],
+            status: "current",
+          },
+        ]),
+      );
+      await writeFile(join(tmp, "docs", ".registry.json"), JSON.stringify({ features }));
+      for (const key of Object.keys(features)) {
+        await writeFile(join(tmp, "docs", "features", `${key}.md`), `# ${key}\n\nWhat it is.\n`);
+      }
+      for (const f of files) {
+        await mkdir(dirname(join(tmp, f)), { recursive: true });
+        await writeFile(join(tmp, f), "{}\n");
+      }
+      const registry = await readRegistry(join(tmp, "docs", ".registry.json"));
+      return analyze({ root: tmp, registry, srcDir: "src" }).lint;
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it("FIELD REPLAY: a lockfile and a manifest owned by a doc are named, with the fix", async () => {
+    const lint = await lintFor({ onboarding: ["bun.lock", "package.json", "src/a.ts"] }, [
+      "bun.lock",
+      "package.json",
+      "src/a.ts",
+    ]);
+    const found = lint.filter((f) => f.id === "manifest-owned");
+    assert.deepStrictEqual(
+      found.map((f) => f.file),
+      ["bun.lock", "package.json"],
+    );
+    assert.match(found[0].message, /every dependency change wakes docs\/features\/onboarding\.md/);
+    assert.match(found[0].message, /Move it to related_sources/);
+    assert.equal(found[0].severity, "warn", "named, never rewritten");
+  });
+
+  it("the same file as an IMPACT claim is exactly right, and stays silent", async () => {
+    const lint = await lintFor({ onboarding: ["~bun.lock", "src/a.ts"] }, ["bun.lock", "src/a.ts"]);
+    assert.deepStrictEqual(
+      lint.filter((f) => f.id === "manifest-owned"),
+      [],
+      "related_sources claims impact, never a wake — which is the whole fix",
+    );
+  });
+
+  it("real source is never mistaken for packaging", async () => {
+    const lint = await lintFor({ core: ["src/package.ts", "src/lock.ts", "src/a.ts"] }, [
+      "src/package.ts",
+      "src/lock.ts",
+      "src/a.ts",
+    ]);
+    assert.deepStrictEqual(
+      lint.filter((f) => f.id === "manifest-owned"),
+      [],
+      "the list is names, not a heuristic that guesses",
+    );
+  });
+
+  it("knows the ecosystems the adapters already do", () => {
+    for (const p of [
+      "Cargo.lock",
+      "go.sum",
+      "poetry.lock",
+      "Gemfile.lock",
+      "pnpm-lock.yaml",
+      "vendor/pubspec.yaml",
+      "src/App.csproj",
+    ]) {
+      assert.equal(isDependencyManifest(p), true, p);
+    }
+    for (const p of ["src/a.ts", "src/cargo.ts", "docs/package.md", "gomod.ts"]) {
+      assert.equal(isDependencyManifest(p), false, p);
+    }
   });
 });
 

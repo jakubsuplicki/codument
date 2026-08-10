@@ -728,6 +728,54 @@ function patternMatchesAny(root: string, pattern: string, spec: ExclusionSpec): 
   return false;
 }
 
+/** The dependency manifests and lockfiles a registry may reference but should not
+ *  claim to OWN. Matched by basename across the ecosystems codument's adapters and
+ *  detectors already know about, plus the `.csproj`/`.fsproj` shape whose name is the
+ *  project's rather than a convention's. Deliberately a fixed list and not a
+ *  heuristic: a lint that guesses at what a manifest is would fire on real source. */
+const MANIFEST_NAMES = new Set([
+  "package.json",
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "bun.lock",
+  "bun.lockb",
+  "deno.lock",
+  "cargo.toml",
+  "cargo.lock",
+  "go.mod",
+  "go.sum",
+  "pyproject.toml",
+  "poetry.lock",
+  "uv.lock",
+  "pdm.lock",
+  "pipfile",
+  "pipfile.lock",
+  "requirements.txt",
+  "gemfile",
+  "gemfile.lock",
+  "composer.json",
+  "composer.lock",
+  "pom.xml",
+  "build.gradle",
+  "build.gradle.kts",
+  "gradle.lockfile",
+  "package.swift",
+  "package.resolved",
+  "podfile",
+  "podfile.lock",
+  "pubspec.yaml",
+  "pubspec.lock",
+]);
+
+export function isDependencyManifest(path: string): boolean {
+  const base = toPosix(path).split("/").pop() ?? "";
+  const lower = base.toLowerCase();
+  return MANIFEST_NAMES.has(lower) || /\.(csproj|fsproj|vbproj)$/.test(lower);
+}
+
 function computeLint(
   root: string,
   entries: [string, RegistryEntry][],
@@ -771,6 +819,28 @@ function computeLint(
           message: `${key}: mapped source no longer exists: ${source}`,
         });
       }
+    }
+
+    // A dependency manifest or lockfile claimed as something this feature OWNS.
+    // Ownership means a wake: every edit to the file asks its doc whether the
+    // documented contract moved. A lockfile is a machine-written resolution artifact
+    // with no contract for any doc to carry, and a manifest moves on every version
+    // bump and script tweak — so in the field a `bun.lock` line woke an ADR about
+    // deferring native voice modules, and a `package.json` line woke a getting-started
+    // page, on changes neither document could possibly be wrong about. `related_sources`
+    // is the concept that already fits: impact, never a wake. Named and never
+    // rewritten, because moving a source between the two changes what wakes and that
+    // is the user's call — a project that really does document its packaging keeps
+    // the claim and this line with it.
+    for (const source of entry.primary_sources) {
+      if (isSourcePattern(source) || !isDependencyManifest(source)) continue;
+      findings.push({
+        id: "manifest-owned",
+        severity: "warn",
+        feature: key,
+        file: source,
+        message: `${key}: claims ${source} as an owned source, so every dependency change wakes ${entry.doc} — a manifest carries no contract this doc can be wrong about. Move it to related_sources (impact, never a wake), or keep the claim if this feature really does document packaging`,
+      });
     }
 
     // A path this entry's OWN tree already covers. Scoped to the entry on purpose:
@@ -1363,6 +1433,7 @@ export const FINDING_ORDER = [
   "missing-source",
   "unmatched-pattern",
   "shadowed-source",
+  "manifest-owned",
   "shipped-scaffolding",
   "missing-doc",
   "generated-leakage",
