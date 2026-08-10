@@ -24,6 +24,12 @@ export interface Acknowledgment {
   reason: string;
   /** Who attested. An identity; independence (signer != author) is an opt-in check. */
   signer: string;
+  /** File grain, where no adapter can name a symbol: the lines this vouch actually
+   *  covered. Same principle as `covers` one grain up, applied where the signer is
+   *  blindest — a hash transition tells them nothing, so a truthful reason about
+   *  one part of the file bought silence over all of it. Absent where symbols carry
+   *  the disclosure instead. */
+  coveredLines?: string[];
   /** Tree grain only, and required there: the matched set this ack vouched for,
    *  path by path. A combined digest would be cheaper and would leave the record
    *  unreadable — a signature on a blank page — so the set is written out and
@@ -65,7 +71,15 @@ export function parseAck(value: unknown): Acknowledgment | null {
   const wantsSet = !anchorId.includes("::") && isSourcePattern(anchorId);
   const covered = parseCovered(v.covered);
   if (wantsSet !== (covered !== null && covered.length > 0)) return null;
-  return covered ? { anchorId, fromHash, toHash, reason, signer, covered } : { anchorId, fromHash, toHash, reason, signer };
+  // The disclosure survives the round trip or it is not a record. Rebuilding the
+  // object from known fields silently dropped it on read, so the ack file held what
+  // the vouch covered while every surface that reads one showed nothing.
+  const lines =
+    Array.isArray(v.coveredLines) && v.coveredLines.every((l: unknown) => typeof l === "string")
+      ? { coveredLines: v.coveredLines as string[] }
+      : {};
+  const base = { anchorId, fromHash, toHash, reason, signer, ...lines };
+  return covered ? { ...base, covered } : base;
 }
 
 function parseCovered(value: unknown): CoveredFile[] | null {
@@ -95,9 +109,7 @@ function parseCovered(value: unknown): CoveredFile[] | null {
  * friction, and quoted with the four characters double quotes still interpret escaped.
  */
 export function shellArg(token: string): string {
-  return /^[A-Za-z0-9_.:@/+-]+$/.test(token)
-    ? token
-    : `"${token.replace(/(["\\$`])/g, "\\$1")}"`;
+  return /^[A-Za-z0-9_.:@/+-]+$/.test(token) ? token : `"${token.replace(/(["\\$`])/g, "\\$1")}"`;
 }
 
 // Whether an ack covers a specific moved anchor: it must name the same anchor AND

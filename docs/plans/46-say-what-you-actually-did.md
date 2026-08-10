@@ -190,7 +190,7 @@ Status: draft, awaiting approval before source edits.
       surface that lies. Rows this release will turn green are expected to land red.
 - [x] Step 2: Nothing that changes the reader's next action lives only above the verdict
       line, so a piped `tail -1` is sufficient rather than merely honest.
-- [ ] Step 3: A file acknowledgment names what it vouched for at every grain. Where no
+- [x] Step 3: A file acknowledgment names what it vouched for at every grain. Where no
       adapter can enumerate symbols, it names the changed hunks — at signing time, in the
       record, in the acks card and in `ack --list`.
 - [ ] Step 4: A standing acknowledgment, bound to the owning doc rather than to file

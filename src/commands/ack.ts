@@ -1,4 +1,4 @@
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import pc from "picocolors";
 import {
@@ -43,6 +43,7 @@ import {
 } from "../lib/registry.js";
 import { emitAck, emitAckRemove } from "../lib/review-events.js";
 import {
+  readBlobAtRef,
   resolveBase,
   worktreeChangesSince,
   worktreeDeletionsSince,
@@ -105,6 +106,10 @@ export interface AckJson {
    *  grain makes, so the record is readable rather than a bare digest — an
    *  acknowledgment nobody can audit afterwards is a signature on a blank page. */
   covers?: string[];
+  /** File grain, where no adapter can name a symbol: the lines the vouch covered.
+   *  The width is the trade this grain makes too, so the record is readable rather
+   *  than a bare hash transition — the same rule `covers` holds one grain up. */
+  coveredLines?: string[];
   /** The fingerprint transition the ack is bound to. */
   from: string;
   to: string;
@@ -122,12 +127,63 @@ export interface AckListJson {
 const short = (fp: string): string => fp.slice(0, 8);
 const handleOf = (ack: Acknowledgment): string => ackFileName(ack).replace(/\.json$/, "");
 
+/** Enough to see what was signed for; a wall of diff is the unreadable surface this
+ *  disclosure exists to replace, so the rest is counted rather than printed. */
+const COVERED_LINE_CAP = 20;
+
+/**
+ * The lines this file ack vouches for, as `- was` / `+ is`.
+ *
+ * A multiset difference, not a positional diff: the question a signer needs
+ * answered is "what content am I speaking for", and re-ordering the same lines
+ * changes no content. Reading whole blobs is affordable because this runs once, at
+ * signing time, on one file — never on the verdict path.
+ */
+function changedLines(
+  root: string,
+  baseRef: string,
+  file: string,
+  renamedFrom: Map<string, string>,
+): string[] {
+  const was = readBlobAtRef(root, baseRef, renamedFrom.get(file) ?? file);
+  let is: string;
+  try {
+    is = readFileSync(join(root, file), "utf8");
+  } catch {
+    return [];
+  }
+  if (was === null) return [];
+  const count = (text: string): Map<string, number> => {
+    const m = new Map<string, number>();
+    for (const line of text.split(/\r?\n/)) {
+      const t = line.trim();
+      if (t !== "") m.set(t, (m.get(t) ?? 0) + 1);
+    }
+    return m;
+  };
+  const a = count(was);
+  const b = count(is);
+  const out: string[] = [];
+  for (const [line, n] of a) {
+    const left = n - (b.get(line) ?? 0);
+    for (let i = 0; i < left; i++) out.push(`- ${line}`);
+  }
+  for (const [line, n] of b) {
+    const left = n - (a.get(line) ?? 0);
+    for (let i = 0; i < left; i++) out.push(`+ ${line}`);
+  }
+  return out;
+}
+
 function fail(message: string): void {
   console.error(`codument ack: ${message}`);
   process.exitCode = 1;
 }
 
-export async function ackCommand(anchor: string | undefined, options: AckCliOptions): Promise<void> {
+export async function ackCommand(
+  anchor: string | undefined,
+  options: AckCliOptions,
+): Promise<void> {
   const root = options.root ?? process.cwd();
   // Recording and re-validating acks parses worktree content synchronously;
   // warm whatever grammar the repo's files need first.
@@ -359,6 +415,26 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
     return;
   }
 
+  // What this vouch actually covers, where no adapter can name it in symbols. A
+  // hash transition discloses nothing, so a reason that is true about one part of
+  // the file buys silence over every other part — which is how a rules change
+  // making private data world-readable rode a comment ack to a green, signed gate.
+  // Named BEFORE the signature is taken, and recorded with it, on exactly the
+  // principle tree grain already holds: an acknowledgment nobody can read
+  // afterwards is a signature on a blank page.
+  const symbolic = (anchorChanges[file] ?? []).length > 0;
+  const coveredLines = symbolic ? undefined : changedLines(root, baseRef, file, renamedFrom);
+  if (coveredLines && coveredLines.length > 0) {
+    console.log(
+      pc.yellow(`  This ack covers every change in ${file} — ${coveredLines.length} line(s):`),
+    );
+    for (const l of coveredLines.slice(0, COVERED_LINE_CAP)) console.log(`      ${pc.dim(l)}`);
+    if (coveredLines.length > COVERED_LINE_CAP) {
+      console.log(pc.dim(`      … +${coveredLines.length - COVERED_LINE_CAP} more`));
+    }
+    console.log();
+  }
+
   const author = getGitAuthor(root) ?? "agent";
   const signer = options.signer ?? author;
   const ack: Acknowledgment = {
@@ -367,6 +443,7 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
     toHash: to,
     reason: options.reason!.trim(),
     signer,
+    ...(coveredLines && coveredLines.length > 0 ? { coveredLines } : {}),
   };
   writeAck(root, ack);
   const kind = isIndependent(ack, author) ? "independent" : "self";
@@ -428,7 +505,9 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
       console.log(`      ${pc.dim("•")} ${ch.id}${sig ? pc.dim(" (signature changed)") : ""}`);
       console.log(
         `          ${pc.dim("contract changed →")} update ${doc} ${pc.dim(
-          sig ? "at intent altitude — no ack of any grain clears a signature move" : "at intent altitude",
+          sig
+            ? "at intent altitude — no ack of any grain clears a signature move"
+            : "at intent altitude",
         )}`,
       );
       if (!sig) {
@@ -608,7 +687,9 @@ function ackTree(root: string, pattern: string, options: AckCliOptions): void {
       }
     }
     if (stillMoved.length > 10) {
-      console.log(`      ${pc.dim(`• +${stillMoved.length - 10} more — \`codument review\` lists them all`)}`);
+      console.log(
+        `      ${pc.dim(`• +${stillMoved.length - 10} more — \`codument review\` lists them all`)}`,
+      );
     }
   }
   console.log(pc.dim("  Re-run `codument review` to confirm the finding cleared."));
@@ -653,6 +734,7 @@ function ackToJson(root: string, ack: Acknowledgment): AckJson {
     symbol: bare ? null : ack.anchorId.slice(sep + 2),
     grain: tree ? "tree" : fileGrain ? "file" : "symbol",
     ...(tree ? { covers: ack.covered?.map((c) => c.path) ?? [] } : {}),
+    ...(ack.coveredLines ? { coveredLines: ack.coveredLines } : {}),
     from: ack.fromHash,
     to: ack.toHash,
     reason: ack.reason,
@@ -684,15 +766,24 @@ function listAcks(root: string): void {
     if (validity === "invalidated") invalidated += 1;
     // A tree ack's width is stated wherever it is shown: "one line, 120 files" is the
     // whole trade, and a reader who has to open the record to learn it will not.
-    const covers = isTreeGrainAck(a)
-      ? ` ${pc.dim(`(tree, ${a.covered?.length ?? 0} files)`)}`
-      : "";
+    const covers = isTreeGrainAck(a) ? ` ${pc.dim(`(tree, ${a.covered?.length ?? 0} files)`)}` : "";
     console.log(
       `  ${pc.bold(handleOf(a))}  ${a.anchorId}${covers} ${pc.dim(
         `(${short(a.fromHash)}→${short(a.toHash)})`,
       )}${validityTag(validity)}`,
     );
     console.log(`    ${pc.dim(`${a.signer}:`)} ${a.reason}`);
+    // The width beside the reason. A file ack over a file no adapter reads covers
+    // everything in it, so the audit surface has to show what that was — a reason
+    // and a hash transition let a truthful sentence about one line stand in for the
+    // whole file, which is exactly how one bought silence over a security rule.
+    if (a.coveredLines && a.coveredLines.length > 0) {
+      console.log(
+        pc.dim(
+          `      covered ${a.coveredLines.length} changed line(s): ${a.coveredLines.slice(0, 2).join(" · ")}${a.coveredLines.length > 2 ? ` · +${a.coveredLines.length - 2} more` : ""}`,
+        ),
+      );
+    }
   }
   // Auto-invalidation (ADR 006) is the design working, but it produces dead weight
   // nothing sweeps: a field session finished with 52 of 342 acks invalidated, each

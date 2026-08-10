@@ -10,6 +10,7 @@ import {
   blocking,
   checkSurfaceConformance,
   cliRunner,
+  plain,
   routesIn,
   type SurfaceScenario,
   unsafeTokens,
@@ -295,6 +296,40 @@ describe("surface conformance battery", () => {
     assert.deepEqual(
       violations.map((v) => v.rule),
       ["0-scenario-fires"],
+    );
+  });
+
+  it("a file ack over a file no adapter reads names every line it covers", async () => {
+    // The field's worst moment, as a fixture. A rules file carrying a comment edit
+    // AND a rule change making private data world-readable was acked with a reason
+    // naming only the comment. The reason was true; file grain covered the rest; the
+    // gate went clean, exit 0, signed. Nothing in the output disclosed the rule.
+    const root = await arrange({
+      name: "probe 1",
+      base: {
+        "docs/.registry.json": registry({ x: entry({ primary_sources: ["firestore.rules"] }) }),
+        "docs/features/x.md": DOC,
+        "firestore.rules": "// collections - free tier\nallow read: if isOwner(userId);\n",
+      },
+      change: { "firestore.rules": "// collections - FREE tier\nallow read: if true;\n" },
+      invoke: [],
+      finding: /never used/,
+      expect: "routes-clear",
+    });
+    const run = cliRunner(CLI);
+    const signing = plain(
+      run(root, ["ack", "firestore.rules", "--reason", "comment wording only"]),
+    );
+    assert.match(signing, /allow read: if isOwner\(userId\);/, "the removed rule is named");
+    assert.match(signing, /\+ allow read: if true;/, "the rule it became is named");
+    assert.ok(
+      signing.indexOf("allow read: if true;") < signing.indexOf("✓ acknowledged"),
+      "named BEFORE the signature is taken, not after",
+    );
+    const listed = JSON.parse(plain(run(root, ["ack", "--list", "--json"])));
+    assert.ok(
+      listed.acks[0].coveredLines.some((l: string) => l.includes("if true;")),
+      "and it survives the round trip into the record",
     );
   });
 
