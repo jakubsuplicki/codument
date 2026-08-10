@@ -204,9 +204,9 @@ Status: draft, awaiting approval before source edits.
       registry pointer's standard.
 - [x] Step 9: A manifest or lockfile claimed as a `primary_sources` entry is a lint —
       named as an ownership error, never rewritten.
-- [ ] Step 10: `doctor` separates the findings this change produced from the debt the repo
+- [x] Step 10: `doctor` separates the findings this change produced from the debt the repo
       arrived with, and says which is which.
-- [ ] Step 11: `doctor --fix` clears the judgment-free subset in one command and prints
+- [x] Step 11: `doctor --fix` clears the judgment-free subset in one command and prints
       what it deliberately left alone.
 - [ ] Step 12: The workflow routes ownership questions through `codument context --owner`
       instead of a flat read of `docs/.registry.json`.

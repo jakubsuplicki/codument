@@ -60,6 +60,10 @@ program
     "--write",
     "Write .codument/coverage.json and .codument/coverage.svg (the score artifact + badge)",
   )
+  .option(
+    "--fix",
+    "Clear the findings that need no judgment (a registry entry naming a path that is not there, a declared tree matching nothing) and print what was deliberately left",
+  )
   .option("--max-doc-lines <n>", "Whole-doc line threshold for bloat (default 400)")
   .option("--max-section-lines <n>", "Per-section line threshold for bloat (default 150)")
   .option("--max-completed-log <n>", "Completed-log [x] item threshold for bloat (default 15)")

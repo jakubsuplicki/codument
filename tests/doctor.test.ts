@@ -227,6 +227,211 @@ describe("codument doctor (CLI)", () => {
   }
 });
 
+// The field: seventy findings on a maintained repo, sixty-nine of them inherited from
+// upgrades and one just introduced, rendering identically — so the loop's only
+// whole-repo health surface was unreadable at exactly the moment it had something new
+// to say.
+describe("doctor separates what this change produced from what the repo arrived with", () => {
+  let dir: string;
+
+  async function project(): Promise<void> {
+    dir = await mkdtemp(join(tmpdir(), "codument-attrib-"));
+    await mkdir(join(dir, "docs", "features"), { recursive: true });
+    await mkdir(join(dir, "src"), { recursive: true });
+    await writeFile(join(dir, "src", "old.ts"), "export const a = 1;\n");
+    await writeFile(join(dir, "src", "fresh.ts"), "export const b = 2;\n");
+    // Two entries, each already carrying inherited debt: a mapped source that is
+    // not on disk. Only one of them will be touched by the working tree.
+    const entry = (k: string, extra: string) => ({
+      doc: `docs/features/${k}.md`,
+      type: "feature",
+      primary_sources: [`src/${k}.ts`, extra],
+      related_sources: [],
+      docs: [],
+      depends_on: ["core"],
+      risk: [],
+      status: "current",
+    });
+    await writeFile(
+      join(dir, "docs", ".registry.json"),
+      JSON.stringify({ features: { old: entry("old", "src/gone.ts"), fresh: entry("fresh", "src/vanished.ts") } }),
+    );
+    for (const k of ["old", "fresh"]) {
+      await writeFile(join(dir, "docs", "features", `${k}.md`), `# ${k}\n\nWhat it is.\n`);
+    }
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+    execFileSync("git", ["config", "user.email", "t@example.com"], { cwd: dir });
+    execFileSync("git", ["config", "user.name", "T"], { cwd: dir });
+    execFileSync("git", ["add", "-A"], { cwd: dir });
+    execFileSync("git", ["commit", "-qm", "baseline"], { cwd: dir });
+  }
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("attributes a finding to this change only when its own subject file was touched", async () => {
+    await project();
+    // Add the missing source under `fresh` — its finding is now this change's,
+    // while `old`'s identical finding is not.
+    await writeFile(join(dir, "src", "vanished.ts"), "export const c = 3;\n");
+    await writeFile(join(dir, "src", "gone.ts"), "export const d = 4;\n");
+    execFileSync("git", ["add", "-A"], { cwd: dir });
+    execFileSync("git", ["commit", "-qm", "both exist"], { cwd: dir });
+    // Now delete one of them in the working tree: that is what THIS change did.
+    await rm(join(dir, "src", "vanished.ts"));
+
+    const report = JSON.parse(
+      execFileSync("node", [CLI, "doctor", "--json"], { cwd: dir, encoding: "utf-8" }),
+    );
+    assert.deepStrictEqual(
+      report.lint.attribution.fromThisChange.map((f: { file: string }) => f.file),
+      ["src/vanished.ts"],
+      "the path this working tree removed",
+    );
+    assert.ok(
+      !report.lint.attribution.inherited.some((f: { file: string }) => f.file === "src/vanished.ts"),
+      "and it is not also counted as inherited",
+    );
+  });
+
+  it("the human surface leads with what this change produced, and says which is which", async () => {
+    await project();
+    await rm(join(dir, "src", "old.ts"));
+
+    const out = execFileSync("node", [CLI, "doctor"], {
+      cwd: dir,
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    assert.match(out, /from this change, \d+ the repo arrived with/);
+    assert.match(out, /From this change/);
+    assert.match(out, /Inherited — not this change/);
+    // The one it just caused comes before the pile it did not.
+    assert.ok(
+      out.indexOf("src/old.ts") < out.indexOf("src/gone.ts"),
+      `what this change produced must lead:\n${out}`,
+    );
+  });
+
+  it("no repository to ask is not 'nothing is new' — the split is absent, not empty", async () => {
+    await project();
+    await rm(join(dir, ".git"), { recursive: true, force: true });
+
+    const report = JSON.parse(
+      execFileSync("node", [CLI, "doctor", "--json"], { cwd: dir, encoding: "utf-8" }),
+    );
+    assert.equal(report.lint.attribution, null);
+    assert.ok(report.lint.count > 0, "the findings themselves are unaffected");
+    const out = execFileSync("node", [CLI, "doctor"], {
+      cwd: dir,
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    assert.doesNotMatch(out, /the repo arrived with/, "no split is drawn over an answer it lacks");
+  });
+});
+
+// An agent pointed at seventy findings writes compaction theater — plan 42's own
+// finding, almost word for word. So the mechanical subset is cleared in one command
+// and everything that needs a decision is named and left.
+describe("doctor --fix clears what needs no judgment, and says what it left", () => {
+  let dir: string;
+  const registryPath = () => join(dir, "docs", ".registry.json");
+  const read = () => JSON.parse(readFileSync(registryPath(), "utf-8"));
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "codument-fix-"));
+    await mkdir(join(dir, "docs", "features"), { recursive: true });
+    await mkdir(join(dir, "src"), { recursive: true });
+    await writeFile(join(dir, "src", "real.ts"), "export const a = 1;\n");
+    await writeFile(join(dir, "docs", "features", "core.md"), "# core\n\nWhat it is.\n");
+    await writeFile(
+      registryPath(),
+      JSON.stringify({
+        features: {
+          core: {
+            doc: "docs/features/core.md",
+            type: "feature",
+            // Three claims: one true, one naming a path that is not there, and one
+            // manifest — which is a real finding whose fix is a decision, not an edit.
+            primary_sources: ["src/real.ts", "src/ghost.ts", "package.json"],
+            related_sources: [],
+            docs: [],
+            depends_on: ["other"],
+            risk: [],
+            status: "current",
+          },
+        },
+      }),
+    );
+    await writeFile(join(dir, "package.json"), "{}\n");
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("drops the false pointer, keeps everything real, and leaves the judgment call alone", () => {
+    const out = execFileSync("node", [CLI, "doctor", "--fix"], {
+      cwd: dir,
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    assert.match(out, /dropped 1 false registry pointer/);
+    assert.match(out, /src\/ghost\.ts/);
+
+    const after = read();
+    assert.deepStrictEqual(
+      [...after.features.core.primary_sources].sort(),
+      ["package.json", "src/real.ts"],
+      "only the path that was not there is gone",
+    );
+  });
+
+  it("names what it deliberately left, so a partial clear never reads as a whole one", () => {
+    const out = execFileSync("node", [CLI, "doctor", "--fix"], {
+      cwd: dir,
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    assert.match(out, /need a decision, which is not this command's to make/);
+    assert.match(out, /manifest-owned × 1/);
+  });
+
+  it("touches no doc — an agent pointed at a doc-level finding writes compaction theater", async () => {
+    await writeFile(join(dir, "docs", "features", "core.md"), "# core\n\nWhat it is.\n");
+    const before = readFileSync(join(dir, "docs", "features", "core.md"), "utf-8");
+    execFileSync("node", [CLI, "doctor", "--fix"], { cwd: dir, encoding: "utf-8" });
+    assert.equal(readFileSync(join(dir, "docs", "features", "core.md"), "utf-8"), before);
+  });
+
+  it("is idempotent, and says plainly when there is nothing mechanical left", () => {
+    execFileSync("node", [CLI, "doctor", "--fix"], { cwd: dir, encoding: "utf-8" });
+    const first = read();
+    const out = execFileSync("node", [CLI, "doctor", "--fix"], {
+      cwd: dir,
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    assert.deepStrictEqual(read(), first, "a second run changes nothing");
+    assert.match(out, /Nothing mechanical to clear/);
+  });
+
+  it("the report that follows is the state the fix left, not the one it found", () => {
+    const out = execFileSync("node", [CLI, "doctor", "--fix"], {
+      cwd: dir,
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    assert.doesNotMatch(
+      out.slice(out.indexOf("codument doctor\n")),
+      /mapped source no longer exists/,
+      "the finding it just cleared must not still be listed below",
+    );
+  });
+});
+
 describe("codument doctor --strict (CLI gating)", () => {
   function run(args: string[], cwd: string): { status: number; stdout: string } {
     try {

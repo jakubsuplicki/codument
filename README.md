@@ -294,7 +294,13 @@ The commands below are local, need no network and no AI model, and produce the s
 ```bash
 npx codument doctor
 npx codument doctor --strict   # exit 1 on findings, to gate a CI step
+npx codument doctor --fix      # clear the findings that need no judgment; print what it left
 ```
+
+Findings are split into what this change produced and what the repo arrived with, so a
+long-standing pile never buries the one thing that is new. `--fix` clears only the
+mechanical half — a registry entry naming a path that is not there — and names every
+finding it deliberately left, because those need a decision it should not make for you.
 
 <details>
 <summary>Coverage / lint / notes / scope channels, and every flag</summary>

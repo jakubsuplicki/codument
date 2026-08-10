@@ -3,10 +3,17 @@ import { join } from "node:path";
 import pc from "picocolors";
 import { atomicWriteFileSync } from "../lib/events.js";
 import { LANGUAGE_MATRIX, warmAdaptersForRepo } from "../lib/fingerprint.js";
-import { assertRootIsRepoToplevel, resolveWorkspace } from "../lib/git.js";
+import {
+  assertRootIsRepoToplevel,
+  getWorkingTreeChanges,
+  getWorkingTreeDeletions,
+  getWorkingTreeRenames,
+  isGitRepo,
+  resolveWorkspace,
+} from "../lib/git.js";
 import { GateError } from "../lib/two-ref.js";
 import { versionSkewNotice } from "../lib/version.js";
-import { readRegistrySync } from "../lib/registry.js";
+import { normalizeRelPath, readRegistrySync } from "../lib/registry.js";
 import { renderCoverageBadge } from "../lib/badge.js";
 import {
   analyze,
@@ -36,6 +43,8 @@ interface DoctorOptions {
   root?: string;
   json?: boolean;
   write?: boolean;
+  /** Clear the judgment-free findings and print what was deliberately left. */
+  fix?: boolean;
   strict?: boolean;
   verifyInvariants?: boolean;
   testCommand?: string[];
@@ -123,6 +132,23 @@ export interface DoctorReport {
     findings: LintFinding[];
     /** Awareness-only findings (severity "info"). Never block clean. */
     notes: LintFinding[];
+    /**
+     * The split between what this repo state just produced and what it arrived with.
+     *
+     * Seventy findings on a maintained repo reads as a surface that cries wolf, but
+     * the cause is upgrade debt rather than calibration: every lint added since a
+     * project adopted retroactively finds old violations, so the count climbs on
+     * upgrade even when the repo has not moved. The consequence is what matters —
+     * sixty-nine inherited findings and the one this change just created rendered
+     * identically, so the loop's only whole-repo health surface was unreadable at
+     * exactly the moment it had something new to say.
+     *
+     * Derived, never a baseline file: a finding is this change's when its subject
+     * file is in the working tree's change set. No recorded baseline means no second
+     * source of truth to rot. Null when there is no repository to ask, which is
+     * honestly different from "nothing here is new".
+     */
+    attribution: { fromThisChange: LintFinding[]; inherited: LintFinding[] } | null;
   };
 }
 
@@ -201,8 +227,143 @@ export function buildReport(
     inScopeSourceCount: result.inScopeSourceCount,
     coverage: result.coverage,
     scope,
-    lint: { count: findings.length, byId, findings, notes },
+    lint: { count: findings.length, byId, findings, notes, attribution: attribute(root, findings) },
   };
+}
+
+/**
+ * Which of these findings this repo state just produced.
+ *
+ * A finding is this change's when its own subject file is in the working tree's
+ * change set — the tightest reading, and deliberately so. Attributing by FEATURE
+ * would mark every pre-existing finding on a feature as new the moment someone edits
+ * one of its files, which reproduces the unreadable pile it exists to fix, in the
+ * other direction. A finding with no subject file has nothing to match and stays
+ * inherited: over-attributing is the failure that costs, since the whole value of
+ * the split is that the short list is trustworthy.
+ *
+ * The change set is the same one `review` scopes to — changes, deletions and a
+ * rename's origin — because a `missing-source` finding about a path this change just
+ * deleted is exactly the kind the reader must not lose in sixty-nine others. Fails
+ * to null rather than to empty: no repository to ask is a different answer from
+ * "nothing here is new", and reporting the second would be the unknown-is-not-empty
+ * conflation this codebase refuses everywhere else.
+ */
+function attribute(
+  root: string,
+  findings: LintFinding[],
+): { fromThisChange: LintFinding[]; inherited: LintFinding[] } | null {
+  // Asked before the listers, because outside a repository they answer "nothing
+  // changed" rather than refusing — and reporting every finding as inherited on the
+  // strength of that would be the unknown-is-not-empty conflation, dressed as a fact.
+  if (!isGitRepo(root)) return null;
+  let touched: Set<string>;
+  try {
+    const renames = getWorkingTreeRenames(root);
+    touched = new Set([
+      ...getWorkingTreeChanges(root),
+      ...getWorkingTreeDeletions(root),
+      ...renames.map((r) => r.from),
+    ]);
+  } catch {
+    return null;
+  }
+  const isNew = (f: LintFinding): boolean =>
+    f.file !== undefined && touched.has(normalizeRelPath(f.file));
+  return {
+    fromThisChange: findings.filter(isNew),
+    inherited: findings.filter((f) => !isNew(f)),
+  };
+}
+
+/**
+ * The findings `--fix` may clear without reading anyone's mind.
+ *
+ * Two of them, and the line between them and everything else is whether resolving
+ * one requires a judgment. A registry entry naming a path that is not on disk is
+ * simply false — dropping it restores an honest control plane and settles nothing
+ * else. A declared tree that matches nothing is the same falsehood in pattern form.
+ * Everything past that needs a decision an agent pointed at seventy findings will
+ * fabricate: where a manifest belongs is what wakes, an unmapped file needs an owner,
+ * and a doc-level finding invites compaction theater — plan 42's own finding, almost
+ * word for word. Those are printed, never written.
+ */
+const FIXABLE = new Set<string>(["missing-source", "unmatched-pattern"]);
+
+interface FixOutcome {
+  /** `feature: path` pairs the fix removed from the registry. */
+  removed: Array<{ feature: string; source: string; id: string }>;
+  /** Findings it deliberately left, grouped by lint id with a count. */
+  left: Array<{ id: string; count: number }>;
+}
+
+/**
+ * Drop every registry source a fixable finding named, and report what was left alone.
+ *
+ * Reversible by construction: the only edit is removing a path from an entry's source
+ * lists, which git shows as a diff like any other. It never adds, never re-points, and
+ * never touches a doc — a fix that guessed at an intent would put the corruption INTO
+ * the control plane, which is the state this whole surface exists to detect.
+ */
+function applyFix(root: string, findings: LintFinding[]): FixOutcome {
+  const fixable = findings.filter((f) => FIXABLE.has(f.id) && f.feature && f.file);
+  const left = new Map<string, number>();
+  for (const f of findings) {
+    if (fixable.includes(f)) continue;
+    left.set(f.id, (left.get(f.id) ?? 0) + 1);
+  }
+  const outcome: FixOutcome = {
+    removed: [],
+    left: [...left.entries()]
+      .map(([id, count]) => ({ id, count }))
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+  };
+  if (fixable.length === 0) return outcome;
+
+  const registryPath = join(root, "docs", ".registry.json");
+  const registry = readRegistrySync(registryPath);
+  for (const f of fixable) {
+    const entry = registry.features[f.feature as string];
+    if (!entry) continue;
+    const drop = normalizeRelPath(f.file as string);
+    const keep = (list: string[]) => list.filter((s) => normalizeRelPath(s) !== drop);
+    const before = entry.primary_sources.length + entry.related_sources.length;
+    entry.primary_sources = keep(entry.primary_sources);
+    entry.related_sources = keep(entry.related_sources);
+    if (entry.primary_sources.length + entry.related_sources.length < before) {
+      outcome.removed.push({ feature: f.feature as string, source: f.file as string, id: f.id });
+    }
+  }
+  if (outcome.removed.length > 0) {
+    atomicWriteFileSync(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
+  }
+  return outcome;
+}
+
+function printFix(outcome: FixOutcome): void {
+  console.log(pc.bold("codument doctor --fix"));
+  console.log();
+  if (outcome.removed.length === 0) {
+    console.log(pc.dim("  Nothing mechanical to clear."));
+  } else {
+    console.log(`  ${pc.green("✓")} dropped ${outcome.removed.length} false registry pointer(s):`);
+    for (const r of outcome.removed) {
+      console.log(`      ${pc.dim(`${r.feature}:`)} ${r.source} ${pc.dim(`(${r.id})`)}`);
+    }
+  }
+  // What it did NOT do, always, and with the count. A fix that clears part of a pile
+  // and says nothing about the rest reads as having cleared the pile.
+  if (outcome.left.length > 0) {
+    const total = outcome.left.reduce((n, l) => n + l.count, 0);
+    console.log();
+    console.log(
+      pc.dim(
+        `  Left alone — ${total} finding(s) that need a decision, which is not this command's to make:`,
+      ),
+    );
+    for (const l of outcome.left) console.log(`      ${pc.dim(`${l.id} × ${l.count}`)}`);
+  }
+  console.log();
 }
 
 function num(value: string | number | undefined): number | undefined {
@@ -244,10 +405,15 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
   if (sectionLines !== undefined) bloat.sectionLines = sectionLines;
   if (completedLogItems !== undefined) bloat.completedLogItems = completedLogItems;
 
-  const report = buildReport(root, {
-    bloat,
-    highFanoutThreshold: num(options.highFanout),
-  });
+  const reportOpts = { bloat, highFanoutThreshold: num(options.highFanout) };
+  // `--fix` runs BEFORE the report the rest of this command renders, so what a reader
+  // sees afterwards is the state they are actually in — not the pile that existed a
+  // moment ago with a note claiming some of it is gone.
+  if (options.fix) {
+    const outcome = applyFix(root, buildReport(root, reportOpts).lint.findings);
+    if (!options.json) printFix(outcome);
+  }
+  const report = buildReport(root, reportOpts);
 
   // Opt-in, environment-touching mode: RUN each doc invariant's cited test. Off by
   // default so bare doctor stays instant, deterministic, and byte-identical. When
@@ -441,15 +607,33 @@ function printHuman(report: DoctorReport, strictFail = false): void {
   );
   console.log();
 
+  const row = (f: LintFinding, indent = "    ") =>
+    console.log(`${indent}${pc.yellow("⚠")} ${pc.dim(f.id.padEnd(17))} ${f.message}`);
   if (lint.count === 0) {
     console.log(`  ${pc.green("✓")} Lint: no findings`);
-  } else {
+  } else if (lint.attribution === null || lint.attribution.fromThisChange.length === lint.count) {
+    // No repository to attribute against, or everything here is this change's —
+    // either way the split says nothing the flat list does not, so it is not drawn.
     console.log(`  Lint: ${pc.yellow(String(lint.count))} findings`);
-    for (const finding of lint.findings) {
-      console.log(
-        `    ${pc.yellow("⚠")} ${pc.dim(finding.id.padEnd(17))} ${finding.message}`,
-      );
+    for (const finding of lint.findings) row(finding);
+  } else {
+    // What this repo state just produced leads, and what it arrived with follows
+    // under its own heading. Rendering them identically is what made the whole
+    // surface unreadable at the one moment it had something new to say — sixty-nine
+    // inherited findings and the one that was just introduced, in one undifferentiated
+    // list, on a surface the loop runs every step.
+    const { fromThisChange, inherited } = lint.attribution;
+    console.log(
+      `  Lint: ${pc.yellow(String(lint.count))} findings ${pc.dim(
+        `— ${fromThisChange.length} from this change, ${inherited.length} the repo arrived with`,
+      )}`,
+    );
+    if (fromThisChange.length > 0) {
+      console.log(`    ${pc.bold("From this change")}`);
+      for (const finding of fromThisChange) row(finding, "      ");
     }
+    console.log(`    ${pc.dim("Inherited — not this change; nothing here gates anything")}`);
+    for (const finding of inherited) row(finding, "      ");
   }
 
   if (lint.notes.length > 0) {
