@@ -109,7 +109,10 @@ const SCENARIOS: SurfaceScenario[] = [
     },
     change: { "src/shapes.ts": SRC.replace("return w * h;", "return h * w;") },
     invoke: ["review", "--strict"],
-    finding: /Stale docs/,
+    // The drift entry, not the stale doc: a per-symbol ack answers the move, and
+    // naming the section it answers is what keeps the route judged where its reader
+    // actually meets it.
+    finding: /Symbol drift/,
     expect: "routes-clear",
   },
   {
@@ -145,13 +148,29 @@ const SCENARIOS: SurfaceScenario[] = [
     invoke: ["review", "--strict"],
     finding: /registry|deleted/i,
     expect: "no-ack-route",
-    // Found by this battery on its first run, and reproduced by hand: the stale
-    // doc a deletion wakes is offered `codument ack <path>`, which `ack` refuses
-    // by name ("no acknowledgment clears a deletion") — so the gate is left
-    // exactly as red by the command printed to clear it. Plans 36 and 42 closed
-    // this for unclaimed symbols and for signature moves; deletions were never
-    // covered, because nothing asked all the routes the same question at once.
-    pending: { rule: "2-no-dead-route", step: "step 13" },
+  },
+  {
+    // The sharper half of the same defect, found by attacking the first fix: a doc
+    // that lost ONE source among several. Judged per file, the surviving sibling's
+    // ack is offered, records truthfully, is accepted — and leaves the gate red on
+    // the line it sat under, because clearing one waker never settles a doc the
+    // deletion still wakes. A deletion is therefore judged of the doc, not the file.
+    name: "a doc that lost one source among several — no ack settles it",
+    base: {
+      "docs/.registry.json": registry({
+        x: entry({ primary_sources: ["src/shapes.ts", "src/keep.ts"] }),
+      }),
+      "docs/features/x.md": DOC,
+      "src/shapes.ts": SRC,
+      "src/keep.ts": "export function keep(w: number): number {\n  return w;\n}\n",
+    },
+    change: {
+      "src/shapes.ts": null,
+      "src/keep.ts": "export function keep(w: number): number {\n  return w + 0;\n}\n",
+    },
+    invoke: ["review", "--strict"],
+    finding: /Stale docs/,
+    expect: "no-ack-route",
   },
   {
     // Plan 36's shape, the most-broken route in this tool's history: a symbol two

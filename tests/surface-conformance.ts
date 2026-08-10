@@ -49,6 +49,57 @@ export function routesIn(output: string): string[] {
   return [...new Set(found)];
 }
 
+/**
+ * The same commands in their PLACEHOLDER form — `codument ack <path>` and friends.
+ * A pointer cannot be executed, so it is exempt from "it must run and clear"; it is
+ * NOT exempt from "it must not be offered where nothing it names can work". The
+ * epilogue offers its routes this way, which is how a dead ack route survived there
+ * after being withdrawn from the finding three lines above.
+ */
+export function pointersIn(output: string): string[] {
+  const found: string[] = [];
+  for (const raw of plain(output).split("\n")) {
+    for (const m of raw.matchAll(/`(codument\s+[a-z][a-z-]*\s[^`\n]+)`/g)) {
+      if (/<[^>]+>/.test(m[1])) found.push(m[1].trim());
+    }
+  }
+  return [...new Set(found)];
+}
+
+/**
+ * The region a route is judged in: the finding's own section, plus the `--strict`
+ * epilogue.
+ *
+ * Scope is the whole question. Judged over the entire output, an ack that correctly
+ * resolves a DIFFERENT finding standing beside this one reads as a dead route —
+ * which would push a surface into withdrawing a command that works. Judged only
+ * inside the section, the epilogue goes unchecked, and the epilogue is exactly where
+ * a withdrawn route survived in placeholder form. So: both, and nothing else.
+ *
+ * Sections are two-space-indented headings; their entries are indented further, so a
+ * section runs until the next line that is neither blank nor deeper than its heading.
+ */
+export function judgedRegion(output: string, heading: RegExp): string {
+  const lines = plain(output).split("\n");
+  const start = lines.findIndex((l) => heading.test(l));
+  const section: string[] = [];
+  if (start >= 0) {
+    const depth = lines[start].length - lines[start].trimStart().length;
+    section.push(lines[start]);
+    for (const line of lines.slice(start + 1)) {
+      const indent = line.length - line.trimStart().length;
+      if (line.trim() !== "" && indent <= depth) break;
+      section.push(line);
+    }
+  }
+  // The epilogue: everything from the strict verdict's own line onward. It claims to
+  // list only routes that can clear what actually fired, so it is judged for every
+  // scenario whether or not the section above was found.
+  const verdict = lines.findIndex((l) => /✗ --strict:/.test(l));
+  const epilogue = verdict >= 0 ? lines.slice(verdict) : [];
+  return [...section, ...epilogue].join("\n");
+}
+
 /** Characters a POSIX shell acts on. A printed command carrying one of these
  *  unquoted is a command the reader must repair before it runs — plan 42's
  *  defect, where every per-symbol ack command ever printed was a syntax error. */
@@ -184,7 +235,12 @@ export async function checkSurfaceConformance(h: SurfaceHarness): Promise<Surfac
       continue;
     }
 
-    const routes = routesIn(output);
+    // Routes are judged where the reader meets them: under the finding this
+    // scenario is about, and in the epilogue that claims to list only what clears
+    // it. Everything else in the output belongs to some other finding and answers
+    // to its own row.
+    const judged = judgedRegion(output, s.finding);
+    const routes = routesIn(judged);
 
     // Rule 1 — a printed command is one a reader can paste. Unbalanced quoting or
     // an unquoted shell metacharacter means the reader repairs it first, which is
@@ -198,9 +254,12 @@ export async function checkSurfaceConformance(h: SurfaceHarness): Promise<Surfac
     // Rule 2 — no route is offered that cannot clear the finding it sits under.
     // A plausible command leaving the gate exactly as red costs more than silence.
     if (s.expect === "no-ack-route") {
-      for (const cmd of routes) {
+      // Routes AND pointers. Withdrawing the command from the finding while the
+      // epilogue goes on naming the same dead route in placeholder form is the
+      // defect moved, not fixed — the reader reaches the refusal either way.
+      for (const cmd of [...routes, ...pointersIn(judged)]) {
         if (/^codument\s+ack\b/.test(cmd)) {
-          flag("2-no-dead-route", `an ack route was offered where none can clear: ${cmd}`);
+          flag("2-no-dead-route", `an ack was offered where none can clear: ${cmd}`);
         }
       }
     }

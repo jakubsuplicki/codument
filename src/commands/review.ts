@@ -2,14 +2,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import pc from "picocolors";
 import {
-  ackCovers,
   type Acknowledgment,
+  ackCovers,
   isFileGrainAck,
   normalizeIdentity,
   readAcks,
   shellArg,
 } from "../lib/acknowledgment.js";
-import { isExcluded, resolveScopeSync, type ExclusionSpec } from "../lib/analyze.js";
+import { type ExclusionSpec, isExcluded, resolveScopeSync } from "../lib/analyze.js";
 import {
   type ApprovedPlan,
   type ChangeState,
@@ -30,18 +30,18 @@ import {
 } from "../lib/fingerprint.js";
 import {
   assertRootIsRepoToplevel,
-  isGateableRoot,
-  resolveWorkspace,
-  workspaceBases,
   getChangeAuthors,
   getHeadSha,
   getWorkingTreeChanges,
   getWorkingTreeDeletions,
   getWorkingTreeRenames,
-  movesOnly,
-  renamedFromMap,
+  isGateableRoot,
   isGitRepo,
+  movesOnly,
   type RenamePair,
+  renamedFromMap,
+  resolveWorkspace,
+  workspaceBases,
 } from "../lib/git.js";
 import {
   allSources,
@@ -261,6 +261,22 @@ function readRegistryAtRef(root: string, ref: string): Registry | undefined {
 // is skipped: a glob is not a path, and asking whether it exists is the wrong
 // question — `doctor` answers the right one (does it match anything) because it is
 // the surface that holds the file list.
+/**
+ * The files this change REMOVED, at either grain.
+ *
+ * A deletion owes its owning doc attention and nothing else: `ack` refuses one by
+ * name ("no acknowledgment clears a deletion"), per the ack-scope decision's
+ * conservative stance. So no surface may offer the ack route over one — and the
+ * set is derived once, here, because the two places that decide the route are what
+ * let `review` print a command `ack` was always going to refuse.
+ */
+function deletedInChange(state: {
+  deletedSources: readonly string[];
+  governedDeleted: readonly string[];
+}): Set<string> {
+  return new Set([...state.deletedSources, ...state.governedDeleted]);
+}
+
 function registryRot(
   root: string,
   registry: Registry,
@@ -536,7 +552,9 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // is a usage error, not a quiet win-for-the-other-flag.
   if (sarifMode && (options.json || options.bundle || options.record)) {
     console.log(
-      pc.red("  ✗ --format sarif cannot combine with --json, --bundle, or --record; pick one output."),
+      pc.red(
+        "  ✗ --format sarif cannot combine with --json, --bundle, or --record; pick one output.",
+      ),
     );
     process.exitCode = 1;
     return;
@@ -640,7 +658,13 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       if (options.json) {
         console.log(
           JSON.stringify(
-            { version: 2, gate: "unavailable", reason: err.message, kind: err.kind, isGitRepo: true },
+            {
+              version: 2,
+              gate: "unavailable",
+              reason: err.message,
+              kind: err.kind,
+              isGitRepo: true,
+            },
             null,
             2,
           ),
@@ -858,10 +882,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // status the artifact merely claims. A red test re-promotes to confirmed; a
     // toolchain failure (missing runner, resolution error) is unrunnable → advisory.
     const confirmedFindings = covering
-      ? confirmFindings(
-          covering.findings,
-          makeTestRunner({ root, command: resolvedTest.command }),
-        ).findings
+      ? confirmFindings(covering.findings, makeTestRunner({ root, command: resolvedTest.command }))
+          .findings
       : null;
     // The honesty condition is keyed on OUTCOMES, not on which flag was passed.
     // Keying it on flag-absence meant supplying any command silenced it, working or
@@ -984,7 +1006,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
         (l) => l.file === file && l.changeKind === "changed" && l.features.includes(feature),
       );
     const ownershipOnly = report.state.staleDocs.filter(
-      (d) => d.changedSources.length > 0 && d.changedSources.every((f) => contestedFor(f, d.feature)),
+      (d) =>
+        d.changedSources.length > 0 && d.changedSources.every((f) => contestedFor(f, d.feature)),
     );
     const contested = new Set(ownershipOnly.flatMap((d) => d.changedSources));
     if (ownershipOnly.length > 0) {
@@ -1027,10 +1050,26 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // file. Naming the ack route over either is the dead end this line exists to stop
     // printing, and the signature half went on printing it after plan 36 fixed the
     // ownership half.
+    // A deletion is the third way a stale doc cannot be settled by an ack, and it
+    // reached this list last: `ack` has always refused one by name, so the route was
+    // dead on arrival in the finding above AND in this epilogue. Asked of the doc,
+    // like the signature case — one unackable source keeps the doc stale however many
+    // others could be acked.
+    const gone = deletedInChange(report.state);
+    const movedContract = (d: { feature: string }): boolean =>
+      report.drift.some((m) => m.feature === d.feature && !m.acknowledged && m.signatureChanged);
+    // ANY removed source, not every: one waker no signature can reach keeps the doc
+    // stale however many others could be acked — the same shape the signature case
+    // already had, and the reason `every` was wrong is that it let a doc that had
+    // merely LOST a file among others go on advertising the ack route.
+    const anyRemoved = (d: { changedSources: string[] }): boolean =>
+      d.changedSources.some((f) => gone.has(f));
     const unackable = report.state.staleDocs.filter(
       (d) =>
-        report.drift.some((m) => m.feature === d.feature && !m.acknowledged && m.signatureChanged) ||
-        (d.changedSources.length > 0 && d.changedSources.every((f) => contestedFor(f, d.feature))),
+        movedContract(d) ||
+        (d.changedSources.length > 0 &&
+          d.changedSources.every((f) => contestedFor(f, d.feature))) ||
+        anyRemoved(d),
     );
     // Withholding the dead route must not take the live one with it. These two share a
     // line, and a signature move keeps the doc-update half while losing the ack half —
@@ -1039,14 +1078,28 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // ownership-contested doc keeps neither (a doc edit there is the mirror prose), and
     // its registry route is already printed above.
     const ackable = report.state.staleDocs.length - unackable.length;
-    const contractOnly = unackable.length - ownershipOnly.length;
+    // Withholding the ack route says nothing about WHY, and the reason is the part a
+    // reader acts on — so the sentence that replaces it names the actual condition.
+    // Inheriting the signature wording for a deletion would have swapped one false
+    // statement for another: the reader is told a contract moved when a file was
+    // removed. Both are named where both fired, rather than one standing in for the
+    // other.
+    const others = unackable.filter((d) => !ownershipOnly.includes(d));
+    const why = [
+      others.some(anyRemoved)
+        ? "a removal owes its doc attention, and no acknowledgment clears a deletion"
+        : null,
+      others.some(movedContract)
+        ? "a signature moved, and no ack of any grain clears a contract change"
+        : null,
+    ].filter((s): s is string => s !== null);
     if (ackable > 0)
       routes.push(
         "    Resolve each stale doc: update it at intent altitude, or acknowledge a change that owes no doc line (`codument ack <path>` / `codument ack <path>::<symbol>`).",
       );
-    else if (contractOnly > 0)
+    else if (why.length > 0)
       routes.push(
-        "    Resolve each stale doc by updating it at intent altitude: a signature moved, and no ack of any grain clears a contract change.",
+        `    Resolve each stale doc by updating it at intent altitude: ${why.join("; ")}.`,
       );
     for (const line of routes) console.log(pc.dim(line));
     console.log(pc.dim("    Then re-run."));
@@ -1099,9 +1152,7 @@ function computeRealChange(
   exclusion: ExclusionSpec,
 ): { set: string[]; realDeletions: string[] } {
   const isDocPath = (p: string) => p.startsWith("docs/") && p.endsWith(".md");
-  const realDeletions = deletions.filter(
-    (d) => !isDocPath(d) && !isExcluded(d, exclusion),
-  );
+  const realDeletions = deletions.filter((d) => !isDocPath(d) && !isExcluded(d, exclusion));
   const set = [
     ...new Set([...report.state.changedSources, ...report.state.otherChanged, ...realDeletions]),
   ].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
@@ -1243,7 +1294,9 @@ function ownershipResolution(
 
   const head =
     `${indent}${pc.yellow("⚠")} ${pc.bold(
-      ambiguous ? "shared symbol claimed by more than one feature" : "shared symbol no feature claims",
+      ambiguous
+        ? "shared symbol claimed by more than one feature"
+        : "shared symbol no feature claims",
     )} ${pc.dim(`— ${file} :: ${descriptors.join(", ")} · across ${candidates.join(", ")}`)}` +
     `${indent}  ${pc.dim("this recurs on EVERY edit to the file until the registry says who owns it")}`;
 
@@ -1380,7 +1433,9 @@ function printHuman(report: ReviewReport): void {
       console.log(pc.dim(`    • +${report.registryRot.length - shown.length} more`));
     }
     console.log(
-      pc.dim("    fix → re-point or remove each in docs/.registry.json (`codument doctor` lists them all)"),
+      pc.dim(
+        "    fix → re-point or remove each in docs/.registry.json (`codument doctor` lists them all)",
+      ),
     );
     console.log();
   }
@@ -1391,7 +1446,6 @@ function printHuman(report: ReviewReport): void {
       .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
       .map((f) => `${pc.yellow("⚠")} ${f}`),
   );
-
 
   // A stale doc whose changed source was gated at FILE grain (a coarse file:
   // .js, generated, re-export-only) produces no Symbol-drift entry, so without
@@ -1459,10 +1513,22 @@ function printHuman(report: ReviewReport): void {
         ...d.viaPatterns.map((p) => `${p.pattern} (${p.count} file${p.count === 1 ? "" : "s"})`),
       ];
       let line = `${pc.yellow("⚠")} ${d.feature}: ${d.doc} (changed: ${named.join(", ")})`;
-      const coarse = d.changedSources.filter(
-        (f) =>
-          !ownsUnresolvedMove(f, d.feature) && !unevaluableFiles.has(f) && !ackBlocked(f, d.feature),
-      );
+      // A deletion is judged of the DOC, not of the file. No ack clears a removal,
+      // so once this change took a source away nothing the reader can sign settles
+      // the doc it woke — and printing a working per-file ack beside it is still a
+      // dead route, because clearing one waker leaves the finding standing. Asked
+      // per file it offered exactly that: an ack that records truthfully, is
+      // accepted, and leaves the gate red on the same line it sat under.
+      const removed = deletedInChange(state);
+      const lostASource = d.changedSources.some((f) => removed.has(f));
+      const coarse = lostASource
+        ? []
+        : d.changedSources.filter(
+            (f) =>
+              !ownsUnresolvedMove(f, d.feature) &&
+              !unevaluableFiles.has(f) &&
+              !ackBlocked(f, d.feature),
+          );
       // A tree answers in one line or the route is not worth printing. Where every
       // file a pattern woke is ackable, the pattern IS the command — 120 file routes
       // for one translation drop is the same unreadable surface as the 120 paths in

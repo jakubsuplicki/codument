@@ -210,7 +210,7 @@ Status: draft, awaiting approval before source edits.
       what it deliberately left alone.
 - [ ] Step 12: The workflow routes ownership questions through `codument context --owner`
       instead of a flat read of `docs/.registry.json`.
-- [ ] Step 13: A stale doc woken by a deletion is not offered the file-grain ack, in the
+- [x] Step 13: A stale doc woken by a deletion is not offered the file-grain ack, in the
       finding or in the `--strict` epilogue. **Found by step 1's battery on its first run
       and reproduced by hand** — `review` prints `codument ack <path>` and `ack` refuses it
       with "no acknowledgment clears a deletion", so the gate is left exactly as red by the
