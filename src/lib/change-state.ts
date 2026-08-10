@@ -16,7 +16,7 @@ import {
   type ExclusionSpec,
 } from "./analyze.js";
 import { resolveOwner, splitAnchorId } from "./ownership.js";
-import { fileContentTransition, type AnchorChange } from "./fingerprint.js";
+import { fileContentTransition, isPreciseFile, type AnchorChange } from "./fingerprint.js";
 import {
   ackCovers,
   ackCoversTree,
@@ -122,6 +122,19 @@ export interface StaleDoc {
    * was involved, so a registry of literal paths renders exactly as before.
    */
   viaPatterns: Array<{ pattern: string; count: number }>;
+  /**
+   * The changed sources here that no adapter can read — gated at file grain, with no
+   * symbol view at all.
+   *
+   * The downgrade is correct and always was: registration widens the gate's scope,
+   * never its judgment, so a `.rules` file or a registered `.js` is governed whole.
+   * What was missing is that nothing said so. The reader was offered the blunt
+   * file-grain route and left to infer from its absence that a per-symbol one was
+   * never available — an inference from what is NOT printed, which is the same class
+   * of silence as a condition reachable only above the verdict. Absent for a doc woken
+   * only by files the gate can see inside.
+   */
+  coarseSources: string[];
 }
 
 export interface HighFanoutChange {
@@ -645,6 +658,7 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
         doc: entry.doc,
         changedSources: files,
         viaPatterns: patternsCovering(entry, files),
+        coarseSources: files.filter((f) => !isPreciseFile(f)),
       });
     }
     if (aDocChanged && !sourceChanged) {
@@ -665,6 +679,9 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
       doc: w.doc,
       changedSources: sortStrings(w.files),
       viaPatterns: [],
+      // A removed entry's files are gone; the grain question is about what the gate
+      // can still read, and there is nothing left to read.
+      coarseSources: [],
     });
   }
   staleDocs.sort((a, b) => (a.feature < b.feature ? -1 : a.feature > b.feature ? 1 : 0));

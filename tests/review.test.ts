@@ -2389,6 +2389,62 @@ describe("governed registered changes in review (ADR 017)", () => {
     assert.ok(r.out.includes("Registered as impact only"), "info section missing");
     assert.ok(r.out.includes("app/site.css"), "file not named");
   });
+
+  it("a file gated coarse SAYS it is coarse — the downgrade stops being an inference", async () => {
+    await scaffold({
+      "docs/features/site.md": "# site\n",
+      "firestore.rules": "allow read: if isOwner(uid);\n",
+      "docs/.registry.json": registryWith({
+        primary_sources: ["firestore.rules"],
+        related_sources: [],
+      }),
+    });
+    gitInit(tmp);
+    await scaffold({ "firestore.rules": "allow read: if true;\n" });
+
+    const r = runReview();
+    assert.equal(r.code, 1);
+    assert.match(r.out, /gated at file grain — no adapter reads \.rules/);
+    assert.match(r.out, /never what changed inside/);
+    // Stated once per entry, not once per route it explains.
+    assert.equal(r.out.split("gated at file grain").length - 1, 1);
+  });
+
+  it("a file the gate CAN see inside is not told it cannot", async () => {
+    await scaffold({
+      "docs/features/site.md": "# site\n",
+      "src/site.ts": "export function a() {\n  return 1;\n}\n",
+      "docs/.registry.json": registryWith({ primary_sources: ["src/site.ts"], related_sources: [] }),
+    });
+    gitInit(tmp);
+    await scaffold({ "src/site.ts": "export function a() {\n  return 2;\n}\n" });
+
+    const r = runReview();
+    assert.equal(r.code, 1);
+    assert.doesNotMatch(r.out, /gated at file grain/, "a precise file never lost a grain");
+  });
+
+  it("several unreadable files name every extension the gate could not read", async () => {
+    await scaffold({
+      "docs/features/site.md": "# site\n",
+      "firestore.rules": "allow read: if isOwner(uid);\n",
+      "app/site.css": ".hero { color: red; }\n",
+      "docs/.registry.json": registryWith({
+        primary_sources: ["firestore.rules", "app/site.css"],
+        related_sources: [],
+      }),
+    });
+    gitInit(tmp);
+    await scaffold({
+      "firestore.rules": "allow read: if true;\n",
+      "app/site.css": ".hero { color: green; }\n",
+    });
+
+    const r = runReview();
+    assert.equal(r.code, 1);
+    assert.match(r.out, /no adapter reads \.css\/\.rules/);
+    assert.match(r.out, /sees 2 of these files change/);
+  });
 });
 
 // Plan 17 acceptance: the full config-file arc, end to end — the exact friction

@@ -292,6 +292,14 @@ function deletedInChange(state: {
   return new Set([...state.deletedSources, ...state.governedDeleted]);
 }
 
+/** A path's extension as the grain notice names it — `.rules`, `.json` — or the bare
+ *  filename where there is none, since `Dockerfile` reads better than an empty string. */
+function extensionOf(path: string): string {
+  const base = path.slice(path.lastIndexOf("/") + 1);
+  const dot = base.lastIndexOf(".");
+  return dot > 0 ? base.slice(dot) : base;
+}
+
 /** How much of a standing vouch's sweep any surface shows before counting the rest.
  *  Enough to recognise what was taken; a wall of diff is the unreadable surface this
  *  disclosure exists to replace. */
@@ -1627,6 +1635,21 @@ function printHuman(report: ReviewReport): void {
         ...d.viaPatterns.map((p) => `${p.pattern} (${p.count} file${p.count === 1 ? "" : "s"})`),
       ];
       let line = `${pc.yellow("⚠")} ${d.feature}: ${d.doc} (changed: ${named.join(", ")})`;
+      // The grain, stated once, before the routes it explains. Registration widens the
+      // gate's scope and never its judgment, so a file no adapter reads is governed
+      // whole and correctly — but nothing said so, and the reader was left inferring
+      // the downgrade from which route was missing. An inference from what is NOT
+      // printed is the same silence as a fact reachable only above the verdict. Said
+      // once per entry rather than per route: one file has one grain however many
+      // commands it earns.
+      if (d.coarseSources.length > 0) {
+        const exts = [...new Set(d.coarseSources.map(extensionOf))].sort();
+        const what =
+          d.coarseSources.length === 1
+            ? d.coarseSources[0]
+            : `${d.coarseSources.length} of these files`;
+        line += `\n        ${pc.dim(`gated at file grain — no adapter reads ${exts.join("/")}, so the gate sees ${what} change and never what changed inside`)}`;
+      }
       // A deletion is judged of the DOC, not of the file. No ack clears a removal,
       // so once this change took a source away nothing the reader can sign settles
       // the doc it woke — and printing a working per-file ack beside it is still a
