@@ -188,7 +188,7 @@ Status: draft, awaiting approval before source edits.
 - [x] Step 1: A surfaces conformance battery — the guidance-to-outcome contract as a
       fixture table over every route the tool prints, mutation-proven against a seeded
       surface that lies. Rows this release will turn green are expected to land red.
-- [ ] Step 2: Nothing that changes the reader's next action lives only above the verdict
+- [x] Step 2: Nothing that changes the reader's next action lives only above the verdict
       line, so a piped `tail -1` is sufficient rather than merely honest.
 - [ ] Step 3: A file acknowledgment names what it vouched for at every grain. Where no
       adapter can enumerate symbols, it names the changed hunks — at signing time, in the

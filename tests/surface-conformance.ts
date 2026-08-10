@@ -176,6 +176,11 @@ export interface SurfaceScenario {
    * all, because no acknowledgment of any grain can reach this finding.
    */
   expect: "routes-clear" | "no-ack-route";
+  /** Conditions that change what the reader does next and must therefore survive a
+   *  pipe. Readers grep `| tail -1`, so anything reachable only above the verdict is
+   *  in practice unreachable — which cost an adversarial field report two false
+   *  entries about behaviour the tool has and prints. */
+  verdictNames?: RegExp[];
   /** A known gap a later step closes: the ONE rule exempted, and the step that
    *  ends the exemption. Naming the rule keeps the exemption from covering every
    *  other question asked of this scenario. A pending rule that starts PASSING is
@@ -284,6 +289,16 @@ export async function checkSurfaceConformance(h: SurfaceHarness): Promise<Surfac
         if (s.finding.test(after)) {
           flag("3-routes-clear", `route left the finding standing: ${cmd}`);
         }
+      }
+    }
+
+    // Rule 5 — the verdict line stands alone. Whatever else the render says, the
+    // last line carries every condition that changes the reader's next action,
+    // because the last line is the only part a piped read reliably keeps.
+    for (const re of s.verdictNames ?? []) {
+      const last = plain(output).trimEnd().split("\n").pop() ?? "";
+      if (!re.test(last)) {
+        flag("5-verdict-stands-alone", `the verdict line does not name ${re}: ${last}`);
       }
     }
 

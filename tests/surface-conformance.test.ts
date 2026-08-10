@@ -173,6 +173,27 @@ const SCENARIOS: SurfaceScenario[] = [
     expect: "no-ack-route",
   },
   {
+    // Two facts the tool has always known and always printed above the verdict, and
+    // which an adversarial field report therefore wrote up as absent: registry rot it
+    // inherited, and a scaffold behind the installed version. Neither gates — that is
+    // settled — but a fact worth printing at all is worth printing where the reader
+    // is looking, and where the reader is looking is `| tail -1`.
+    name: "the verdict line carries what a pipe would otherwise destroy",
+    base: {
+      "docs/.registry.json": registry({
+        x: entry({ primary_sources: ["src/keep.ts", "src/long-gone.ts"] }),
+      }),
+      "docs/features/x.md": DOC,
+      "src/keep.ts": "export function keep(w: number): number {\n  return w;\n}\n",
+      ".codument-meta.json": '{"version":"0.1.0"}\n',
+    },
+    change: { "src/keep.ts": "export function keep(w: number): number {\n  return w + 0;\n}\n" },
+    invoke: ["review", "--strict"],
+    finding: /Symbol drift/,
+    expect: "routes-clear",
+    verdictNames: [/registry path\(s\) missing/, /scaffold behind/],
+  },
+  {
     // Plan 36's shape, the most-broken route in this tool's history: a symbol two
     // features claim as primary with no `owned_symbols` between them. The wake is
     // ownership, not doc debt, so no ack reaches it — the fix is a registry edit.

@@ -1123,10 +1123,27 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     gateable.push(`${report.state.staleDocs.length} stale doc(s)`);
   if (report.state.registryPointers.length > 0)
     gateable.push(`${report.state.registryPointers.length} registry pointer(s)`);
+  // Everything else that changes what the reader does next. Plan 39 put the verdict
+  // last because readers pipe; the field then showed the other half of that habit —
+  // `| tail -1` delivers this line and destroys the rest, so anything reachable ONLY
+  // above it is, in practice, unreachable. It cost two false entries in an
+  // adversarial field report: the inherited registry rot `review` does name was
+  // written up as missing across fourteen runs, and a scaffold two minor versions
+  // behind printed on every invocation for five hours unseen. Neither gates — that
+  // is settled and unchanged — but a fact worth printing at all is worth printing
+  // where the reader is looking.
+  const alsoTrue: string[] = [];
+  if (report.registryRot.length > 0)
+    alsoTrue.push(
+      `${report.registryRot.length} registry path(s) missing (not this change; ungated)`,
+    );
+  if (versionSkewNotice(root)) alsoTrue.push("scaffold behind the installed version");
+  const also = alsoTrue.length > 0 ? pc.dim(` · ${alsoTrue.join(" · ")}`) : "";
+
   const blocking = strictFail ? [...gateable] : [];
   if (reviewGateFail) blocking.push("adversarial review not covering this diff");
   if (blocking.length > 0) {
-    console.log(pc.red(`codument review: BLOCKED — ${blocking.join(", ")}`));
+    console.log(pc.red(`codument review: BLOCKED — ${blocking.join(", ")}`) + also);
   } else if (gateable.length > 0) {
     // Ungated, but NOT clean. Without `--strict` this run is a report and exits 0
     // by design, so the exit code cannot carry the difference — which is exactly why
@@ -1135,10 +1152,16 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // tells an agent to run; a reader who trusts `| tail -1` there gets the same lie
     // by a shorter route. Name what was found, and say plainly that nothing gated it.
     console.log(
-      pc.yellow(`codument review: ${gateable.join(", ")} — not gated (add \`--strict\` to gate)`),
+      pc.yellow(`codument review: ${gateable.join(", ")} — not gated (add \`--strict\` to gate)`) +
+        also,
     );
   } else {
-    console.log(pc.green("codument review: clean"));
+    // `clean` still names the GATE's result and nothing more, which is what it has
+    // always meant; the advisories ride the same line rather than replacing the word,
+    // so a reader who greps for it still finds it and a reader who reads the line
+    // learns what else is true. A run with genuinely nothing to report prints the
+    // bare word, exactly as before.
+    console.log(pc.green("codument review: clean") + also);
   }
 }
 
