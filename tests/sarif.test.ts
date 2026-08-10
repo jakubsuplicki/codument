@@ -62,6 +62,12 @@ const EVERY_FINDING_REPORT: ReviewReport = {
       },
       { file: "src/legacy/dropped.ts", features: ["auth", "billing"], kind: "deleted" },
     ],
+    // The prose pointer beside them. It blocks `--strict` on the same terms, so it
+    // needs a rule here on the same terms: a blocking input with no projection uploads
+    // as a clean pass beside a check that exited 1.
+    docPointers: [
+      { doc: "docs/features/i18n.md", paths: ["src/i18n/format.ts", "src/legacy/dropped.ts"] },
+    ],
   },
   drift: [
     {
@@ -136,9 +142,10 @@ describe("reviewReportToSarif", () => {
     clean.state.ownershipLints = [];
     clean.state.unevaluable = [];
     clean.state.registryPointers = [];
+    clean.state.docPointers = [];
     const sarif = reviewReportToSarif(clean);
     assert.equal(sarif.runs[0].results.length, 0);
-    assert.equal(sarif.runs[0].tool.driver.rules.length, 6, "the catalog is advertised regardless");
+    assert.equal(sarif.runs[0].tool.driver.rules.length, 7, "the catalog is advertised regardless");
   });
 });
 

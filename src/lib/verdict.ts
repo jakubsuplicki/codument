@@ -74,6 +74,11 @@ export interface Verdict {
    *  tree the gate refuses is the one way the live view and a snapshot can
    *  contradict each other. */
   registryPointers: number;
+  /** Docs still naming a path this change removed. Carried on exactly the terms
+   *  `registryPointers` is, because it is the same corruption one layer out and would
+   *  go missing the same way: it blocks `--strict`, does not move the severity ladder,
+   *  and must never be the finding a clean-reading gloss left out. */
+  docPointers: number;
 }
 
 export interface VerdictOptions {
@@ -188,8 +193,12 @@ function buildGloss(v: Verdict, state: ChangeState): string {
   // WAS updated — has nothing else left to report, so the view announced a tidy
   // little change over a tree the gate refuses. `review` and `watch` deriving from
   // one analyzer is worth nothing if the projection drops a blocking finding.
-  const pointers =
-    v.registryPointers > 0 ? plural(v.registryPointers, "stale registry pointer") : "";
+  const pointers = [
+    v.registryPointers > 0 ? plural(v.registryPointers, "stale registry pointer") : "",
+    v.docPointers > 0 ? plural(v.docPointers, "doc naming a removed path") : "",
+  ]
+    .filter((s) => s !== "")
+    .join(" · ");
   const withPointers = (s: string): string => (pointers ? `${s} · ${pointers}` : s);
   if (v.status === "clean") {
     const parts: string[] = [];
@@ -306,6 +315,7 @@ export function classifyVerdict(state: ChangeState, opts: VerdictOptions): Verdi
     },
     unmapped: state.unmapped.length,
     registryPointers: state.registryPointers.length,
+    docPointers: state.docPointers.length,
   };
   verdict.gloss = buildGloss(verdict, state);
   return verdict;

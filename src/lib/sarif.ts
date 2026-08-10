@@ -108,6 +108,15 @@ const RULES: SarifRule[] = [
     defaultConfiguration: { level: "warning" },
   },
   {
+    id: "codument/doc-pointer",
+    name: "DocPointer",
+    shortDescription: {
+      text: "A doc still names a source path this change renamed or deleted.",
+    },
+    helpUri: `${DOCS}/change-control-gate.md`,
+    defaultConfiguration: { level: "warning" },
+  },
+  {
     id: "codument/unevaluable",
     name: "Unevaluable",
     shortDescription: {
@@ -238,6 +247,21 @@ export function reviewReportToSarif(report: ReviewReport, notifications: string[
     // object, not the serialization.
     if (p.renamedTo) result.relatedLocations = [loc(p.renamedTo)];
     results.push(result);
+  }
+
+  // The prose pointer beside the registry pointer, and a blocking input on the same
+  // terms — so it needs a rule here for the same reason: a `--strict` input with no
+  // projection uploads as a clean pass beside a check that exited 1. Anchored on the
+  // DOC that carries the false pointer, which is the file a reviewer would open.
+  for (const p of state.docPointers) {
+    results.push({
+      ruleId: "codument/doc-pointer",
+      level: "warning",
+      message: {
+        text: `${p.doc} still names ${p.paths.join(", ")}, which this change removed. Name the path it moved to, or drop the mention — no acknowledgment clears a false pointer.`,
+      },
+      locations: [loc(p.doc)],
+    });
   }
 
   // A changed file the gate could not parse (parse error / conflict markers) is a

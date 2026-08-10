@@ -4,9 +4,12 @@ import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { writeFileSync } from "node:fs";
 import {
   computeChangeState,
   detectApprovedPlanScope,
+  removedInChange,
+  resolveDocPointers,
 } from "../src/lib/change-state.js";
 import { readRegistry } from "../src/lib/registry.js";
 
@@ -757,6 +760,100 @@ describe("registry pointers left dangling by this change", () => {
       renames: [{ from: "src/a.ts", to: "src/b.ts" }],
     });
     assert.deepEqual(s.registryPointers, []);
+  });
+
+  it("what is GONE is decided once, so the two pointer findings cannot disagree", () => {
+    // A copy and a file split both arrive labelled as renames with the origin still on
+    // disk, and a path dropped from the index but present in the tree was not removed
+    // either. Both narrowings governed the registry pointer already; the doc pointer
+    // reads the same answer rather than re-deriving one.
+    assert.deepEqual(
+      removedInChange([{ from: "a.ts", to: "b.ts" }], ["b.ts"], []),
+      ["a.ts"],
+      "a genuine move",
+    );
+    assert.deepEqual(
+      removedInChange([{ from: "a.ts", to: "b.ts" }], ["a.ts", "b.ts"], []),
+      [],
+      "a copy or a split leaves the origin in place",
+    );
+    assert.deepEqual(removedInChange([], [], ["a.ts"]), ["a.ts"], "a deletion");
+    assert.deepEqual(
+      removedInChange([], ["a.ts"], ["a.ts"]),
+      [],
+      "dropped from the index, still in the tree",
+    );
+  });
+});
+
+// The registry's pointer to a vanished file was always checked; the sentence beside it
+// never was, so a rename that correctly re-pointed the entry went green with the owning
+// doc still sending its next reader to a path that is not there.
+describe("a doc naming a path this change removed", () => {
+  let dir: string;
+  const registry = {
+    features: {
+      i18n: {
+        doc: "docs/concepts/i18n.md",
+        type: "concept" as const,
+        primary_sources: ["i18n/dateFormat.ts"],
+        related_sources: [],
+        docs: ["docs/concepts/i18n-extra.md"],
+        depends_on: [],
+        risk: [],
+        status: "current",
+      },
+    },
+  };
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "codument-docptr-"));
+    await mkdir(join(dir, "docs", "concepts"), { recursive: true });
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const write = (rel: string, body: string) => writeFileSync(join(dir, rel), body);
+
+  it("finds the dead path in the owning doc's prose, and clears when the doc is corrected", () => {
+    write("docs/concepts/i18n.md", "# i18n\n\n## Key files\n\n- `i18n/format.ts` — formatting\n");
+    assert.deepEqual(resolveDocPointers(dir, registry as never, ["i18n/format.ts"]), [
+      { doc: "docs/concepts/i18n.md", paths: ["i18n/format.ts"] },
+    ]);
+
+    write("docs/concepts/i18n.md", "# i18n\n\n## Key files\n\n- `i18n/dateFormat.ts` — formatting\n");
+    assert.deepEqual(resolveDocPointers(dir, registry as never, ["i18n/format.ts"]), []);
+  });
+
+  it("reads every doc an entry names, not only its primary one", () => {
+    write("docs/concepts/i18n.md", "# i18n\n");
+    write("docs/concepts/i18n-extra.md", "See `i18n/format.ts` for the shape.\n");
+    assert.deepEqual(
+      resolveDocPointers(dir, registry as never, ["i18n/format.ts"]).map((p) => p.doc),
+      ["docs/concepts/i18n-extra.md"],
+    );
+  });
+
+  it("a path is a path, never a fragment of a longer one", () => {
+    write(
+      "docs/concepts/i18n.md",
+      "`i18n/format.ts.bak` is generated, and `vendor/i18n/format.ts` is theirs.\n",
+    );
+    assert.deepEqual(
+      resolveDocPointers(dir, registry as never, ["i18n/format.ts"]),
+      [],
+      "neither mention is the removed path",
+    );
+  });
+
+  it("a removal nobody documented, and a doc that is not there, both stay silent", () => {
+    write("docs/concepts/i18n.md", "# i18n\n\nNothing about files here.\n");
+    assert.deepEqual(resolveDocPointers(dir, registry as never, ["i18n/format.ts"]), []);
+    assert.deepEqual(resolveDocPointers(dir, registry as never, []), [], "nothing was removed");
+    // docs/concepts/i18n-extra.md is registered and absent — an unreadable doc
+    // contributes nothing rather than raising, the advisory stance every walk takes.
+    assert.deepEqual(resolveDocPointers(dir, registry as never, ["anything.ts"]), []);
   });
 });
 

@@ -34,6 +34,7 @@ function emptyState(): ChangeState {
     deletedSources: [],
     ungatedRegistered: [],
     registryPointers: [],
+    docPointers: [],
     governedRegistered: [],
     governedDeleted: [],
   };
@@ -530,9 +531,27 @@ describe("report command (temp git repo)", () => {
         riskTouches: ["auth", "b"],
         offPlan: ["src/x.ts"],
         driftTransitions: [
-          { anchorId: "src/a.ts::x", from: "h1", to: "h2", resolution: "acked", comovement: "not-referenced" },
-          { anchorId: "src/a.ts::y", from: "h3", to: "h4", resolution: "file-acked", comovement: "not-referenced" },
-          { anchorId: "src/a.ts::z", from: "h5", to: "h6", resolution: "doc-updated", comovement: "co-moved" },
+          {
+            anchorId: "src/a.ts::x",
+            from: "h1",
+            to: "h2",
+            resolution: "acked",
+            comovement: "not-referenced",
+          },
+          {
+            anchorId: "src/a.ts::y",
+            from: "h3",
+            to: "h4",
+            resolution: "file-acked",
+            comovement: "not-referenced",
+          },
+          {
+            anchorId: "src/a.ts::z",
+            from: "h5",
+            to: "h6",
+            resolution: "doc-updated",
+            comovement: "co-moved",
+          },
         ],
       });
       await writeFile(join(tmp, "src", "auth", "login.ts"), "export const a = 9;\n");

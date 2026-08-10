@@ -91,6 +91,7 @@ function cs(partial: Partial<ChangeState>): ChangeState {
     deletedSources: [],
     ungatedRegistered: [],
     registryPointers: [],
+    docPointers: [],
     governedRegistered: [],
     governedDeleted: [],
     ...partial,
@@ -248,9 +249,15 @@ describe("buildReviewBundle", () => {
     };
     const docs = new Map<string, string>([
       // "(honestly" is prose, not a no-test marker — must NOT flag
-      ["docs/features/c.md", "## Invariants & boundaries\n\n- **X holds.** (honestly, covered by c.test.ts)\n"],
+      [
+        "docs/features/c.md",
+        "## Invariants & boundaries\n\n- **X holds.** (honestly, covered by c.test.ts)\n",
+      ],
       // "(honest boundary" is the real idiom — must flag
-      ["docs/features/d.md", "## Invariants & boundaries\n\n- **Y caps here.** *(honest boundary — the label-noise limit)*\n"],
+      [
+        "docs/features/d.md",
+        "## Invariants & boundaries\n\n- **Y caps here.** *(honest boundary — the label-noise limit)*\n",
+      ],
     ]);
     const c = buildReviewBundle({
       base: "HEAD",
@@ -347,9 +354,6 @@ describe("buildReviewBundle", () => {
     assert.deepEqual(bundle.priorFindings, priorFindings);
     // Every touched feature keeps its invariants and test pointers — scoping the
     // oracle is how a narrow review becomes a shallow one.
-    assert.deepEqual(
-      bundle.features.map((f) => f.feature).sort(),
-      ["a", "b"],
-    );
+    assert.deepEqual(bundle.features.map((f) => f.feature).sort(), ["a", "b"]);
   });
 });

@@ -62,7 +62,11 @@ describe("sessionStats — calendar span, not summed session time", () => {
     const events = [
       tok("A", "2026-06-01T00:00:00.000Z"),
       tok("A", "not-a-date"),
-      { type: "tokens", ts: "2026-06-01T09:00:00.000Z", data: { model: "opus-4.8" } } as CodumentEvent,
+      {
+        type: "tokens",
+        ts: "2026-06-01T09:00:00.000Z",
+        data: { model: "opus-4.8" },
+      } as CodumentEvent,
     ];
     const { sessions, hours } = sessionStats(events);
     assert.equal(sessions, 1); // only "A"; the session-less event is ignored
@@ -148,20 +152,23 @@ describe("renderFrame token block", () => {
         riskTouches: [],
         unmapped: [],
         otherChanged: [],
-    excludedChanged: [],
+        excludedChanged: [],
         outOfPlan: [],
         highFanout: [],
         dependents: [],
         dependentsSummary: [],
         planScoped: false,
         registryPointers: [],
+        docPointers: [],
       },
     }) as unknown as Review;
   const coverage = { coverage: { percent: 80 } } as never;
-  const tok = (data: Record<string, unknown>, ts = "2026-06-16T10:00:00.000Z") =>
-    ({ type: "tokens", ts, data });
-  const ev = (type: string, message: string) =>
-    ({ type, ts: "2026-06-16T10:00:00.000Z", message });
+  const tok = (data: Record<string, unknown>, ts = "2026-06-16T10:00:00.000Z") => ({
+    type: "tokens",
+    ts,
+    data,
+  });
+  const ev = (type: string, message: string) => ({ type, ts: "2026-06-16T10:00:00.000Z", message });
   const NOW = "2026-06-16 10:00:00";
 
   it("hides the block when there are no token events", () => {
@@ -190,7 +197,16 @@ describe("renderFrame token block", () => {
     const frame = renderFrame(
       gitReview(),
       coverage,
-      [tok({ model: "opus-4.8", input: 12000, output: 3000, cacheRead: 480000, cacheCreate: 20000, feature: "auth" })],
+      [
+        tok({
+          model: "opus-4.8",
+          input: 12000,
+          output: 3000,
+          cacheRead: 480000,
+          cacheCreate: 20000,
+          feature: "auth",
+        }),
+      ],
       NOW,
     );
     assert.match(frame, /\bcost\b/i);
@@ -207,9 +223,30 @@ describe("renderFrame token block", () => {
       gitReview(),
       coverage,
       [
-        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "auth" }),
-        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 600000, cacheCreate: 0, feature: "auth" }),
-        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 400000, cacheCreate: 0, feature: "billing" }),
+        tok({
+          model: "opus-4.8",
+          input: 0,
+          output: 0,
+          cacheRead: 1000000,
+          cacheCreate: 0,
+          feature: "auth",
+        }),
+        tok({
+          model: "opus-4.8",
+          input: 0,
+          output: 0,
+          cacheRead: 600000,
+          cacheCreate: 0,
+          feature: "auth",
+        }),
+        tok({
+          model: "opus-4.8",
+          input: 0,
+          output: 0,
+          cacheRead: 400000,
+          cacheCreate: 0,
+          feature: "billing",
+        }),
       ],
       NOW,
     );
@@ -227,10 +264,38 @@ describe("renderFrame token block", () => {
       gitReview(),
       coverage,
       [
-        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "f-big" }),
-        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 600000, cacheCreate: 0, feature: "f-mid" }),
-        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 200000, cacheCreate: 0, feature: "f-small" }),
-        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 20000, cacheCreate: 0, feature: "f-tiny" }),
+        tok({
+          model: "opus-4.8",
+          input: 0,
+          output: 0,
+          cacheRead: 1000000,
+          cacheCreate: 0,
+          feature: "f-big",
+        }),
+        tok({
+          model: "opus-4.8",
+          input: 0,
+          output: 0,
+          cacheRead: 600000,
+          cacheCreate: 0,
+          feature: "f-mid",
+        }),
+        tok({
+          model: "opus-4.8",
+          input: 0,
+          output: 0,
+          cacheRead: 200000,
+          cacheCreate: 0,
+          feature: "f-small",
+        }),
+        tok({
+          model: "opus-4.8",
+          input: 0,
+          output: 0,
+          cacheRead: 20000,
+          cacheCreate: 0,
+          feature: "f-tiny",
+        }),
       ],
       NOW,
     );
@@ -246,9 +311,33 @@ describe("renderFrame token block", () => {
       gitReview(),
       coverage,
       [
-        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "a", session: "s1" }),
-        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "b", session: "s2" }),
-        tok({ model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "c", session: "s3" }),
+        tok({
+          model: "opus-4.8",
+          input: 0,
+          output: 0,
+          cacheRead: 1000000,
+          cacheCreate: 0,
+          feature: "a",
+          session: "s1",
+        }),
+        tok({
+          model: "opus-4.8",
+          input: 0,
+          output: 0,
+          cacheRead: 1000000,
+          cacheCreate: 0,
+          feature: "b",
+          session: "s2",
+        }),
+        tok({
+          model: "opus-4.8",
+          input: 0,
+          output: 0,
+          cacheRead: 1000000,
+          cacheCreate: 0,
+          feature: "c",
+          session: "s3",
+        }),
       ],
       NOW,
     );
@@ -258,11 +347,27 @@ describe("renderFrame token block", () => {
 
   it("shows a 'this session' delta for cost accrued since the watch started", () => {
     const before = tok(
-      { model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "a", session: "s1" },
+      {
+        model: "opus-4.8",
+        input: 0,
+        output: 0,
+        cacheRead: 1000000,
+        cacheCreate: 0,
+        feature: "a",
+        session: "s1",
+      },
       "2026-06-16T09:00:00.000Z",
     );
     const after = tok(
-      { model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "a", session: "s1" },
+      {
+        model: "opus-4.8",
+        input: 0,
+        output: 0,
+        cacheRead: 1000000,
+        cacheCreate: 0,
+        feature: "a",
+        session: "s1",
+      },
       "2026-06-16T11:00:00.000Z",
     );
     const frame = renderFrame(gitReview(), coverage, [before, after], NOW, {
@@ -274,10 +379,20 @@ describe("renderFrame token block", () => {
 
   it("omits the 'this session' delta when nothing accrued since the watch started", () => {
     const old = tok(
-      { model: "opus-4.8", input: 0, output: 0, cacheRead: 1000000, cacheCreate: 0, feature: "a", session: "s1" },
+      {
+        model: "opus-4.8",
+        input: 0,
+        output: 0,
+        cacheRead: 1000000,
+        cacheCreate: 0,
+        feature: "a",
+        session: "s1",
+      },
       "2026-06-16T09:00:00.000Z",
     );
-    const frame = renderFrame(gitReview(), coverage, [old], NOW, { sinceTs: "2026-06-16T10:00:00.000Z" });
+    const frame = renderFrame(gitReview(), coverage, [old], NOW, {
+      sinceTs: "2026-06-16T10:00:00.000Z",
+    });
     assert.doesNotMatch(frame, /this session/);
   });
 
@@ -286,8 +401,22 @@ describe("renderFrame token block", () => {
       gitReview(),
       coverage,
       [
-        tok({ model: "opus-4.8", input: 12000, output: 3000, cacheRead: 480000, cacheCreate: 20000, feature: "auth" }),
-        tok({ model: "gpt-9-ultra", input: 50000, output: 10000, cacheRead: 0, cacheCreate: 0, feature: "auth" }),
+        tok({
+          model: "opus-4.8",
+          input: 12000,
+          output: 3000,
+          cacheRead: 480000,
+          cacheCreate: 20000,
+          feature: "auth",
+        }),
+        tok({
+          model: "gpt-9-ultra",
+          input: 50000,
+          output: 10000,
+          cacheRead: 0,
+          cacheCreate: 0,
+          feature: "auth",
+        }),
       ],
       NOW,
     );
@@ -309,7 +438,16 @@ describe("renderFrame token block", () => {
     const frame = renderFrame(
       review,
       coverage,
-      [tok({ model: "opus-4.8", input: 12000, output: 3000, cacheRead: 480000, cacheCreate: 20000, feature: "auth" })],
+      [
+        tok({
+          model: "opus-4.8",
+          input: 12000,
+          output: 3000,
+          cacheRead: 480000,
+          cacheCreate: 20000,
+          feature: "auth",
+        }),
+      ],
       NOW,
     );
     assert.match(frame, /docs coverage: 80%/);
@@ -323,7 +461,16 @@ describe("renderFrame token block", () => {
     const frame = renderFrame(
       gitReview(),
       coverage,
-      [tok({ model: "sonnet-4.6", input: 10000, output: 2000, cacheRead: 500000, cacheCreate: 16000, feature: "docs" })],
+      [
+        tok({
+          model: "sonnet-4.6",
+          input: 10000,
+          output: 2000,
+          cacheRead: 500000,
+          cacheCreate: 16000,
+          feature: "docs",
+        }),
+      ],
       NOW,
     );
     assert.match(frame, /est(\.|imated)/i);
@@ -333,7 +480,14 @@ describe("renderFrame token block", () => {
 
   it("is a pure function of its inputs", () => {
     const events = [
-      tok({ model: "opus-4.8", input: 12000, output: 3000, cacheRead: 480000, cacheCreate: 20000, feature: "auth" }),
+      tok({
+        model: "opus-4.8",
+        input: 12000,
+        output: 3000,
+        cacheRead: 480000,
+        cacheCreate: 20000,
+        feature: "auth",
+      }),
     ];
     const a = renderFrame(gitReview(), coverage, events, NOW);
     const b = renderFrame(gitReview(), coverage, events, NOW);
@@ -348,8 +502,21 @@ describe("renderFrame token block", () => {
         gitReview(),
         coverage,
         [
-          tok({ model: "opus-4.8", input: 12000, output: 3000, cacheRead: 480000, cacheCreate: 20000, feature: "auth" }, "2026-06-16T10:05:00.000Z"),
-          tok({ model: "opus-4.8", input: "oops", output: null, cacheRead: undefined }, "2026-06-16T10:01:00.000Z"),
+          tok(
+            {
+              model: "opus-4.8",
+              input: 12000,
+              output: 3000,
+              cacheRead: 480000,
+              cacheCreate: 20000,
+              feature: "auth",
+            },
+            "2026-06-16T10:05:00.000Z",
+          ),
+          tok(
+            { model: "opus-4.8", input: "oops", output: null, cacheRead: undefined },
+            "2026-06-16T10:01:00.000Z",
+          ),
           { type: "tokens", ts: "2026-06-16T10:02:00.000Z" } as never,
           tok({ input: 5, output: 5 }, "2026-06-16T10:03:00.000Z"),
         ],
@@ -367,7 +534,16 @@ describe("renderFrame token block", () => {
     const frame = renderFrame(
       gitReview(),
       coverage,
-      [tok({ model: "codex-1", input: 1_000_000, output: 0, cacheRead: 0, cacheCreate: 0, feature: "auth" })],
+      [
+        tok({
+          model: "codex-1",
+          input: 1_000_000,
+          output: 0,
+          cacheRead: 0,
+          cacheCreate: 0,
+          feature: "auth",
+        }),
+      ],
       NOW,
       { rates },
     );
@@ -379,7 +555,16 @@ describe("renderFrame token block", () => {
     const frame = renderFrame(
       gitReview(),
       coverage,
-      [tok({ model: "codex-1", input: 1_000_000, output: 0, cacheRead: 0, cacheCreate: 0, feature: "auth" })],
+      [
+        tok({
+          model: "codex-1",
+          input: 1_000_000,
+          output: 0,
+          cacheRead: 0,
+          cacheCreate: 0,
+          feature: "auth",
+        }),
+      ],
       NOW,
     );
     assert.match(frame, /unpriced/i);
@@ -402,13 +587,14 @@ describe("renderFrame caught section (impact ledger)", () => {
         riskTouches: [],
         unmapped: [],
         otherChanged: [],
-    excludedChanged: [],
+        excludedChanged: [],
         outOfPlan: [],
         highFanout: [],
         dependents: [],
         dependentsSummary: [],
         planScoped: false,
         registryPointers: [],
+        docPointers: [],
       },
     }) as unknown as Review;
   const coverage = { coverage: { percent: 80 } } as never;
@@ -420,7 +606,11 @@ describe("renderFrame caught section (impact ledger)", () => {
       data: { commit: null, staleDocs: [], riskTouches: [], offPlan: [], ...data },
     }) as unknown as CodumentEvent;
   const review = (tier: string, resolution: string) =>
-    ({ type: "review", ts: "2026-06-16T10:00:00.000Z", data: { tier, resolution } }) as unknown as CodumentEvent;
+    ({
+      type: "review",
+      ts: "2026-06-16T10:00:00.000Z",
+      data: { tier, resolution },
+    }) as unknown as CodumentEvent;
 
   it("hides the section when there are no caught/review events", () => {
     const frame = renderFrame(gitReview(), coverage, [], NOW);
@@ -449,7 +639,12 @@ describe("renderFrame caught section (impact ledger)", () => {
     const frame = renderFrame(
       gitReview(),
       coverage,
-      [review("correctness", "fixed"), review("correctness", "fixed"), review("minor", "fixed"), review("minor", "deferred")],
+      [
+        review("correctness", "fixed"),
+        review("correctness", "fixed"),
+        review("minor", "fixed"),
+        review("minor", "deferred"),
+      ],
       NOW,
     );
     assert.match(frame, /caught \(all sessions\)/);

@@ -20,6 +20,8 @@ import {
   detectApprovedPlanScope,
   type OwnershipLint,
   owningDocsOf,
+  removedInChange,
+  resolveDocPointers,
   resolveFileGrainAcked,
   standingTreeAcks,
   type UngatedRegisteredChange,
@@ -515,6 +517,10 @@ export function buildReview(
     // entry that owned the file while it existed — so removing the entry in the
     // same change cannot dodge the wake.
     baseRegistry: deletions.length > 0 ? readRegistryAtRef(root, baseRef) : undefined,
+    // The prose pointer beside the registry pointer. Resolved here because reading a
+    // doc is impure and the analyzer never touches the filesystem; both findings read
+    // one removal set, so they cannot disagree about what is gone.
+    docPointers: resolveDocPointers(root, registry, removedInChange(renames, changes, deletions)),
   });
   // The acks adjudicating this change — the audit card both the human review and the
   // HTML report read. Computed from the FULL ack set (not `honoredAcks`), so under
@@ -919,7 +925,12 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       // control plane every other answer derives from, so letting a step commit a
       // pointer to a file that no longer exists is a green verdict over a corrupted
       // ground truth — the one thing worse than a stale doc.
-      report.state.registryPointers.length > 0);
+      report.state.registryPointers.length > 0 ||
+      // The same corruption one layer out: a doc still sending its reader to a path
+      // this change took away. The registry's pointer was checked and the prose
+      // pointer beside it was not, so a rename that correctly re-pointed the entry
+      // went green with the owning doc naming a file that is gone.
+      report.state.docPointers.length > 0);
 
   // Adversarial-review gate (opt-in). For a NON-TRIVIAL diff it requires a current,
   // fingerprint-bound review artifact whose findings — RE-CONFIRMED here by running
@@ -1063,6 +1074,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       reasons.push(
         `${report.state.registryPointers.length} registry entr(ies) naming a path this change removed`,
       );
+    if (report.state.docPointers.length > 0)
+      reasons.push(`${report.state.docPointers.length} doc(s) naming a path this change removed`);
     console.log(
       pc.red(
         `  ✗ --strict: ${reasons.join(" and ")} — the registry/docs are not in sync for this change.`,
@@ -1111,6 +1124,10 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     if (report.state.registryPointers.length > 0)
       routes.push(
         "    Fix each registry pointer — re-point the entry to the new path, or drop it. No ack applies: the pointer is simply false.",
+      );
+    if (report.state.docPointers.length > 0)
+      routes.push(
+        "    Fix each doc pointer — name the new path, or drop the mention. No ack applies here either, and a doc that merely records the removal still sends its reader nowhere.",
       );
     // Deliberately a pointer, not the command. The edit differs by shape — claim an
     // unclaimed symbol, drop a duplicate claim, or demote the file — and a summary
@@ -1201,6 +1218,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     gateable.push(`${report.state.staleDocs.length} stale doc(s)`);
   if (report.state.registryPointers.length > 0)
     gateable.push(`${report.state.registryPointers.length} registry pointer(s)`);
+  if (report.state.docPointers.length > 0)
+    gateable.push(`${report.state.docPointers.length} doc pointer(s)`);
   // Everything else that changes what the reader does next. Plan 39 put the verdict
   // last because readers pipe; the field then showed the other half of that habit —
   // `| tail -1` delivers this line and destroys the rest, so anything reachable ONLY
@@ -1533,6 +1552,20 @@ function printHuman(report: ReviewReport): void {
         ? `${pc.yellow("⚠")} ${p.file} ${pc.dim("→ renamed to")} ${p.renamedTo} ${pc.dim(`· still named by ${where}`)}\n        ${pc.dim("fix →")} replace it with ${pc.cyan(p.renamedTo ?? "")} in ${where}${pc.dim(", or `codument map materialize` the new path and drop the old")}`
         : `${pc.yellow("⚠")} ${p.file} ${pc.dim("→ deleted")} ${pc.dim(`· still named by ${where}`)}\n        ${pc.dim("fix →")} remove it from ${where}${pc.dim(" (a doc update for the removal is owed separately)")}`;
     }),
+  );
+
+  // The prose pointer beside the registry pointer, and printed with it for the same
+  // reason: a doc naming a file that is gone sends its next reader nowhere, and the
+  // registry's pointer was always checked while the sentence beside it never was. The
+  // fix is the doc's own — name the new path or drop the mention — so the line points
+  // at the doc rather than offering a command, and no acknowledgment is offered
+  // because nothing here is a judgment call.
+  section(
+    pc.yellow("A doc names a path this change removed (re-point it, or drop the mention)"),
+    state.docPointers.map(
+      (p) =>
+        `${pc.yellow("⚠")} ${p.doc} ${pc.dim(`· names ${p.paths.join(", ")}`)}\n        ${pc.dim("fix →")} name the path it moved to, or remove the mention${pc.dim(" — a doc that only records the removal still points nowhere")}`,
+    ),
   );
 
   // Rot the change did not cause, said out loud by the surface that runs every step.

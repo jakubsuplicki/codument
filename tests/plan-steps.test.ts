@@ -59,14 +59,19 @@ describe("parseDeliveryPlan", () => {
   it("falls back to Definition of Done when there is no Delivery Plan", () => {
     const md = "## Definition of Done\n- [x] a\n- [ ] b\n";
     const steps = parseDeliveryPlan(md);
-    assert.deepEqual(steps.map((s) => s.text), ["a", "b"]);
+    assert.deepEqual(
+      steps.map((s) => s.text),
+      ["a", "b"],
+    );
   });
 
   it("prefers Delivery Plan over Definition of Done when both exist", () => {
-    const md =
-      "## Definition of Done\n- [ ] dod-only\n\n## Delivery Plan\n- [ ] real-step\n";
+    const md = "## Definition of Done\n- [ ] dod-only\n\n## Delivery Plan\n- [ ] real-step\n";
     const steps = parseDeliveryPlan(md);
-    assert.deepEqual(steps.map((s) => s.text), ["real-step"]);
+    assert.deepEqual(
+      steps.map((s) => s.text),
+      ["real-step"],
+    );
   });
 
   it("accepts `*` bullets and capital [X]", () => {
@@ -163,10 +168,10 @@ describe("findActivePlans / loadPlan (fs discovery)", () => {
     await writeFile(join(tmp, "docs", "features", "a.md"), PLAN);
     await writeFile(join(tmp, "docs", "concepts", "b.md"), PLAN);
     const plans = findActivePlans(tmp);
-    assert.deepEqual(plans.map((p) => p.path), [
-      "docs/concepts/b.md",
-      "docs/features/a.md",
-    ]);
+    assert.deepEqual(
+      plans.map((p) => p.path),
+      ["docs/concepts/b.md", "docs/features/a.md"],
+    );
   });
 
   it("loadPlan reads a specific doc by repo-relative path", async () => {
@@ -272,13 +277,14 @@ describe("watch tape integration", () => {
         riskTouches: [],
         unmapped: [],
         otherChanged: [],
-    excludedChanged: [],
+        excludedChanged: [],
         outOfPlan: [],
         highFanout: [],
         dependents: [],
         dependentsSummary: [],
         planScoped: false,
         registryPointers: [],
+        docPointers: [],
       },
     } as unknown as Parameters<typeof renderFrame>[0];
     const coverage = { coverage: { percent: 94 } } as never;
@@ -363,19 +369,27 @@ describe("parseDeliveryPlan across multiple plan sections", () => {
     const steps = parseDeliveryPlan(
       "## Plan\n\n### Delivery Plan\n- [ ] real-step\n\n### Open questions\n- [ ] not-a-step\n",
     );
-    assert.deepEqual(steps.map((s) => s.text), ["real-step"]);
+    assert.deepEqual(
+      steps.map((s) => s.text),
+      ["real-step"],
+    );
   });
 
   it("runs ordinals continuously across a section's subheadings", () => {
     const steps = parseDeliveryPlan(
       "## Delivery Plan\n- [x] one\n\n### Continued\n- [ ] two\n- [ ] three\n",
     );
-    assert.deepEqual(steps.map((s) => s.n), [1, 2, 3]);
+    assert.deepEqual(
+      steps.map((s) => s.n),
+      [1, 2, 3],
+    );
   });
 
   it("falls back to the last section once every plan is complete", () => {
-    const allDone = MULTI_PLAN.replace("- [ ] Step 2: The real active step", "- [x] Step 2: The real active step")
-      .replace("- [ ] Step 3: Later", "- [x] Step 3: Later");
+    const allDone = MULTI_PLAN.replace(
+      "- [ ] Step 2: The real active step",
+      "- [x] Step 2: The real active step",
+    ).replace("- [ ] Step 3: Later", "- [x] Step 3: Later");
     const steps = parseDeliveryPlan(allDone);
     assert.equal(steps.length, 3);
     assert.equal(activeStep(steps), null);

@@ -64,6 +64,17 @@
               }
             },
             {
+              "id": "codument/doc-pointer",
+              "name": "DocPointer",
+              "shortDescription": {
+                "text": "A doc still names a source path this change renamed or deleted."
+              },
+              "helpUri": "https://github.com/jakubsuplicki/codument/blob/main/docs/features/change-control-gate.md",
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
               "id": "codument/unevaluable",
               "name": "Unevaluable",
               "shortDescription": {
@@ -78,6 +89,25 @@
         }
       },
       "results": [
+        {
+          "ruleId": "codument/doc-pointer",
+          "level": "warning",
+          "message": {
+            "text": "docs/features/i18n.md still names src/i18n/format.ts, src/legacy/dropped.ts, which this change removed. Name the path it moved to, or drop the mention — no acknowledgment clears a false pointer."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/features/i18n.md"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        },
         {
           "ruleId": "codument/out-of-plan",
           "level": "warning",

@@ -102,6 +102,10 @@ export interface ChangeStateInput {
    *  entry in the same change cannot dodge the deletion wake — the entry that
    *  owned the file when it existed still flags its doc. */
   baseRegistry?: Registry;
+  /** Docs still naming a path this change removed, resolved impurely by the caller
+   *  (see `resolveDocPointers`) — the analyzer never reads a file. Absent → no doc
+   *  pointer was looked for, which is byte-identical to a tree that removed nothing. */
+  docPointers?: DocPointer[];
 }
 
 export interface FeatureGroup {
@@ -281,6 +285,13 @@ export interface ChangeState {
    *  `RegistryPointer`). A strict input: the gate stays red until the registry
    *  stops naming the vanished path. */
   registryPointers: RegistryPointer[];
+  /** Registry-known docs whose prose still names a path this change removed. Held to
+   *  the registry pointer's standard and for the same reason: both are the control
+   *  plane pointing at nothing, and a reader sent to a path that is not there is
+   *  worse served by the doc than by no doc. A strict input; no acknowledgment
+   *  applies, because nothing here is a judgment call — the pointer is simply
+   *  false. */
+  docPointers: DocPointer[];
   governedRegistered: string[];
   /** Deleted counterparts of `governedRegistered` — an owned unjudgeable file
    *  removed. Wakes its owners with no ack fast-path, the same stance ADR 012
@@ -712,8 +723,8 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
       registryPointers.push({ file: from, features: sortStrings(features), kind: "renamed", renamedTo: to });
     }
   }
-  for (const file of deleted) {
-    if (changed.has(file)) continue; // removed from the index, still on disk
+  for (const file of removedInChange(input.renames ?? [], input.changedFiles, deleted)) {
+    if (input.renames?.some((r) => r.from === file)) continue; // already named as a rename
     const features = namingEntries(file);
     if (features.length > 0) {
       registryPointers.push({ file, features: sortStrings(features), kind: "deleted" });
@@ -820,9 +831,91 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     deletedSources,
     ungatedRegistered,
     registryPointers,
+    docPointers: input.docPointers ?? [],
     governedRegistered: sortStrings(governedRegistered),
     governedDeleted: sortStrings(governedDeletedSet),
   };
+}
+
+/**
+ * Every path this change REMOVED: a rename's origin and a deletion, sorted.
+ *
+ * "Removed" is narrower than what git reports and narrower than what a deletion
+ * listing says. Git pairs by similarity, so a copy and a file split both arrive
+ * labelled as renames while the origin is still on disk; and a path dropped from the
+ * index but present in the tree was not removed either. Both narrowings already
+ * governed the registry-pointer finding, and they are lifted here rather than
+ * re-derived, because two findings about "what is gone" deciding it separately is
+ * exactly how they would come to disagree about the same file.
+ */
+export function removedInChange(
+  renames: readonly RenamePair[],
+  changedFiles: readonly string[],
+  deletedFiles: readonly string[],
+): string[] {
+  const changed = new Set(changedFiles);
+  const gone = new Set<string>();
+  for (const { from } of movesOnly(renames, changed)) gone.add(from);
+  for (const file of deletedFiles) {
+    if (!changed.has(file)) gone.add(file);
+  }
+  return sortStrings(gone);
+}
+
+/** One doc still naming a path this change took away. The registry's pointer to a
+ *  vanished file is checked; the prose pointer beside it was not, so a rename that
+ *  correctly re-pointed the entry went green with the owning doc's Key files layer
+ *  still sending the next reader to a path that is not there. */
+export interface DocPointer {
+  doc: string;
+  /** The removed paths this doc names, sorted. */
+  paths: string[];
+}
+
+/**
+ * Which registry-known docs still name a path this change removed.
+ *
+ * Impure (reads the docs), so it lives with the other resolvers rather than inside
+ * the analyzer. Scoped to the docs the registry names — the knowledge base codument
+ * governs — and deliberately not to every markdown file in the tree: a plan is
+ * transient scaffolding and an ADR is an immutable record of a decision, and neither
+ * should be rewritten because a file later moved. A doc that is absent contributes
+ * nothing rather than raising, the same advisory stance every other walk here takes.
+ */
+export function resolveDocPointers(
+  root: string,
+  registry: Registry,
+  removed: readonly string[],
+): DocPointer[] {
+  if (removed.length === 0) return [];
+  const docs = sortStrings(
+    new Set(Object.values(registry.features).flatMap((e) => [e.doc, ...e.docs])),
+  );
+  const out: DocPointer[] = [];
+  for (const doc of docs) {
+    let text: string;
+    try {
+      text = readFileSync(join(root, doc), "utf-8");
+    } catch {
+      continue; // absent or unreadable — nothing to read a pointer out of
+    }
+    const paths = removed.filter((p) => namesPath(text, p));
+    if (paths.length > 0) out.push({ doc, paths });
+  }
+  return out;
+}
+
+/** Whether `text` names `path` as a path rather than as a fragment of a longer one.
+ *  Bounded on both sides by the characters a path is made of, so a doc naming
+ *  `src/a.ts.bak` or `vendor/src/a.ts` is not read as naming `src/a.ts`. */
+function namesPath(text: string, path: string): boolean {
+  const isPathChar = (c: string): boolean => /[A-Za-z0-9_./\\-]/.test(c);
+  for (let i = text.indexOf(path); i !== -1; i = text.indexOf(path, i + 1)) {
+    const before = i === 0 ? "" : text[i - 1];
+    const after = text[i + path.length] ?? "";
+    if (!isPathChar(before) && !isPathChar(after)) return true;
+  }
+  return false;
 }
 
 /** The docs a standing vouch over `file` answers to — the owning set, deduped and

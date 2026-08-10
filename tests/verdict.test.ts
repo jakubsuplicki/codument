@@ -32,6 +32,7 @@ function mkState(p: Partial<ChangeState> = {}): ChangeState {
     deletedSources: [],
     ungatedRegistered: [],
     registryPointers: [],
+    docPointers: [],
     governedRegistered: [],
     governedDeleted: [],
     ...p,
@@ -59,7 +60,12 @@ describe("classifyVerdict — severity", () => {
     assert.equal(classifyVerdict(base, OPTS).gloss, "2 features touched · docs current");
     const scoped = classifyVerdict(mkState({ ...base, planScoped: true }), OPTS);
     assert.equal(scoped.gloss, "2 features touched · docs current · in plan");
-    assert.deepEqual(classifyVerdict(base, OPTS).blast, { touched: 2, total: 64, touchedFiles: 0, totalFiles: 0 });
+    assert.deepEqual(classifyVerdict(base, OPTS).blast, {
+      touched: 2,
+      total: 64,
+      touchedFiles: 0,
+      totalFiles: 0,
+    });
   });
 
   it("computes file-grain blast from changed sources and the in-scope count", () => {
@@ -81,10 +87,7 @@ describe("classifyVerdict — severity", () => {
   it("config/asset changes never read as 'working tree clean' (the false-clean)", () => {
     // app.json + an asset: neither source nor docs, so nothing codument governs
     // changed — but the tree is NOT empty, and the gloss must say so.
-    const v = classifyVerdict(
-      mkState({ otherChanged: ["app.json", "assets/icon.png"] }),
-      OPTS,
-    );
+    const v = classifyVerdict(mkState({ otherChanged: ["app.json", "assets/icon.png"] }), OPTS);
     assert.equal(v.status, "clean");
     assert.equal(v.gloss, "2 files changed · not source or docs");
     assert.notEqual(v.gloss, "working tree clean");
@@ -107,8 +110,16 @@ describe("classifyVerdict — severity", () => {
       mkState({
         byFeature: [{ feature: "recipe-list", files: ["src/a.ts"] }],
         staleDocs: [
-          { feature: "recipe-list", doc: "docs/features/recipe-list.md", changedSources: ["src/a.ts"] },
-          { feature: "recipe-extraction", doc: "docs/features/recipe-extraction.md", changedSources: ["src/b.ts"] },
+          {
+            feature: "recipe-list",
+            doc: "docs/features/recipe-list.md",
+            changedSources: ["src/a.ts"],
+          },
+          {
+            feature: "recipe-extraction",
+            doc: "docs/features/recipe-extraction.md",
+            changedSources: ["src/b.ts"],
+          },
         ],
       }),
       OPTS,
@@ -213,15 +224,32 @@ describe("classifyVerdict — headline is the highest severity, gloss enumerates
         planScoped: true,
         outOfPlan: ["src/util/currency.ts", "src/lib/proration.ts"],
         staleDocs: [
-          { feature: "recipe-list", doc: "docs/features/recipe-list.md", changedSources: ["src/a.ts"] },
-          { feature: "recipe-extraction", doc: "docs/features/recipe-extraction.md", changedSources: ["src/b.ts"] },
+          {
+            feature: "recipe-list",
+            doc: "docs/features/recipe-list.md",
+            changedSources: ["src/a.ts"],
+          },
+          {
+            feature: "recipe-extraction",
+            doc: "docs/features/recipe-extraction.md",
+            changedSources: ["src/b.ts"],
+          },
         ],
-        riskTouches: [{ feature: "paywall", risk: ["payments"], files: ["src/p1.ts", "src/p2.ts", "src/p3.ts"] }],
+        riskTouches: [
+          {
+            feature: "paywall",
+            risk: ["payments"],
+            files: ["src/p1.ts", "src/p2.ts", "src/p3.ts"],
+          },
+        ],
       }),
       OPTS,
     );
     assert.equal(v.status, "at-risk");
-    assert.equal(v.gloss, "payments touched with no test · 2 files off-plan · 2 docs now behind code");
+    assert.equal(
+      v.gloss,
+      "payments touched with no test · 2 files off-plan · 2 docs now behind code",
+    );
   });
 
   it("off-plan outranks drifting when no risk is present", () => {
@@ -260,9 +288,7 @@ describe("classifyVerdict — headline is the highest severity, gloss enumerates
   // contradict each other. It rides every gloss for the same reason `unmapped`
   // does, and grades severity for the same reason it does not: the ladder is about
   // whether the DOCS are behind the code.
-  const pointer = [
-    { file: "src/gone.ts", features: ["i18n"], kind: "deleted" as const },
-  ];
+  const pointer = [{ file: "src/gone.ts", features: ["i18n"], kind: "deleted" as const }];
 
   it("a registry pointer is named in the gloss without moving the severity ladder", () => {
     const v = classifyVerdict(mkState({ registryPointers: pointer }), OPTS);
@@ -342,12 +368,25 @@ describe("costProvenance + formatCost", () => {
 
 describe("isTestFile", () => {
   it("matches conventional test paths and filenames", () => {
-    for (const p of ["tests/foo.test.ts", "src/__tests__/a.ts", "spec/b.ts", "src/x.test.tsx", "pkg/y_test.go", "auth.spec.ts"]) {
+    for (const p of [
+      "tests/foo.test.ts",
+      "src/__tests__/a.ts",
+      "spec/b.ts",
+      "src/x.test.tsx",
+      "pkg/y_test.go",
+      "auth.spec.ts",
+    ]) {
       assert.equal(isTestFile(p), true, p);
     }
   });
   it("does not match ordinary sources", () => {
-    for (const p of ["src/auth/login.ts", "src/contest.ts", "src/latest.ts", "src/manifest.ts", "docs/features/a.md"]) {
+    for (const p of [
+      "src/auth/login.ts",
+      "src/contest.ts",
+      "src/latest.ts",
+      "src/manifest.ts",
+      "docs/features/a.md",
+    ]) {
       assert.equal(isTestFile(p), false, p);
     }
   });

@@ -200,7 +200,7 @@ Status: draft, awaiting approval before source edits.
 - [x] Step 6: `--require-review` never claims to cover a diff it adjudicated nothing in.
 - [x] Step 7: A governed file gated coarse says so once, so a lost precision is a stated
       fact rather than an inference from which routes were offered.
-- [ ] Step 8: A doc naming a source path this change removed is a finding, held to the
+- [x] Step 8: A doc naming a source path this change removed is a finding, held to the
       registry pointer's standard.
 - [ ] Step 9: A manifest or lockfile claimed as a `primary_sources` entry is a lint —
       named as an ownership error, never rewritten.

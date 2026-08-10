@@ -107,6 +107,14 @@ export function renderReviewReportHtml(data: ReportData): string {
     },
     {
       level: "warn",
+      count: s.docPointers.length,
+      label: "A doc names a path this change removed",
+      items: s.docPointers.map((p) => `${shortDoc(p.doc)} → ${p.paths.map(short).join(", ")}`),
+      explain:
+        "A rename or deletion left a doc's prose naming a path that no longer exists. The registry's pointer to a vanished file has always been checked; the sentence beside it was not, so a rename that correctly re-pointed the entry went green with the owning doc still sending its next reader nowhere. Name the path it moved to, or drop the mention; no acknowledgment clears it, because nothing here is a judgment call.",
+    },
+    {
+      level: "warn",
       count: plan ? s.outOfPlan.length : 0,
       label: plan
         ? `Changes outside the approved plan (${shortDoc(plan.plan)})`

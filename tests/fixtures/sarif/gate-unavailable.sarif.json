@@ -64,6 +64,17 @@
               }
             },
             {
+              "id": "codument/doc-pointer",
+              "name": "DocPointer",
+              "shortDescription": {
+                "text": "A doc still names a source path this change renamed or deleted."
+              },
+              "helpUri": "https://github.com/jakubsuplicki/codument/blob/main/docs/features/change-control-gate.md",
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
               "id": "codument/unevaluable",
               "name": "Unevaluable",
               "shortDescription": {

@@ -1456,6 +1456,40 @@ describe("a rename never leaves the registry pointing at a ghost (probe C)", () 
     assert.equal(r.code, 0, `re-pointing the entry resolves it:\n${r.out}`);
   });
 
+  it("PROBE 3: re-pointing the registry is not enough while the DOC still names the ghost", async () => {
+    // The reported end state: the registry was corrected, the gate went green, and
+    // the owning doc's Key files layer still sent its next reader to a dead path.
+    await scaffold({
+      "docs/features/i18n.md":
+        "# i18n\n\nFormats dates for display.\n\n## Key files\n\n- `i18n/format.ts` — the formatter\n",
+      "i18n/format.ts": "export function formatDate(d: Date): string {\n  return d.toISOString();\n}\n",
+      "docs/.registry.json": registryFor(["i18n/format.ts"]),
+    });
+    gitInit(tmp);
+
+    execFileSync("git", ["mv", "i18n/format.ts", "i18n/dateFormat.ts"], { cwd: tmp });
+    await scaffold({ "docs/.registry.json": registryFor(["i18n/dateFormat.ts"]) });
+
+    let r = runReview();
+    assert.equal(r.code, 1, `the doc's dead pointer must keep the gate red:\n${r.out}`);
+    assert.ok(
+      !r.out.includes("Registry names a path this change removed"),
+      `the registry is already honest:\n${r.out}`,
+    );
+    assert.match(r.out, /A doc names a path this change removed/);
+    assert.match(r.out, /docs\/features\/i18n\.md/);
+    // And it reaches the line a pipe keeps.
+    assert.match(r.out.trimEnd().split("\n").at(-1) ?? "", /doc pointer\(s\)/);
+
+    // Correcting the prose clears it — nothing to acknowledge, nothing to remember.
+    await scaffold({
+      "docs/features/i18n.md":
+        "# i18n\n\nFormats dates for display.\n\n## Key files\n\n- `i18n/dateFormat.ts` — the formatter\n",
+    });
+    r = runReview();
+    assert.equal(r.code, 0, `naming the new path resolves it:\n${r.out}`);
+  });
+
   it("a file SPLIT stays satisfiable — the origin is still there, so nothing was removed", async () => {
     // `git mv a b` then re-create `a` as a re-export shim: git reports a rename
     // whose origin is present on disk. Read as a move, the gate demanded the
