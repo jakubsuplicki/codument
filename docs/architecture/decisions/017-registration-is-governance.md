@@ -1,7 +1,9 @@
 ---
-status: accepted
+status: superseded-in-part
 date: 2026-08-08
 ---
+
+> **Superseded in part by [020](020-a-block-must-be-provable.md) (2026-08-12).** Registration is still a claim of governance, and a claimed file is still watched and reported. What no longer follows is the BLOCK: nothing here can be read, so the only artifact a gate could demand is a signature over content nobody looked at. A blind file gates when an owner declares a risk, and its deletion gates unconditionally — a removal needs no reading to be proven. Everything below still describes the wake, the grain, and the resolution vocabulary correctly; read "governed" as "governed where risk is declared".
 
 # 017 — Registration is governance: an owned file no adapter can judge is gated at file grain
 

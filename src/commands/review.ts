@@ -1197,6 +1197,14 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   if (bodyOnly > 0) {
     alsoTrue.push(`${bodyOnly} body-only move(s) reported, not gated`);
   }
+  // The same rule one grain up: an owned file no adapter reads, changed, with no
+  // owner declaring a risk. This is the sharper of the two demotions to disclose —
+  // the tool read nothing at all here, so a reader who never sees the line has no
+  // way to know a claimed file moved unexamined.
+  const unreadOwned = report.state.ungatedRegistered.filter((u) => u.kind === "unread").length;
+  if (unreadOwned > 0) {
+    alsoTrue.push(`${unreadOwned} owned file(s) no adapter reads — reported, not gated`);
+  }
   // A review that passed without reproducing anything is the sharpest case this line
   // exists for: the gate exits 0, so nothing else can carry it, and the honest
   // condition printed above the verdict is precisely what a `| tail -1` destroys.
@@ -1717,6 +1725,7 @@ function printHuman(report: ReviewReport): void {
   // "verify by hand" there hides that one of them should go.
   const excludedRegistered = state.ungatedRegistered.filter((u) => u.kind === "excluded");
   const impactOnly = state.ungatedRegistered.filter((u) => u.kind === "impact-only");
+  const unread = state.ungatedRegistered.filter((u) => u.kind === "unread");
   const ownersOf = (u: UngatedRegisteredChange) =>
     pc.dim(`→ ${u.owners.map((o) => o.doc).join(", ")}`);
   section(
@@ -1732,6 +1741,21 @@ function printHuman(report: ReviewReport): void {
   section(
     pc.dim("Registered as impact only (no adapter judges these — verify their docs by hand)"),
     impactOnly.map((u) => `${pc.dim("•")} ${u.file} ${ownersOf(u)}`),
+  );
+  // Owned, changed, and unreadable: reported rather than gated, with the line that
+  // reverses it printed per file. A downgrade nobody is told about is the quiet green
+  // ADR 017 was written against — what changed is which artifact the block could
+  // honestly demand, not whether the reader gets to know.
+  section(
+    pc.dim(
+      "Owned but unread (no adapter reads these; reported, not gated — declare a risk on the owner to gate them)",
+    ),
+    unread.flatMap((u) => [
+      `${pc.dim("•")} ${u.file} ${ownersOf(u)}`,
+      `      ${pc.dim("gate it →")} add ${pc.cyan('"risk": ["<why it matters>"]')} ${pc.dim(
+        `to ${u.owners.map((o) => o.feature).join(" or ")} in`,
+      )} ${pc.cyan("docs/.registry.json")}`,
+    ]),
   );
 
   // Per-symbol drift: owned symbols that moved. The deterministic verdict above is

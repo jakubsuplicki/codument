@@ -1874,7 +1874,9 @@ describe("an unclaimed shared file says how to stop being one (plan 36)", () => 
       "docs/.registry.json": JSON.stringify(
         {
           features: {
-            site: { ...feature("site"), primary_sources: ["app/site.css"] },
+            // Risk-declared: ADR 020 gates an unread file only where the project says
+            // it matters, and a hint can only "survive" on a wake that happened.
+            site: { ...feature("site"), primary_sources: ["app/site.css"], risk: ["styling"] },
           },
         },
         null,
@@ -2347,8 +2349,28 @@ describe("governed registered changes in review (ADR 017)", () => {
     }
   }
 
+  // Risk-declared by default: ADR 020 narrows ADR 017 to files the project says can
+  // do damage unread, and every test below is about what the gate SAYS once it has
+  // fired. The downgrade itself — a quiet owner, no gate, and the line that restores
+  // it — has its own test at the end, where an overridden `risk: []` is the variable.
   const registryWith = (site: Record<string, unknown>) =>
-    JSON.stringify({ features: { site: { doc: "docs/features/site.md", type: "feature", docs: [], depends_on: [], risk: [], status: "current", ...site } } }, null, 2);
+    JSON.stringify(
+      {
+        features: {
+          site: {
+            doc: "docs/features/site.md",
+            type: "feature",
+            docs: [],
+            depends_on: [],
+            risk: ["styling"],
+            status: "current",
+            ...site,
+          },
+        },
+      },
+      null,
+      2,
+    );
 
   it("FIELD REPLAY: rewriting an owned unjudgeable file gates, and both resolutions clear it", async () => {
     await scaffold({
@@ -2535,6 +2557,61 @@ describe("governed registered changes in review (ADR 017)", () => {
     assert.equal(r.code, 1);
     assert.match(r.out, /no adapter reads \.css\/\.rules/);
     assert.match(r.out, /sees 2 of these files change/);
+  });
+
+  it("a quiet owner downgrades it, out loud: reported on the verdict line, with the line that gates it", async () => {
+    // The half of ADR 017 that ADR 020 takes back. The block it demanded could only
+    // ever be cleared by a signature over content the tool never read, so it goes —
+    // but everything the tool DOES know is still said, and said where a piping reader
+    // still gets it, because a downgrade nobody can see is the quiet green ADR 017
+    // was written against.
+    await scaffold({
+      "docs/features/site.md": "# site\n",
+      "firestore.rules": "allow read: if isOwner(uid);\n",
+      "docs/.registry.json": registryWith({
+        primary_sources: ["firestore.rules"],
+        related_sources: [],
+        risk: [],
+      }),
+    });
+    gitInit(tmp);
+    await scaffold({ "firestore.rules": "allow read: if true;\n" });
+
+    const r = runReview();
+    assert.equal(r.code, 0, `no risk declared, so nothing gates:\n${r.out}`);
+    assert.match(r.out, /Owned but unread/);
+    assert.match(r.out, /firestore\.rules/);
+    assert.match(r.out, /add "risk": \["<why it matters>"\] to site/, "the reversing line");
+    // On the verdict line, which is all a `| tail -1` reader keeps.
+    const last = r.out.trimEnd().split("\n").at(-1) ?? "";
+    assert.match(last, /1 owned file\(s\) no adapter reads — reported, not gated/, last);
+
+    // And the declaration puts the block straight back — same file, same edit.
+    await scaffold({
+      "docs/.registry.json": registryWith({
+        primary_sources: ["firestore.rules"],
+        related_sources: [],
+        risk: ["security"],
+      }),
+    });
+    assert.equal(runReview().code, 1, "one registry line restores it");
+  });
+
+  it("a deletion still gates with no risk declared — nothing has to be read to see it is gone", async () => {
+    await scaffold({
+      "docs/features/site.md": "# site\n",
+      "firestore.rules": "allow read: if isOwner(uid);\n",
+      "docs/.registry.json": registryWith({
+        primary_sources: ["firestore.rules"],
+        related_sources: [],
+        risk: [],
+      }),
+    });
+    gitInit(tmp);
+    rmSync(join(tmp, "firestore.rules"));
+
+    const r = runReview();
+    assert.equal(r.code, 1, `a removal is proven without reading anything:\n${r.out}`);
   });
 });
 

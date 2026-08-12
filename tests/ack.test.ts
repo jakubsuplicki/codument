@@ -488,11 +488,21 @@ describe("a MOVED file is judged the same way by review and by ack", async () =>
     }
   };
 
+  // Risk-declared: some of these fixtures are files no adapter reads, and ADR 020
+  // gates one of those only where the project says it matters. The subject here is
+  // whether `review` and `ack` agree about a MOVED file, which needs a wake to
+  // disagree about in the first place.
   const registryFor = (sources: string[], doc = "docs/features/alpha.md") =>
     JSON.stringify(
       {
         features: {
-          alpha: { doc, type: "feature", primary_sources: sources, status: "current" },
+          alpha: {
+            doc,
+            type: "feature",
+            primary_sources: sources,
+            risk: ["styling"],
+            status: "current",
+          },
         },
       },
       null,
@@ -1306,12 +1316,17 @@ describe("signature/body split — the ack acceptance table", async () => {
 // appearing under the pattern refuses it, and only a DECLARED tree is ackable.
 describe("codument ack <pattern> — one signature for a governed tree (plan 43)", () => {
   const TREE = "i18n/locales/**/*.json";
+  // Risk-declared, because a locale pack is a file no adapter reads and ADR 020 gates
+  // one of those only where the project says it matters. Everything below is about
+  // the TREE grain — one signature for 120 files, decaying when a new member appears
+  // — and none of it can be asked of a tree nothing wakes.
   const TREE_REGISTRY = {
     features: {
       i18n: {
         doc: "docs/concepts/i18n.md",
         type: "concept",
         primary_sources: [TREE],
+        risk: ["user-facing-copy"],
         status: "current",
       },
     },
@@ -1579,6 +1594,10 @@ describe("codument ack --standing — retired with ADR 019 (ADR 020)", () => {
         doc: "docs/features/copy.md",
         type: "feature",
         primary_sources: ["src/locales/en.json", "src/a.ts"],
+        // Risk-declared so the locale pack still wakes: ADR 020 gates an unread file
+        // only where the project says it matters, and "a retired vouch clears
+        // nothing" is only a claim about something if there is a wake to clear.
+        risk: ["user-facing-copy"],
         status: "current",
       },
     },

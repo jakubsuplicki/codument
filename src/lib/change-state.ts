@@ -300,12 +300,18 @@ export interface ChangeState {
 export interface UngatedRegisteredChange {
   file: string;
   owners: { feature: string; doc: string }[];
-  /** WHY this registered file is not governed — two different situations that need
-   *  two different words. `excluded`: the exclusion spec drops it, so the
-   *  registration contradicts a declaration and one of them should go.
+  /** WHY this registered file is not governed — three different situations that need
+   *  three different words, because each has a different fix (or none).
+   *  `excluded`: the exclusion spec drops it, so the registration contradicts a
+   *  declaration and one of them should go.
    *  `impact-only`: it is named solely in `related_sources`, which claims impact and
-   *  never ownership, so not waking is correct and there is nothing to fix. */
-  kind: "excluded" | "impact-only";
+   *  never ownership, so not waking is correct and there is nothing to fix.
+   *  `unread`: owned as primary, but no adapter can read a line of it and no owner
+   *  declares a risk — so the only artifact a block could demand is a signature over
+   *  content nobody looked at (ADR 020). Reported with the one registry line that
+   *  puts the block back, because a downgrade the user has to discover is worse than
+   *  the gate it replaced. */
+  kind: "excluded" | "impact-only" | "unread";
 }
 
 function sortStrings(values: Iterable<string>): string[] {
@@ -447,26 +453,56 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   // a registered file would be a false "fresh" whatever dropped it.
   //
   // Such a file splits by whether the registry OWNS it (ADR 017):
-  //   - owned (`primary_sources`) and not excluded -> GOVERNED at file grain. The
-  //     honest floor is the one an unparseable source already gets: any content
-  //     move wakes every primary owner, cleared by doc attention or a file-grain
-  //     ack. Without it, rewriting a registered contract file (a locale pack, a
-  //     content file) passed `--strict` green — a false green on the very files
-  //     someone took the trouble to claim.
+  //   - owned (`primary_sources`), not excluded, and RISK-DECLARED -> GOVERNED at
+  //     file grain. Any content move wakes every primary owner, cleared by doc
+  //     attention or a file-grain ack signed over the changed lines.
+  //   - owned but with no risk tag on any owner -> reported, never gated (ADR 020).
+  //     ADR 017 gated every owned blind file, and it was right that a claimed file
+  //     going silently green is a false green — but the block it demanded is one the
+  //     tool cannot check. Nothing here can be read, so the only artifact a gate can
+  //     ask for is a signature over "this was fine", which is the theater ADR 020
+  //     names. A risk tag is the project saying the opposite out loud: this file can
+  //     do real damage unread, so make me look. One registry line, and the block is
+  //     back — but it is the project's declaration, not the tool's guess.
   //   - anything else -> the info-only residue. EXCLUDED beats registration (the
   //     spec overrides the registry, so the two declarations contradict), and an
   //     IMPACT-ONLY registration (`related_sources`) never wakes by design.
+  //
+  // A DELETION is untouched by any of this and still gates without a risk tag: the
+  // file is gone, which is structurally proven and needs no reading, and the fix
+  // (update the doc, or drop the entry) is checkable. That was the worse half of
+  // ADR 017's field case, and it stays closed.
   const governedRegistered: string[] = [];
   const ungatedRegistered: UngatedRegisteredChange[] = [];
   for (const file of sortStrings(changed)) {
     if (isDoc(file) || changedSourceSet.has(file)) continue;
     const owners = fileToFeatures.get(file);
     if (!owners || owners.length === 0) continue;
-    const ownedPrimary =
-      (featurePrimary.get(file)?.length ?? 0) > 0 || (conceptPrimary.get(file)?.length ?? 0) > 0;
+    const primaryOwners = [
+      ...(featurePrimary.get(file) ?? []),
+      ...(conceptPrimary.get(file) ?? []),
+    ];
+    const ownedPrimary = primaryOwners.length > 0;
     const excluded = isExcluded(file, exclusion);
     if (ownedPrimary && !excluded) {
-      governedRegistered.push(file);
+      // ANY risk-declared owner gates the file: risk is a claim about consequence,
+      // and one owner saying "this can hurt" is not overruled by another staying
+      // quiet. Asked of the PRIMARY owners only, matching who the wake reaches.
+      const risky = primaryOwners.some(
+        (key) => (entryByKey.get(key)?.risk?.length ?? 0) > 0,
+      );
+      if (risky) {
+        governedRegistered.push(file);
+        continue;
+      }
+      ungatedRegistered.push({
+        file,
+        owners: primaryOwners
+          .slice()
+          .sort()
+          .map((key) => ({ feature: key, doc: entryByKey.get(key)?.doc ?? "" })),
+        kind: "unread",
+      });
       continue;
     }
     ungatedRegistered.push({

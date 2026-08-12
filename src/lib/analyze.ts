@@ -1050,6 +1050,31 @@ function computeLint(
     }
   }
 
+  // unread-owned: a file an entry claims as primary that NO adapter can read, whose
+  // owners declare no risk. Under ADR 020 its content changes are reported and never
+  // gated, and the per-change surface says so for the files you touch — but a project
+  // upgrading from 0.17 had every one of these gating yesterday, and the ones it is
+  // not touching today are exactly the ones it would never hear about. This is the
+  // whole-registry view of that downgrade: it names every file, and the one registry
+  // line that puts each block back. A note, never a finding — the state is a
+  // consequence of a decision, not a defect to clear, and a project that reads it and
+  // shrugs is answering correctly.
+  for (const [key, entry] of entries) {
+    if ((entry.risk?.length ?? 0) > 0) continue;
+    for (const source of entry.primary_sources) {
+      if (isSourcePattern(source)) continue; // a tree is judged by its members
+      if (isSourceFile(source, exclusion)) continue; // an adapter reads it
+      if (isExcluded(source, exclusion)) continue; // the spec drops it entirely
+      findings.push({
+        id: "unread-owned",
+        severity: "info",
+        feature: key,
+        file: source,
+        message: `${source}: owned by ${key}, which no adapter reads and no risk tag covers — content changes are reported, not gated; add "risk": ["<why it matters>"] to ${key} to gate them`,
+      });
+    }
+  }
+
   // unmapped in-scope source files on disk
   for (const file of inScopeFiles) {
     if (!fileToFeatures.has(file)) {
@@ -1442,6 +1467,7 @@ export const FINDING_ORDER = [
   "missing-doc",
   "generated-leakage",
   "high-fanout",
+  "unread-owned",
   "empty-depends-on",
   "dangling-depends-on",
   "bloated-doc",

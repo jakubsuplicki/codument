@@ -862,7 +862,13 @@ describe("a doc naming a path this change removed", () => {
 // feature/concept OWNS it. The field false green this closes: rewriting a
 // registered locale pack (the app's entire user-visible string surface) counted as
 // "0 source, 1 other" and exited 0.
-describe("governed registered changes (ADR 017)", () => {
+describe("governed registered changes (ADR 017, narrowed by ADR 020)", () => {
+  // The risk tag is what governs an unread file now. ADR 017 gated every owned one,
+  // and it was right that a claimed file going silently green is a false green — but
+  // nothing here can be read, so the only artifact a block could demand is a
+  // signature over content nobody looked at. A risk tag is the project saying the
+  // opposite out loud, and it is the whole difference between this describe and the
+  // downgrade test at the end of it.
   const registry = {
     features: {
       i18n: {
@@ -872,7 +878,7 @@ describe("governed registered changes (ADR 017)", () => {
         related_sources: [],
         docs: [],
         depends_on: [],
-        risk: [],
+        risk: ["user-facing-copy"],
         status: "current",
       },
     },
@@ -997,6 +1003,83 @@ describe("governed registered changes (ADR 017)", () => {
     });
     assert.deepEqual(s.governedDeleted, []);
     assert.deepEqual(s.staleDocs, []);
+  });
+
+  it("without a risk tag the same rewrite is reported, not gated — and says how to gate it", () => {
+    // ADR 020 narrows ADR 017: the false green it closed comes back for files nobody
+    // declared risky, because the block it demanded could only ever be cleared by a
+    // signature over content the tool never read. What replaces it is disclosure —
+    // the file is named, its owner is named, and the one registry line that restores
+    // the block is named — so the downgrade is something the reader declines rather
+    // than something that happens to them.
+    const noRisk = {
+      features: { i18n: { ...registry.features.i18n, risk: [] } },
+    };
+    const s = computeChangeState({
+      registry: noRisk as never,
+      changedFiles: ["i18n/locales/en/journal.json"],
+    });
+    assert.deepEqual(s.governedRegistered, [], "not gated");
+    assert.deepEqual(s.staleDocs, [], "so nothing goes stale for it");
+    assert.deepEqual(
+      s.ungatedRegistered.map((u) => [u.file, u.kind]),
+      [["i18n/locales/en/journal.json", "unread"]],
+      "…but it is reported, in its own words — not as excluded, not as impact-only",
+    );
+    assert.deepEqual(s.ungatedRegistered[0].owners.map((o) => o.feature), ["i18n"]);
+  });
+
+  it("a deletion gates with no risk tag at all — nothing has to be read to see it is gone", () => {
+    // The worse half of ADR 017's field case, and the half the narrowing does not
+    // touch: a removal is structurally proven and its fix (update the doc, or drop
+    // the entry) is checkable, so it clears both of ADR 020's bars without anyone
+    // declaring anything.
+    const noRisk = {
+      features: { i18n: { ...registry.features.i18n, risk: [] } },
+    };
+    const s = computeChangeState({
+      registry: noRisk as never,
+      changedFiles: [],
+      deletedFiles: ["i18n/locales/en/journal.json"],
+    });
+    assert.deepEqual(s.governedDeleted, ["i18n/locales/en/journal.json"]);
+    assert.deepEqual(
+      s.staleDocs.map((d) => d.feature),
+      ["i18n"],
+    );
+  });
+
+  it("one risky owner gates the file, even where another owner is quiet", () => {
+    // Risk is a claim about consequence, and a feature saying "this can hurt" is not
+    // overruled by a co-owner who has not thought about it. The alternative rule —
+    // every owner must agree — would make the gate a function of the least careful
+    // entry that happens to name the file.
+    const mixed = {
+      features: {
+        i18n: { ...registry.features.i18n, risk: [] },
+        legal: {
+          doc: "docs/features/legal.md",
+          type: "feature" as const,
+          primary_sources: ["i18n/locales/en/journal.json"],
+          related_sources: [],
+          docs: [],
+          depends_on: [],
+          risk: ["compliance"],
+          status: "current",
+        },
+      },
+    };
+    const s = computeChangeState({
+      registry: mixed as never,
+      changedFiles: ["i18n/locales/en/journal.json"],
+    });
+    assert.deepEqual(s.governedRegistered, ["i18n/locales/en/journal.json"]);
+    assert.deepEqual(s.ungatedRegistered, [], "one risky owner is enough");
+    assert.deepEqual(
+      s.staleDocs.map((d) => d.feature).sort(),
+      ["i18n", "legal"],
+      "and both owners wake — the wake follows ownership, not who declared the risk",
+    );
   });
 
   it("a file owned by one feature and merely related to another wakes only its owner", () => {
@@ -1152,6 +1235,10 @@ describe("a non-test module under a test directory is governed like any source",
 // so governing 380 locale files costs one registry line instead of 380.
 describe("a pattern source governs a tree (plan 43)", () => {
   const TREE = "i18n/locales/**/*.json";
+  // Risk-declared, because these are locale packs no adapter reads and ADR 020 gates
+  // an unread file only where the project says it matters. Every test here is about
+  // how a PATTERN resolves — one wake for a tree, no claim outside it, exclusion
+  // still winning — and none of them could answer that with nothing waking at all.
   const registry = (sources: string[]): Registry => ({
     features: {
       i18n: {
@@ -1161,7 +1248,7 @@ describe("a pattern source governs a tree (plan 43)", () => {
         related_sources: [],
         docs: [],
         depends_on: [],
-        risk: [],
+        risk: ["user-facing-copy"],
         status: "current",
       },
     },

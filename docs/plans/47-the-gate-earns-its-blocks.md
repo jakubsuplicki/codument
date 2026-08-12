@@ -156,7 +156,7 @@ Status: awaiting approval.
       than the owned findings, because a file no feature claims is exactly where
       silence would read as "the tool saw nothing" — scoped by the exclusion spec,
       since a declared build tree is not something the gate may report having read.
-- [ ] Step 5: Re-scope blind-file governance: non-risk coarse governed files advisory;
+- [x] Step 5: Re-scope blind-file governance: non-risk coarse governed files advisory;
       risk-declared blind files gate with changed-line disclosure and the file-ack escape.
       This partially supersedes ADR 017 (its motivating false-green returns for non-risk
       blind files); ADR 020 records the supersession, and the downgrade is never silent —

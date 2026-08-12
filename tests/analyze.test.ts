@@ -361,6 +361,77 @@ describe("analyze lint (change-control fixture)", () => {
   });
 });
 
+// ADR 020's disclosure at whole-registry grain. The per-change surface names the
+// downgraded files you touch; a project upgrading from 0.17 had ALL of these gating
+// yesterday, and the ones it is not touching today are exactly the ones it would
+// otherwise never hear about.
+describe("unread-owned: every blind file that lost its gate is named, with the line that gates it", () => {
+  let tmp: string;
+  const entry = (over: Partial<RegistryEntry>): RegistryEntry =>
+    ({
+      doc: "docs/features/x.md",
+      type: "feature",
+      primary_sources: [],
+      related_sources: [],
+      docs: [],
+      depends_on: [],
+      risk: [],
+      status: "current",
+      ...over,
+    }) as RegistryEntry;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-unread-"));
+    await mkdir(join(tmp, "src"), { recursive: true });
+    await mkdir(join(tmp, "docs", "features"), { recursive: true });
+    await writeFile(join(tmp, "docs", "features", "x.md"), "# x\n");
+    await writeFile(join(tmp, "src", "a.ts"), "export const a = 1;\n");
+    await writeFile(join(tmp, "rules.conf"), "allow: all\n");
+    await writeFile(join(tmp, "locales.json"), '{ "a": "a" }\n');
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  const lintOf = (registry: Record<string, RegistryEntry>) =>
+    analyze({ root: tmp, registry: { features: registry }, srcDir: "src" }).lint;
+
+  it("names a blind owned file whose owner declares no risk, and says what gates it", () => {
+    const lint = lintOf({
+      x: entry({ primary_sources: ["src/a.ts", "rules.conf", "locales.json"] }),
+    });
+    const named = lint.filter((f) => f.id === "unread-owned").map((f) => f.file);
+    assert.deepStrictEqual(
+      named.sort(),
+      ["locales.json", "rules.conf"],
+      "the readable source is not among them — an adapter reads it, so nothing was lost",
+    );
+    const one = lint.find((f) => f.id === "unread-owned");
+    assert.equal(one?.severity, "info", "a consequence of a decision, not a defect to clear");
+    assert.match(one?.message ?? "", /add "risk"/, "the line that puts the block back");
+    assert.match(one?.message ?? "", /reported, not gated/);
+  });
+
+  it("says nothing once the owner declares a risk — the file is governed again", () => {
+    const lint = lintOf({
+      x: entry({ primary_sources: ["rules.conf"], risk: ["security"] }),
+    });
+    assert.deepStrictEqual(lint.filter((f) => f.id === "unread-owned"), []);
+  });
+
+  it("says nothing about a file the exclusion spec drops, or one claimed only as impact", () => {
+    // Neither lost a gate: an excluded file never had one (that contradiction has its
+    // own finding), and `related_sources` claims impact, never ownership.
+    const lint = lintOf({
+      x: entry({
+        primary_sources: ["node_modules/pkg/data.json"],
+        related_sources: ["rules.conf"],
+      }),
+    });
+    assert.deepStrictEqual(lint.filter((f) => f.id === "unread-owned"), []);
+  });
+});
+
 const BLOAT_FIXTURE = join(
   here,
   "..",

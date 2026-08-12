@@ -89,7 +89,12 @@ const SCENARIOS: SurfaceScenario[] = [
     // signpost promised and only a case-by-case test ever checked.
     name: "coarse governed file — the printed file ack clears it",
     base: {
-      "docs/.registry.json": registry({ x: entry({ primary_sources: ["config/rules.conf"] }) }),
+      // Risk-declared: ADR 020 gates an unread file only where the project says it
+      // can do damage unread, and this scenario is about the route it prints once it
+      // has fired.
+      "docs/.registry.json": registry({
+        x: entry({ primary_sources: ["config/rules.conf"], risk: ["security"] }),
+      }),
       "docs/features/x.md": DOC,
       "config/rules.conf": "allow read: if owner;\n",
     },
