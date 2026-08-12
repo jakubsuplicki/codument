@@ -99,7 +99,7 @@ export function extractDocSection(content: string, heading: string): string {
   const out: string[] = [];
   let inSection = false;
   let inFence = false;
-  for (const line of content.split("\n")) {
+  for (const line of content.split(/\r?\n/)) {
     // A fenced code block can hold lines that look like headings (shell prompts,
     // markdown examples). Track the fence so a `#`/`##` line inside one neither
     // opens nor closes a section — without this, a fenced `# foo` silently drops

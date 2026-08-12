@@ -1116,7 +1116,7 @@ function isApprovedPlan(content: string): boolean {
 }
 
 function parseScopeSection(content: string): string[] {
-  const lines = content.split("\n");
+  const lines = content.split(/\r?\n/);
   const scope: string[] = [];
   let inScope = false;
   for (const line of lines) {

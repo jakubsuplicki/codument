@@ -70,7 +70,7 @@ const ANNOTATION_RE = /\*\(([\s\S]*?)\)\*/g;
 // Extract the `## Invariants & boundaries` section body (up to the next level-2
 // heading or EOF). Returns null when the doc has no such section.
 function invariantsSection(docText: string): { body: string; startLine: number } | null {
-  const lines = docText.split("\n");
+  const lines = docText.split(/\r?\n/);
   let start = -1;
   for (let i = 0; i < lines.length; i++) {
     if (/^##\s+Invariants\b/i.test(lines[i])) {
@@ -149,7 +149,7 @@ function classifyAnnotations(spans: string[]): InvariantAnnotation {
 export function parseInvariants(docText: string): ParsedInvariant[] {
   const section = invariantsSection(docText);
   if (!section) return [];
-  const lines = section.body.split("\n");
+  const lines = section.body.split(/\r?\n/);
   const invariants: ParsedInvariant[] = [];
   let current: { text: string[]; line: number } | null = null;
   const flush = () => {

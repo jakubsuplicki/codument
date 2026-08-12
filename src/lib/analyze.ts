@@ -1145,7 +1145,7 @@ function computeLint(
 /** Text under `## <heading>` up to the next `## ` (or EOF), with HTML comments
  *  and surrounding whitespace stripped. null when the heading is absent. */
 function sectionBody(content: string, heading: string): string | null {
-  const lines = content.split("\n");
+  const lines = content.split(/\r?\n/);
   const want = `## ${heading}`;
   const start = lines.findIndex((l) => l.trim() === want);
   if (start < 0) return null;
@@ -1290,7 +1290,11 @@ function computeBloat(
       continue;
     }
 
-    const lines = content.split("\n");
+    // Split on either ending. A retained `\r` is invisible until a line regex
+    // anchors on `$` — `.` never matches a carriage return, so every heading
+    // stopped matching on a CRLF checkout and whole documents read as one
+    // untitled section. Platform-dependent silence, so the suite never saw it.
+    const lines = content.split(/\r?\n/);
     const totalLines = lines.length;
     const completedItems = lines.filter((l) => /^\s*[-*]\s+\[x\]/i.test(l)).length;
     const { maxSectionLines, maxSectionTitle } = largestSection(lines);
