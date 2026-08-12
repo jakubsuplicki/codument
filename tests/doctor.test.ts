@@ -330,6 +330,51 @@ describe("doctor separates what this change produced from what the repo arrived 
     });
     assert.doesNotMatch(out, /the repo arrived with/, "no split is drawn over an answer it lacks");
   });
+
+  // The split shipped as a rendering change while the exit code went on failing
+  // over everything, so the surface said "nothing here gates anything" directly
+  // above a red gate. `review` settled the same argument for inherited registry
+  // rot; this is doctor finally getting the rule.
+  function strictRun(cwd: string): { status: number; stdout: string } {
+    try {
+      return {
+        status: 0,
+        stdout: execFileSync("node", [CLI, "doctor", "--strict"], {
+          cwd,
+          encoding: "utf-8",
+          env: { ...process.env, NO_COLOR: "1" },
+        }),
+      };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { status: e.status ?? 1, stdout: e.stdout ?? "" };
+    }
+  }
+
+  it("--strict passes on a repo carrying only inherited findings", async () => {
+    await project();
+    // Untouched tree: `old` and `fresh` both dangle, and neither is this change's.
+    const { status, stdout } = strictRun(dir);
+    assert.ok(/the repo arrived with/.test(stdout), "the findings are still reported");
+    assert.equal(status, 0, `inherited debt must never gate:\n${stdout}`);
+  });
+
+  it("--strict fails as soon as this change produces one", async () => {
+    await project();
+    await rm(join(dir, "src", "old.ts"));
+    const { status, stdout } = strictRun(dir);
+    assert.equal(status, 1);
+    assert.match(stdout, /Strict: 1 finding from this change, failing \(exit 1\)/);
+    // The number the exit code came from, and the pile it deliberately ignored.
+    assert.match(stdout, /inherited — reported, never gated/);
+  });
+
+  it("no repository to ask fails closed — every finding gates rather than none", async () => {
+    await project();
+    await rm(join(dir, ".git"), { recursive: true, force: true });
+    const { status } = strictRun(dir);
+    assert.equal(status, 1, "cannot-tell must never resolve to a green nobody earned");
+  });
 });
 
 // An agent pointed at seventy findings writes compaction theater — plan 42's own

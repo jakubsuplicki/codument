@@ -38,18 +38,18 @@ Nothing here is automated. Run it top to bottom.
    `prepublishOnly` re-runs the build and the suite at publish time, but that is a backstop, not the
    check.
 
-   Two of those have a **recorded baseline**, and the bar is *no movement against it*, not zero:
-   as of 0.17.0 the suite carries **27** known Windows path-separator failures across 14 suites,
-   and `doctor --strict` exits 1 on **2** long-standing `bloated-doc` findings (`SKILL.md`
-   preambles). Say what the baseline is when you check it, and treat any change to either number
-   as a blocker. This step used to demand a green `doctor --strict`, which no release has ever
-   met — a bar nobody can clear is not a bar, it is a step people learn to skip.
+   **`doctor --strict` must be green.** It is, as of 0.18.0. For every release before that it
+   exited 1 on `bloated-doc` findings recorded here as an accepted baseline — first 3, then 2 —
+   and every one of them was a bug: the section parser split lines on `\n` and a Windows
+   checkout's retained carriage return made every heading unmatchable, so whole documents read
+   as one untitled section. The baseline was never debt to tolerate. It was a defect wearing a
+   baseline's clothes, and writing it down here is what let it sit for six releases. **Treat a
+   recorded baseline as a claim to interrogate once, never as a number to carry forward.**
 
-   **Re-measure both numbers and write what you measured back here.** They were 31 and 3 when
-   this guide was written and neither had been touched since; a baseline nobody re-measures is
-   exactly the recorded-state rot the tool exists to catch, sitting in the runbook that tells
-   you to check it. The direction matters too — a stale HIGH baseline hides a real regression
-   underneath it.
+   The suite has the one **real** baseline: **27** known Windows path-separator failures across
+   14 suites as of 0.18.0. The bar is *no movement against it*, not zero. Say what you measured
+   when you check it, treat any change as a blocker, and **write what you measured back here** —
+   the direction matters, since a stale high baseline hides a real regression underneath it.
 
 5. **Commit** as `chore(release): X.Y.Z`, with a body that says what the release is for.
 

@@ -443,12 +443,22 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
       })
     : null;
 
-  // --strict is opt-in CI gating: it only sets a nonzero exit code when there are
-  // actionable findings. Notes (info) are excluded by lint.count. Invariant warns
-  // (broken/unpinned) count only when --verify-invariants ran them. Bare doctor is
-  // unaffected; --strict never writes to stdout, so --json stays byte-identical.
+  // --strict is opt-in CI gating over what THIS change produced, never over what
+  // the repo arrived with. `review` settled this argument already — inherited
+  // registry rot is reported and never gated, "because a gate that fails on
+  // inherited state is a gate people learn to bypass" — and doctor never got the
+  // rule: a field repo failed on 105 findings while the same output labelled them
+  // "nothing here gates anything", which makes the exit code unreadable and the
+  // step one people learn to skip. Notes (info) are excluded by lint.count.
+  // Invariant warns count only when --verify-invariants ran them.
+  //
+  // Attribution is null when there is no repository to ask, which is "cannot
+  // tell" and never "nothing is new" — so the gate falls back to every finding
+  // rather than to none. Fail closed: a green nobody earned is the one outcome
+  // worse than a red nobody can clear.
+  const gatingFindings = report.lint.attribution?.fromThisChange ?? report.lint.findings;
   const strictFail =
-    !!options.strict && (report.lint.count > 0 || (invReport?.warnings.length ?? 0) > 0);
+    !!options.strict && (gatingFindings.length > 0 || (invReport?.warnings.length ?? 0) > 0);
 
   if (options.write) {
     const { jsonPath, svgPath } = writeCoverageArtifacts(root, report);
@@ -477,7 +487,7 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
     return;
   }
 
-  printHuman(report, strictFail);
+  printHuman(report, strictFail, gatingFindings.length);
   if (invReport) printInvariants(invReport, !!options.strict, invCondition);
   // Advisory skew nudge — human output only, so the --json contract stays
   // byte-identical; never a finding, never an exit-code input.
@@ -512,7 +522,10 @@ function ratioLine(r: CoverageRatio): string {
   return `    ${label} ${pct(r.ratio).padStart(4)}  ${pc.dim(frac)}${suffix}`;
 }
 
-function printHuman(report: DoctorReport, strictFail = false): void {
+// `gatingCount` is required rather than defaulted: the strict line is suppressed
+// when it is zero, so a default would let a future caller drop the failure
+// explanation silently while the exit code still went red.
+function printHuman(report: DoctorReport, strictFail: boolean, gatingCount: number): void {
   const { coverage, lint } = report;
 
   console.log(pc.bold("codument doctor"));
@@ -656,16 +669,24 @@ function printHuman(report: DoctorReport, strictFail = false): void {
   );
   // The lint-driven strict line. Invariant-driven strict (with no lint findings)
   // is reported by printInvariants instead, so this never says "0 findings failing".
-  if (strictFail && report.lint.count > 0) {
+  // The count named here is the one the exit code is derived from, never the
+  // total — a line that fails on 105 while only 3 are this change's teaches the
+  // reader that the number and the verdict are unrelated.
+  if (strictFail && gatingCount > 0) {
+    const inherited = report.lint.count - gatingCount;
     console.log(
       pc.red(
-        `  Strict: ${report.lint.count} finding${report.lint.count === 1 ? "" : "s"} present, failing (exit 1). Notes are awareness-only and never count.`,
+        `  Strict: ${gatingCount} finding${gatingCount === 1 ? "" : "s"} from this change, failing (exit 1).` +
+          (inherited > 0 ? ` ${inherited} inherited — reported, never gated.` : "") +
+          " Notes are awareness-only and never count.",
       ),
     );
   } else if (!strictFail) {
     console.log(
       pc.dim(
-        "  Findings are warnings, not failures. Notes are awareness-only. Neither changes the exit code.",
+        report.lint.count > 0
+          ? "  Findings are warnings, not failures — and --strict gates only on what this change produced. Notes are awareness-only. Neither changes the exit code."
+          : "  Findings are warnings, not failures. Notes are awareness-only. Neither changes the exit code.",
       ),
     );
   }
