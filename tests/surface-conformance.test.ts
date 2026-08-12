@@ -99,20 +99,23 @@ const SCENARIOS: SurfaceScenario[] = [
     expect: "routes-clear",
   },
   {
-    // A body-only move keeps the cheap ack path (ADR 006). The printed per-symbol
-    // command must carry its real anchor AND survive a shell — `area().` bare is a
-    // parse error, which is how every such command shipped broken until plan 42.
-    name: "body-only symbol move — the printed per-symbol ack runs and clears",
+    // New public surface on a precise file: a contract event the parser proves, and
+    // the one class ADR 020 still gates that a signature can settle. The route it
+    // prints is the FILE-grain form (`additive only →`), because a symbol that has
+    // just appeared has no transition for a per-symbol ack to bind to — so the
+    // command that pastes here is deliberately not the one the anchor id suggests.
+    name: "additive export — the printed file ack runs and clears",
     base: {
       "docs/.registry.json": registry({ x: entry({ primary_sources: ["src/shapes.ts"] }) }),
       "docs/features/x.md": DOC,
       "src/shapes.ts": SRC,
     },
-    change: { "src/shapes.ts": SRC.replace("return w * h;", "return h * w;") },
+    change: {
+      "src/shapes.ts": `${SRC}export function diagonal(w: number, h: number): number {\n  return w + h;\n}\n`,
+    },
     invoke: ["review", "--strict"],
-    // The drift entry, not the stale doc: a per-symbol ack answers the move, and
-    // naming the section it answers is what keeps the route judged where its reader
-    // actually meets it.
+    // The drift entry, not the stale doc: the ack answers the move, and naming the
+    // section it answers keeps the route judged where its reader actually meets it.
     finding: /Symbol drift/,
     expect: "routes-clear",
   },
@@ -188,10 +191,14 @@ const SCENARIOS: SurfaceScenario[] = [
       "src/keep.ts": "export function keep(w: number): number {\n  return w;\n}\n",
       ".codument-meta.json": '{"version":"0.1.0"}\n',
     },
-    change: { "src/keep.ts": "export function keep(w: number): number {\n  return w + 0;\n}\n" },
+    // A CONTRACT move: ADR 020 keeps a body edit out of the drift block, and a
+    // scenario whose finding never prints tests the battery, not the tool.
+    change: {
+      "src/keep.ts": "export function keep(w: number, pad: number): number {\n  return w + pad;\n}\n",
+    },
     invoke: ["review", "--strict"],
     finding: /Symbol drift/,
-    expect: "routes-clear",
+    expect: "no-ack-route",
     verdictNames: [/registry path\(s\) missing/, /scaffold behind/],
   },
   {
@@ -208,7 +215,15 @@ const SCENARIOS: SurfaceScenario[] = [
       "docs/features/y.md": DOC,
       "src/shapes.ts": SRC,
     },
-    change: { "src/shapes.ts": SRC.replace("return w * h;", "return h * w;") },
+    // A CONTRACT move. ADR 020 answers the body-only case by not asking the
+    // ownership question at all — no doc goes stale, so there is no "which doc"
+    // to settle — and a scenario that fires nothing cannot judge a route.
+    change: {
+      "src/shapes.ts": SRC.replace(
+        "export function area(w: number, h: number): number {",
+        "export function area(w: number, h: number, scale: number): number {",
+      ),
+    },
     invoke: ["review", "--strict"],
     finding: /Stale docs/,
     expect: "no-ack-route",

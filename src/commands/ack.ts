@@ -6,7 +6,6 @@ import {
   type Acknowledgment,
   ackCovers,
   ackFileName,
-  docSetHash,
   isFileGrainAck,
   isIndependent,
   isTreeGrainAck,
@@ -16,8 +15,8 @@ import {
   writeAck,
 } from "../lib/acknowledgment.js";
 import { resolveScopeSync } from "../lib/analyze.js";
-import { owningDocsOf, treeCoverage } from "../lib/change-state.js";
-import { ownershipOfFile } from "../lib/context-pack.js";
+import { treeCoverage } from "../lib/change-state.js";
+import { anchorGates } from "../lib/drift.js";
 import {
   type AckValidity,
   type AnchorChange,
@@ -192,27 +191,23 @@ export async function ackCommand(
     );
     return;
   }
-  // A standing vouch is file grain, and the two refusals say why rather than
-  // silently narrowing. A symbol's contract is decided by its own signature, not by
-  // a doc's claims — binding one to a doc would let a contract move under a vouch
-  // that is watching the wrong thing. A tree's decay when a member appears is the
-  // guard ADR 018 rests on ("adding a language is the single change most worth
-  // seeing"), and standing over a tree is exactly what removes it.
-  if (options.standing && anchor) {
-    if (anchor.includes("::")) {
-      fail(
-        "--standing is file grain: it binds a judgment to the doc whose claims decide it, and a symbol's contract is decided by its own signature. " +
-          `Ack the file standing (\`codument ack ${shellArg(anchor.slice(0, anchor.indexOf("::")))} --standing --reason "..."\`), or update the owning doc.`,
-      );
-      return;
-    }
-    if (isSourcePattern(anchor)) {
-      fail(
-        "--standing is file grain: a tree ack is already one judgment over many files, and it expires when a file appears under the pattern — which is the guard that keeps a wide vouch honest. " +
-          "Ack the tree per change, or make the standing judgment on the file it is actually about.",
-      );
-      return;
-    }
+  // ADR 019 is retired by ADR 020. A standing vouch existed so that a recurring
+  // judgment about a body-only change was not re-signed on every unrelated edit —
+  // in the field, one locale namespace signed for four times in a session. Under
+  // 020 a body-only move is reported and never gated, so that judgment is never
+  // requested and there is nothing to stand over. Refused by name rather than
+  // quietly ignored: a flag that parses and does nothing is worse than one that is
+  // gone, and the reason is the thing worth telling a reader who had adopted it.
+  // Records already written stay parseable and are labeled obsolete on read.
+  if (options.standing) {
+    fail(
+      "--standing is retired (ADR 020 supersedes ADR 019). It existed so a recurring judgment about a " +
+        "body-only change was not re-signed on every unrelated edit; a body-only move is now reported and " +
+        "never gates, so no signature is asked for in the first place. Drop the flag: if the change still " +
+        "gates, it is an added or removed export, a signature move, a deletion or a risk-declared file, " +
+        "and each of those wants a doc update or a plain ack.",
+    );
+    return;
   }
 
   const sep = anchor.indexOf("::");
@@ -321,11 +316,26 @@ export async function ackCommand(
   if (isSignatureMove(ch)) {
     // The highest-signal refusal (ADR 006): a public signature moved, so the
     // symbol's CONTRACT changed. No ack — per-symbol or file-grain — clears it;
-    // the owning doc's contract needs an update. A body-only move stays ackable.
+    // the owning doc's contract needs an update.
     fail(
       `${ch.id}'s signature changed — the symbol's contract moved, so no ack applies: ` +
-        `update the owning doc's contract at intent altitude. ` +
-        `(An implementation-only body change would still be ackable.)`,
+        `update the owning doc's contract at intent altitude.`,
+    );
+    return;
+  }
+  if (!anchorGates(ch)) {
+    // ADR 020 retires the per-symbol acknowledgment wherever an adapter reports a
+    // signature: a move that is not a signature move is body-only, body-only is
+    // reported and never gated, so there is no finding for a signature to clear.
+    // Recording one anyway would write precisely the artifact this release exists
+    // to stop producing — a vouch nobody reads back, over a question nobody asked.
+    // Refused rather than accepted-and-inert, on the same principle as every other
+    // refusal here: a green checkmark over a gate that never moved spends the
+    // reader's trust in everything else the surface says.
+    fail(
+      `${ch.id} is a body-only move — implementation changed, and no documented contract can have gone ` +
+        `stale from it, so it is reported and never gates (ADR 020). There is nothing here to acknowledge. ` +
+        `If behaviour a doc actually describes did change, that is a doc update, not a signature.`,
     );
     return;
   }
@@ -432,36 +442,15 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
     registry = null; // no registry → nothing is owned/gated → no guidance to give
   }
 
-  // A standing vouch is bound to the docs whose claims decide it. Resolved from the
-  // registry rather than named on the command line: the vouch has to watch what
-  // actually gates the file, and a doc the signer typed could be one nothing wakes.
-  const owning = registry ? ownershipOfFile(registry, file) : [];
-  const standingDocs = [...new Set(owning.map((o) => o.doc))].sort();
-  if (options.standing && standingDocs.length === 0) {
-    fail(
-      `no feature owns ${file}, so there is no doc whose claims decide the judgment and a standing vouch would bind to nothing. ` +
-        `Map it first: \`codument map materialize ${shellArg(file)}\`, or ack this change alone (drop --standing).`,
-    );
-    return;
-  }
-  // Both hashes are the doc set's: a doc has one state at signing, so a standing
-  // record claims no transition it does not have.
-  const docHash = options.standing ? docSetHash(root, standingDocs) : null;
-
   const author = getGitAuthor(root) ?? "agent";
   const signer = options.signer ?? author;
   const ack: Acknowledgment = {
     anchorId: file,
-    fromHash: docHash ?? from,
-    toHash: docHash ?? to,
+    fromHash: from,
+    toHash: to,
     reason: options.reason!.trim(),
     signer,
-    // Only the content-bound grain records the lines it covered. A standing vouch's
-    // covered set is open — it sweeps changes that do not exist yet — so a recorded
-    // list naming only the first one would be the record lying about its own width.
-    // What it sweeps is named per review instead, where the sweep is actually known.
-    ...(!options.standing && coveredLines && coveredLines.length > 0 ? { coveredLines } : {}),
-    ...(docHash ? { standing: { docs: standingDocs } } : {}),
+    ...(coveredLines && coveredLines.length > 0 ? { coveredLines } : {}),
   };
   writeAck(root, ack);
   const kind = isIndependent(ack, author) ? "independent" : "self";
@@ -469,37 +458,11 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
 
   console.log(
     `${pc.green("✓")} acknowledged file ${pc.bold(file)} ${pc.dim(
-      docHash ? `(standing, ${kind})` : `(${short(from)}→${short(to)}, ${kind})`,
+      `(${short(from)}→${short(to)}, ${kind})`,
     )}`,
   );
   console.log(`  ${pc.dim("reason:")} ${ack.reason}`);
   console.log(`  ${pc.dim(`signer: ${signer} · handle ${handleOf(ack)}`)}`);
-
-  if (docHash) {
-    // The width, at the moment it is taken. A standing vouch is the only artifact in
-    // the format that covers changes nobody has made yet, and the surface that stays
-    // quiet about that is how a signature comes to mean less than the reader thinks.
-    console.log();
-    console.log(
-      pc.yellow(
-        `  ⚠ This vouch STANDS: it covers every future change to ${file} until ${standingDocs.join(" or ")} changes.`,
-      ),
-    );
-    console.log(
-      pc.dim(
-        `     Nothing asks for a signature in between — each review that leans on it names what it swept.`,
-      ),
-    );
-    const risky = owning.filter((o) => (registry?.features[o.feature]?.risk ?? []).length > 0);
-    for (const o of risky) {
-      const tags = (registry?.features[o.feature]?.risk ?? []).join(", ");
-      console.log(
-        pc.yellow(
-          `     ${o.feature} is tagged [${tags}] — standing width over a risk surface, allowed and loud.`,
-        ),
-      );
-    }
-  }
 
   // Guide, don't blanket: a file ack never clears a moved OWNED symbol. Name any
   // still-unacknowledged moved anchor that a feature owns (so it stays flagged) so it
@@ -514,6 +477,11 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
           ch.kind === "changed" &&
           ch.from !== undefined &&
           ch.to !== undefined &&
+          // Only a move that still GATES belongs in a warning about what this vouch
+          // failed to clear. A body-only move is not cleared either, but it holds
+          // nothing red, so naming it here invents work from a fact the reader can
+          // do nothing with — and routes them to a command `ack` now refuses.
+          anchorGates(ch) &&
           resolveOwner(registry as Registry, ch.id).kind === "owned" &&
           !acks.some((a) => ackCovers(a, ch.id, ch.from as string, ch.to as string)),
       );
@@ -705,6 +673,9 @@ function ackTree(root: string, pattern: string, options: AckCliOptions): void {
             ch.kind === "changed" &&
             ch.from !== undefined &&
             ch.to !== undefined &&
+            // Same rule the file-grain warning holds: only a move that still gates
+            // is something this vouch can be said to have left behind.
+            anchorGates(ch) &&
             resolveOwner(registry as Registry, ch.id).kind === "owned" &&
             !acks.some((a) => ackCovers(a, ch.id, ch.from as string, ch.to as string)),
         );
@@ -757,29 +728,10 @@ function resolveAnchor(fullId: string, symbol: string, changes: AnchorChange[]):
   };
 }
 
-/** The owning docs a standing vouch answers to, or `null` when the registry cannot
- *  be read — the distinction the validity check needs, since "cannot say" and "no
- *  owner" lead to opposite verdicts about a recorded judgment. Read once per command
- *  rather than per ack: a list of 342 acks would otherwise re-read the registry 342
- *  times to answer the same question. */
-function standingLookup(root: string): (ack: Acknowledgment) => readonly string[] | null {
-  let registry: Registry | null;
-  try {
-    registry = readRegistrySync(join(root, "docs", ".registry.json"));
-  } catch {
-    registry = null;
-  }
-  return (ack) => (registry ? owningDocsOf(registry, ack.anchorId) : null);
-}
-
 // Recompute each ack's standing against the working tree and shape it for the
 // machine contract — one place both the human and `--json` renderers read, so they
 // can never disagree about validity.
-function ackToJson(
-  root: string,
-  ack: Acknowledgment,
-  docsFor: (ack: Acknowledgment) => readonly string[] | null,
-): AckJson {
+function ackToJson(root: string, ack: Acknowledgment): AckJson {
   const sep = ack.anchorId.indexOf("::");
   const tree = isTreeGrainAck(ack);
   const fileGrain = isFileGrainAck(ack);
@@ -797,18 +749,23 @@ function ackToJson(
     to: ack.toHash,
     reason: ack.reason,
     signer: ack.signer,
-    validity: ackValidity(root, ack, ack.standing ? docsFor(ack) : undefined),
+    validity: ackValidity(root, ack),
   };
 }
 
 // The dim tag a non-covering ack carries in the human list — an invalidated ack is
 // dead weight the user can `--remove`; an indeterminate one flags an unparseable
 // file to fix. A covering ack (the common case) stays unadorned.
-function validityTag(v: AckValidity): string {
+function validityTag(v: AckValidity, ack: Acknowledgment): string {
   if (v === "covering") return "";
-  return v === "invalidated"
-    ? pc.yellow(" (auto-invalidated — the anchor moved past it; codument ack --remove)")
-    : pc.dim(" (indeterminate — the file does not parse)");
+  if (v === "indeterminate") return pc.dim(" (indeterminate — the file does not parse)");
+  // A standing vouch did not decay: nothing moved past it, the mechanism behind it
+  // was retired. Saying "the anchor moved past it" would send the reader hunting for
+  // a move that never happened, on a record they can only delete.
+  if (ack.standing) {
+    return pc.yellow(" (auto-invalidated — --standing is retired; codument ack --prune)");
+  }
+  return pc.yellow(" (auto-invalidated — the anchor moved past it; codument ack --remove)");
 }
 
 function listAcks(root: string): void {
@@ -818,10 +775,9 @@ function listAcks(root: string): void {
     return;
   }
   console.log(pc.bold(`Acknowledgments (${acks.length})`));
-  const docsFor = standingLookup(root);
   let invalidated = 0;
   for (const a of acks) {
-    const validity = ackValidity(root, a, a.standing ? docsFor(a) : undefined);
+    const validity = ackValidity(root, a);
     if (validity === "invalidated") invalidated += 1;
     // A tree ack's width is stated wherever it is shown: "one line, 120 files" is the
     // whole trade, and a reader who has to open the record to learn it will not.
@@ -829,16 +785,16 @@ function listAcks(root: string): void {
     console.log(
       `  ${pc.bold(handleOf(a))}  ${a.anchorId}${covers} ${pc.dim(
         a.standing ? "(standing)" : `(${short(a.fromHash)}→${short(a.toHash)})`,
-      )}${validityTag(validity)}`,
+      )}${validityTag(validity, a)}`,
     );
     console.log(`    ${pc.dim(`${a.signer}:`)} ${a.reason}`);
-    // A standing vouch's width is what it is bound to, so the list says it here for
-    // the same reason a tree ack states its file count: a reader who has to open the
-    // record to learn that one signature answers for everything to come will not.
+    // What the record used to answer for, in the past tense it now deserves. The
+    // binding is still shown because it is the only thing that explains a signature
+    // nobody can find a matching transition for.
     if (a.standing) {
       console.log(
         pc.dim(
-          `      standing on ${a.standing.docs.join(", ")} — covers every change until that doc moves`,
+          `      was standing on ${a.standing.docs.join(", ")} — the moves it absorbed are no longer asked about`,
         ),
       );
     }
@@ -869,10 +825,9 @@ function listAcks(root: string): void {
 }
 
 function listAcksJson(root: string): void {
-  const docsFor = standingLookup(root);
   const payload: AckListJson = {
     version: 1,
-    acks: readAcks(root).map((a) => ackToJson(root, a, docsFor)),
+    acks: readAcks(root).map((a) => ackToJson(root, a)),
   };
   console.log(JSON.stringify(payload, null, 2));
 }
@@ -886,10 +841,7 @@ function listAcksJson(root: string): void {
 // a swept ack is as traceable as a hand-removed one.
 function pruneAcks(root: string): void {
   const acks = readAcks(root);
-  const docsFor = standingLookup(root);
-  const dead = acks.filter(
-    (a) => ackValidity(root, a, a.standing ? docsFor(a) : undefined) === "invalidated",
-  );
+  const dead = acks.filter((a) => ackValidity(root, a) === "invalidated");
   if (dead.length === 0) {
     console.log(
       pc.dim(

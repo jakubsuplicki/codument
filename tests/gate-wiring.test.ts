@@ -286,15 +286,26 @@ describe("gate wiring — end-to-end (temp git repo, real anchor diff)", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("editing alphaCmd's body wakes ONLY alpha — beta (same file) stays clean", async () => {
+  // Observed through the drift finding rather than the stale-doc verdict. The
+  // property under test is symbol-grained OWNERSHIP — one file, two features, and
+  // an edit that must reach exactly one of them — which is independent of whether
+  // the move happens to gate. Asserting it through staleDocs made it a hostage of
+  // the gating policy, and under ADR 020 a body-only move gates nothing, so the
+  // old form could no longer tell a dissolved cascade from a silent gate.
+  it("editing alphaCmd's body attributes to ONLY alpha — beta (same file) stays clean", async () => {
     await scaffold({
       "src/shared.ts": SHARED_SRC.replace("return 1;", "return 11;"),
     });
     const report = buildReview(tmp);
     assert.deepStrictEqual(
-      report.state.staleDocs.map((d) => d.feature).sort(),
+      report.drift.map((d) => d.feature).sort(),
       ["alpha"],
-      "only alpha's doc is stale; the cascade to beta is dissolved",
+      "only alpha's symbol moved; the cascade to beta is dissolved",
+    );
+    assert.deepStrictEqual(
+      report.state.staleDocs,
+      [],
+      "and a body-only move gates neither of them",
     );
   });
 
@@ -421,21 +432,27 @@ describe("gate wiring — local-rename canonicalization (e2e)", () => {
     );
   });
 
-  it("a REAL change to the exported body still fires", async () => {
+  // The two below pin the canonicalizer's SOUNDNESS: the renames above must move
+  // no fingerprint, and these must move one. That contrast is the whole guarantee,
+  // and it is a statement about the fingerprint rather than about the gate — so it
+  // is asserted on the drift finding. Left on staleDocs it would have read as
+  // green under ADR 020 for the wrong reason, turning the one pair of tests that
+  // proves the canonicalizer does not over-suppress into a pair that cannot fail.
+  it("a REAL change to the exported body still moves the fingerprint", async () => {
     await scaffold({ "src/m.ts": RENAME_SRC.replace("return base + 1;", "return base + 2;") });
     const report = buildReview(tmp);
     assert.deepStrictEqual(
-      report.state.staleDocs.map((d) => d.feature),
+      report.drift.map((d) => d.feature),
       ["alpha"],
-      "a genuine implementation change is not a rename — it still wakes the doc",
+      "a genuine implementation change is not a rename — its fingerprint moves",
     );
   });
 
-  it("a helper BODY change still fires its exported caller (closure intact)", async () => {
+  it("a helper BODY change still moves its exported caller (closure intact)", async () => {
     await scaffold({ "src/m.ts": RENAME_SRC.replace("const doubled = seed * 2", "const doubled = seed * 3") });
     const report = buildReview(tmp);
     assert.deepStrictEqual(
-      report.state.staleDocs.map((d) => d.feature),
+      report.drift.map((d) => d.feature),
       ["alpha"],
       "changing the private helper's behavior moves run's closed-over fingerprint",
     );

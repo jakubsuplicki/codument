@@ -3,7 +3,6 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWriteFileSync } from "./events.js";
 import { isSourcePattern } from "./registry.js";
-import { byteNormalize } from "./two-ref.js";
 
 // A recorded, attributed, fingerprint-bound decision that a moved anchor needs no
 // doc change (a refactor / behavior-preserving move). The gate NEVER verifies the
@@ -138,50 +137,6 @@ export function parseAck(value: unknown): Acknowledgment | null {
   return covered ? { ...base, covered } : base;
 }
 
-/**
- * The combined content hash of the docs a standing vouch is bound to.
- *
- * Byte-normalized, because the ack record is a committed, merge-friendly artifact
- * that travels: a doc read CRLF on one checkout and LF on another is the same
- * claims, and a vouch that died on a line-ending difference would be a gate that
- * fails on where you cloned. A doc that is absent hashes as absent, so deleting the
- * doc a judgment rests on kills the judgment.
- */
-export function docSetHash(root: string, docs: readonly string[]): string {
-  const h = createHash("sha256");
-  for (const doc of [...docs].sort()) {
-    let body: string;
-    try {
-      body = byteNormalize(readFileSync(join(root, doc), "utf8"));
-    } catch {
-      body = "\u0000absent";
-    }
-    h.update(`${doc}\u0000${createHash("sha256").update(body, "utf8").digest("hex")}\n`, "utf8");
-  }
-  return h.digest("hex");
-}
-
-/**
- * Whether a standing vouch still stands: recomputed on every read, never a stored
- * status — the same rule the content-bound grains hold, asked of the thing this
- * grain is actually bound to.
- *
- * `docs` is the file's owning set as the registry reads it NOW, passed by any caller
- * that has the registry in view. Ownership can widen after signing — a second feature
- * claims the file — and a vouch that kept clearing then would be settling a doc its
- * signer never read. Because the hash covers each doc's PATH as well as its content,
- * one comparison catches both: a doc whose claims moved, and a doc that was not in
- * the room. Omitted, it falls back to the recorded set, which is the honest answer
- * where no registry is in hand.
- */
-export function standingHolds(
-  root: string,
-  ack: Acknowledgment,
-  docs?: readonly string[],
-): boolean {
-  return ack.standing !== undefined && docSetHash(root, docs ?? ack.standing.docs) === ack.toHash;
-}
-
 function parseCovered(value: unknown): CoveredFile[] | null {
   if (!Array.isArray(value)) return null;
   const out: CoveredFile[] = [];
@@ -222,10 +177,12 @@ export function ackCovers(
   fromHash: string,
   toHash: string,
 ): boolean {
-  // A standing ack is bound to a doc, never to a content transition, and its two
-  // hashes are the doc set's. Answering here would report a standing vouch as a
-  // transition vouch at every surface that tells the two apart — the widest claim in
-  // the format, rendered as the narrowest. It is resolved by `standingHolds`.
+  // A standing vouch (ADR 019) is bound to a doc, never to a content transition, and
+  // its two hashes are the doc set's — so it could never answer this question. ADR 020
+  // retired the mechanism that did answer it, which makes this line the whole story
+  // for a 0.17 record still on disk: it covers nothing, at any grain, ever. Records
+  // stay parseable so an upgrade does not crash a list; `ackValidity` reads them as
+  // dead so `--prune` sweeps them.
   if (ack.standing) return false;
   return ack.anchorId === anchorId && ack.fromHash === fromHash && ack.toHash === toHash;
 }

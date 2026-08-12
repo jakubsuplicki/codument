@@ -8,7 +8,6 @@ import {
   normalizeIdentity,
   readAcks,
   shellArg,
-  standingHolds,
 } from "../lib/acknowledgment.js";
 import { type ExclusionSpec, isExcluded, resolveScopeSync } from "../lib/analyze.js";
 import {
@@ -19,16 +18,14 @@ import {
   type DependentSummary,
   detectApprovedPlanScope,
   type OwnershipLint,
-  owningDocsOf,
   removedInChange,
   resolveDocPointers,
   resolveFileGrainAcked,
   standingTreeAcks,
   type UngatedRegisteredChange,
 } from "../lib/change-state.js";
-import { computeDrift, type DriftFinding } from "../lib/drift.js";
+import { anchorGates, computeDrift, type DriftFinding } from "../lib/drift.js";
 import {
-  type AnchorChange,
   fileContentTransition,
   gatherAnchorChanges,
   warmAdaptersForRepo,
@@ -85,7 +82,6 @@ import { gateUnavailableSarif, reviewReportToSarif } from "../lib/sarif.js";
 import { MODULE_ANCHOR_NAME } from "../lib/ts-adapter.js";
 import {
   blobExistsAtRef,
-  changedLinesAgainst,
   EMPTY_TREE_SHA,
   GateError,
   readBlobAtRef,
@@ -164,6 +160,12 @@ export interface ReviewReport {
   /** Per-symbol drift detail behind the verdict: which owned symbols moved, their
    *  co-movement telemetry, and which were cleared by a recorded acknowledgment. */
   drift: DriftFinding[];
+  /** Every symbol move this change made that ADR 020 reports instead of gating —
+   *  counted over the WHOLE anchor diff, not just `drift`, which carries only the
+   *  moves an owning feature claims. A file no feature claims is exactly where a
+   *  count derived from ownership would read as "the tool saw nothing", and the
+   *  report is the entire consideration for dropping the block. */
+  reportedNotGated: number;
   /** Files whose current content is covered by a file-grain ack (`codument ack
    *  <path>`) — the additive/concept/coarse staleness cleared this run. Surfaced so
    *  the resolution summary shows a file-ack AS an ack, never laundered as a doc
@@ -211,17 +213,6 @@ export interface CoveringAck {
    *  trade a tree ack makes, so it is stated wherever the ack is shown rather than
    *  left to be discovered by opening the record. */
   covers?: number;
-  /** Present when this vouch is STANDING: the docs whose claims decide it. A standing
-   *  ack was signed against some earlier change and answers for this one too, so the
-   *  card names it as standing — a wide vouch that went unremarked here would be
-   *  indistinguishable from a signature taken on the diff in front of the reader. */
-  standing?: string[];
-  /** Standing vouches only: what this one absorbed in THIS change — the exports it
-   *  swept where an adapter can name them, the changed lines where none can. Every
-   *  other grain's coverage is visible in the diff the reader is already looking at;
-   *  a standing vouch's is not, because the signature was taken against a change that
-   *  is no longer in front of them. Never empty while the vouch cleared something. */
-  swept?: string[];
   signer: string;
   reason: string;
   /** The signer differs from the change author (a second-party sign-off). */
@@ -300,52 +291,6 @@ function extensionOf(path: string): string {
   const base = path.slice(path.lastIndexOf("/") + 1);
   const dot = base.lastIndexOf(".");
   return dot > 0 ? base.slice(dot) : base;
-}
-
-/** How much of a standing vouch's sweep any surface shows before counting the rest.
- *  Enough to recognise what was taken; a wall of diff is the unreadable surface this
- *  disclosure exists to replace. */
-export const SWEPT_CAP = 6;
-
-/**
- * What a standing vouch absorbed in the change in front of the reader.
- *
- * Every other grain is self-disclosing: a signature taken on this diff covers what
- * the reader is already looking at, and a tree vouch writes its set into the record.
- * A standing vouch is neither — it was signed against a change that has scrolled
- * away, and it answers for this one silently. Naming the sweep per review is what
- * keeps the width honest, so it is computed wherever the card is built rather than
- * recorded once at signing, where the covered set was not yet known.
- *
- * Named the way the file itself can be named: exports where an adapter reads them —
- * the only thing a file vouch sweeps on a precise file, since a moved symbol is
- * never cleared — and changed lines where none can. A vouch that cleared a
- * whole-file (umbrella) wake with no export moving says exactly that, rather than
- * printing nothing and reading as covering nothing.
- */
-function sweptBy(
-  root: string,
-  baseRef: string,
-  file: string,
-  anchorChanges: Record<string, AnchorChange[]>,
-  renamedFrom: ReadonlyMap<string, string>,
-): string[] {
-  const precise = (anchorChanges[file] ?? []).length > 0;
-  const anchors = anchorChanges[file] ?? [];
-  const swept = precise
-    ? anchors
-        .filter((c) => c.kind !== "changed")
-        .map((c) => `${c.kind === "added" ? "+" : "-"} ${c.name} (${c.kind} export)`)
-    : changedLinesAgainst(root, baseRef, file, renamedFrom.get(file) ?? file);
-  if (swept.length > 0) return swept.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  // Nothing nameable moved, but the vouch still cleared a wake — the file's whole-file
-  // flag. Said in the grain's own words: a coarse file has no exports to have moved,
-  // and telling its reader none did would be answering a question nobody asked.
-  return [
-    precise
-      ? "this file's whole-file wake — no export was added or removed"
-      : "this file's whole-file wake — no line changed outside formatting",
-  ];
 }
 
 function registryRot(
@@ -482,7 +427,7 @@ export function buildReview(
   const resolveAcked = (set: Acknowledgment[]): string[] =>
     [
       ...new Set([
-        ...resolveFileGrainAcked(root, baseRef, changes, set, unevaluable, renamedFrom, registry),
+        ...resolveFileGrainAcked(root, baseRef, changes, set, unevaluable, renamedFrom),
         ...set.flatMap((a) => standingTrees.get(a) ?? []),
       ]),
     ].sort();
@@ -505,8 +450,12 @@ export function buildReview(
     anchorChanges: filtered,
     // The ORIGINAL (pre-ack-filter) movement set: concept umbrellas wake off
     // this, so a per-symbol ack can never clear an umbrella's file-grain flag.
+    // Filtered by the SAME predicate the per-symbol path uses, or a body-only
+    // move would stop waking its own feature and go on waking the umbrella
+    // narrating the directory above it — one question answered two ways, which
+    // is the failure this codebase keeps paying for.
     contentMovedFiles: Object.entries(anchorChanges)
-      .filter(([, v]) => v.length > 0)
+      .filter(([, v]) => v.some(anchorGates))
       .map(([k]) => k),
     unevaluable,
     fileGrainAcked,
@@ -571,21 +520,15 @@ export function buildReview(
   for (const file of cardFileGrainAcked) {
     const { from, to } = fileContentTransition(root, baseRef, file, renamedFrom.get(file) ?? file);
     if (from === null || to === null) continue;
-    // A standing vouch is looked for first: where both grains would clear the file,
-    // the standing one is the wider claim and the one the card exists to make loud.
-    const mineStanding = acks.filter((a) => a.standing && a.anchorId === file);
-    const now = mineStanding.length > 0 ? owningDocsOf(registry, file) : undefined;
-    const ack =
-      mineStanding.find((a) => standingHolds(root, a, now)) ??
-      acks.find((a) => isFileGrainAck(a) && ackCovers(a, file, from, to));
+    // A standing vouch (ADR 019) clears nothing since ADR 020 retired it, so it can
+    // never be the ack shown here — the card names what actually adjudicated the
+    // change, and a retired record adjudicated none of it.
+    const ack = acks.find((a) => isFileGrainAck(a) && !a.standing && ackCovers(a, file, from, to));
     if (ack) {
       coveringAcks.push({
         anchorId: file,
         grain: "file",
         symbol: null,
-        ...(ack.standing
-          ? { standing: ack.standing.docs, swept: sweptBy(root, baseRef, file, anchorChanges, renamedFrom) }
-          : {}),
         signer: ack.signer,
         reason: ack.reason,
         independent: independentOf(ack.signer),
@@ -604,6 +547,17 @@ export function buildReview(
     plan,
     state,
     drift,
+    // Counted over the whole anchor diff, so an unclaimed file's move is disclosed
+    // too — but only within the gate's own scope. Two exclusions, for the same
+    // reason: a number on the verdict line must be one the reader can account for.
+    // A DECLARED-EXCLUDED file is already counted as excluded on the change line, so
+    // reporting a move inside it announces the tool read a file it says it ignores.
+    // The MODULE RESIDUAL holds what did not anchor as an export, so it is not a
+    // symbol move and no symbol in the diff would account for it.
+    reportedNotGated: Object.entries(anchorChanges)
+      .filter(([file]) => !isExcluded(file, exclusion))
+      .flatMap(([, v]) => v)
+      .filter((ch) => !anchorGates(ch) && ch.name !== MODULE_ANCHOR_NAME).length,
     fileGrainAcked,
     registryRot: registryRot(root, registry, state.registryPointers),
     coveringAcks,
@@ -1235,6 +1189,14 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       `${report.registryRot.length} registry path(s) missing (not this change; ungated)`,
     );
   if (versionSkewNotice(root)) alsoTrue.push("scaffold behind the installed version");
+  // Body-only movement is reported and never gated (ADR 020). It rides the verdict
+  // line because it changes what the reader does next — it is the one thing they
+  // may still want to open a doc about — and because a demotion nobody can see is
+  // indistinguishable from a gate that stopped noticing.
+  const bodyOnly = report.reportedNotGated;
+  if (bodyOnly > 0) {
+    alsoTrue.push(`${bodyOnly} body-only move(s) reported, not gated`);
+  }
   // A review that passed without reproducing anything is the sharpest case this line
   // exists for: the gate exits 0, so nothing else can carry it, and the honest
   // condition printed above the verdict is precisely what a `| tail -1` destroys.
@@ -1781,7 +1743,12 @@ function printHuman(report: ReviewReport): void {
   // the resolved/flagged decision here — so a correct intent-altitude doc update
   // resolves a finding, and a symbol-mirror doc earns no credit.
   const staleFeatures = new Set(report.state.staleDocs.map((s) => s.feature));
-  const unresolved = report.drift.filter((d) => !d.acknowledged && staleFeatures.has(d.feature));
+  // `d.gates` is required, not implied by staleness: a feature stale for some
+  // other reason would otherwise drag its body-only moves back into a block
+  // headed "resolve each", asking for a resolution ADR 020 stopped requiring.
+  const unresolved = report.drift.filter(
+    (d) => d.gates && !d.acknowledged && staleFeatures.has(d.feature),
+  );
   if (unresolved.length > 0) {
     console.log(
       `  ${pc.bold("Symbol drift")} ${pc.dim("— resolve each: update the doc, or ack a contract-neutral move")}`,
@@ -1804,8 +1771,13 @@ function printHuman(report: ReviewReport): void {
     for (const d of unresolved) {
       const sigTag = d.signatureChanged ? ` ${pc.yellow("[signature changed]")}` : "";
       const subject = isWholeModule(d) ? d.anchorId.split("::")[0] : d.symbol;
+      // A moved whole-module anchor that reaches this block moved its CONTRACT, by
+      // construction: the shape always carries a signature, and ADR 020 keeps a move
+      // whose signature held out of the verdict entirely. The label used to fork on
+      // body-vs-contract because both could land here; only one can now, and a "body"
+      // arm nothing reaches would read as a state the tool can still put you in.
       const what = isWholeModule(d)
-        ? `(${d.signatureChanged ? "contract" : "body"} ${d.kind}) in ${d.feature}`
+        ? `(${d.kind === "changed" ? "contract changed" : d.kind}) in ${d.feature}`
         : `(${d.kind}) in ${d.feature}`;
       console.log(`    ${pc.dim("•")} ${pc.bold(subject)} ${pc.dim(what)}${sigTag}`);
       console.log(
@@ -1861,7 +1833,15 @@ function printHuman(report: ReviewReport): void {
     let acked = 0;
     let fileAcked = 0;
     let docUpdated = 0;
+    // A move that never gated owes no resolution, so it is its own bucket rather
+    // than an unexplained remainder. Without it the buckets stop summing to
+    // `moved` — a count a reader cannot reconcile is a count they stop reading.
+    let reported = 0;
     for (const d of report.drift) {
+      if (!d.gates) {
+        reported++;
+        continue;
+      }
       switch (driftResolution(d, staleFeatures, fileGrainAcked)) {
         case "acked":
           acked++;
@@ -1876,6 +1856,7 @@ function printHuman(report: ReviewReport): void {
     }
     console.log(
       `  ${pc.bold("Drift resolution")}: ${moved} owned symbol(s) moved · ` +
+        (reported > 0 ? `${reported} body-only (reported, not gated) · ` : "") +
         `${acked} acked (contract-neutral) · ` +
         (fileAcked > 0 ? `${fileAcked} file-acked (additive) · ` : "") +
         `${docUpdated} resolved by doc update · ${unresolved.length} still flagged`,
@@ -1908,26 +1889,9 @@ function printHuman(report: ReviewReport): void {
           ? pc.red("[self — not counted]")
           : pc.yellow("[self]");
       const target =
-        a.grain === "file"
-          ? pc.dim(`${a.anchorId} (file${a.standing ? ", standing" : ""})`)
-          : pc.bold(a.symbol ?? a.anchorId);
+        a.grain === "file" ? pc.dim(`${a.anchorId} (file)`) : pc.bold(a.symbol ?? a.anchorId);
       const mark = isIgnored ? pc.red("✗") : pc.dim("✓");
       console.log(`    ${mark} ${target} ${badge} ${pc.dim(`${a.signer}:`)} ${a.reason}`);
-      // Signed against an earlier change, not this one. Saying so is the whole
-      // discipline of the grain: a standing vouch nobody is reminded of is exactly the
-      // ride-forever exemption the ack model was built to refuse — so the width is
-      // named AND what it took this time is named under it, every run.
-      if (a.standing) {
-        console.log(
-          pc.yellow(
-            `        standing on ${a.standing.join(", ")} — signed earlier, covers this change too`,
-          ),
-        );
-        for (const s of (a.swept ?? []).slice(0, SWEPT_CAP)) console.log(`          ${pc.dim(s)}`);
-        if ((a.swept?.length ?? 0) > SWEPT_CAP) {
-          console.log(pc.dim(`          … +${(a.swept as string[]).length - SWEPT_CAP} more`));
-        }
-      }
     }
     if (ignored > 0) {
       console.log(

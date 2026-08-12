@@ -191,7 +191,7 @@ program
   )
   .option(
     "--standing",
-    "with a bare <path>: bind the judgment to the owning doc's claims instead of the file's bytes — it stands across later content changes and dies when that doc moves (every review it covers names what it swept)",
+    "retired (ADR 020): the recurring body-only judgment it stood over is no longer asked for at all. Still parsed so an old command is refused with the reason instead of an unknown-option error",
   )
   .option("--list", "list recorded acknowledgments with their handles")
   .option(

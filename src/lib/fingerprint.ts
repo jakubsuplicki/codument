@@ -1,12 +1,7 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import {
-  type Acknowledgment,
-  isFileGrainAck,
-  isTreeGrainAck,
-  standingHolds,
-} from "./acknowledgment.js";
+import { type Acknowledgment, isFileGrainAck, isTreeGrainAck } from "./acknowledgment.js";
 import { getWorkingTreeChanges, listTrackedFiles } from "./git.js";
 import { allSources, readRegistrySync } from "./registry.js";
 import { csharpAdapter } from "./csharp-adapter.js";
@@ -594,29 +589,12 @@ export function contentChangedFiles(
 // gate agreement.
 export type AckValidity = "covering" | "invalidated" | "indeterminate";
 
-export function ackValidity(
-  root: string,
-  ack: Acknowledgment,
-  // The owning docs a STANDING vouch answers to, as the registry reads them now.
-  // Three states on purpose, the same unknown-is-not-empty rule the scope layer
-  // holds: a set to check against, `null` for "the registry could not be read", and
-  // absent for a caller that has no registry in hand.
-  standingDocs?: readonly string[] | null,
-): AckValidity {
-  // A standing ack is bound to the doc whose claims decide it, so its standing is
-  // asked of the doc. Asking the file would report every standing vouch invalidated
-  // the moment it did its job — absorbing a content change is the entire grain. The
-  // file still has to exist: a vouch over a path that is gone covers nothing, and
-  // ADR 012's stance is that a removal owes its doc attention rather than a signature.
-  if (ack.standing) {
-    if (!existsSync(join(root, ack.anchorId))) return "invalidated";
-    // An unreadable registry cannot say what this vouch answers to, and calling that
-    // `invalidated` would let `--prune` destroy a live judgment over a file the user
-    // still has to fix. Indeterminate is the honest gap, and prune leaves it alone —
-    // the same stance a file that does not parse already gets.
-    if (standingDocs === null) return "indeterminate";
-    return standingHolds(root, ack, standingDocs) ? "covering" : "invalidated";
-  }
+export function ackValidity(root: string, ack: Acknowledgment): AckValidity {
+  // A standing vouch (ADR 019) is retired by ADR 020, so it covers nothing whatever
+  // its bound doc now says. Reading it as invalidated is what makes the retirement
+  // reach a repo that already has these on disk: the list says it is dead and
+  // `--prune` sweeps it, instead of leaving a record that looks live and is not.
+  if (ack.standing) return "invalidated";
   if (isTreeGrainAck(ack)) {
     // A tree ack binds each member's coarse fingerprint, so the list asks the same
     // question of every one of them: does the file still hash to what was vouched

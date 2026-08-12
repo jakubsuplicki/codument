@@ -77,6 +77,17 @@ const REGISTRY = {
   },
 };
 
+// ADR 020: the gate blocks only a PROVEN contract event, so editing a function body
+// no longer makes anything stale. A test that needs auth's source to owe its doc a
+// line reaches for one of these two instead — and which one it picks says what it is
+// really testing, because they take different exits:
+//   a signature move — `login` gains a parameter. No ack of any grain clears it.
+//   an additive move — a new export appears. A FILE-grain ack still clears it.
+// Both take a distinguishing argument so consecutive edits move the fingerprint.
+const loginSigMove = (params: string): string => `export const login = (${params}) => {};\n`;
+const loginAdditive = (name: string): string =>
+  `export const login = () => {};\nexport const ${name} = () => 1;\n`;
+
 beforeEach(async () => {
   tmp = await mkdtemp(join(tmpdir(), "codument-review-"));
   await scaffold({
@@ -102,9 +113,9 @@ describe("buildReview (temp git repo)", () => {
   });
 
   it("flags a stale doc, an unmapped change, a risk touch, and dependents", async () => {
-    // change auth's source without its doc; add an unmapped file
+    // move auth's contract without its doc; add an unmapped file
     await scaffold({
-      "src/auth/login.ts": "export const login = () => { return true; };\n",
+      "src/auth/login.ts": loginSigMove("remember: boolean"),
       "src/lib/cache.ts": "export const cache = {};\n",
     });
 
@@ -145,7 +156,7 @@ describe("buildReview (temp git repo)", () => {
 
     // commit a change to auth's source (not its doc) on a branch; leave the tree clean
     run(["checkout", "-b", "feature"]);
-    await scaffold({ "src/auth/login.ts": "export const login = () => 42;\n" });
+    await scaffold({ "src/auth/login.ts": loginSigMove("remember: boolean") });
     run(["add", "-A"]);
     run(["commit", "-m", "change auth source, not its doc"]);
 
@@ -228,10 +239,11 @@ describe("buildReview (temp git repo)", () => {
     // registered file rather than an untracked add.
     gitCommitAll(tmp, "add non-ascii sources");
 
-    // Real per-symbol change to both, docs untouched.
+    // Real per-symbol CONTRACT move on both (ADR 020: a body edit gates nothing),
+    // docs untouched.
     await scaffold({
-      "src/föo.ts": "export const alpha = () => { return 1; };\n",
-      "src/日本語.ts": "export const beta = () => { return 2; };\n",
+      "src/föo.ts": "export const alpha = (n: number) => {};\n",
+      "src/日本語.ts": "export const beta = (n: number) => {};\n",
     });
 
     const report = buildReview(tmp);
@@ -257,35 +269,37 @@ describe("acks card — self vs independent (buildReview + review CLI)", () => {
   const headSha = (): string =>
     execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmp, encoding: "utf-8" }).trim();
 
-  // Commit a body-only move of `login` (authored by AUTHOR, so it is a real change
-  // author in base..HEAD), then record an ack for it signed by `signer`. Independence
-  // is judged against the COMMIT author, not whoever runs review — so the review must
+  // Commit an ADDITIVE move on auth's source (authored by AUTHOR, so it is a real
+  // change author in base..HEAD), then record the FILE-grain ack that clears it,
+  // signed by `signer`. Additive because that is the gating class an ack still
+  // adjudicates under ADR 020 — a body-only move gates nothing, so an ack over one
+  // would make every assertion below pass over an empty verdict. Independence is
+  // judged against the COMMIT author, not whoever runs review — so the review must
   // be run with `--base <baseSha>` to see the committed change.
-  async function commitLoginMoveAndAck(signer: string): Promise<string> {
+  async function commitMoveAndAck(signer: string): Promise<string> {
     const baseSha = headSha();
-    await scaffold({ "src/auth/login.ts": "export const login = () => { return 3; };\n" });
-    gitCommitAll(tmp, "refactor login body");
-    const since = worktreeChangesSince(tmp, baseSha);
-    const f = buildReview(tmp, since, baseSha).drift.find((d) => d.symbol === "login");
-    assert.ok(f?.from && f?.to, "login moved (a body-only, ackable change)");
+    await scaffold({ "src/auth/login.ts": loginAdditive("helper") });
+    gitCommitAll(tmp, "add an internal helper export");
+    const { from, to } = fileContentTransition(tmp, baseSha, "src/auth/login.ts");
+    assert.ok(from && to, "the file's content moved (an additive, file-ackable change)");
     writeAck(tmp, {
-      anchorId: f!.anchorId,
-      fromHash: f!.from!,
-      toHash: f!.to!,
-      reason: "rename only; same call shape",
+      anchorId: "src/auth/login.ts",
+      fromHash: from as string,
+      toHash: to as string,
+      reason: "internal helper; no public contract added",
       signer,
     });
     return baseSha;
   }
 
   it("an ack signed by a change author is badged self", async () => {
-    const baseSha = await commitLoginMoveAndAck(AUTHOR);
+    const baseSha = await commitMoveAndAck(AUTHOR);
     const since = worktreeChangesSince(tmp, baseSha);
     const report = buildReview(tmp, since, baseSha);
     assert.equal(report.coveringAcks.length, 1);
     const ack = report.coveringAcks[0];
-    assert.equal(ack.grain, "symbol");
-    assert.equal(ack.symbol, "login");
+    assert.equal(ack.grain, "file");
+    assert.equal(ack.anchorId, "src/auth/login.ts");
     assert.equal(ack.independent, false, "signer is a commit author → self");
 
     const out = execFileSync("node", [CLI, "review", "--base", baseSha], {
@@ -293,12 +307,12 @@ describe("acks card — self vs independent (buildReview + review CLI)", () => {
       encoding: "utf-8",
     });
     assert.match(out, /Acknowledgments in this change/);
-    assert.match(out, /login \[self\]/);
+    assert.match(out, /src\/auth\/login\.ts \(file\) \[self\]/);
     assert.match(out, /1 covering \(1 self\)/);
   });
 
   it("an ack signed by someone other than the change author is badged independent", async () => {
-    const baseSha = await commitLoginMoveAndAck("Reviewer <reviewer@example.com>");
+    const baseSha = await commitMoveAndAck("Reviewer <reviewer@example.com>");
     const since = worktreeChangesSince(tmp, baseSha);
     const report = buildReview(tmp, since, baseSha);
     assert.equal(
@@ -311,7 +325,7 @@ describe("acks card — self vs independent (buildReview + review CLI)", () => {
       cwd: tmp,
       encoding: "utf-8",
     });
-    assert.match(out, /login \[independent\]/);
+    assert.match(out, /src\/auth\/login\.ts \(file\) \[independent\]/);
     assert.match(out, /1 covering \(0 self\)/);
   });
 
@@ -320,7 +334,7 @@ describe("acks card — self vs independent (buildReview + review CLI)", () => {
     // DIFFERENT git identity (a fresh CI clone, a bot). This is the regression the
     // adversarial review caught: keying independence to `git config user.*` of the
     // runner flipped Alice's self-ack to a green [independent] badge in CI.
-    const baseSha = await commitLoginMoveAndAck(AUTHOR);
+    const baseSha = await commitMoveAndAck(AUTHOR);
     const since = worktreeChangesSince(tmp, baseSha);
     // Simulate a different runner: change the local git identity after authoring.
     execFileSync("git", ["config", "user.name", "CI Bot"], { cwd: tmp, stdio: "ignore" });
@@ -335,9 +349,7 @@ describe("acks card — self vs independent (buildReview + review CLI)", () => {
 
   it("a file-grain ack appears in the card as a file, with its badge", async () => {
     // an additive export wakes auth file-grain; a file-grain ack covers it
-    await scaffold({
-      "src/auth/login.ts": "export const login = () => {};\nexport const helper = () => 1;\n",
-    });
+    await scaffold({ "src/auth/login.ts": loginAdditive("helper") });
     const { from, to } = fileContentTransition(tmp, "HEAD", "src/auth/login.ts");
     assert.ok(from && to);
     writeAck(tmp, {
@@ -358,7 +370,7 @@ describe("acks card — self vs independent (buildReview + review CLI)", () => {
   });
 
   it("no covering ack → no card (a clean self-review isn't hidden, but there's nothing to show)", async () => {
-    await scaffold({ "src/auth/login.ts": "export const login = () => { return 5; };\n" });
+    await scaffold({ "src/auth/login.ts": loginSigMove("remember: boolean") });
     const report = buildReview(tmp);
     assert.deepEqual(report.coveringAcks, []);
     const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
@@ -371,28 +383,31 @@ describe("--require-independent-ack (ADR 006 strict mode)", () => {
   const headSha = (): string =>
     execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmp, encoding: "utf-8" }).trim();
 
-  // Commit a body-only move of `login` authored by AUTHOR, then ack it as `signer`.
-  async function commitLoginMoveAndAck(
+  // Commit an ADDITIVE move on auth's source authored by AUTHOR, then file-ack it as
+  // `signer`. Additive because that is the gating class an ack still adjudicates
+  // under ADR 020: over a body-only move the verdict is empty before any ack is
+  // written, so every "cleared / did not clear" assertion below would pass either way.
+  async function commitMoveAndAck(
     signer: string,
   ): Promise<{ baseSha: string; since: string[] }> {
     const baseSha = headSha();
-    await scaffold({ "src/auth/login.ts": "export const login = () => { return 3; };\n" });
-    gitCommitAll(tmp, "refactor login body");
+    await scaffold({ "src/auth/login.ts": loginAdditive("helper") });
+    gitCommitAll(tmp, "add an internal helper export");
     const since = worktreeChangesSince(tmp, baseSha);
-    const f = buildReview(tmp, since, baseSha).drift.find((d) => d.symbol === "login");
-    assert.ok(f?.from && f?.to);
+    const { from, to } = fileContentTransition(tmp, baseSha, "src/auth/login.ts");
+    assert.ok(from && to);
     writeAck(tmp, {
-      anchorId: f!.anchorId,
-      fromHash: f!.from!,
-      toHash: f!.to!,
-      reason: "internal refactor; same shape",
+      anchorId: "src/auth/login.ts",
+      fromHash: from as string,
+      toHash: to as string,
+      reason: "internal helper; no public contract added",
       signer,
     });
     return { baseSha, since };
   }
 
   it("a self-signed ack does NOT clear the finding under the flag; it clears without it", async () => {
-    const { baseSha, since } = await commitLoginMoveAndAck(AUTHOR);
+    const { baseSha, since } = await commitMoveAndAck(AUTHOR);
     // no flag: the self-ack clears (byte-identical to before this step)
     const off = buildReview(tmp, since, baseSha);
     assert.deepEqual(off.state.staleDocs, [], "self-ack clears without the flag");
@@ -406,26 +421,26 @@ describe("--require-independent-ack (ADR 006 strict mode)", () => {
     );
     assert.equal(on.requireIndependentAck, true);
     // the ignored self-ack is STILL shown in the card (not silently dropped)
-    const ack = on.coveringAcks.find((a) => a.symbol === "login");
+    const ack = on.coveringAcks.find((a) => a.grain === "file");
     assert.ok(ack, "the ignored self-ack is still surfaced");
     assert.equal(ack.independent, false);
   });
 
   it("an independent ack DOES clear the finding under the flag", async () => {
-    const { baseSha, since } = await commitLoginMoveAndAck("Reviewer <reviewer@example.com>");
+    const { baseSha, since } = await commitMoveAndAck("Reviewer <reviewer@example.com>");
     const on = buildReview(tmp, since, baseSha, undefined, { requireIndependentAck: true });
     assert.deepEqual(on.state.staleDocs, [], "an independent ack clears even under the flag");
   });
 
   it("--strict + --require-independent-ack exits 1 on a self-acked move; the card marks it not counted", async () => {
-    const { baseSha } = await commitLoginMoveAndAck(AUTHOR);
+    const { baseSha } = await commitMoveAndAck(AUTHOR);
     // bare (no --strict) is informational → exit 0, but the card marks the self-ack ignored
     const out = execFileSync(
       "node",
       [CLI, "review", "--base", baseSha, "--require-independent-ack"],
       { cwd: tmp, encoding: "utf-8" },
     );
-    assert.match(out, /login \[self — not counted\]/);
+    assert.match(out, /src\/auth\/login\.ts \(file\) \[self — not counted\]/);
     assert.match(out, /self-signed ack does not clear/);
     // with --strict the self-acked stale doc fails the gate
     assert.throws(
@@ -441,13 +456,13 @@ describe("--require-independent-ack (ADR 006 strict mode)", () => {
   });
 
   it("an independent ack passes --strict --require-independent-ack (exit 0)", async () => {
-    const { baseSha } = await commitLoginMoveAndAck("Reviewer <reviewer@example.com>");
+    const { baseSha } = await commitMoveAndAck("Reviewer <reviewer@example.com>");
     const out = execFileSync(
       "node",
       [CLI, "review", "--base", baseSha, "--require-independent-ack", "--strict"],
       { cwd: tmp, encoding: "utf-8" },
     );
-    assert.match(out, /login \[independent\]/);
+    assert.match(out, /src\/auth\/login\.ts \(file\) \[independent\]/);
   });
 
   it("fail-open closed: an UNCOMMITTED ack cannot launder past the flag (authorship unverifiable)", async () => {
@@ -462,15 +477,15 @@ describe("--require-independent-ack (ADR 006 strict mode)", () => {
       ["commit", "--allow-empty", "-m", "someone else's commit", "--author=Bob <bob@example.com>"],
       { cwd: tmp, stdio: "ignore" },
     );
-    await scaffold({ "src/auth/login.ts": "export const login = () => { return 7; };\n" });
+    await scaffold({ "src/auth/login.ts": loginAdditive("helper") });
     const since = worktreeChangesSince(tmp, baseSha);
-    const f = buildReview(tmp, since, baseSha).drift.find((d) => d.symbol === "login");
-    assert.ok(f?.from && f?.to);
+    const { from, to } = fileContentTransition(tmp, baseSha, "src/auth/login.ts");
+    assert.ok(from && to);
     // even a "stranger" signer (not Bob) must not clear an uncommitted change
     writeAck(tmp, {
-      anchorId: f!.anchorId,
-      fromHash: f!.from!,
-      toHash: f!.to!,
+      anchorId: "src/auth/login.ts",
+      fromHash: from as string,
+      toHash: to as string,
       reason: "trust me",
       signer: "Mallory <mallory@example.com>",
     });
@@ -513,9 +528,7 @@ describe("--require-independent-ack (ADR 006 strict mode)", () => {
 
 describe("codument review (CLI)", () => {
   it("--json emits the contract and exits 0", async () => {
-    await scaffold({
-      "src/auth/login.ts": "export const login = () => { return 2; };\n",
-    });
+    await scaffold({ "src/auth/login.ts": loginSigMove("remember: boolean") });
     const out = execFileSync("node", [CLI, "review", "--json"], {
       cwd: tmp,
       encoding: "utf-8",
@@ -528,34 +541,35 @@ describe("codument review (CLI)", () => {
   });
 
   it("human output names stale docs", async () => {
-    await scaffold({
-      "src/auth/login.ts": "export const login = () => { return 3; };\n",
-    });
+    await scaffold({ "src/auth/login.ts": loginSigMove("remember: boolean") });
     const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
     assert.match(out, /Stale docs/);
     assert.match(out, /auth/);
   });
 
   it("forks each drift finding (update doc vs ack) with the exact ack command + a resolution summary", async () => {
-    await scaffold({
-      "src/auth/login.ts": "export const login = () => { return 3; };\n",
-    });
+    // An ADDITIVE move: the fork survives ADR 020 only for the classes that still
+    // gate, and this is the one of them a signature can still settle. The ack arm it
+    // prints is FILE grain, because a symbol that has just appeared has no transition
+    // for a per-symbol ack to bind to.
+    await scaffold({ "src/auth/login.ts": loginAdditive("helper") });
     const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
     assert.match(out, /Symbol drift/);
     assert.match(out, /contract changed →/); // the doc-update arm is shown...
-    assert.match(out, /codument ack src\/auth\/login\.ts::login/); // ...alongside the ack arm
+    assert.match(out, /codument ack src\/auth\/login\.ts --reason/); // ...alongside the ack arm
+    assert.doesNotMatch(out, /codument ack src\/auth\/login\.ts::/, "never a per-symbol route here");
     assert.match(out, /Drift resolution: 1 owned symbol\(s\) moved/);
     assert.match(out, /1 still flagged/);
   });
 
   it("a correct intent-altitude doc edit resolves the drift — the surface mirrors the verdict, not co-movement (ADR 010)", async () => {
     await scaffold({
-      "src/auth/login.ts": "export const login = () => { return true; };\n",
+      "src/auth/login.ts": loginSigMove("remember: boolean"),
       // The doc is updated in plain English, deliberately WITHOUT naming `login`
       // (the standard forbids symbol mirrors). The verdict clears because the doc
       // changed; the surface must agree, not nag via co-movement.
       "docs/features/auth.md":
-        "# auth\n\n## In plain terms\nSign-in now succeeds for valid input.\n",
+        "# auth\n\n## In plain terms\nSign-in now remembers you between visits.\n",
     });
     const report = buildReview(tmp);
     assert.ok(
@@ -569,22 +583,21 @@ describe("codument review (CLI)", () => {
   });
 
   it("lists applied acknowledgments with their reason and counts them in the summary", async () => {
-    await scaffold({
-      "src/auth/login.ts": "export const login = () => { return 3; };\n",
-    });
-    const f = buildReview(tmp).drift.find((d) => d.symbol === "login");
-    assert.ok(f?.from && f?.to);
+    await scaffold({ "src/auth/login.ts": loginAdditive("helper") });
+    const { from, to } = fileContentTransition(tmp, "HEAD", "src/auth/login.ts");
+    assert.ok(from && to);
     writeAck(tmp, {
-      anchorId: f!.anchorId,
-      fromHash: f!.from!,
-      toHash: f!.to!,
-      reason: "rename only; same call shape",
+      anchorId: "src/auth/login.ts",
+      fromHash: from as string,
+      toHash: to as string,
+      reason: "internal helper; no public contract added",
       signer: "agent",
     });
     const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
     assert.match(out, /Acknowledgments in this change/);
-    assert.match(out, /rename only; same call shape/);
-    assert.match(out, /1 acked \(contract-neutral\)/);
+    assert.match(out, /internal helper; no public contract added/);
+    assert.match(out, /1 file-acked \(additive\)/, "counted at the grain that actually cleared it");
+    assert.match(out, /0 still flagged/);
   });
 
   it("--log writes a caught snapshot with finding identities", async () => {
@@ -592,7 +605,7 @@ describe("codument review (CLI)", () => {
       "docs/plans/add-thing.md":
         "---\ntitle: Add Thing\ntype: plan\nstatus: approved\n---\n\n## Scope\n\n- `src/lib/db.ts`\n",
       // auth source changes without its doc (stale + risk), and an off-plan file
-      "src/auth/login.ts": "export const login = () => { return 9; };\n",
+      "src/auth/login.ts": loginSigMove("remember: boolean"),
     });
     execFileSync("node", [CLI, "review", "--log"], { cwd: tmp, encoding: "utf-8" });
     const log = await readFile(join(tmp, ".codument", "events.jsonl"), "utf-8");
@@ -621,9 +634,7 @@ describe("codument review (CLI)", () => {
   });
 
   it("--strict exits 1 on a stale doc (mapped source changed, doc did not)", async () => {
-    await scaffold({
-      "src/auth/login.ts": "export const login = () => { return 6; };\n",
-    });
+    await scaffold({ "src/auth/login.ts": loginSigMove("remember: boolean") });
     assert.throws(
       () =>
         execFileSync("node", [CLI, "review", "--strict"], {
@@ -636,7 +647,7 @@ describe("codument review (CLI)", () => {
 
   it("--strict exits 0 when new sources are mapped and docs are fresh", async () => {
     await scaffold({
-      "src/auth/login.ts": "export const login = () => { return 5; };\n",
+      "src/auth/login.ts": loginSigMove("remember: boolean"),
       "docs/features/auth.md": "# auth\n\ntouched\n",
     });
     const out = execFileSync("node", [CLI, "review", "--strict"], {
@@ -1361,8 +1372,11 @@ describe("coarse-file ack signpost", () => {
       "docs/.registry.json": JSON.stringify(REGISTRY, null, 2),
     });
     gitInit(tmp);
+    // A CONTRACT move, so there is a gating drift finding for the signpost to be
+    // absent from: under ADR 020 a body edit produces no stale doc at all, and a
+    // missing file-grain line proves nothing when nothing was flagged.
     await scaffold({
-      "src/auth/login.ts": "export function login(u: string) { return u.trim(); }\n",
+      "src/auth/login.ts": "export function login(u: string, trim: boolean) { return u; }\n",
     });
     let out = "";
     try {
@@ -1647,7 +1661,7 @@ describe("the verdict is the last line, and a single-anchor file says something 
     await fixture();
     await scaffold({
       "app/Button.tsx":
-        "export default function Button(props: { label: string }) {\n  return props.label.trim();\n}\n",
+        "export default function Button(props: { label: string; tone: string }) {\n  return props.label;\n}\n",
     });
 
     const red = run(["review", "--strict"]);
@@ -1666,7 +1680,7 @@ describe("the verdict is the last line, and a single-anchor file says something 
       "codument review: 1 stale doc(s) — not gated (add `--strict` to gate)",
     );
 
-    await scaffold({ "docs/features/ui.md": "# ui\n\n## In plain terms\nButtons, trimmed.\n" });
+    await scaffold({ "docs/features/ui.md": "# ui\n\n## In plain terms\nButtons carry a tone.\n" });
     const green = run(["review", "--strict"]);
     assert.equal(green.code, 0);
     assert.equal(lastLine(green.out), "codument review: clean");
@@ -1675,35 +1689,40 @@ describe("the verdict is the last line, and a single-anchor file says something 
     assert.equal(lastLine(run(["review"]).out), "codument review: clean");
   });
 
-  it("a file whose only anchor is the module one is named by file, and says body vs contract", async () => {
+  it("a file whose only anchor is the module one is named by file, not by `default`", async () => {
     // ADR 014 gives every default-exported component one `default.` anchor, so the
     // drift line read `default (changed)` — the symbol name IS the file, and the
-    // line told the reader nothing the change list had not. Name the file, and
-    // spend the line on what was never visible: whether the contract moved.
-    await fixture();
-    await scaffold({
-      "app/Button.tsx":
-        "export default function Button(props: { label: string }) {\n  return props.label.trim();\n}\n",
-      "app/two.ts": "export function alpha() {\n  return 11;\n}\nexport function beta() {\n  return 2;\n}\n",
-    });
-    const out = run(["review", "--strict"]).out;
-    assert.match(out, /• app\/Button\.tsx \(body changed\) in ui/);
-    assert.doesNotMatch(out, /• default \(changed\)/, "the symbol name added nothing");
-    // A multi-symbol file is untouched: there the symbol name is the information.
-    assert.match(out, /• alpha \(changed\) in ui/);
-    // The ack route still names the precise anchor — the collapse is rendering only.
-    assert.match(out, /codument ack app\/Button\.tsx::default\. --reason/);
-  });
-
-  it("a contract move on that same shape says contract, not body", async () => {
+    // line told the reader nothing the change list had not. Name the file instead.
     await fixture();
     await scaffold({
       "app/Button.tsx":
         "export default function Button(props: { label: string; tone: string }) {\n  return props.label;\n}\n",
+      "app/two.ts":
+        "export function alpha(n: number) {\n  return n;\n}\nexport function beta() {\n  return 2;\n}\n",
     });
     const out = run(["review", "--strict"]).out;
     assert.match(out, /• app\/Button\.tsx \(contract changed\) in ui/);
-    assert.match(out, /signature move/, "and a signature move still refuses the ack route");
+    assert.doesNotMatch(out, /• default \(changed\)/, "the symbol name added nothing");
+    // A multi-symbol file is untouched: there the symbol name is the information.
+    assert.match(out, /• alpha \(changed\) in ui/);
+    assert.match(out, /signature move/, "and a signature move refuses the ack route");
+  });
+
+  it("and nothing in that block is ever labelled `body` — a body move never reaches it", async () => {
+    // The label used to fork body-vs-contract because both could land in a block
+    // headed "resolve each". Under ADR 020 only one can, and the other arm is not
+    // rendered differently — it is not rendered at all, because there is nothing
+    // left for the reader to resolve.
+    await fixture();
+    await scaffold({
+      "app/Button.tsx":
+        "export default function Button(props: { label: string }) {\n  return props.label.trim();\n}\n",
+    });
+    const r = run(["review", "--strict"]);
+    assert.equal(r.code, 0, "a body-only move does not gate");
+    assert.doesNotMatch(r.out, /Symbol drift/);
+    assert.doesNotMatch(r.out, /body changed/);
+    assert.match(r.out, /1 body-only \(reported, not gated\)/, "still reported, never blocking");
   });
 });
 
@@ -1738,7 +1757,19 @@ describe("an unclaimed shared file says how to stop being one (plan 36)", () => 
     ...extra,
   });
 
-  async function threeOwners(extra: Record<string, Record<string, unknown>> = {}): Promise<void> {
+  // The contested file after the edit. Defaults to a CONTRACT move: under ADR 020 the
+  // field's actual episode — a body edit — wakes nothing at all now, which is the
+  // outcome this plan was for and is pinned in its own test below. Everything else
+  // here is about ROUTING a wake, so it needs a wake that still happens.
+  const CONTRACT_MOVE =
+    "export default function Button(props: { label: string; tone: string }) {\n  return props.label;\n}\n";
+  const BODY_MOVE =
+    "export default function Button(props: { label: string }) {\n  return props.label.trim();\n}\n";
+
+  async function threeOwners(
+    extra: Record<string, Record<string, unknown>> = {},
+    edited: string = CONTRACT_MOVE,
+  ): Promise<void> {
     await scaffold({
       "docs/features/cart.md": "# cart\n\n## In plain terms\nThe cart.\n",
       "docs/features/checkout.md": "# checkout\n\n## In plain terms\nCheckout.\n",
@@ -1758,10 +1789,7 @@ describe("an unclaimed shared file says how to stop being one (plan 36)", () => 
       ),
     });
     gitInit(tmp);
-    await scaffold({
-      [CONTESTED]:
-        "export default function Button(props: { label: string }) {\n  return props.label.trim();\n}\n",
-    });
+    await scaffold({ [CONTESTED]: edited });
   }
 
   it("the field replay: the fix is on the blocking line, stated once, and no dead ack is offered", async () => {
@@ -1823,8 +1851,12 @@ describe("an unclaimed shared file says how to stop being one (plan 36)", () => 
       ),
     });
     gitInit(tmp);
+    // `priceOf` moves its CONTRACT: ADR 020 leaves a body edit unrouted because it
+    // is unblocked, so a test about which route leads needs a move that still has
+    // one. `taxOf` stays put — the split is what makes claiming the better fix.
     await scaffold({
-      "src/shared.ts": "export function priceOf() {\n  return 11;\n}\nexport function taxOf() {\n  return 2;\n}\n",
+      "src/shared.ts":
+        "export function priceOf(qty: number) {\n  return qty;\n}\nexport function taxOf() {\n  return 2;\n}\n",
     });
     const out = runReview(["review"]).out;
     const demote = out.indexOf("demote it →");
@@ -1857,23 +1889,22 @@ describe("an unclaimed shared file says how to stop being one (plan 36)", () => 
     assert.match(r.out, /codument ack app\/site\.css/);
   });
 
-  it("either fix ends the churn: one wake, and one ack clears it", async () => {
-    // The acceptance criterion, and the proof that this plan changed no semantics —
-    // both resolutions were always available, they were just never named.
+  it("either fix ends the churn: one wake, and one doc ends it", async () => {
+    // The acceptance criterion: both resolutions were always available, they were
+    // just never named. What ADR 020 changed is the exit at the far end — a contract
+    // move is settled by the doc, never by a signature.
     await threeOwners({ cart: { owned_symbols: { [CONTESTED]: ["default."] } } });
     let r = runReview();
     assert.equal((r.out.match(/^ {4}⚠ \w+: docs/gm) ?? []).length, 1, "one doc wakes, not three");
-    const m = r.out.match(/codument ack (\S+) --reason/);
-    assert.ok(m, `a claimed symbol is ackable again:\n${r.out}`);
-    execFileSync("node", [CLI, "ack", m![1], "--reason", "same props in, same node out"], {
-      cwd: tmp,
-      encoding: "utf-8",
-    });
-    assert.equal(runReview().code, 0, "and the ack clears the gate");
+    assert.doesNotMatch(r.out, /codument ack/, "a contract move takes no signature at any grain");
+    await scaffold({ "docs/features/cart.md": "# cart\n\n## In plain terms\nThe cart, toned.\n" });
+    assert.equal(runReview().code, 0, "and the one owning doc ends it");
 
-    // The demotion reaches the same place by the other route.
-    rmSync(join(tmp, ".codument", "acks"), { recursive: true, force: true });
+    // The demotion reaches the same place by the other route. Put cart's doc back
+    // first, or it is fresh and the count below would read one-wake for the wrong
+    // reason.
     await scaffold({
+      "docs/features/cart.md": "# cart\n\n## In plain terms\nThe cart.\n",
       "docs/.registry.json": JSON.stringify(
         {
           features: {
@@ -1888,6 +1919,23 @@ describe("an unclaimed shared file says how to stop being one (plan 36)", () => 
     });
     r = runReview();
     assert.equal((r.out.match(/^ {4}⚠ \w+: docs/gm) ?? []).length, 1, "one wake by demotion too");
+  });
+
+  it("the field's own episode needs neither fix now: a body edit wakes none of the three", async () => {
+    // The report's worst moment, replayed byte for byte: one line inside a component
+    // three features claim. It cost three stale docs, two inert acks, and prose in
+    // five docs. Under ADR 020 the ownership question never comes up, because no doc
+    // went stale for it to be a question about — the registry is as contested as it
+    // ever was, and nothing asks the agent to settle it mid-edit.
+    await threeOwners({}, BODY_MOVE);
+    const r = runReview();
+    assert.equal(r.code, 0, "nothing gates");
+    assert.doesNotMatch(r.out, /shared symbol no feature claims/);
+    assert.doesNotMatch(r.out, /⚠ \w+: docs\//, "no doc woke at all");
+    // Still disclosed on the verdict line, though no feature claims the symbol —
+    // the report is the whole consideration for dropping the block, so a file the
+    // registry cannot resolve is the last place it may go quiet.
+    assert.match(r.out, /1 body-only move\(s\) reported, not gated/);
   });
 
   it("a symbol two features BOTH claim gets the opposite fix, not the same one", async () => {
@@ -2000,7 +2048,10 @@ describe("an unclaimed shared file says how to stop being one (plan 36)", () => 
       ),
     });
     gitInit(tmp);
-    await scaffold({ "src/shared.ts": "export function priceOf() {\n  return 2;\n}\n" });
+    // A CONTRACT move: routing a wake needs a wake, and ADR 020 stopped a body edit
+    // from producing one — on the umbrella and on the contested owners alike, which
+    // is the point (one file, one move, one answer).
+    await scaffold({ "src/shared.ts": "export function priceOf(qty: number) {\n  return qty;\n}\n" });
 
     const r = runReview();
     assert.equal(r.code, 1);
@@ -2098,8 +2149,13 @@ describe("the file-ack route is decided per doc, not per file (plan 42)", () => 
       ),
     });
     gitInit(tmp);
-    // A BODY-only move: ackable in principle, so the routes are the whole question.
-    await scaffold({ [SRC]: "export function compute(x: number) {\n  return x + 2;\n}\n" });
+    // A CONTRACT move. ADR 020 leaves a body move unrouted because it is unblocked,
+    // so a test about which route each doc gets needs a move that still wakes both —
+    // and this one wakes them for DIFFERENT reasons, which is the whole question:
+    // engine by its own moved symbol, toolkit by the file's content moving under it.
+    await scaffold({
+      [SRC]: "export function compute(x: number, scale: number) {\n  return x * scale;\n}\n",
+    });
   }
 
   it("offers the file ack to the umbrella a file ack actually clears", async () => {
@@ -2128,9 +2184,7 @@ describe("the file-ack route is decided per doc, not per file (plan 42)", () => 
     );
     // Its resolution is the per-symbol one, and that is printed where it belongs.
     assert.match(r.out, /• compute \(changed\) in engine/);
-    // Quoted: `compute().` is a bash syntax error pasted bare, so a "paste-ready"
-    // command that does not survive a shell is not one.
-    assert.match(r.out, /codument ack "src\/engine\.ts::compute\(\)\." --reason/);
+    assert.match(r.out, /signature move {2}→/, "and it names the doc as the only exit");
   });
 
   it("a signature move on a contested file names the registry escape, not just the denial", async () => {
@@ -2451,7 +2505,10 @@ describe("governed registered changes in review (ADR 017)", () => {
       "docs/.registry.json": registryWith({ primary_sources: ["src/site.ts"], related_sources: [] }),
     });
     gitInit(tmp);
-    await scaffold({ "src/site.ts": "export function a() {\n  return 2;\n}\n" });
+    // A CONTRACT move: the notice is attached to a stale-doc entry, so proving it is
+    // absent needs an entry for it to be absent from (ADR 020 leaves a body edit with
+    // no entry at all).
+    await scaffold({ "src/site.ts": "export function a(n: number) {\n  return n;\n}\n" });
 
     const r = runReview();
     assert.equal(r.code, 1);
@@ -2524,7 +2581,7 @@ describe("config-file grain arc (nuxt.config.ts shape)", () => {
     }
   }
 
-  it("comment edit silent; value edit one ackable finding; ack clears; callee swap refused", async () => {
+  it("comment edit silent; value edit reported not gated; the ack refused; callee swap gates", async () => {
     await scaffold({
       "docs/features/site.md": "# site\n",
       "nuxt.config.ts": BASE,
@@ -2537,26 +2594,34 @@ describe("config-file grain arc (nuxt.config.ts shape)", () => {
     let r = runReview();
     assert.equal(r.code, 0, `comment edit must be silent, got:\n${r.out}`);
 
-    // 2. A value edit is ONE named body-only finding with a pasteable per-symbol ack.
+    // 2. A value edit moves the config's BODY (ADR 014 splits the callee from its
+    //    arguments), and under ADR 020 that is reported and never gated. This is the
+    //    exact friction the website dogfood recorded: every module list edit bought a
+    //    signature, and the signatures were all the same sentence.
     await scaffold({
       "nuxt.config.ts": BASE.replace("'@nuxt/content'", "'@nuxt/content', '@nuxt/image'"),
     });
     r = runReview();
-    assert.equal(r.code, 1, "value edit must gate");
-    assert.ok(r.out.includes("default"), "the default anchor must be named");
-    assert.ok(
-      r.out.includes("codument ack nuxt.config.ts::default."),
-      "pasteable per-symbol ack expected",
-    );
+    assert.equal(r.code, 0, `a value edit no longer gates, got:\n${r.out}`);
+    assert.match(r.out, /1 body-only move\(s\) reported, not gated/, "and is still disclosed");
 
-    // 3. The pasted ack clears it.
-    execFileSync(
-      "node",
-      [CLI, "ack", "nuxt.config.ts::default.", "--reason", "module list grew; site contract unchanged"],
-      { cwd: tmp, encoding: "utf-8", env: { ...process.env, NO_COLOR: "1" } },
+    // 3. …so the per-symbol ack for it is refused BY NAME, rather than quietly
+    //    writing a record that clears a gate which never closed.
+    let refusal = "";
+    assert.throws(
+      () =>
+        execFileSync(
+          "node",
+          [CLI, "ack", "nuxt.config.ts::default.", "--reason", "module list grew"],
+          { cwd: tmp, encoding: "utf-8", env: { ...process.env, NO_COLOR: "1" }, stdio: "pipe" },
+        ),
+      (e: unknown) => {
+        refusal = String((e as { stderr?: string }).stderr ?? "");
+        return true;
+      },
     );
-    r = runReview();
-    assert.equal(r.code, 0, `ack must clear the gate, got:\n${r.out}`);
+    assert.match(refusal, /body-only move/);
+    assert.match(refusal, /reported and never gates/);
 
     // 4. Swapping the producing callee is a signature move: ack refused, doc owed.
     execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
@@ -2632,7 +2697,7 @@ describe("python settings arc (Django settings.py shape)", () => {
     }
   }
 
-  it("comment edit silent; value edit one ackable finding; ack clears; signature move refused; never ungated", async () => {
+  it("comment edit silent; value edit reported not gated; signature move refused; never ungated", async () => {
     await scaffold({
       "docs/features/settings.md": "# settings\n\nDEBUG and the database url resolver.\n",
       "app/settings.py": BASE,
@@ -2647,16 +2712,14 @@ describe("python settings arc (Django settings.py shape)", () => {
     let r = runReview();
     assert.equal(r.code, 0, `comment edit must be silent, got:\n${r.out}`);
 
-    // 2. A settings VALUE edit is ONE named, body-only, ackable finding — and the
-    // file is GATED per-symbol, never riding the ungated-registered surface.
+    // 2. A settings VALUE edit moves DEBUG's body, and under ADR 020 that is
+    // reported and never gated. The file is still GATED per-symbol — the point of
+    // the `ungatedRegistered` check is that a governed `.py` is read, not waved
+    // through, and a quiet run must not be mistaken for the second thing.
     await scaffold({ "app/settings.py": BASE.replace("DEBUG = True", "DEBUG = False") });
     r = runReview();
-    assert.equal(r.code, 1, "value edit must gate");
-    assert.ok(r.out.includes("DEBUG"), "the DEBUG anchor must be named");
-    assert.ok(
-      r.out.includes("codument ack app/settings.py::DEBUG."),
-      `pasteable per-symbol ack expected, got:\n${r.out}`,
-    );
+    assert.equal(r.code, 0, `a value edit no longer gates, got:\n${r.out}`);
+    assert.match(r.out, /1 body-only move\(s\) reported, not gated/, "and is still disclosed");
     const json = JSON.parse(
       execFileSync("node", [CLI, "review", "--json"], {
         cwd: tmp,
@@ -2665,19 +2728,23 @@ describe("python settings arc (Django settings.py shape)", () => {
       }),
     );
     assert.deepEqual(json.state.ungatedRegistered, [], "a governed .py is never 'ungated'");
-    assert.deepEqual(
-      json.state.staleDocs.map((d: { feature: string }) => d.feature),
-      ["settings"],
+    assert.deepEqual(json.state.staleDocs, [], "and nothing went stale for a body move");
+    assert.equal(
+      json.drift.find((d: { symbol: string }) => d.symbol === "DEBUG")?.gates,
+      false,
+      "the move is on the record as a non-gating one, not absent from it",
     );
 
-    // 3. The pasted ack clears it.
-    execFileSync(
-      "node",
-      [CLI, "ack", "app/settings.py::DEBUG.", "--reason", "dev default flipped; contract unchanged"],
-      { cwd: tmp, encoding: "utf-8", env: { ...process.env, NO_COLOR: "1" } },
+    // 3. …so the per-symbol ack for it is refused by name.
+    assert.throws(
+      () =>
+        execFileSync(
+          "node",
+          [CLI, "ack", "app/settings.py::DEBUG.", "--reason", "dev default flipped"],
+          { cwd: tmp, encoding: "utf-8", env: { ...process.env, NO_COLOR: "1" }, stdio: "pipe" },
+        ),
+      "a body-only move has no finding for a signature to clear",
     );
-    r = runReview();
-    assert.equal(r.code, 0, `ack must clear the gate, got:\n${r.out}`);
 
     // 4. A default-value change on a documented def is a SIGNATURE move: the gate
     // says so and the ack path refuses it.
@@ -2844,7 +2911,7 @@ describe("sfc component arc (the website dogfood shape)", () => {
 });
 
 describe("go handler arc", () => {
-  it("a body refactor is ackable; a param add is a signature move the ack refuses", async () => {
+  it("a body refactor is reported not gated; a param add is a signature move the ack refuses", async () => {
     const GO = "package server\n\nfunc Handle(n int) int {\n\treturn n\n}\n";
     await scaffold({
       "docs/features/handler.md": "# handler\n",
@@ -2871,21 +2938,32 @@ describe("go handler arc", () => {
     gitInit(tmp);
     const env = { ...process.env, NO_COLOR: "1" };
 
-    // Body refactor: one ackable finding, and the pasted ack clears it.
+    // Body refactor: the Go adapter reads a signature, so the move is PROVEN
+    // body-only and passes --strict without a signature (ADR 020).
     await scaffold({ "server/handler.go": GO.replace("return n", "return n * 1") });
-    assert.throws(() =>
-      execFileSync("node", [CLI, "review", "--strict"], { cwd: tmp, encoding: "utf-8", env, stdio: "pipe" }),
+    const out = execFileSync("node", [CLI, "review", "--strict"], {
+      cwd: tmp,
+      encoding: "utf-8",
+      env,
+    });
+    assert.match(out, /1 body-only move\(s\) reported, not gated/);
+    assert.throws(
+      () =>
+        execFileSync(
+          "node",
+          [CLI, "ack", "server/handler.go::Handle().", "--reason", "identity refactor"],
+          { cwd: tmp, encoding: "utf-8", env, stdio: "pipe" },
+        ),
+      "and the ack for it is refused: there is no finding to clear",
     );
-    execFileSync(
-      "node",
-      [CLI, "ack", "server/handler.go::Handle().", "--reason", "identity refactor; contract unchanged"],
-      { cwd: tmp, encoding: "utf-8", env },
-    );
-    execFileSync("node", [CLI, "review", "--strict"], { cwd: tmp, encoding: "utf-8", env });
 
-    // A param add is a signature move: refused.
+    // A param add is a signature move: refused for the opposite reason — a contract
+    // moved, and no signature settles that either.
     execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
-    execFileSync("git", ["commit", "--no-verify", "-m", "ack landed"], { cwd: tmp, stdio: "ignore" });
+    execFileSync("git", ["commit", "--no-verify", "-m", "body refactor landed"], {
+      cwd: tmp,
+      stdio: "ignore",
+    });
     await scaffold({
       "server/handler.go": GO.replace("Handle(n int) int", "Handle(n, pad int) int").replace(
         "return n",
@@ -2905,7 +2983,7 @@ describe("go handler arc", () => {
 });
 
 describe("jvm controller arc", () => {
-  it("Java: a body refactor acks; adding @GetMapping to the method refuses the ack", async () => {
+  it("Java: a body refactor is reported not gated; adding @GetMapping refuses the ack", async () => {
     const JAVA =
       "package server;\n\npublic class Controller {\n    public int handle(int n) {\n        return n;\n    }\n}\n";
     await scaffold({
@@ -2933,21 +3011,22 @@ describe("jvm controller arc", () => {
     gitInit(tmp);
     const env = { ...process.env, NO_COLOR: "1" };
 
-    // Body refactor: one ackable finding, cleared by the pasted ack.
+    // Body refactor: the JVM adapter reads a signature, so the move is PROVEN
+    // body-only and passes --strict without a signature (ADR 020).
     await scaffold({ "server/Controller.java": JAVA.replace("return n;", "return n * 1;") });
-    assert.throws(() =>
-      execFileSync("node", [CLI, "review", "--strict"], { cwd: tmp, encoding: "utf-8", env, stdio: "pipe" }),
-    );
-    execFileSync(
-      "node",
-      [CLI, "ack", "server/Controller.java::Controller#handle().", "--reason", "identity refactor; contract unchanged"],
-      { cwd: tmp, encoding: "utf-8", env },
-    );
-    execFileSync("node", [CLI, "review", "--strict"], { cwd: tmp, encoding: "utf-8", env });
+    const out = execFileSync("node", [CLI, "review", "--strict"], {
+      cwd: tmp,
+      encoding: "utf-8",
+      env,
+    });
+    assert.match(out, /1 body-only move\(s\) reported, not gated/);
 
     // Adding a framework annotation is a contract move the ack refuses.
     execFileSync("git", ["add", "-A"], { cwd: tmp, stdio: "ignore" });
-    execFileSync("git", ["commit", "--no-verify", "-m", "ack landed"], { cwd: tmp, stdio: "ignore" });
+    execFileSync("git", ["commit", "--no-verify", "-m", "body refactor landed"], {
+      cwd: tmp,
+      stdio: "ignore",
+    });
     await scaffold({
       "server/Controller.java": JAVA.replace("    public int handle(int n)", '    @GetMapping("/h")\n    public int handle(int n)').replace(
         "return n;",
@@ -2992,18 +3071,34 @@ describe("jvm controller arc", () => {
     gitInit(tmp);
     const env = { ...process.env, NO_COLOR: "1" };
 
-    // No `public` keyword anywhere, yet the function gates per symbol: a body
-    // edit is one ackable finding addressable by its precise anchor id.
-    await scaffold({ "app/Greeter.kt": KOTLIN.replace('return "hi " + name', 'return "hey " + name') });
+    // No `public` keyword anywhere, yet the function is read per symbol. A body edit
+    // proves the reading without gating on it: the finding names `greet` by its own
+    // anchor and says, in the same breath, that it blocks nothing.
+    await scaffold({
+      "app/Greeter.kt": KOTLIN.replace('return "hi " + name', 'return "hey " + name'),
+    });
+    const json = JSON.parse(
+      execFileSync("node", [CLI, "review", "--json"], { cwd: tmp, encoding: "utf-8", env }),
+    );
+    const finding = json.drift.find((d: { symbol: string }) => d.symbol === "greet");
+    assert.ok(finding, `a default-visibility function is a public anchor:\n${json.drift.length}`);
+    assert.equal(finding.gates, false, "and a body edit on it is reported, not gated");
+
+    // …and it gates per symbol the moment its contract moves.
+    await scaffold({
+      "app/Greeter.kt": KOTLIN.replace(
+        "fun greet(name: String): String",
+        "fun greet(name: String, loud: Boolean): String",
+      ),
+    });
     assert.throws(() =>
-      execFileSync("node", [CLI, "review", "--strict"], { cwd: tmp, encoding: "utf-8", env, stdio: "pipe" }),
+      execFileSync("node", [CLI, "review", "--strict"], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env,
+        stdio: "pipe",
+      }),
     );
-    execFileSync(
-      "node",
-      [CLI, "ack", "app/Greeter.kt::greet().", "--reason", "wording only; contract unchanged"],
-      { cwd: tmp, encoding: "utf-8", env },
-    );
-    execFileSync("node", [CLI, "review", "--strict"], { cwd: tmp, encoding: "utf-8", env });
   });
 });
 
@@ -3050,6 +3145,34 @@ describe("review scopes the gate to the project's declared exclusions", () => {
     });
     const report = buildReview(tmp);
     assert.ok(report.state.unmapped.includes("src/lib/cache.ts"));
+  });
+
+  it("a body move inside the declared tree is not disclosed either — the scope holds both ways", async () => {
+    // Found by attacking the ADR 020 disclosure: the verdict line counted body-only
+    // moves over the whole anchor diff, so a build tree the same line had just called
+    // "1 excluded" also produced "1 body-only move reported". A number on the verdict
+    // line has to be one the reader can account for, and this one contradicted the
+    // summary two lines above it. Exclusion is a scope, and a scope binds every
+    // sentence the gate says — the ones that block and the ones that only inform.
+    await scaffold({
+      ".codument-meta.json": JSON.stringify({
+        version: "0.9.0",
+        initialized: "2026-07-21",
+        project: { srcDir: "src" },
+        exclude: { dirs: ["out"] },
+      }),
+      "out/gen.ts": "export function gen() {\n  return 1;\n}\n",
+    });
+    gitCommitAll(tmp, "declare the build tree and commit it");
+
+    await scaffold({ "out/gen.ts": "export function gen() {\n  return 2;\n}\n" });
+    const report = buildReview(tmp);
+    assert.equal(report.reportedNotGated, 0, "an excluded file's move is not disclosed");
+
+    // The control: the identical edit on an in-scope file IS disclosed, so the zero
+    // above comes from the exclusion and not from the counter being broken.
+    await scaffold({ "src/auth/login.ts": "export const login = () => 7;\n" });
+    assert.equal(buildReview(tmp).reportedNotGated, 1);
   });
 
   it("declaring nothing leaves the verdict identical to no config at all", async () => {
@@ -3129,8 +3252,13 @@ describe("the gate sees changes inside a nested member repository", () => {
     g(ws, ["init", "-q"]);
     g(ws, ["add", "-A"]);
     g(ws, ["commit", "-m", "init"]);
-    // The contract change that must fire: an owned symbol's body moves.
-    await writeFile(join(ws, "child", "src", "app.ts"), "export function hello() {\n  return 99;\n}\n");
+    // The contract change that must fire: an owned symbol gains a parameter. A BODY
+    // move would prove nothing here — ADR 020 leaves it ungated in both topologies,
+    // so a nested repo that saw nothing at all would still match the control.
+    await writeFile(
+      join(ws, "child", "src", "app.ts"),
+      "export function hello(n: number) {\n  return n;\n}\n",
+    );
     forgetWorkspace();
   };
 
@@ -3144,7 +3272,10 @@ describe("the gate sees changes inside a nested member repository", () => {
     g(flat, ["init", "-q"]);
     g(flat, ["add", "-A"]);
     g(flat, ["commit", "-m", "init"]);
-    await writeFile(join(flat, "child", "src", "app.ts"), "export function hello() {\n  return 99;\n}\n");
+    await writeFile(
+      join(flat, "child", "src", "app.ts"),
+      "export function hello(n: number) {\n  return n;\n}\n",
+    );
     forgetWorkspace();
     return flat;
   };

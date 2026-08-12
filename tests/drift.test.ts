@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, beforeEach, afterEach } from "node:test";
 import { buildReview } from "../src/commands/review.js";
-import { writeAck } from "../src/lib/acknowledgment.js";
 
 let tmp: string;
 
@@ -58,12 +57,18 @@ describe("drift wiring — per-symbol findings, acknowledgments, auto-invalidati
     await rm(tmp, { recursive: true, force: true });
   });
 
-  it("a moved symbol with an unreconciled doc is a drift finding AND a stale doc", async () => {
+  it("a body-only move is reported in full and gates nothing (ADR 020)", async () => {
     await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
     const report = buildReview(tmp);
 
-    // deterministic verdict: alpha's doc is stale (file did not change)
-    assert.deepStrictEqual(report.state.staleDocs.map((d) => d.feature), ["alpha"]);
+    // The whole point of ADR 020: an implementation edit is not a contract event,
+    // and the only fix the gate could have demanded here was a signature nobody
+    // reads back. Everything the tool KNOWS is still reported; only the block goes.
+    assert.deepStrictEqual(
+      report.state.staleDocs.map((d) => d.feature),
+      [],
+      "a body-only move never reaches the stale-doc verdict",
+    );
 
     // precise per-symbol trace, with co-movement telemetry + fingerprint transition
     const f = report.drift.find((d) => d.symbol === "foo");
@@ -73,6 +78,7 @@ describe("drift wiring — per-symbol findings, acknowledgments, auto-invalidati
     assert.equal(f?.comovement, "prose-unchanged"); // the foo() line did not move
     assert.equal(f?.acknowledged, false);
     assert.equal(f?.signatureChanged, false, "a return-value edit is a body-only move");
+    assert.equal(f?.gates, false, "and so it is reported, never gated");
     assert.ok(f?.from && f?.to && f.from !== f.to, "carries the from->to fingerprints");
   });
 
@@ -84,6 +90,9 @@ describe("drift wiring — per-symbol findings, acknowledgments, auto-invalidati
     const f = report.drift.find((d) => d.symbol === "foo");
     assert.equal(f?.kind, "changed");
     assert.equal(f?.signatureChanged, true, "a new parameter is a signature move");
+    // The other half of ADR 020, and the half that must not quietly widen: a
+    // proven contract event still blocks exactly as it always did.
+    assert.equal(f?.gates, true, "a contract move still gates");
   });
 
   it("co-movement reads as co-moved when the symbol's doc line is reconciled", async () => {
@@ -97,54 +106,29 @@ describe("drift wiring — per-symbol findings, acknowledgments, auto-invalidati
     assert.equal(report.drift.find((d) => d.symbol === "foo")?.comovement, "co-moved");
   });
 
-  it("a recorded acknowledgment clears the finding AND the stale-doc verdict", async () => {
+  // Both tests that used to live here proved the per-symbol acknowledgment
+  // adjudicated a body-only move and then decayed on the next one. ADR 020 removes
+  // the question: a body-only move never gates, so there is nothing for a per-symbol
+  // ack to clear, and both would now pass vacuously — the verdict is already empty
+  // before any ack is written. A test that cannot fail is the vacuous green the
+  // conformance batteries exist to reject, so the property is asserted where it
+  // still bites instead.
+  //
+  // Auto-invalidation itself is untouched and still covered: `acknowledgment.test.ts`
+  // pins `ackCovers` decaying on a re-move directly, and the file- and tree-grain
+  // suites in `ack.test.ts` exercise it end to end on the grains that still gate.
+  it("a repeated body-only move needs no signature, and never accumulates one", async () => {
     await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
-    const before = buildReview(tmp);
-    const f = before.drift.find((d) => d.symbol === "foo");
-    assert.ok(f?.from && f?.to);
+    assert.deepStrictEqual(buildReview(tmp).state.staleDocs, [], "first move: reported, not gated");
 
-    // the agent records "behavior-preserving, no doc change owed" for this exact move
-    writeAck(tmp, {
-      anchorId: f!.anchorId,
-      fromHash: f!.from!,
-      toHash: f!.to!,
-      reason: "refactor: return value semantics unchanged",
-      signer: "agent",
-    });
-
-    const after = buildReview(tmp);
-    assert.deepStrictEqual(after.state.staleDocs, [], "ack adjudicates the move -> doc no longer stale");
-    const acked = after.drift.find((d) => d.symbol === "foo");
-    assert.equal(acked?.acknowledged, true);
-    assert.equal(
-      acked?.ackReason,
-      "refactor: return value semantics unchanged",
-      "the finding carries the covering ack's reason for review/--json to show",
-    );
-  });
-
-  it("the acknowledgment auto-invalidates when the symbol moves again", async () => {
-    await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 2;") });
-    const first = buildReview(tmp);
-    const f = first.drift.find((d) => d.symbol === "foo")!;
-    writeAck(tmp, {
-      anchorId: f.anchorId,
-      fromHash: f.from!,
-      toHash: f.to!,
-      reason: "refactor",
-      signer: "agent",
-    });
-    assert.deepStrictEqual(buildReview(tmp).state.staleDocs, [], "covered while the fingerprint matches");
-
-    // the symbol moves AGAIN: the head fingerprint changes, so the ack (bound to the
-    // old `to`) no longer covers it — the flag returns, no ride-forever exemption.
+    // The field's treadmill in two lines: the same file edited again in the next
+    // step. Under 012 this re-fired the gate and bought a second near-identical
+    // signature — thirty-eight of the field ledger's seventy-two were this shape.
     await scaffold({ "src/a.ts": A_SRC.replace("return 1;", "return 999;") });
     const reMoved = buildReview(tmp);
-    assert.deepStrictEqual(
-      reMoved.state.staleDocs.map((d) => d.feature),
-      ["alpha"],
-      "a second move invalidates the stale ack",
-    );
-    assert.equal(reMoved.drift.find((d) => d.symbol === "foo")?.acknowledged, false);
+    assert.deepStrictEqual(reMoved.state.staleDocs, [], "second move: still nothing to sign");
+    const f = reMoved.drift.find((d) => d.symbol === "foo");
+    assert.equal(f?.gates, false);
+    assert.equal(f?.acknowledged, false, "and no acknowledgment was needed to get there");
   });
 });

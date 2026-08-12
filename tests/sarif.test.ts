@@ -223,9 +223,14 @@ describe("review --format sarif (e2e)", () => {
   };
 
   it("emits a stale-doc SARIF result on a real change, byte-identical across runs", async () => {
-    // Change the source, leave its doc alone → the gate flags auth stale; SARIF must
-    // carry it as a codument/stale-doc result anchored at the doc.
-    await writeFile(join(tmp, "src", "auth", "login.ts"), "export const login = () => 2;\n");
+    // Move the source's CONTRACT, leave its doc alone → the gate flags auth stale;
+    // SARIF must carry it as a codument/stale-doc result anchored at the doc. A
+    // body-only edit would gate nothing (ADR 020), so this would be asserting the
+    // shape of an empty result set.
+    await writeFile(
+      join(tmp, "src", "auth", "login.ts"),
+      "export const login = (remember: boolean) => {};\n",
+    );
     const first = runSarif();
     const second = runSarif();
     assert.equal(first.stdout, second.stdout, "SARIF is byte-identical across runs");
@@ -242,7 +247,10 @@ describe("review --format sarif (e2e)", () => {
     assert.equal(clean.status, 0);
     assert.equal(JSON.parse(clean.stdout).runs[0].results.length, 0);
     // Drift: same SARIF shape, exit 1 — the exit code comes from --strict, not the format.
-    await writeFile(join(tmp, "src", "auth", "login.ts"), "export const login = () => 3;\n");
+    await writeFile(
+      join(tmp, "src", "auth", "login.ts"),
+      "export const login = (remember: boolean) => {};\n",
+    );
     const dirty = runSarif(["--strict"]);
     assert.equal(dirty.status, 1);
     assert.ok(JSON.parse(dirty.stdout).runs[0].results.length > 0);

@@ -18,6 +18,30 @@ import { byteNormalize, readBlobAtRef } from "./two-ref.js";
 // the next move, since the ack is bound to this `to` fingerprint). The verdict
 // itself stays deterministic; co-movement only labels the finding.
 
+/**
+ * Whether a moved anchor BLOCKS, per ADR 020: the gate blocks only where the
+ * event is structurally proven and the fix it demands is checkable.
+ *
+ * An added or removed symbol is public surface appearing or vanishing — proven.
+ * A signature move is a contract change by construction — proven. A move whose
+ * two signatures are present and equal is proven body-only: implementation
+ * moved, no documented contract can have gone stale from it, and the only fix
+ * the gate could demand there is a signature nobody reads back.
+ *
+ * Body-only is PROVEN, never assumed. An anchor carrying no signature on either
+ * side has nothing to compare, so it cannot be shown to have left its contract
+ * alone and keeps gating — with one exception that is structural rather than a
+ * guess: the module residual holds exactly what did NOT anchor as an export,
+ * because every exported symbol anchors on its own, so nothing in it ever
+ * carried an export's contract.
+ */
+export function anchorGates(ch: AnchorChange): boolean {
+  if (ch.kind !== "changed") return true;
+  if (isSignatureMove(ch)) return true;
+  if (ch.fromSig !== undefined && ch.toSig !== undefined) return false;
+  return ch.name !== MODULE_ANCHOR_NAME;
+}
+
 export interface DriftFinding {
   /** `<path>::<descriptor>` of the moved anchor. */
   anchorId: string;
@@ -35,6 +59,10 @@ export interface DriftFinding {
    *  contract needs an update, not an exemption. A body-only move (`false`) keeps
    *  the ackable path. */
   signatureChanged: boolean;
+  /** Whether this move GATES (ADR 020). A proven contract event — an added or
+   *  removed symbol, or a signature move — blocks and owes its doc a line. A move
+   *  proven body-only is reported and never reaches the stale-doc verdict. */
+  gates: boolean;
   /** Info-only telemetry: did the doc's lines mentioning this symbol move? */
   comovement: ComovementStatus;
   /** A valid acknowledgment names this exact `from`->`to` transition. */
@@ -97,9 +125,15 @@ export function computeDrift(
       const owner = resolveOwner(registry, ch.id);
       // Only FEATURE-owned anchors get a per-symbol drift finding; unowned /
       // unassigned / ambiguous are left to the change-state (concept umbrellas,
-      // fail-loud lints) and pass through unfiltered.
+      // fail-loud lints) and pass through — but through the SAME gating predicate.
+      // The ownership lint's fix is checkable, so it was tempting to let it block on
+      // any move at all; the other half of ADR 020 forbids it. Under a body-only move
+      // no doc is stale, so "which doc owes the line" is a question with no line
+      // behind it — and letting it block anyway would keep the field's worst episode
+      // (one body edit, three docs woken, prose into five) alive under a new name.
+      // The registry may still be wrong; that is rot, and rot is reported, not gated.
       if (owner.kind !== "owned") {
-        kept.push(ch);
+        if (anchorGates(ch)) kept.push(ch);
         continue;
       }
       const doc = registry.features[owner.feature].doc;
@@ -113,6 +147,7 @@ export function computeDrift(
           ? acks.find((a) => ackCovers(a, ch.id, ch.from as string, ch.to as string))
           : undefined;
       const acknowledged = coveringAck !== undefined;
+      const gates = anchorGates(ch);
       const { base, head } = docContents(doc);
       const comovement = classifyComovement(base, head, ch.name, ch.kind, {
         module: ch.name === MODULE_ANCHOR_NAME,
@@ -126,11 +161,15 @@ export function computeDrift(
         from: ch.from,
         to: ch.to,
         signatureChanged,
+        gates,
         comovement,
         acknowledged,
         ...(coveringAck ? { ackReason: coveringAck.reason, ackSigner: coveringAck.signer } : {}),
       });
-      if (!acknowledged) kept.push(ch);
+      // A non-gating move is still REPORTED — it stays in `findings`, in the
+      // ledger, and on the verdict line — but it never reaches the stale-doc
+      // verdict, so it cannot block and cannot be cleared by a signature.
+      if (!acknowledged && gates) kept.push(ch);
     }
     filtered[file] = kept;
   }

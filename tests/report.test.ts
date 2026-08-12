@@ -156,7 +156,11 @@ describe("renderReviewReportHtml", () => {
     assert.match(html, /src\/b\.ts/); // the file-grain ack names its path
   });
 
-  it("a standing vouch reads as standing here too, with what it swept — the page and the CLI cannot disagree", () => {
+  // The standing vouch this test used to render is retired (ADR 020), and the
+  // projection no longer carries the field. What survives is the property the test
+  // was really about: the page shows exactly the grains the CLI card shows, so a
+  // reader cannot be told two different stories about who adjudicated a change.
+  it("renders the file grain plainly — there is no wider vouch left to disclose", () => {
     const html = renderReviewReportHtml({
       review: {
         version: 2,
@@ -173,8 +177,6 @@ describe("renderReviewReportHtml", () => {
             anchorId: "src/locales/en.json",
             grain: "file",
             symbol: null,
-            standing: ["docs/features/copy.md"],
-            swept: ['+ "retry": "retry"'],
             signer: "alice",
             reason: "string additions owe no line to this doc",
             independent: false,
@@ -184,10 +186,9 @@ describe("renderReviewReportHtml", () => {
       coveragePercent: 90,
       generatedAt: "t",
     });
-    assert.match(html, /file &middot; standing/, "the grain says it is standing");
-    assert.match(html, /signed earlier, covers this change too/);
-    assert.match(html, /docs\/features\/copy\.md/, "and names what ends it");
-    assert.match(html, /\+ &quot;retry&quot;: &quot;retry&quot;/, "and what it took this time");
+    assert.match(html, /src\/locales\/en\.json/, "the vouch names its file");
+    assert.match(html, /class="akg">file</, "at file grain, unqualified");
+    assert.doesNotMatch(html, /standing/, "nothing claims to cover a change off this page");
   });
 
   it("omits the acknowledgments card when the change carries no covering ack", () => {
