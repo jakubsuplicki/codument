@@ -359,6 +359,70 @@ describe("update command", () => {
   });
 });
 
+// 0.18 narrowed the gate, which is silent good news forward and a pile of stale
+// state backward: acknowledgments banked against moves that no longer gate,
+// retired `--standing` records, registry lines the project's own declarations
+// contradict. None of it announces itself, and the upgrade is the one moment a
+// reader is looking at codument at all.
+describe("the upgrade names the cleanup it leaves behind", () => {
+  const setMetaVersion = async (version: string | null): Promise<void> => {
+    const path = join(tmp, ".codument-meta.json");
+    const meta = JSON.parse(await readFile(path, "utf-8"));
+    if (version === null) delete meta.version;
+    else meta.version = version;
+    await writeFile(path, JSON.stringify(meta, null, 2));
+  };
+
+  it("tells a pre-0.18 project what changed and the two commands that clear it", async () => {
+    await setupInitializedProject();
+    await setMetaVersion("0.16.2");
+
+    const { stdout } = runCli("update");
+    assert.match(stdout, /blocks only what it can prove/);
+    assert.match(stdout, /codument ack --prune/);
+    assert.match(stdout, /codument doctor --fix/);
+  });
+
+  it("names the block that got quieter, which nobody discovers on their own", async () => {
+    // A loosening is the half of a release a user never finds by using it:
+    // finding out later that a file quietly stopped being watched is how trust
+    // in an exit code dies. So the note says it, and says where to look.
+    await setupInitializedProject();
+    await setMetaVersion("0.16.2");
+
+    const { stdout } = runCli("update");
+    assert.match(stdout, /no adapter can read/);
+    assert.match(stdout, /risk/);
+    assert.match(stdout, /codument doctor\b/);
+  });
+
+  it("never nags a project already past it", async () => {
+    await setupInitializedProject();
+    await setMetaVersion("0.18.0");
+
+    const { stdout } = runCli("update");
+    assert.doesNotMatch(stdout, /blocks only what it can prove/);
+  });
+
+  it("shows in a dry run too — the preview must not hide the part you act on", async () => {
+    await setupInitializedProject();
+    await setMetaVersion("0.16.2");
+
+    const { stdout } = runCli("update", "--dry-run");
+    assert.match(stdout, /blocks only what it can prove/);
+  });
+
+  it("shows when the prior version cannot be read at all", async () => {
+    // Fail open: an unprovable "they already crossed" costs a screen of text,
+    // while a wrong silence costs the cleanup entirely.
+    await setupInitializedProject();
+    await setMetaVersion(null);
+
+    const { stdout } = runCli("update");
+    assert.match(stdout, /blocks only what it can prove/);
+  });
+});
+
 describe("nonDirectoryAncestor", () => {
   it("flags file / symlink-to-file / broken-symlink ancestors, allows real and symlinked dirs", async () => {
     // real directory ancestor → writable, not a blocker

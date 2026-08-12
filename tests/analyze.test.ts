@@ -995,6 +995,127 @@ describe("generated-leakage consults git's ignore set, not only the static spec"
   });
 });
 
+// A `doctor --fix` that removes a registry line is only defensible where the
+// project's OWN declarations already contradict it. Two of the three ways a file
+// can land out of scope are declarations (a .gitignore entry, an `exclude` block);
+// the third is codument's built-in heuristic, which the message itself hedges
+// because it misreads a hand-authored `*.seed.json` as build output. The lint
+// carries that split so the fix does not have to guess at it — and so a future
+// surface asking "may I clear this?" gets one answer, not a second copy of the
+// reasoning.
+describe("a finding says whether clearing it is transcription or a judgment", () => {
+  let tmp: string;
+
+  const git = (args: string[]) =>
+    execFileSync("git", args, {
+      cwd: tmp,
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@t",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@t",
+      },
+    });
+
+  const declared = { dirs: ["locales"] };
+
+  const analyzeWith = (sources: string[]) =>
+    analyze({
+      root: tmp,
+      srcDir: ".",
+      exclusion: {
+        ...DEFAULT_EXCLUSION_SPEC,
+        dirs: [...DEFAULT_EXCLUSION_SPEC.dirs, "locales"],
+      },
+      declaredExclusions: declared,
+      registry: {
+        features: {
+          app: {
+            doc: "docs/features/app.md",
+            type: "feature",
+            primary_sources: sources,
+            related_sources: [],
+            docs: [],
+            depends_on: [],
+            risk: [],
+            status: "current",
+          },
+        },
+      },
+    });
+
+  const findingFor = (sources: string[], file: string): LintFinding => {
+    const hit = analyzeWith(sources).lint.find((f) => f.file === file);
+    assert.ok(hit, `expected a finding naming ${file}`);
+    return hit;
+  };
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-mech-"));
+    await mkdir(join(tmp, "app"), { recursive: true });
+    await mkdir(join(tmp, "out"), { recursive: true });
+    await mkdir(join(tmp, "locales"), { recursive: true });
+    await mkdir(join(tmp, "docs", "features"), { recursive: true });
+    await writeFile(join(tmp, ".gitignore"), "out/\n");
+    await writeFile(join(tmp, "app", "real.ts"), "export const a = 1;\n");
+    await writeFile(join(tmp, "out", "gen.js"), "exports.g = 1;\n");
+    await writeFile(join(tmp, "app", "thing.test.ts"), "export const t = 1;\n");
+    await writeFile(join(tmp, "locales", "en.json"), '{"k":"v"}\n');
+    await writeFile(join(tmp, "docs", "features", "app.md"), "# app\n\nPromise.\n");
+    git(["init"]);
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("a git-ignored source is the repository's own word, so it clears mechanically", () => {
+    const f = findingFor(["app/real.ts", "out/gen.js"], "out/gen.js");
+    assert.equal(f.id, "generated-leakage");
+    assert.equal(f.mechanical, true);
+  });
+
+  it("a source the project's own `exclude` covers clears mechanically too", () => {
+    const f = findingFor(["app/real.ts", "locales/en.json"], "locales/en.json");
+    assert.equal(f.id, "generated-leakage");
+    assert.match(f.message, /the project's own `exclude`/);
+    assert.equal(f.mechanical, true);
+  });
+
+  it("a source only a built-in heuristic calls out-of-scope does NOT", () => {
+    // The same lint id, deliberately not clearable: nothing the project wrote
+    // says this file is out of scope — codument guessed from its name, and a
+    // fix that deletes a registration on its own guess writes the corruption
+    // this whole surface exists to detect.
+    const f = findingFor(["app/real.ts", "app/thing.test.ts"], "app/thing.test.ts");
+    assert.equal(f.id, "generated-leakage");
+    assert.match(f.message, /matches a built-in exclusion rule/);
+    assert.equal(f.mechanical, undefined);
+  });
+
+  it("the two falsehoods that were always clearable still are", () => {
+    // The control on the mechanism swap: the flag replaced an id allow-list, so
+    // the findings that allow-list held must still carry it, or `--fix` quietly
+    // stopped doing the job it already did.
+    const ghost = findingFor(["app/real.ts", "app/ghost.ts"], "app/ghost.ts");
+    assert.equal(ghost.id, "missing-source");
+    assert.equal(ghost.mechanical, true);
+
+    const tree = findingFor(["app/real.ts", "nowhere/**/*.ts"], "nowhere/**/*.ts");
+    assert.equal(tree.id, "unmatched-pattern");
+    assert.equal(tree.mechanical, true);
+  });
+
+  it("a finding whose fix is a decision never carries the flag", () => {
+    // The pile `--fix` must print rather than write. One representative is
+    // enough: what matters is that the flag is opt-in per finding, so a lint
+    // added later is un-clearable until someone argues it should be.
+    const undecidable = analyzeWith(["app/real.ts"]).lint.filter((f) => f.mechanical);
+    assert.deepStrictEqual(undecidable, [], "a clean registry offers nothing to clear");
+  });
+});
+
 describe("resolveExclusionSpec widens the defaults, never narrows them", () => {
   let root: string;
 

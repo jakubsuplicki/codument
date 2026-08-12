@@ -477,6 +477,106 @@ describe("doctor --fix clears what needs no judgment, and says what it left", ()
   });
 });
 
+// The upgrade half of plan 47: 0.18 narrows what gates, and a repo that arrives
+// from an earlier release carries registry lines its own declarations already
+// contradict. Clearing those by hand across a real registry is the chore that
+// makes an upgrade land badly, and every one of them is decidable — so `--fix`
+// does it, and stops exactly where the contradiction is with a codument guess
+// instead of with something the project wrote.
+describe("doctor --fix clears the out-of-scope claims an upgrade leaves behind", () => {
+  let dir: string;
+  const registryPath = () => join(dir, "docs", ".registry.json");
+  const sources = () => JSON.parse(readFileSync(registryPath(), "utf-8")).features.core.primary_sources;
+  const run = () =>
+    execFileSync("node", [CLI, "doctor", "--fix"], {
+      cwd: dir,
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "codument-fixleak-"));
+    await mkdir(join(dir, "docs", "features"), { recursive: true });
+    await mkdir(join(dir, "src"), { recursive: true });
+    await mkdir(join(dir, "dist"), { recursive: true });
+    await mkdir(join(dir, "locales"), { recursive: true });
+    await writeFile(join(dir, ".gitignore"), "dist/\n");
+    await writeFile(join(dir, "src", "real.ts"), "export const a = 1;\n");
+    await writeFile(join(dir, "src", "thing.test.ts"), "export const t = 1;\n");
+    await writeFile(join(dir, "dist", "bundle.js"), "exports.b = 1;\n");
+    await writeFile(join(dir, "locales", "en.json"), '{"k":"v"}\n');
+    await writeFile(join(dir, "docs", "features", "core.md"), "# core\n\nWhat it is.\n");
+    await writeFile(
+      join(dir, ".codument-meta.json"),
+      JSON.stringify({
+        version: "0.17.0",
+        initialized: "2026-07-21",
+        project: { srcDir: "src" },
+        exclude: { dirs: ["locales"] },
+      }),
+    );
+    await writeFile(
+      registryPath(),
+      JSON.stringify({
+        features: {
+          core: {
+            doc: "docs/features/core.md",
+            type: "feature",
+            // One real claim, and one for each of the three ways a file lands
+            // out of scope — git's ignore set, the project's own declaration,
+            // and codument's built-in guess.
+            primary_sources: [
+              "src/real.ts",
+              "dist/bundle.js",
+              "locales/en.json",
+              "src/thing.test.ts",
+            ],
+            related_sources: [],
+            docs: [],
+            depends_on: [],
+            risk: [],
+            status: "current",
+          },
+        },
+      }),
+    );
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("drops the claims the repo's own .gitignore and exclude block contradict", () => {
+    const out = run();
+    assert.match(out, /dist\/bundle\.js/);
+    assert.match(out, /locales\/en\.json/);
+    assert.deepStrictEqual(
+      [...sources()].sort(),
+      ["src/real.ts", "src/thing.test.ts"],
+      "both declared contradictions are gone, and nothing else moved",
+    );
+  });
+
+  it("refuses to delete a registration on the strength of its own guess", () => {
+    // `src/thing.test.ts` is out of scope only because a built-in rule reads the
+    // NAME as a test. That rule is a heuristic — it calls a hand-authored
+    // `*.seed.json` build output too — so the finding is printed for a human and
+    // the line stays. Removing it would put codument's guess into the registry.
+    const out = run();
+    assert.ok(sources().includes("src/thing.test.ts"), "the guessed-at claim survives");
+    assert.match(out, /need a decision, which is not this command's to make/);
+    assert.match(out, /generated-leakage × 1/);
+  });
+
+  it("is idempotent — a second pass finds nothing mechanical left", () => {
+    run();
+    const first = sources();
+    const out = run();
+    assert.deepStrictEqual(sources(), first);
+    assert.match(out, /Nothing mechanical to clear/);
+  });
+});
+
 describe("codument doctor --strict (CLI gating)", () => {
   function run(args: string[], cwd: string): { status: number; stdout: string } {
     try {

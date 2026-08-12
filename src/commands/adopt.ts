@@ -90,7 +90,21 @@ export async function adopt(options: AdoptOptions): Promise<void> {
     return;
   }
 
-  await update({ agents: agentIds.join(","), dryRun });
+  // The prior version is handed over rather than left to be re-read: the meta
+  // write above has already stamped the current one, so `update` would conclude
+  // this project has nothing to migrate from — on the very command whose job is
+  // bringing an older project forward. No metadata at all is a different answer
+  // from an unreadable version: this project was never on codument, so there is
+  // no earlier release for a migration note to be about.
+  await update({
+    agents: agentIds.join(","),
+    dryRun,
+    priorVersion: existingMeta
+      ? typeof existingMeta.version === "string"
+        ? existingMeta.version
+        : ""
+      : null,
+  });
 }
 
 interface RegistryAdoptionResult {

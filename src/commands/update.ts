@@ -30,11 +30,25 @@ import {
   nonDirectoryAncestor,
 } from "../lib/scaffold.js";
 import { MARKER_START, MARKER_END } from "../lib/markers.js";
-import { version as pkgVersion } from "../lib/version.js";
+import { version as pkgVersion, compareVersions } from "../lib/version.js";
 
 interface UpdateOptions {
   dryRun?: boolean;
   agents?: string;
+  /**
+   * The version the project is coming FROM, for a caller that has already
+   * rewritten the metadata this command would otherwise read it out of.
+   * `adopt` is that caller: it stamps the new version and then delegates here,
+   * so the file no longer remembers where the project started — which silently
+   * suppressed the migration note on the one command whose whole job is
+   * bringing an older project forward.
+   *
+   * `null` says the caller KNOWS there was no earlier install, which is a
+   * different answer from "could not tell": a project that never ran codument
+   * has nothing for a migration note to be about, while one whose version is
+   * unreadable might. Absent means read it from the metadata as usual.
+   */
+  priorVersion?: string | null;
 }
 
 interface UpdateAction {
@@ -118,6 +132,16 @@ export async function update(options: UpdateOptions): Promise<void> {
     process.exitCode = 1;
     return;
   }
+
+  // Captured before the write below overwrites it: the note below is keyed on
+  // where the project is coming FROM, and by the time it prints that is gone.
+  // A caller that already stamped the new version says so explicitly.
+  const priorVersion =
+    options.priorVersion !== undefined
+      ? options.priorVersion
+      : typeof meta.version === "string"
+        ? meta.version
+        : "";
 
   let agentIds: AgentProfileId[];
   try {
@@ -270,6 +294,10 @@ export async function update(options: UpdateOptions): Promise<void> {
     console.log(pc.dim("  Run without --dry-run to apply changes."));
   }
 
+  if (priorVersion !== null && compareVersions(priorVersion, MIGRATION_FROM_BELOW) < 0) {
+    printMigrationNote();
+  }
+
   console.log();
 }
 
@@ -390,6 +418,59 @@ function buildClaudeManagedSection(): string {
 Shared agent guidance lives in \`AGENTS.md\`. Follow that file as the canonical Codument workflow contract.
 
 ${buildManagedSection()}`;
+}
+
+/**
+ * The one release whose upgrade leaves work behind, and what clears it.
+ *
+ * 0.18 narrowed the gate to what it can prove, which is a silent improvement for
+ * everything going forward and a pile of stale state for everything already
+ * recorded: acknowledgments banked against moves that no longer gate, `--standing`
+ * records the release retires, registry lines the project's own declarations
+ * contradict. None of it is dangerous and none of it announces itself, so the
+ * upgrade is the only moment a reader is looking. It also names the one block that
+ * got QUIETER — a loosening is the half of a release nobody discovers on their own,
+ * and finding out later that a file stopped being watched is how trust in an exit
+ * code dies.
+ *
+ * Keyed on the version the project was last updated FROM, so it appears exactly
+ * once per repo and never nags a project already past it. An unreadable prior
+ * version shows the note: we cannot prove they have crossed, and a second reading
+ * costs a screen where a missed one costs the cleanup.
+ */
+const MIGRATION_FROM_BELOW = "0.18.0";
+
+function printMigrationNote(): void {
+  console.log();
+  console.log(pc.bold("  codument 0.18 — the gate blocks only what it can prove"));
+  console.log();
+  console.log(
+    "  A body-only symbol move is now reported, never blocked: the acknowledgment",
+  );
+  console.log(
+    "  treadmill stops with no action from you. Two commands clear what earlier",
+  );
+  console.log("  releases left behind:");
+  console.log();
+  console.log(
+    `    ${pc.cyan("codument ack --prune")}     sweeps acknowledgments that cover nothing any`,
+  );
+  console.log(
+    "                             more, including every --standing record (0.18",
+  );
+  console.log("                             retires the flag)");
+  console.log(
+    `    ${pc.cyan("codument doctor --fix")}    drops registry lines your own .gitignore or`,
+  );
+  console.log("                             exclude block already contradicts");
+  console.log();
+  console.log(
+    "  One block got quieter, deliberately: a registered file no adapter can read",
+  );
+  console.log(
+    `  now gates only where an owning entry declares a ${pc.bold("risk")}. Run ${pc.cyan("codument doctor")}`,
+  );
+  console.log("  to see every file that lost its gate.");
 }
 
 function printActions(actions: UpdateAction[], dryRun: boolean): void {

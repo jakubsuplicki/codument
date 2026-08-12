@@ -172,9 +172,25 @@ Status: awaiting approval.
       same ack tests to be rewritten twice: once to describe that one-commit state, once
       to delete it. The step boundary existed to keep each commit reviewable, and here it
       did the opposite.
-- [ ] Step 7: Upgrade cleanup: extend `doctor --fix` to remove excluded-file source
+- [x] Step 7: Upgrade cleanup: extend `doctor --fix` to remove excluded-file source
       claims (removal-only, decidable); `codument update` prints the 0.18 migration note
       naming the two cleanup commands.
+      **Delivered narrower than written in one place, and wider in another.**
+      (a) "Excluded-file claims" splits three ways, and only two are decidable. Git's
+      ignore set and the project's own `exclude` block are the project contradicting
+      itself, so removing the line transcribes a decision already made. A built-in
+      exclusion is codument GUESSING from a filename — the same rule that catches build
+      output calls a hand-authored `*.seed.json` generated — so clearing a registration
+      on it would be the tool overruling a human claim with a heuristic, which is the
+      corruption `--fix` exists to detect. The analyzer therefore marks each finding
+      rather than the command matching lint ids, since one lint lands on either side.
+      (b) The note was suppressed on `adopt`, the command whose whole job is bringing an
+      older project forward: it stamps the new version into the metadata and only then
+      delegates the sync, so the delegate re-read the file and concluded there was
+      nothing to migrate from. Re-deriving state a caller has already overwritten is the
+      shape of the bug; a caller that knows now hands the prior version over — and says
+      "there was no earlier install" as a distinct answer from "could not tell", so a
+      first-time adopter is not told to clean up after a release it never ran.
 - [ ] Step 8: Build the condition→remedy table — one catalog of every gating condition
       and its remedy — and render every review/ack/doctor route from it.
 - [ ] Step 9: Invert the surfaces battery: enumerate the condition catalog exhaustively —

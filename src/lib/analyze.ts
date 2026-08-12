@@ -291,6 +291,19 @@ export interface LintFinding {
   file?: string;
   count?: number;
   evidence?: string[];
+  /**
+   * True when the registry line this finding names is contradicted by something
+   * the PROJECT itself declared — a path git ignores, a tree that matches
+   * nothing on disk, an `exclude` rule the project wrote — so removing the line
+   * transcribes a decision already made rather than making one. `doctor --fix`
+   * clears exactly these and prints the rest.
+   *
+   * Deliberately absent where the contradiction is with a codument heuristic
+   * instead of a project declaration: a built-in exclusion is a guess that can
+   * be wrong about a hand-authored file, and a fix that deletes registrations on
+   * the strength of its own guess writes the corruption it exists to detect.
+   */
+  mechanical?: boolean;
 }
 
 // ── Analyzer input/output ───────────────────────────────────────────────
@@ -805,6 +818,7 @@ function computeLint(
             severity: "warn",
             feature: key,
             file: source,
+            mechanical: true,
             message: `${key}: declared tree matches no file: ${source} — it governs nothing, so every file under it is ungoverned`,
           });
         }
@@ -816,6 +830,7 @@ function computeLint(
           severity: "warn",
           feature: key,
           file: source,
+          mechanical: true,
           message: `${key}: mapped source no longer exists: ${source}`,
         });
       }
@@ -884,21 +899,31 @@ function computeLint(
           severity: "warn",
           feature: key,
           file: source,
+          // The repository's own ignore set put this file outside version
+          // control; a file git declines to track cannot be documented source,
+          // and the project is the one that said so.
+          mechanical: true,
           message: `${key}: git-ignored file listed as source — the repository ignores it, so it is build/generated output, not documented source: ${source}`,
         });
       } else if (isExcluded(source, exclusion)) {
+        // Name WHICH rule fired. A project's own declaration and a built-in
+        // heuristic call for different responses — one is "you declared this,
+        // un-map it or narrow your declaration", the other is "codument's
+        // guess may be wrong about your file" — and the generic wording sent
+        // both to the same dead end. The same split decides whether `--fix` may
+        // clear the line: against the project's own `exclude` the removal is
+        // transcription; against a built-in guess it would be codument
+        // overruling a registration on a heuristic that misreads a
+        // hand-authored `*.seed.json` as build output.
+        const rule = declaredRuleFor(source, declared);
         findings.push({
           id: "generated-leakage",
           severity: "warn",
           feature: key,
           file: source,
-          // Name WHICH rule fired. A project's own declaration and a built-in
-          // heuristic call for different responses — one is "you declared this,
-          // un-map it or narrow your declaration", the other is "codument's
-          // guess may be wrong about your file" — and the generic wording sent
-          // both to the same dead end.
-          message: declaredRuleFor(source, declared)
-            ? `${key}: declared out-of-scope file listed as source — the project's own \`exclude\` (${declaredRuleFor(source, declared)}) covers it, so it cannot be documented source too: ${source}`
+          ...(rule ? { mechanical: true } : {}),
+          message: rule
+            ? `${key}: declared out-of-scope file listed as source — the project's own \`exclude\` (${rule}) covers it, so it cannot be documented source too: ${source}`
             : `${key}: out-of-scope file listed as source — matches a built-in exclusion rule (build/generated/test/data, e.g. *.seed.json): ${source}`,
         });
       }

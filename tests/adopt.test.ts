@@ -225,3 +225,45 @@ describe("adopt carries the project's own metadata forward", () => {
     assert.equal(meta.somethingFuture, 42);
   });
 });
+
+// The forward-migration command is the one place a project arriving from an
+// older release is guaranteed to pass through, and it stamps the new version
+// into the metadata BEFORE delegating the managed-file sync — so the delegate,
+// reading that file to learn where the project came from, concluded there was
+// nothing to migrate. The note was suppressed on exactly the command whose job
+// is bringing an older project forward.
+describe("adopt does not swallow the migration note it delegates", () => {
+  const writeExisting = async (version: string): Promise<void> => {
+    await writeFile(
+      join(tmp, ".codument-meta.json"),
+      JSON.stringify({
+        version,
+        initialized: "2026-04-20",
+        agents: ["claude"],
+        project: { language: "typescript", srcDir: "src" },
+      }),
+      "utf-8",
+    );
+  };
+
+  it("carries the note through when the project arrives from an older release", async () => {
+    await writeExisting("0.16.2");
+    const out = runAdopt("--agents", "claude");
+    assert.match(out, /blocks only what it can prove/);
+    assert.match(out, /codument ack --prune/);
+  });
+
+  it("stays quiet for a project already past it", async () => {
+    await writeExisting("0.18.0");
+    const out = runAdopt("--agents", "claude");
+    assert.doesNotMatch(out, /blocks only what it can prove/);
+  });
+
+  it("stays quiet for a project that was never on codument at all", async () => {
+    // No metadata is a different answer from an unreadable version: this repo
+    // has no earlier release to have left anything behind, and a note about
+    // cleanup that cannot apply is the noise that teaches people to skip notes.
+    const out = runAdopt("--agents", "claude");
+    assert.doesNotMatch(out, /blocks only what it can prove/);
+  });
+});

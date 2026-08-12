@@ -279,16 +279,24 @@ function attribute(
 /**
  * The findings `--fix` may clear without reading anyone's mind.
  *
- * Two of them, and the line between them and everything else is whether resolving
- * one requires a judgment. A registry entry naming a path that is not on disk is
- * simply false — dropping it restores an honest control plane and settles nothing
- * else. A declared tree that matches nothing is the same falsehood in pattern form.
+ * The line between them and everything else is whether resolving one requires a
+ * judgment, and the analyzer marks it per finding (`mechanical`) because for one
+ * lint the answer differs case by case. What qualifies is a registry line the
+ * project's OWN declarations already contradict: a path that is not on disk, a
+ * declared tree that matches nothing, a file git ignores, a file the project's
+ * `exclude` block covers. Dropping any of those transcribes a decision the
+ * project already made and settles nothing else.
+ *
  * Everything past that needs a decision an agent pointed at seventy findings will
  * fabricate: where a manifest belongs is what wakes, an unmapped file needs an owner,
  * and a doc-level finding invites compaction theater — plan 42's own finding, almost
- * word for word. Those are printed, never written.
+ * word for word. So does the one out-of-scope claim that rests on a codument
+ * heuristic rather than a project declaration, where the guess can be wrong about
+ * a hand-authored file. Those are printed, never written.
  */
-const FIXABLE = new Set<string>(["missing-source", "unmatched-pattern"]);
+function isMechanical(f: LintFinding): boolean {
+  return f.mechanical === true && Boolean(f.feature) && Boolean(f.file);
+}
 
 interface FixOutcome {
   /** `feature: path` pairs the fix removed from the registry. */
@@ -306,7 +314,7 @@ interface FixOutcome {
  * the control plane, which is the state this whole surface exists to detect.
  */
 function applyFix(root: string, findings: LintFinding[]): FixOutcome {
-  const fixable = findings.filter((f) => FIXABLE.has(f.id) && f.feature && f.file);
+  const fixable = findings.filter(isMechanical);
   const left = new Map<string, number>();
   for (const f of findings) {
     if (fixable.includes(f)) continue;
