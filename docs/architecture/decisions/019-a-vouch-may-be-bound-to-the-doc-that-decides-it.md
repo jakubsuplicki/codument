@@ -1,9 +1,11 @@
 ---
-status: accepted
+status: superseded
 date: 2026-08-10
 ---
 
 # 019 — An acknowledgment may be bound to the doc that decides it, not to the file's bytes
+
+> **Superseded by [020](020-a-block-must-be-provable.md).** The reasoning below is unchanged and still correct for the question it was asked: a judgment should be bound to the premise that can falsify it, not to bytes that cannot. What changed is that the question stopped being put. A standing vouch existed so that a recurring judgment about a body-only change was not re-signed on every unrelated edit; under 020 a body-only move is reported and never gated, so the judgment is never requested and there is nothing to stand over. The flag is refused and existing standing records are labeled obsolete rather than silently ignored. Kept intact so the chain reads.
 
 ## Context
 
