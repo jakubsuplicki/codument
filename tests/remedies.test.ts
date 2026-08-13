@@ -25,7 +25,7 @@ const CTX: ConditionContext = {
   matched: 12,
   claimants: 3,
   candidates: ["pay", "billing"],
-  descriptor: "priceOf",
+  descriptors: ["priceOf()."],
   where: "docs/.registry.json",
 };
 
@@ -71,6 +71,19 @@ describe("the condition catalog answers for every condition it names", () => {
           `${id} routes to an ack it does not accept, via "${r.label}"`,
         );
       }
+    }
+  });
+
+  it("never explains a refusal with a field the caller forgot", () => {
+    // The routes were guarded against this and the REASONS were not, which is how
+    // `undefined does not parse — fix the parse error` reached the one surface a
+    // reader meets at their most stuck: a command that just said no. Same empty
+    // context, same question, asked of the other half of the catalog.
+    for (const id of CONDITION_IDS) {
+      const reason = whyNoAck(id, {});
+      if (reason === null) continue;
+      assert.doesNotMatch(reason, /undefined/, `${id}'s reason leaks an absent field`);
+      assert.doesNotMatch(reason, /\(\)|``|" "/, `${id}'s reason renders an empty slot`);
     }
   });
 
@@ -160,6 +173,20 @@ describe("the routes read as they always have", () => {
     assert.equal(ackApplies("body-only-move"), false);
     assert.equal(conditionFor("body-only-move").gates, false);
     assert.match(String(whyNoAck("body-only-move")), /reported and never gates \(ADR 020\)/);
+  });
+
+  it("the two ownership shapes route to opposite edits", () => {
+    // The pair with the worst history in this tool: one adds a claim, the other
+    // removes one, and a summary that restated either was wrong for the other half
+    // of its readers. Both now come from here, so the report and the refusal are
+    // one sentence.
+    assert.deepStrictEqual(render("ownership-unassigned", { ...CTX, feature: "pay" }), [
+      'claim it → add under ONE of them in docs/.registry.json: "owned_symbols": { "src/pay.ts": ["priceOf()."] }',
+      "demote it → keep src/pay.ts in one feature's primary_sources, move it to the related_sources of billing — impact, never a wake",
+    ]);
+    assert.deepStrictEqual(render("ownership-ambiguous"), [
+      'fix → remove "priceOf()." from owned_symbols in all but one of pay and billing',
+    ]);
   });
 
   it("a blind file with no declared risk is told how to earn its gate", () => {

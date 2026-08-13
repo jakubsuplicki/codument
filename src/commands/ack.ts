@@ -10,14 +10,20 @@ import {
   isIndependent,
   isTreeGrainAck,
   readAcks,
-  shellArg,
   treeSetHash,
   writeAck,
 } from "../lib/acknowledgment.js";
 import { resolveScopeSync } from "../lib/analyze.js";
 import { treeCoverage } from "../lib/change-state.js";
 import { anchorGates } from "../lib/drift.js";
-import { whyNoAck } from "../lib/remedies.js";
+import {
+  labelWidth,
+  routeLine,
+  routesFor,
+  whyNoAck,
+  type ConditionId,
+  type Palette,
+} from "../lib/remedies.js";
 import {
   type AckValidity,
   type AnchorChange,
@@ -145,6 +151,39 @@ function fail(message: string): void {
   process.exitCode = 1;
 }
 
+/** `ack`'s colors for a catalog route — its own look, the catalog's words. */
+const ROUTE_PALETTE: Palette = { plain: (s) => s, cmd: pc.cyan, dim: pc.dim };
+
+/**
+ * The moves a just-recorded vouch did NOT clear, each with what does clear it.
+ *
+ * Written once for both the file and the tree surface. It was written twice, and
+ * the two copies had already drifted to different label-column widths for the
+ * same pair of labels — which is the alignment nobody sees in a diff and every
+ * reader sees on screen. The resolution belongs INSIDE the finding it resolves
+ * and has to be a command rather than a shape to fill in: a dim
+ * `codument ack <path>::<symbol>` under the warning was read past twice in one
+ * field session before it was acted on.
+ */
+function printStillMoved(stillMoved: AnchorChange[], registry: Registry): void {
+  const width = labelWidth("signature-move", "symbol-internal-move");
+  for (const ch of stillMoved) {
+    const owner = resolveOwner(registry, ch.id);
+    const doc =
+      owner.kind === "owned"
+        ? (registry.features[owner.feature]?.doc ?? "the owning doc")
+        : "the owning doc";
+    const sig = isSignatureMove(ch);
+    console.log(`      ${pc.dim("•")} ${ch.id}${sig ? pc.dim(" (signature changed)") : ""}`);
+    // A signature move owes a contract update and gets no ack offered at any
+    // grain; a move the adapter cannot prove body-only keeps the per-symbol route.
+    const condition: ConditionId = sig ? "signature-move" : "symbol-internal-move";
+    for (const route of routesFor(condition, { doc, anchorId: ch.id })) {
+      console.log(`          ${routeLine(route, width, ROUTE_PALETTE)}`);
+    }
+  }
+}
+
 export async function ackCommand(
   anchor: string | undefined,
   options: AckCliOptions,
@@ -238,7 +277,7 @@ export async function ackCommand(
   const renamedFrom = renamedFromFor(root, options.base);
   const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, [file], renamedFrom);
   if (unevaluable.includes(file)) {
-    fail(`${file} does not parse — fix the parse error before acking`);
+    fail(String(whyNoAck("unevaluable-source", { file })));
     return;
   }
   const changes = anchorChanges[file] ?? [];
@@ -380,7 +419,7 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
   const renamedFrom = renamedFromFor(root, options.base);
   const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, [file], renamedFrom);
   if (unevaluable.includes(file)) {
-    fail(`${file} does not parse — fix the parse error before acking`);
+    fail(String(whyNoAck("unevaluable-source", { file })));
     return;
   }
 
@@ -395,8 +434,8 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
     // its doc an update — or the doc's own removal — never an ack (ADR-012).
     fail(
       from === null
-        ? `${file} was added, not changed — a new file needs an owner and doc attention: \`codument map materialize ${shellArg(file)}\`, then narrate it (no ack applies)`
-        : `${file} was deleted, not changed — a removal owes its owning doc an update (or remove the doc with its feature); no acknowledgment clears a deletion`,
+        ? String(whyNoAck("added-file", { file }))
+        : `${file} was deleted, not changed — ${whyNoAck("owned-file-deleted")}`,
     );
     return;
   }
@@ -488,32 +527,7 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
         `  ⚠ the ack above stands; ${stillMoved.length} moved symbol(s) in this file are NOT cleared by a file ack:`,
       ),
     );
-    // The resolution belongs INSIDE the finding it resolves, and it has to be a
-    // command rather than a shape to fill in: `codument ack <path>::<symbol>`, dim
-    // and last under the warning, was read past twice in one field session before it
-    // was acted on. A body-only move keeps the ack route if it changed no contract;
-    // a signature move owes a contract update and gets no ack offered at any grain.
-    for (const ch of stillMoved) {
-      const owner = resolveOwner(registry as Registry, ch.id);
-      const doc =
-        owner.kind === "owned"
-          ? ((registry as Registry).features[owner.feature]?.doc ?? "the owning doc")
-          : "the owning doc";
-      const sig = isSignatureMove(ch);
-      console.log(`      ${pc.dim("•")} ${ch.id}${sig ? pc.dim(" (signature changed)") : ""}`);
-      console.log(
-        `          ${pc.dim("contract changed →")} update ${doc} ${pc.dim(
-          sig
-            ? "at intent altitude — no ack of any grain clears a signature move"
-            : "at intent altitude",
-        )}`,
-      );
-      if (!sig) {
-        console.log(
-          `          ${pc.dim("internal only   →")} ${pc.cyan(`codument ack ${shellArg(ch.id)} --reason "..."`)}`,
-        );
-      }
-    }
+    printStillMoved(stillMoved, registry as Registry);
   }
   // Make the API growth visible: an added/removed OWNED export IS cleared by this
   // file ack (additive residue), but it changed the surface — surface it (info-only,
@@ -678,15 +692,7 @@ function ackTree(root: string, pattern: string, options: AckCliOptions): void {
         `  ⚠ the ack above stands; ${stillMoved.length} moved symbol(s) inside this tree are NOT cleared by it:`,
       ),
     );
-    for (const ch of stillMoved.slice(0, 10)) {
-      const sig = isSignatureMove(ch);
-      console.log(`      ${pc.dim("•")} ${ch.id}${sig ? pc.dim(" (signature changed)") : ""}`);
-      if (!sig) {
-        console.log(
-          `          ${pc.dim("internal only →")} ${pc.cyan(`codument ack ${shellArg(ch.id)} --reason "..."`)}`,
-        );
-      }
-    }
+    printStillMoved(stillMoved.slice(0, 10), registry as Registry);
     if (stillMoved.length > 10) {
       console.log(
         `      ${pc.dim(`• +${stillMoved.length - 10} more — \`codument review\` lists them all`)}`,

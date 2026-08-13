@@ -21,6 +21,7 @@ import {
 import { adapterFor, fileContentTransition } from "../src/lib/fingerprint.js";
 import { readAllEvents } from "../src/lib/events.js";
 import { getGitAuthor } from "../src/lib/git.js";
+import { renderRoute, routesFor } from "../src/lib/remedies.js";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "cli.js");
 
@@ -1281,7 +1282,12 @@ describe("signature/body split — the ack acceptance table", async () => {
     assert.match(r.out, /\(signature changed\)/, "the moved symbol is tagged as a signature move");
     // and the file-ack guidance routes a signature move to the doc, never to an ack.
     assert.match(r.out, /contract changed → update docs\/features\/alpha\.md/);
-    assert.match(r.out, /no ack of any grain clears a signature move/);
+    // Asserted against the catalog, not a literal: `review` and `ack` say this in
+    // one voice now, and a copy of the sentence here would be a third one to drift.
+    assert.ok(
+      r.out.includes(renderRoute(routesFor("signature-move")[1])),
+      "the denial is the catalog's, printed as its own route",
+    );
     assert.doesNotMatch(r.out, /codument ack src\/a\.ts::foo/, "no per-symbol ack is suggested");
     assert.deepStrictEqual(
       buildReview(tmp).state.staleDocs.map((d) => d.feature),

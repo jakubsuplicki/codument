@@ -209,9 +209,26 @@ Status: awaiting approval.
       rendered in exactly one place has no twin to drift from; folding those in would be
       indirection bought with nothing. Step 9's battery asserts that boundary rather than
       leaving it to be re-argued.
-- [ ] Step 9: Invert the surfaces battery: enumerate the condition catalog exhaustively —
+- [x] Step 9: Invert the surfaces battery: enumerate the condition catalog exhaustively —
       every condition routes, every route prints, pastes, clears, and reaches the verdict
       line; proven to bite against a seeded unrouted condition.
+      **Delivered wider than written, because the inversion is only worth having if what
+      it finds gets fixed.** Walking the catalog found five conditions it held that no
+      surface rendered, and six sites across three surfaces still writing routes the
+      catalog already owned — two of them printing the SAME pair of labels at two
+      different column widths. All of them are converted, so the boundary named in step
+      8(c) is now enforced rather than described: no source outside the catalog may build
+      a `codument` command out of a variable.
+      Three further things the step forced.
+      (a) The label column is derived, not declared. A hand-written width is right until a
+      label is renamed past it, and the block then misaligns — which no assertion about
+      WHICH route printed can see. The battery asks the arrows themselves.
+      (b) The reasons were unguarded where the routes were not: `ack` could print
+      `undefined does not parse` to the one reader who is already stuck, because only the
+      route half was ever rendered against an empty context.
+      (c) The HTML report was offering `codument ack <path>` with no `--reason` — a command
+      the CLI refuses. It was the only surface never checked, which is what made it the one
+      that had been broken longest.
 - [ ] Step 10: Build the field-shaped fixture repo (CRLF, no `src/`, single-default-export
       screens, locale JSON, risk-tagged rules file) and replay the field session's three
       gate episodes end-to-end asserting the new behavior.

@@ -62,9 +62,12 @@ import {
   writeReview,
 } from "../lib/review-artifact.js";
 import {
+  labelWidth,
   renderRoute,
+  routeLine as renderLabelledRoute,
   routesFor,
   whyNoAck,
+  type ConditionContext,
   type ConditionId,
   type Palette,
   type Route,
@@ -258,13 +261,14 @@ export function driftResolution(
  *
  * The catalog holds the words and this holds the colors, so a route reads the
  * same here as it does from `ack` or `doctor` while each keeps its own look.
- * The label column width stays with the caller: it depends on which labels share
- * a block, which is a layout fact about this screen, not about the condition.
+ * Which conditions share a block is a layout fact about this screen and stays
+ * here; the column width they need is arithmetic over their labels and comes from
+ * `labelWidth`, so a renamed label cannot quietly misalign the block it sits in.
  */
 const ROUTE_PALETTE: Palette = { plain: (s) => s, cmd: pc.cyan, dim: pc.dim };
 
 function routeLine(route: Route, width: number): string {
-  return `${pc.dim(`${route.label.padEnd(width)} →`)} ${renderRoute(route, ROUTE_PALETTE)}`;
+  return renderLabelledRoute(route, width, ROUTE_PALETTE);
 }
 
 /** A catalog clause reads mid-sentence; these summary lines start one. */
@@ -1383,14 +1387,6 @@ export function dependentLines(summary: DependentSummary[]): string[] {
   return lines;
 }
 
-/** "a", "a and b", "a, b and c" — these lines are read under pressure, and a
- *  possessive plural spliced onto a comma list ("checkout, product' ...") reads as
- *  a typo, which is one more reason to skip the block. */
-function andList(items: string[]): string {
-  if (items.length <= 1) return items[0] ?? "";
-  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
-}
-
 /**
  * The resolution for a shared-file wake, rendered INSIDE the stale-doc entry the
  * wake produced rather than as an advisory section of its own.
@@ -1422,9 +1418,7 @@ function ownershipResolution(
 ): string {
   const descriptors = [...new Set(lints.map((l) => l.descriptor))].sort();
   const candidates = [...new Set(lints.flatMap((l) => l.features))].sort();
-  const others = candidates.filter((c) => c !== feature);
   const ambiguous = lints.some((l) => l.kind === "ambiguous");
-  const list = descriptors.map((d) => JSON.stringify(d)).join(", ");
   const indent = "\n        ";
   if (!full) {
     return `${indent}${pc.dim(`↑ woken by the same unclaimed shared file (${file}) — one registry edit clears all of these`)}`;
@@ -1447,31 +1441,26 @@ function ownershipResolution(
       ? "no ack clears this — an ack needs one resolved owner, and there are two"
       : "no ack — symbol or file — clears this; prose in the other candidates' docs buys green and spends the standard";
 
-  if (ambiguous) {
-    return (
-      `${head}${indent}  ${pc.dim("fix →")} remove ${pc.cyan(list)} from ${pc.cyan(
-        "owned_symbols",
-      )} in all but one of ${andList(candidates)}` + `${indent}  ${pc.dim(close)}`
-    );
-  }
-
-  const claim = `${indent}  ${pc.dim("claim it  →")} add under ONE of them in docs/.registry.json: ${pc.cyan(
-    `"owned_symbols": { ${JSON.stringify(file)}: [${list}] }`,
-  )}`;
-  const demote = `${indent}  ${pc.dim("demote it →")} keep ${file} in one feature's ${pc.cyan(
-    "primary_sources",
-  )}, move it to the ${pc.cyan("related_sources")} of ${
-    others.length > 0 ? andList(others) : "the other candidates"
-  } ${pc.dim("— impact, never a wake")}`;
+  // Both shapes take their fix lines from the catalog, so the edit `review` names
+  // here and the edit `ack` refuses to substitute for are one sentence. These were
+  // the last routes still authored at the call site, and the ownership family is
+  // the one with the worst history of the two drifting apart.
+  const ctx: ConditionContext = { file, feature, candidates, descriptors };
+  const routes = ambiguous
+    ? routesFor("ownership-ambiguous", ctx)
+    : routesFor("ownership-unassigned", ctx);
+  const width = labelWidth(ambiguous ? "ownership-ambiguous" : "ownership-unassigned");
   // A file whose only moved anchors are the whole-module ones has nothing to split:
   // claiming that single anchor IS file ownership under another name, so the
   // demotion is the honest lead. This is the shape ADR 014 gives every modern
   // config and default-exported component — which is why the field run met it on
-  // every contested file.
+  // every contested file. Presentation order is this screen's call; the words are
+  // not.
   const wholeFileOnly = descriptors.every(
     (d) => d === "default." || d === MODULE_ANCHOR_NAME || d === `${MODULE_ANCHOR_NAME}.`,
   );
-  const fixes = wholeFileOnly ? demote + claim : claim + demote;
+  const ordered = wholeFileOnly ? [...routes].reverse() : routes;
+  const fixes = ordered.map((r) => `${indent}  ${routeLine(r, width)}`).join("");
   return `${head}${fixes}${indent}  ${pc.dim(close)}`;
 }
 
@@ -1646,6 +1635,10 @@ function printHuman(report: ReviewReport): void {
   // work: in the field the agent followed it and banked two inert acks.
   const ackBlocked = (f: string, feature: string): boolean =>
     lintsFor(f, feature).some((l) => l.changeKind === "changed");
+  // The blind files that reached the gate because an owner declared a risk — the
+  // one class whose file ack is signed over disclosed lines rather than over an
+  // expiry, which is what its route has to say.
+  const blindGoverned = new Set(state.governedRegistered);
   const resolutionShown = new Set<string>();
   section(
     pc.yellow("Stale docs (source changed, mapped doc did not)"),
@@ -1721,19 +1714,28 @@ function printHuman(report: ReviewReport): void {
         // wake actually offers — the tree where a pattern answers for all its
         // files, the file otherwise. Both come from the catalog, so the command
         // printed here is the command `ack` will accept.
+        const width = labelWidth("stale-doc-file", "stale-doc-tree", "blind-risk-file");
         const [docRoute] = routesFor("stale-doc-file", { doc: d.doc });
-        line += `\n        ${routeLine(docRoute, 13)}`;
+        line += `\n        ${routeLine(docRoute, width)}`;
         for (const [pattern, matched] of collapsed) {
           const [, treeAck] = routesFor("stale-doc-tree", {
             doc: d.doc,
             pattern,
             matched: matched.length,
           });
-          line += `\n        ${routeLine(treeAck, 13)}`;
+          line += `\n        ${routeLine(treeAck, width)}`;
         }
         for (const f of perFile) {
-          const [, fileAckRoute] = routesFor("stale-doc-file", { doc: d.doc, file: f });
-          line += `\n        ${routeLine(fileAckRoute, 13)}`;
+          // A file no adapter can read got here because its owner declared a risk,
+          // and the ack over it is signed against lines the command discloses — a
+          // different promise from "this expires when the file changes again", and
+          // the one the reader is about to make. Same fork the ack itself takes, so
+          // the route offered and the signature taken describe one act.
+          const [, fileAckRoute] = routesFor(
+            blindGoverned.has(f) ? "blind-risk-file" : "stale-doc-file",
+            { doc: d.doc, file: f },
+          );
+          line += `\n        ${routeLine(fileAckRoute, width)}`;
         }
       }
       for (const f of d.changedSources) {
@@ -1796,7 +1798,7 @@ function printHuman(report: ReviewReport): void {
       ...routesFor("blind-unread-file", {
         file: u.file,
         feature: u.owners.map((o) => o.feature).join(" or "),
-      }).map((r) => `      ${routeLine(r, 7)}`),
+      }).map((r) => `      ${routeLine(r, labelWidth("blind-unread-file"))}`),
     ]),
   );
 
@@ -1866,7 +1868,9 @@ function printHuman(report: ReviewReport): void {
         // unowned, trading a wake for a worse one.
         claimants: state.byFeature.filter((g) => g.files.includes(file)).length,
       })) {
-        console.log(`        ${routeLine(route, 16)}`);
+        console.log(
+          `        ${routeLine(route, labelWidth("signature-move", "symbol-internal-move", "symbol-added-removed"))}`,
+        );
       }
     }
     console.log();

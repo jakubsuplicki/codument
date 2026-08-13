@@ -126,8 +126,10 @@ export interface ConditionContext {
   claimants?: number;
   /** Rival feature keys, for the ownership conditions. */
   candidates?: string[];
-  /** The per-symbol descriptor, as resolved rather than as typed. */
-  descriptor?: string;
+  /** The per-symbol descriptors, as resolved rather than as typed. Plural because
+   *  one shared file routinely wakes several unclaimed anchors and the registry
+   *  edit that settles them is one line naming all of them. */
+  descriptors?: string[];
   /** Where a stale pointer is still named (a doc path, or a registry entry). */
   where?: string;
   /** The path a renamed file moved to, when it moved rather than vanished. */
@@ -174,6 +176,18 @@ export interface Condition {
  * for the next field someone adds.
  */
 const slot = (value: string | undefined, placeholder: string): string => value ?? placeholder;
+
+/** "a", "a and b", "a, b and c" — these lines are read under pressure, and a
+ *  possessive plural spliced onto a comma list ("checkout, product' ...") reads as
+ *  a typo, which is one more reason to skip the block. */
+const andList = (items: string[]): string =>
+  items.length <= 1
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+
+/** The descriptors a registry edit must name, quoted as the JSON they go into. */
+const descriptorList = (ctx: ConditionContext): string =>
+  (ctx.descriptors ?? ["<symbol>"]).map((d) => JSON.stringify(d)).join(", ");
 
 const docUpdate = (label: string, doc: string): Route => ({
   label,
@@ -322,27 +336,35 @@ const CONDITIONS: Record<ConditionId, Condition> = {
     fired: "several features claim the file and none claims the symbol",
     ackGrains: [],
     whyNoAck: (ctx) =>
-      `it is a shared symbol no feature claims (${(ctx.candidates ?? []).join(", ")}), so no ack reaches it — the wake is ownership, not doc debt`,
-    routes: (ctx) => [
-      {
-        label: "claim it",
-        segments: [
-          plain("add under ONE of them in docs/.registry.json:"),
-          cmd(
-            `"owned_symbols": { ${JSON.stringify(slot(ctx.file, "<file>"))}: [${JSON.stringify(slot(ctx.descriptor, "<symbol>"))}] }`,
-          ),
-        ],
-      },
-      {
-        label: "demote it",
-        segments: [
-          plain(`keep ${slot(ctx.file, "<file>")} in one feature's`),
-          cmd("primary_sources"),
-          plain("and move it to the others'"),
-          cmd("related_sources"),
-        ],
-      },
-    ],
+      `it is a shared symbol no feature claims (${slot(andList(ctx.candidates ?? []) || undefined, "the candidates")}), so no ack reaches it — the wake is ownership, not doc debt`,
+    routes: (ctx) => {
+      const others = (ctx.candidates ?? []).filter((c) => c !== ctx.feature);
+      return [
+        {
+          label: "claim it",
+          segments: [
+            plain("add under ONE of them in docs/.registry.json:"),
+            cmd(
+              `"owned_symbols": { ${JSON.stringify(slot(ctx.file, "<file>"))}: [${descriptorList(ctx)}] }`,
+            ),
+          ],
+        },
+        {
+          label: "demote it",
+          segments: [
+            plain(`keep ${slot(ctx.file, "<file>")} in one feature's`),
+            cmd("primary_sources"),
+            { text: ", move it to the", ink: "plain", glue: true },
+            cmd("related_sources"),
+            // Named where they are known: "the other candidates" is what the
+            // reader is left with when the caller could not say, and a route
+            // that names the entries to edit is one less lookup under pressure.
+            plain(`of ${others.length > 0 ? andList(others) : "the other candidates"}`),
+            dim("— impact, never a wake"),
+          ],
+        },
+      ];
+    },
   },
 
   "ownership-ambiguous": {
@@ -351,14 +373,18 @@ const CONDITIONS: Record<ConditionId, Condition> = {
     fired: "two or more features claim the same symbol",
     ackGrains: [],
     whyNoAck: (ctx) =>
-      `it is claimed by ${(ctx.candidates ?? []).join(" and ")}, so ownership is ambiguous and no ack reaches it — remove the claim from owned_symbols in all but one of them`,
+      `it is claimed by ${slot(andList(ctx.candidates ?? []) || undefined, "more than one feature")}, so ownership is ambiguous and no ack reaches it — remove the claim from owned_symbols in all but one of them`,
     routes: (ctx) => [
       {
-        label: "settle it",
+        label: "fix",
         segments: [
-          plain("remove the claim from"),
+          plain("remove"),
+          cmd(descriptorList(ctx)),
+          plain("from"),
           cmd("owned_symbols"),
-          plain(`in all but one of ${(ctx.candidates ?? []).join(", ")}`),
+          plain(
+            `in all but one of ${slot(andList(ctx.candidates ?? []) || undefined, "the claiming features")}`,
+          ),
         ],
       },
     ],
@@ -400,7 +426,8 @@ const CONDITIONS: Record<ConditionId, Condition> = {
     gates: true,
     fired: "an owned source was removed",
     ackGrains: [],
-    whyNoAck: () => "a removal owes its doc attention, and no acknowledgment clears a deletion",
+    whyNoAck: () =>
+      "a removal owes its owning doc an update (or the doc's own removal with its feature), and no acknowledgment clears a deletion",
     routes: (ctx) => [docUpdate("doc impact", ctx.doc ?? "the owning doc")],
   },
 
@@ -440,7 +467,7 @@ const CONDITIONS: Record<ConditionId, Condition> = {
     gates: true,
     fired: "a governed source could not be parsed",
     ackGrains: [],
-    whyNoAck: (ctx) => `${ctx.file} does not parse — fix the parse error before acking`,
+    whyNoAck: (ctx) => `${slot(ctx.file, "the file")} does not parse — fix the parse error before acking`,
     routes: (ctx) => [
       {
         label: "fix",
@@ -595,10 +622,48 @@ export const PLAIN_PALETTE: Palette = {
   dim: (s) => s,
 };
 
+/**
+ * A context that makes every conditional route appear, for questions asked of the
+ * catalog's SHAPE rather than of one instance — how wide the label column must be,
+ * whether every member routes at all. Its values are placeholders on purpose: what
+ * is asked here never depends on them, and a probe carrying plausible-looking data
+ * invites someone to assert against it.
+ */
+const PROBE: ConditionContext = { claimants: 2 };
+
+/**
+ * The width the label column must be for a block that prints these conditions.
+ *
+ * Derived rather than declared, because a hand-written width is a number that has
+ * to be revisited every time a label is added or renamed — and when it is not, the
+ * block silently misaligns, which no test would ever fail on. The caller still owns
+ * WHICH conditions share a block (a layout fact about that screen); it no longer
+ * owns the arithmetic.
+ */
+export function labelWidth(...ids: ConditionId[]): number {
+  return Math.max(
+    0,
+    ...ids.flatMap((id) => CONDITIONS[id].routes(PROBE).map((r) => r.label.length)),
+  );
+}
+
 /** Render one route's segments with the caller's palette, honouring `glue`. */
 export function renderRoute(route: Route, palette: Palette = PLAIN_PALETTE): string {
   return route.segments.reduce(
     (out, s, i) => out + (i > 0 && !s.glue ? " " : "") + palette[s.ink](s.text),
     "",
   );
+}
+
+/**
+ * One route as a reader meets it: `label → route`, padded to a column.
+ *
+ * Shared rather than written per surface because the label column is the shape a
+ * reader learns to scan, and it had already been written four times with two
+ * different widths for the SAME pair of labels — a misalignment nobody would ever
+ * see in a diff. `width` comes from `labelWidth` over whatever conditions share
+ * the block; the palette is the surface's own.
+ */
+export function routeLine(route: Route, width: number, palette: Palette = PLAIN_PALETTE): string {
+  return `${palette.dim(`${route.label.padEnd(width)} →`)} ${renderRoute(route, palette)}`;
 }

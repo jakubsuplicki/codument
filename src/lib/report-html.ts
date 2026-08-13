@@ -1,6 +1,7 @@
 import type { CoveringAck, ReviewReport } from "../commands/review.js";
 import { DEPENDENT_CAP } from "./change-state.js";
 import type { ImpactLedger } from "./impact-ledger.js";
+import { renderRoute, routesFor } from "./remedies.js";
 
 // Self-contained HTML review report: inline CSS, no network, no JS (uses native
 // <details> for the collapsible sections). Pure function of the data passed in,
@@ -220,6 +221,7 @@ export function renderReviewReportHtml(data: ReportData): string {
   // the no-doc-impact resolution so the HTML surface never pressures a mirror edit.
   const driftFiles = new Set((data.review.drift ?? []).map((d) => d.anchorId.split("::")[0]));
   const unevaluableFiles = new Set(s.unevaluable);
+  const blindGoverned = new Set(s.governedRegistered);
   const detailRows = [
     detailList(
       "Stale docs",
@@ -227,9 +229,24 @@ export function renderReviewReportHtml(data: ReportData): string {
         const coarse = d.changedSources.filter(
           (f) => !driftFiles.has(f) && !unevaluableFiles.has(f),
         );
+        // From the catalog, like every other surface, and forked on the same fact
+        // the terminal forks on: a blind file that gates because its owner declared
+        // a risk is acked over disclosed lines, not over an expiry. Written by hand
+        // this printed `codument ack <path>` with no `--reason` — a command the CLI
+        // refuses, so the one route this report offered was one nobody could paste.
         const hint =
           coarse.length > 0
-            ? ` (update the doc, or file-grain ack: ${coarse.map((f) => `codument ack ${f}`).join(" · ")})`
+            ? ` (${[
+                renderRoute(routesFor("stale-doc-file", { doc: d.doc })[0]),
+                ...coarse.map((f) =>
+                  renderRoute(
+                    routesFor(blindGoverned.has(f) ? "blind-risk-file" : "stale-doc-file", {
+                      doc: d.doc,
+                      file: f,
+                    })[1],
+                  ),
+                ),
+              ].join(" · ")})`
             : "";
         return `${d.feature} — ${d.doc}${hint}`;
       }),

@@ -1,4 +1,12 @@
 import { execFileSync } from "node:child_process";
+import {
+  CONDITION_IDS,
+  renderRoute,
+  routesFor,
+  whyNoAck,
+  type ConditionContext,
+  type ConditionId,
+} from "../src/lib/remedies.js";
 
 // The surface conformance battery: the ONE testable meaning of "the guidance is
 // honest", regardless of which surface printed it.
@@ -10,6 +18,15 @@ import { execFileSync } from "node:child_process";
 // command no shell accepts — because each route's promise lived only in whichever
 // test its author happened to write. A promise asserted per case is a promise with
 // gaps, and the gaps are where the field reports keep landing.
+//
+// THE INVERSION. Written as scenarios, this battery could only ever judge the
+// routes some surface remembered to print, and every one of the seventh release's
+// field failures was a route no surface printed at all — a condition the tool can
+// put a reader in with nothing to do about it, which no amount of asserting the
+// printed ones can find. So the catalog drives: `CONDITION_IDS` is walked, each
+// member must be claimed by a scenario that genuinely fires it, and the catalog's
+// own words for that condition must reach the reader's screen. A condition added
+// to the catalog and routed nowhere is now a red suite, not a field report.
 //
 // Like the adapter battery, the checks are pure functions returning violations
 // rather than describe/it blocks, precisely so a runner can assert green on the
@@ -160,6 +177,27 @@ export function unsafeTokens(cmd: string): string[] {
   return bad;
 }
 
+/**
+ * A scenario's claim that it puts a reader in one catalog condition, and how the
+ * catalog's words for that condition reach them.
+ *
+ * `"routes"` — the labelled routes print, so the exact rendered text is looked
+ * for in the output. `"reason"` — the condition is one no acknowledgment reaches
+ * and what prints is the sentence saying why (a refusal, or a summary clause).
+ *
+ * The expected text is DERIVED from the catalog, never written here: a claim that
+ * restated the route in its own words would be a third copy of the sentence whose
+ * second copy this whole module exists to delete.
+ */
+export interface ConditionClaim {
+  id: ConditionId;
+  as: "routes" | "reason";
+  /** What the surface would render this instance with — the fixture's own paths.
+   *  Wrong values fail the claim, which is the point: a claim is only evidence if
+   *  it is checked against the concrete text the reader saw. */
+  ctx?: ConditionContext;
+}
+
 export interface SurfaceScenario {
   name: string;
   /** Files written before the baseline commit. */
@@ -174,8 +212,16 @@ export interface SurfaceScenario {
    * `"routes-clear"` — every route printed must run and clear `finding`.
    * `"no-ack-route"` — the same, AND no `codument ack` route may be offered at
    * all, because no acknowledgment of any grain can reach this finding.
+   * `"refusal"` — the surface is a command that REFUSED, so there is nothing to
+   * clear and the routes it names are the ones it is redirecting to; only the
+   * pasteability rule applies. Without this, a refusal could only be modelled as
+   * one of the two above, and both would ask it the wrong question.
    */
-  expect: "routes-clear" | "no-ack-route";
+  expect: "routes-clear" | "no-ack-route" | "refusal";
+  /** The catalog conditions this scenario puts a reader in. Every member of
+   *  `CONDITION_IDS` must be claimed by some scenario (rule 6) and every claim
+   *  must be visible in the output (rule 7). */
+  conditions?: ConditionClaim[];
   /** Conditions that change what the reader does next and must therefore survive a
    *  pipe. Readers grep `| tail -1`, so anything reachable only above the verdict is
    *  in practice unreachable — which cost an adversarial field report two false
@@ -202,6 +248,40 @@ export interface SurfaceViolation {
   detail: string;
 }
 
+/** Every label the catalog can print, so a route line is told from an ordinary
+ *  line that happens to carry an arrow (`file → doc`, and the like). */
+const CATALOG_LABELS = new Set(
+  CONDITION_IDS.flatMap((id) => routesFor(id, { claimants: 2 }).map((r) => r.label)),
+);
+
+/**
+ * The label columns in one render, as (indent, arrow column) groups.
+ *
+ * A route line is `<indent><label padded> → <route>`. Contiguous ones at the same
+ * indent are one block and their arrows must line up; a hardcoded pad width is
+ * right until a label is renamed past it, and the block then misaligns silently —
+ * no assertion about WHICH route printed can see that.
+ */
+export function labelColumns(output: string): { indent: number; arrow: number; label: string }[][] {
+  const groups: { indent: number; arrow: number; label: string }[][] = [];
+  let current: { indent: number; arrow: number; label: string }[] = [];
+  for (const line of plain(output).split("\n")) {
+    const m = /^(\s*)(\S[^→]*?)\s*(→)/.exec(line);
+    const row =
+      m && CATALOG_LABELS.has(m[2])
+        ? { indent: m[1].length, arrow: line.indexOf("→"), label: m[2] }
+        : null;
+    if (row && (current.length === 0 || current[0].indent === row.indent)) {
+      current.push(row);
+      continue;
+    }
+    if (current.length > 0) groups.push(current);
+    current = row ? [row] : [];
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
+}
+
 /** The real runner: the built CLI, in a real repo, exactly as a reader invokes it. */
 export function cliRunner(cli: string) {
   return (root: string, argv: string[]): string => {
@@ -221,8 +301,35 @@ export function cliRunner(cli: string) {
   };
 }
 
+/**
+ * The catalog members no scenario claims — the inversion's whole point, computed
+ * over the scenario SET rather than per scenario, because "nobody covers this" is
+ * not a fact any single scenario can hold.
+ *
+ * Takes the id list as an argument rather than reading the catalog directly so a
+ * test can seed a condition that exists and is routed nowhere, and watch this
+ * fail. A guard nothing can be shown to trip is a guard nobody should trust.
+ */
+export function uncoveredConditions(
+  scenarios: SurfaceScenario[],
+  ids: readonly ConditionId[] = CONDITION_IDS,
+): ConditionId[] {
+  const claimed = new Set(scenarios.flatMap((s) => (s.conditions ?? []).map((c) => c.id)));
+  return ids.filter((id) => !claimed.has(id));
+}
+
 export async function checkSurfaceConformance(h: SurfaceHarness): Promise<SurfaceViolation[]> {
   const violations: SurfaceViolation[] = [];
+
+  // Rule 6 — every condition the catalog names is claimed by a scenario. Reported
+  // against the battery itself, since the gap belongs to no one scenario.
+  for (const id of uncoveredConditions(h.scenarios)) {
+    violations.push({
+      scenario: "(the catalog)",
+      rule: "6-condition-covered",
+      detail: `${id} is in the catalog and no scenario puts a reader in it`,
+    });
+  }
 
   for (const s of h.scenarios) {
     const flag = (rule: string, detail: string) =>
@@ -246,6 +353,36 @@ export async function checkSurfaceConformance(h: SurfaceHarness): Promise<Surfac
     // to its own row.
     const judged = judgedRegion(output, s.finding);
     const routes = routesIn(judged);
+
+    // Rule 7 — the catalog's words for a claimed condition reached the reader.
+    // Judged over the WHOLE output, not the finding's section: a refusal is the
+    // whole message, and the summary clauses live below the verdict by design.
+    // This is the half that inverts the battery — rules 1-3 ask whether what was
+    // printed is honest, and only this one asks whether it was printed at all.
+    for (const claim of s.conditions ?? []) {
+      if (claim.as === "reason") {
+        const reason = whyNoAck(claim.id, claim.ctx ?? {});
+        if (reason === null) {
+          flag("7-catalog-reaches-reader", `${claim.id} claims a reason and the catalog gives none`);
+          continue;
+        }
+        // Minus its first character: a surface that starts a sentence with it
+        // capitalizes, and that is a presentation choice, not a second claim.
+        if (!output.includes(reason.slice(1))) {
+          flag("7-catalog-reaches-reader", `${claim.id}'s reason never printed: "${reason}"`);
+        }
+        continue;
+      }
+      // EVERY route the catalog names for this instance, not a subset: a claim
+      // that could excuse the routes it did not want checked would be a claim
+      // that proves whatever it was written to prove.
+      for (const r of routesFor(claim.id, claim.ctx ?? {})) {
+        const text = renderRoute(r);
+        if (!output.includes(text)) {
+          flag("7-catalog-reaches-reader", `${claim.id}'s "${r.label}" route never printed: ${text}`);
+        }
+      }
+    }
 
     // Rule 1 — a printed command is one a reader can paste. Unbalanced quoting or
     // an unquoted shell metacharacter means the reader repairs it first, which is
@@ -289,6 +426,17 @@ export async function checkSurfaceConformance(h: SurfaceHarness): Promise<Surfac
         if (s.finding.test(after)) {
           flag("3-routes-clear", `route left the finding standing: ${cmd}`);
         }
+      }
+    }
+
+    // Rule 8 — a block's label column fits every label in it.
+    for (const group of labelColumns(output)) {
+      const arrows = new Set(group.map((r) => r.arrow));
+      if (arrows.size > 1) {
+        flag(
+          "8-label-column-aligned",
+          `labels ${group.map((r) => `"${r.label}"`).join(", ")} put their arrows at ${[...arrows].join(", ")}`,
+        );
       }
     }
 
