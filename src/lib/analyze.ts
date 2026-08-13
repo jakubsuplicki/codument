@@ -14,6 +14,7 @@ import {
 import { adapterFor, isPreciseFile } from "./fingerprint.js";
 import { listIgnoredPaths } from "./git.js";
 import { parseDeliveryPlan } from "./plan-steps.js";
+import { renderRoute, routesFor } from "./remedies.js";
 import { analyzeProseAltitude } from "./prose-altitude.js";
 import {
   allSources,
@@ -1095,7 +1096,12 @@ function computeLint(
         severity: "info",
         feature: key,
         file: source,
-        message: `${source}: owned by ${key}, which no adapter reads and no risk tag covers — content changes are reported, not gated; add "risk": ["<why it matters>"] to ${key} to gate them`,
+        // The remedy comes from the catalog rather than being written again
+        // here: `review` prints the same route beside the file when you touch
+        // it, and these two were authored by hand in two files on the same day.
+        message: `${source}: owned by ${key}, which no adapter reads and no risk tag covers — content changes are reported, not gated; ${renderRoute(
+          routesFor("blind-unread-file", { file: source, feature: key })[0],
+        )}`,
       });
     }
   }

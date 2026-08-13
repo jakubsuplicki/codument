@@ -17,6 +17,7 @@ import {
 import { resolveScopeSync } from "../lib/analyze.js";
 import { treeCoverage } from "../lib/change-state.js";
 import { anchorGates } from "../lib/drift.js";
+import { whyNoAck } from "../lib/remedies.js";
 import {
   type AckValidity,
   type AnchorChange,
@@ -259,11 +260,7 @@ export async function ackCommand(
     // per-symbol transition to ack; the documented alternative is a doc update
     // or the FILE-grain ack over the additive residue.
     const file = ch.id.split("::")[0];
-    fail(
-      `${ch.id} was ${ch.kind}, not changed — an added or removed symbol needs doc attention: ` +
-        `update the owning doc, or acknowledge the file's additive residue with ` +
-        `\`codument ack ${shellArg(file)} --reason "..."\``,
-    );
+    fail(`${ch.id} was ${ch.kind}, not changed — ${whyNoAck("symbol-added-removed", { file })}`);
     return;
   }
   // Who owns this symbol decides whether an ack can do anything at all. Drift
@@ -292,8 +289,8 @@ export async function ackCommand(
     );
     fail(
       concept
-        ? `no feature owns ${ch.id} — it is narrated at file grain by a concept umbrella, which a per-symbol ack never clears: \`codument ack ${shellArg(file)} --reason "..."\``
-        : `no feature owns ${ch.id}, so nothing gates it and an ack would clear nothing. If it should be governed, map the file first: \`codument map materialize ${shellArg(file)}\``,
+        ? `no feature owns ${ch.id} — ${whyNoAck("symbol-under-concept", { file })}`
+        : `no feature owns ${ch.id}, so ${whyNoAck("symbol-unowned", { file })}`,
     );
     return;
   }
@@ -315,12 +312,11 @@ export async function ackCommand(
   }
   if (isSignatureMove(ch)) {
     // The highest-signal refusal (ADR 006): a public signature moved, so the
-    // symbol's CONTRACT changed. No ack — per-symbol or file-grain — clears it;
-    // the owning doc's contract needs an update.
-    fail(
-      `${ch.id}'s signature changed — the symbol's contract moved, so no ack applies: ` +
-        `update the owning doc's contract at intent altitude.`,
-    );
+    // symbol's CONTRACT changed. No ack — per-symbol or file-grain — clears it.
+    // The sentence comes from the catalog, so the reason this command gives and
+    // the reason `review` prints beside the same finding are one claim rather
+    // than two that happen to agree today.
+    fail(`${ch.id}'s signature changed — ${whyNoAck("signature-move", { file })}.`);
     return;
   }
   if (!anchorGates(ch)) {
@@ -332,11 +328,7 @@ export async function ackCommand(
     // Refused rather than accepted-and-inert, on the same principle as every other
     // refusal here: a green checkmark over a gate that never moved spends the
     // reader's trust in everything else the surface says.
-    fail(
-      `${ch.id} is a body-only move — implementation changed, and no documented contract can have gone ` +
-        `stale from it, so it is reported and never gates (ADR 020). There is nothing here to acknowledge. ` +
-        `If behaviour a doc actually describes did change, that is a doc update, not a signature.`,
-    );
+    fail(`${ch.id} is a body-only move — ${whyNoAck("body-only-move")}.`);
     return;
   }
 

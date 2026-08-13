@@ -2186,7 +2186,10 @@ describe("the file-ack route is decided per doc, not per file (plan 42)", () => 
     );
     // Its resolution is the per-symbol one, and that is printed where it belongs.
     assert.match(r.out, /• compute \(changed\) in engine/);
-    assert.match(r.out, /signature move {2}→/, "and it names the doc as the only exit");
+    // The label column is padded by the surface now that the routes come from one
+    // catalog, so the arrows in this block finally line up — they were a space out
+    // from their neighbours for as long as each arm wrote its own label by hand.
+    assert.match(r.out, /signature move\s+→/, "and it names the doc as the only exit");
   });
 
   it("a signature move on a contested file names the registry escape, not just the denial", async () => {

@@ -7,7 +7,6 @@ import {
   isFileGrainAck,
   normalizeIdentity,
   readAcks,
-  shellArg,
 } from "../lib/acknowledgment.js";
 import { type ExclusionSpec, isExcluded, resolveScopeSync } from "../lib/analyze.js";
 import {
@@ -62,6 +61,14 @@ import {
   reviewedDelta,
   writeReview,
 } from "../lib/review-artifact.js";
+import {
+  renderRoute,
+  routesFor,
+  whyNoAck,
+  type ConditionId,
+  type Palette,
+  type Route,
+} from "../lib/remedies.js";
 import { gatherReviewBundle, type ReviewBundleDelta } from "../lib/review-bundle.js";
 import {
   confirmCondition,
@@ -246,6 +253,25 @@ export function driftResolution(
 // OTHER failure is loud — a broken git read here must never quietly fall back,
 // because the fallback is exactly what the registry-entry-removal dodge needs.
 // Present-but-unparseable stays a loud RegistryError, same rule as the worktree.
+/**
+ * `review`'s palette for a catalog route, and the one line that prints it.
+ *
+ * The catalog holds the words and this holds the colors, so a route reads the
+ * same here as it does from `ack` or `doctor` while each keeps its own look.
+ * The label column width stays with the caller: it depends on which labels share
+ * a block, which is a layout fact about this screen, not about the condition.
+ */
+const ROUTE_PALETTE: Palette = { plain: (s) => s, cmd: pc.cyan, dim: pc.dim };
+
+function routeLine(route: Route, width: number): string {
+  return `${pc.dim(`${route.label.padEnd(width)} →`)} ${renderRoute(route, ROUTE_PALETTE)}`;
+}
+
+/** A catalog clause reads mid-sentence; these summary lines start one. */
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 function readRegistryAtRef(root: string, ref: string): Registry | undefined {
   // A repo with no commits yet has no base to read — an honest "no base
   // registry" (a genuinely bad --base already failed loud in resolveBase).
@@ -1074,14 +1100,16 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // clears it, and offering one here sent the reader to a refusal.
     const routes: string[] = [];
     if (report.state.unmapped.length > 0)
-      routes.push("    Materialize unmapped sources: `codument map materialize <file>`.");
+      routes.push(
+        `    Materialize unmapped sources: \`${renderRoute(routesFor("unmapped-source")[0])}\`.`,
+      );
     if (report.state.registryPointers.length > 0)
       routes.push(
-        "    Fix each registry pointer — re-point the entry to the new path, or drop it. No ack applies: the pointer is simply false.",
+        `    Fix each registry pointer — re-point the entry to the new path, or drop it. ${capitalize(whyNoAck("registry-pointer") ?? "")}.`,
       );
     if (report.state.docPointers.length > 0)
       routes.push(
-        "    Fix each doc pointer — name the new path, or drop the mention. No ack applies here either, and a doc that merely records the removal still sends its reader nowhere.",
+        `    Fix each doc pointer — name the new path, or drop the mention. ${capitalize(whyNoAck("doc-pointer") ?? "")}.`,
       );
     // Deliberately a pointer, not the command. The edit differs by shape — claim an
     // unclaimed symbol, drop a duplicate claim, or demote the file — and a summary
@@ -1134,13 +1162,12 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // removed. Both are named where both fired, rather than one standing in for the
     // other.
     const others = unackable.filter((d) => !ownershipOnly.includes(d));
+    // Each clause is the catalog's own reason for its condition, so the summary
+    // and the per-finding route beside it cannot come to say different things
+    // about the same wake.
     const why = [
-      others.some(anyRemoved)
-        ? "a removal owes its doc attention, and no acknowledgment clears a deletion"
-        : null,
-      others.some(movedContract)
-        ? "a signature moved, and no ack of any grain clears a contract change"
-        : null,
+      others.some(anyRemoved) ? whyNoAck("owned-file-deleted") : null,
+      others.some(movedContract) ? `a signature moved, and ${whyNoAck("signature-move")}` : null,
     ].filter((s): s is string => s !== null);
     if (ackable > 0)
       routes.push(
@@ -1690,12 +1717,23 @@ function printHuman(report: ReviewReport): void {
       const collapsedFiles = new Set([...collapsed.values()].flat());
       const perFile = coarse.filter((f) => !collapsedFiles.has(f));
       if (coarse.length > 0) {
-        line += `\n        ${pc.dim("doc impact    →")} update ${d.doc} ${pc.dim("at intent altitude")}`;
+        // One doc-update route heads the block, then one ack route per grain the
+        // wake actually offers — the tree where a pattern answers for all its
+        // files, the file otherwise. Both come from the catalog, so the command
+        // printed here is the command `ack` will accept.
+        const [docRoute] = routesFor("stale-doc-file", { doc: d.doc });
+        line += `\n        ${routeLine(docRoute, 13)}`;
         for (const [pattern, matched] of collapsed) {
-          line += `\n        ${pc.dim("no doc impact →")} ${pc.cyan(`codument ack ${shellArg(pattern)} --reason "..."`)} ${pc.dim(`(tree-grain, ${matched.length} files; expires when any of them changes again)`)}`;
+          const [, treeAck] = routesFor("stale-doc-tree", {
+            doc: d.doc,
+            pattern,
+            matched: matched.length,
+          });
+          line += `\n        ${routeLine(treeAck, 13)}`;
         }
         for (const f of perFile) {
-          line += `\n        ${pc.dim("no doc impact →")} ${pc.cyan(`codument ack ${shellArg(f)} --reason "..."`)} ${pc.dim("(file-grain; expires when the file changes again)")}`;
+          const [, fileAckRoute] = routesFor("stale-doc-file", { doc: d.doc, file: f });
+          line += `\n        ${routeLine(fileAckRoute, 13)}`;
         }
       }
       for (const f of d.changedSources) {
@@ -1752,9 +1790,13 @@ function printHuman(report: ReviewReport): void {
     ),
     unread.flatMap((u) => [
       `${pc.dim("•")} ${u.file} ${ownersOf(u)}`,
-      `      ${pc.dim("gate it →")} add ${pc.cyan('"risk": ["<why it matters>"]')} ${pc.dim(
-        `to ${u.owners.map((o) => o.feature).join(" or ")} in`,
-      )} ${pc.cyan("docs/.registry.json")}`,
+      // The same route `doctor` prints over the whole registry, from the same
+      // record — these two were written by hand in two files on the same day,
+      // which is how far apart a pair starts before it drifts.
+      ...routesFor("blind-unread-file", {
+        file: u.file,
+        feature: u.owners.map((o) => o.feature).join(" or "),
+      }).map((r) => `      ${routeLine(r, 7)}`),
     ]),
   );
 
@@ -1804,41 +1846,27 @@ function printHuman(report: ReviewReport): void {
         ? `(${d.kind === "changed" ? "contract changed" : d.kind}) in ${d.feature}`
         : `(${d.kind}) in ${d.feature}`;
       console.log(`    ${pc.dim("•")} ${pc.bold(subject)} ${pc.dim(what)}${sigTag}`);
-      console.log(
-        `        ${pc.dim("contract changed →")} update ${d.doc} ${pc.dim("at intent altitude")}`,
-      );
-      if (d.signatureChanged) {
-        // A public signature moved: the contract changed, so NO ack applies (per
-        // ADR 006). The only resolution is a doc update — name it, and do not
-        // print an ack command that the gate would refuse.
-        console.log(
-          `        ${pc.dim("signature move  →")} ${pc.dim("the symbol's signature changed — the doc's contract needs an update, not an ack")}`,
-        );
-        // The denial is right and it was the whole message, which left prose as the
-        // only exit — and where the doc's contract does not turn on the symbol at
-        // all, prose is the mirror edit. In the field a union gaining three members
-        // billed a feature whose documented contract was first-run seeding, and the
-        // agent rewrote a line it had no reason to touch. Offered only where a rival
-        // claim exists, because demoting a sole owner would leave the file unowned.
-        const file = d.anchorId.split("::")[0];
-        const claimants = state.byFeature.filter((g) => g.files.includes(file)).length;
-        if (claimants > 1) {
-          console.log(
-            `        ${pc.dim("not its contract →")} ${pc.dim(`${claimants} entries claim ${file}; if ${d.feature}'s contract does not turn on this symbol, demote it there in`)} ${pc.cyan("docs/.registry.json")} ${pc.dim("rather than writing prose")}`,
-          );
-        }
-      } else if (d.kind === "changed") {
-        console.log(
-          `        ${pc.dim("internal only   →")} ${pc.cyan(`codument ack ${shellArg(d.anchorId)} --reason "..."`)}`,
-        );
-      } else {
-        // An added/removed symbol has no per-symbol ack (ack rejects it: new or
-        // removed content needs doc attention). The honest alternative is the
-        // FILE-grain form — suggest the command that actually works when pasted.
-        const file = d.anchorId.split("::")[0];
-        console.log(
-          `        ${pc.dim("additive only   →")} ${pc.cyan(`codument ack ${shellArg(file)} --reason "..."`)} ${pc.dim("(file-grain; a per-symbol ack does not apply to added/removed)")}`,
-        );
+      // Which condition this move IS decides everything printed under it, and the
+      // catalog decides what each condition offers. The three arms used to write
+      // their own sentences here, which is how the signature arm went on
+      // advertising an ack after the ownership arm beside it had learned better.
+      const file = d.anchorId.split("::")[0];
+      const condition: ConditionId = d.signatureChanged
+        ? "signature-move"
+        : d.kind === "changed"
+          ? "symbol-internal-move"
+          : "symbol-added-removed";
+      for (const route of routesFor(condition, {
+        file,
+        doc: d.doc,
+        feature: d.feature,
+        anchorId: d.anchorId,
+        // Only the signature arm reads this, and it is what withholds the
+        // demotion route from a sole owner — demoting one would leave the file
+        // unowned, trading a wake for a worse one.
+        claimants: state.byFeature.filter((g) => g.files.includes(file)).length,
+      })) {
+        console.log(`        ${routeLine(route, 16)}`);
       }
     }
     console.log();

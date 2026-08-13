@@ -191,8 +191,24 @@ Status: awaiting approval.
       shape of the bug; a caller that knows now hands the prior version over — and says
       "there was no earlier install" as a distinct answer from "could not tell", so a
       first-time adopter is not told to clean up after a release it never ran.
-- [ ] Step 8: Build the condition→remedy table — one catalog of every gating condition
+- [x] Step 8: Build the condition→remedy table — one catalog of every gating condition
       and its remedy — and render every review/ack/doctor route from it.
+      **Two corrections the build forced, and one boundary named rather than implied.**
+      (a) "Does an ack apply" is not a boolean. An added export refuses the per-symbol
+      grain and accepts the file grain; a symbol under a concept umbrella is woken whole
+      so only the file grain settles it. A single flag is exactly how "no ack applies"
+      and "no per-symbol ack applies" came to be one sentence meaning two things, so a
+      condition names the GRAINS that reach it.
+      (b) Writing the catalog surfaced a live condition nobody had named: a symbol move
+      on an adapter that reports no signature cannot be PROVEN body-only, so it still
+      gates and the per-symbol ack is what clears it. That is the one surviving home of
+      the per-symbol grain after ADR 020, and it existed only as an `else` branch.
+      (c) The catalog owns the routes with more than one renderer — the drift, stale-doc,
+      pointer, ownership and blind-file families that `review`, `ack` and `doctor` all
+      speak about. A `doctor` lint that carries its fix inside its own message and is
+      rendered in exactly one place has no twin to drift from; folding those in would be
+      indirection bought with nothing. Step 9's battery asserts that boundary rather than
+      leaving it to be re-argued.
 - [ ] Step 9: Invert the surfaces battery: enumerate the condition catalog exhaustively —
       every condition routes, every route prints, pastes, clears, and reaches the verdict
       line; proven to bite against a seeded unrouted condition.
