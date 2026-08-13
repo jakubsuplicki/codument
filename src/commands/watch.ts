@@ -22,7 +22,6 @@ import {
   classifyVerdict,
   costProvenance,
   formatCost,
-  isTestFile,
   type CostModel,
   type Severity,
 } from "../lib/verdict.js";
@@ -263,7 +262,6 @@ export function renderFrame(
   const verdict = classifyVerdict(s, {
     totalFeatures: opts.totalFeatures ?? 0,
     inScopeSourceCount: coverage.inScopeSourceCount,
-    testsTouched: s.changedSources.some(isTestFile),
   });
   const mood = opts.mood ?? deriveMood(review);
   const { face, word } = mascotFor(mood, tick);

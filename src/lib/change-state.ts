@@ -233,7 +233,12 @@ export interface ChangeState {
    *  why they need a name: every other bucket filters them out while the headline
    *  total counts them, so the most ordinary change a step makes (editing a test)
    *  printed a total that did not add up, with no bucket accounting for the
-   *  remainder. Reported so the counts sum; never an input to any verdict. */
+   *  remainder. Reported so the counts sum; never an input to a verdict's
+   *  SEVERITY — an excluded file governs nothing, so it can neither raise nor
+   *  lower a status. The one thing it is read for is the risk aggravator note
+   *  "with no test", which asks whether test work came along: a conventionally
+   *  named test lands here and nowhere else, so a question asked only of the
+   *  governed buckets can never be answered yes. */
   excludedChanged: string[];
   /** Features whose source changed but whose mapped doc did not (drift). */
   staleDocs: StaleDoc[];

@@ -739,6 +739,56 @@ describe("codument watch --once (CLI, temp git repo)", () => {
     assert.match(out, /AT RISK/i);
   });
 
+  // The half the classifier's own unit tests could not reach. They passed the
+  // aggravator in as a flag, so both branches were proven while the live wiring
+  // asked a list the exclusion spec had already emptied of tests — "with no test"
+  // on every risk touch for six releases, including this repository's own runs
+  // over a change that added sixteen. A flag a test can set is not the question
+  // the surface asks; only a real repo with a real test file in it is.
+  it("stops claiming 'no test' once the change actually carries one", async () => {
+    await mkdir(join(tmp, "src", "auth"), { recursive: true });
+    await mkdir(join(tmp, "tests"), { recursive: true });
+    await mkdir(join(tmp, "docs", "features"), { recursive: true });
+    await writeFile(
+      join(tmp, "docs", ".registry.json"),
+      JSON.stringify({
+        features: {
+          auth: {
+            doc: "docs/features/auth.md",
+            type: "feature",
+            primary_sources: ["src/auth/login.ts"],
+            related_sources: [],
+            docs: [],
+            depends_on: [],
+            risk: ["auth"],
+            last_updated: "2026-06-16",
+            status: "current",
+          },
+        },
+      }),
+    );
+    await writeFile(join(tmp, "docs", "features", "auth.md"), "# auth\n");
+    await writeFile(join(tmp, "src", "auth", "login.ts"), "export const a = 1;\n");
+    await writeFile(join(tmp, "tests", "login.test.ts"), "export const t = 1;\n");
+    gitInit(tmp);
+
+    const frame = (): string =>
+      execFileSync("node", [CLI, "watch", "--once"], { cwd: tmp, encoding: "utf-8" });
+
+    // Touch the risk-tagged source alone: the aggravator is earned.
+    await writeFile(join(tmp, "src", "auth", "login.ts"), "export const a = 2;\n");
+    const alone = frame();
+    assert.match(alone, /AT RISK/i);
+    assert.match(alone, /no test/i);
+
+    // Now the change carries its test. Still at risk — a tested risk touch earns
+    // a look — but the sentence must stop asserting something untrue.
+    await writeFile(join(tmp, "tests", "login.test.ts"), "export const t = 2;\n");
+    const withTest = frame();
+    assert.match(withTest, /AT RISK/i);
+    assert.doesNotMatch(withTest, /no test/i);
+  });
+
   it("watches a repo given by --dir from a different cwd (no cd needed)", async () => {
     await mkdir(join(tmp, "src"), { recursive: true });
     await mkdir(join(tmp, "docs"), { recursive: true });

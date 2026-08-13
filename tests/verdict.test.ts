@@ -131,20 +131,57 @@ describe("classifyVerdict — severity", () => {
   });
 
   it("at-risk when a risk-tagged feature is touched; 'no test' only when no test changed", () => {
-    const state = mkState({
+    // The aggravator is read off the CHANGE, not off a flag the caller passes:
+    // the old option let this test assert both branches while the live wiring
+    // asked a list the exclusion spec had already emptied of tests, so the
+    // classifier was proven and the question it exists to answer never was.
+    const risky = {
       byFeature: [{ feature: "paywall", files: ["src/pay.ts"] }],
       riskTouches: [{ feature: "paywall", risk: ["payments"], files: ["src/pay.ts"] }],
-    });
-    const noTest = classifyVerdict(state, { ...OPTS, testsTouched: false });
+    };
+    const noTest = classifyVerdict(mkState({ ...risky, changedSources: ["src/pay.ts"] }), OPTS);
     assert.equal(noTest.status, "at-risk");
     assert.equal(noTest.gloss, "payments touched with no test");
     assert.equal(noTest.risk[0].noTest, true);
 
-    // A tested risk touch still fires — just without the aggravator.
-    const tested = classifyVerdict(state, { ...OPTS, testsTouched: true });
+    // A tested risk touch still fires — just without the aggravator. The test
+    // arrives in `excludedChanged` because that is where the exclusion spec puts
+    // a conventionally named one, which is the whole point.
+    const tested = classifyVerdict(
+      mkState({
+        ...risky,
+        changedSources: ["src/pay.ts"],
+        excludedChanged: ["tests/pay.test.ts"],
+      }),
+      OPTS,
+    );
     assert.equal(tested.status, "at-risk");
     assert.equal(tested.gloss, "payments touched");
     assert.equal(tested.risk[0].noTest, false);
+  });
+
+  it("finds the test wherever the change classifier had to put it", () => {
+    // Three buckets, three legitimate homes for test work, and any single-bucket
+    // reading answers "no" for two of them. A conventionally named test is
+    // excluded; a harness under `tests/` with an ordinary name is governed
+    // source; a fixture beside it is neither.
+    const risky = {
+      byFeature: [{ feature: "paywall", files: ["src/pay.ts"] }],
+      riskTouches: [{ feature: "paywall", risk: ["payments"], files: ["src/pay.ts"] }],
+    };
+    const homes: Array<Partial<ChangeState>> = [
+      { excludedChanged: ["tests/pay.test.ts"] },
+      { changedSources: ["tests/harness.ts"] },
+      { otherChanged: ["tests/fixtures/cards.json"] },
+    ];
+    for (const home of homes) {
+      const v = classifyVerdict(mkState({ ...risky, ...home }), OPTS);
+      assert.equal(
+        v.risk[0].noTest,
+        false,
+        `test work in ${Object.keys(home)[0]} must count as tested`,
+      );
+    }
   });
 
   it("escalates a shared file to risk only above the fanout threshold (>5)", () => {
@@ -165,8 +202,11 @@ describe("classifyVerdict — severity", () => {
 
   it("degrades a risk finding with no tags to a generic subject", () => {
     const v = classifyVerdict(
-      mkState({ riskTouches: [{ feature: "x", risk: [], files: ["f.ts"] }] }),
-      { ...OPTS, testsTouched: true },
+      mkState({
+        riskTouches: [{ feature: "x", risk: [], files: ["f.ts"] }],
+        excludedChanged: ["f.test.ts"],
+      }),
+      OPTS,
     );
     assert.equal(v.status, "at-risk");
     assert.equal(v.gloss, "risk code touched");

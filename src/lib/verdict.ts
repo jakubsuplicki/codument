@@ -86,8 +86,6 @@ export interface VerdictOptions {
   totalFeatures: number;
   /** In-scope source-file count — the file-grain blast denominator. */
   inScopeSourceCount?: number;
-  /** Any test/spec file among the changed sources (aggravator for risk). */
-  testsTouched?: boolean;
   /** Fanout strictly above this escalates a shared file to a risk finding
    *  (default 5). Must be >= the `highFanoutThreshold` used to build the
    *  ChangeState (default 3): the verdict can only escalate files the state
@@ -122,6 +120,32 @@ export interface CostModel {
 
 function plural(n: number, one: string, many = one + "s"): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+/**
+ * Whether this change came with test work — asked of every non-doc bucket.
+ *
+ * Derived here rather than accepted from the caller, because the caller got it
+ * wrong in the only way that matters and nothing noticed for six releases. The
+ * live wiring asked `changedSources.some(isTestFile)`, and `changedSources` is
+ * built by filtering through the exclusion spec — which drops every file the
+ * test conventions name. The predicate could therefore never return true: every
+ * risk touch read "no test yet", however many tests the change added, and this
+ * repository's own runs said so over sixteen new ones. The classifier's unit
+ * tests passed `testsTouched: true` directly, so they proved the classifier and
+ * left the one question the surface actually asks unasked.
+ *
+ * The buckets are asked in the plural on purpose. A conventionally-named test is
+ * excluded (`excludedChanged`); a harness under `tests/` with an ordinary name is
+ * governed source (`changedSources`); a fixture beside it is neither
+ * (`otherChanged`). Any one bucket alone is a subset that answers "no" for real
+ * test work, which is the shape of the original defect, not a smaller version
+ * of it.
+ */
+export function changeIncludesTest(state: ChangeState): boolean {
+  return [...state.changedSources, ...state.excludedChanged, ...state.otherChanged].some(
+    isTestFile,
+  );
 }
 
 /** A test/spec file by conventional path or filename. */
@@ -258,7 +282,7 @@ function buildGloss(v: Verdict, state: ChangeState): string {
  */
 export function classifyVerdict(state: ChangeState, opts: VerdictOptions): Verdict {
   const sharedThreshold = opts.sharedInfraThreshold ?? 5;
-  const testsTouched = opts.testsTouched ?? false;
+  const testsTouched = changeIncludesTest(state);
 
   const risk: RiskFinding[] = [];
   for (const rt of state.riskTouches) {
