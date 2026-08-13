@@ -302,6 +302,27 @@ export async function ackCommand(
     fail(`${ch.id} was ${ch.kind}, not changed — ${whyNoAck("symbol-added-removed", { file })}`);
     return;
   }
+  if (!anchorGates(ch)) {
+    // ADR 020 retires the per-symbol acknowledgment wherever an adapter reports a
+    // signature: a move that is not a signature move is body-only, body-only is
+    // reported and never gated, so there is no finding for a signature to clear.
+    // Recording one anyway would write precisely the artifact this release exists
+    // to stop producing — a vouch nobody reads back, over a question nobody asked.
+    // Refused rather than accepted-and-inert, on the same principle as every other
+    // refusal here: a green checkmark over a gate that never moved spends the
+    // reader's trust in everything else the surface says.
+    //
+    // Asked BEFORE the ownership questions below, and the field fixture is why.
+    // On a component two features claim, a body edit used to be refused with the
+    // ownership demand — sending the reader to a registry edit to settle a wake
+    // that, since ADR 020, no longer happens: `review` reports no ownership
+    // resolution for this move either, so `ack` was the only surface asking for
+    // work. The reader's question is "can I sign this move", and the truthful
+    // answer is that there is nothing here to sign. The ownership defect is real
+    // and still stands; it simply surfaces where it actually wakes something.
+    fail(`${ch.id} is a body-only move — ${whyNoAck("body-only-move")}.`);
+    return;
+  }
   // Who owns this symbol decides whether an ack can do anything at all. Drift
   // consults acknowledgments only for an anchor that resolves to ONE owner, so an
   // ack recorded against a shared symbol no feature claims is inert: it wrote a
@@ -356,18 +377,6 @@ export async function ackCommand(
     // the reason `review` prints beside the same finding are one claim rather
     // than two that happen to agree today.
     fail(`${ch.id}'s signature changed — ${whyNoAck("signature-move", { file })}.`);
-    return;
-  }
-  if (!anchorGates(ch)) {
-    // ADR 020 retires the per-symbol acknowledgment wherever an adapter reports a
-    // signature: a move that is not a signature move is body-only, body-only is
-    // reported and never gated, so there is no finding for a signature to clear.
-    // Recording one anyway would write precisely the artifact this release exists
-    // to stop producing — a vouch nobody reads back, over a question nobody asked.
-    // Refused rather than accepted-and-inert, on the same principle as every other
-    // refusal here: a green checkmark over a gate that never moved spends the
-    // reader's trust in everything else the surface says.
-    fail(`${ch.id} is a body-only move — ${whyNoAck("body-only-move")}.`);
     return;
   }
 

@@ -358,14 +358,15 @@ describe("ack refuses what it cannot clear, and says what would (plan 36)", asyn
     await rm(tmp, { recursive: true, force: true });
   });
 
-  // The routing refusals below fire before ADR 020's gating question, so most of
-  // them read the same whichever move made the symbol drift. Only a test that goes
-  // on to assert a WAKE needs the contract move — a body-only one leaves nothing
-  // for the refused ack to have failed to clear.
+  // The routing refusals below fire AFTER ADR 020's gating question, so they need
+  // a move that actually gates: on a body-only one the honest answer is "there is
+  // nothing here to sign", and routing such a reader to a registry edit asks for
+  // work to settle a wake that no longer happens. The field fixture caught that —
+  // `ack` was the only surface still making the demand.
   const BODY_MOVE = SHARED_SRC.replace("return 1;", "return 2;");
   const CONTRACT_MOVE = "export function priceOf(qty: number) {\n  return qty;\n}\n";
 
-  async function setup(registry: unknown, edited: string = BODY_MOVE): Promise<void> {
+  async function setup(registry: unknown, edited: string = CONTRACT_MOVE): Promise<void> {
     await scaffold({
       "docs/.registry.json": JSON.stringify(registry, null, 2),
       "docs/features/cart.md": "# cart\n\nThe cart.\n",
@@ -444,7 +445,7 @@ describe("ack refuses what it cannot clear, and says what would (plan 36)", asyn
   });
 
   it("claiming the symbol makes the very same ack work — the refusal was routing, not policy", async () => {
-    await setup(contested({ cart: { owned_symbols: { [SHARED]: ["priceOf()."] } } }));
+    await setup(contested({ cart: { owned_symbols: { [SHARED]: ["priceOf()."] } } }), BODY_MOVE);
     const r = await capture(() =>
       ackCommand(`${SHARED}::priceOf`, { reason: "internal: same return shape", root: tmp }),
     );

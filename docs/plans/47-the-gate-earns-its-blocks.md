@@ -229,9 +229,20 @@ Status: awaiting approval.
       (c) The HTML report was offering `codument ack <path>` with no `--reason` — a command
       the CLI refuses. It was the only surface never checked, which is what made it the one
       that had been broken longest.
-- [ ] Step 10: Build the field-shaped fixture repo (CRLF, no `src/`, single-default-export
+- [x] Step 10: Build the field-shaped fixture repo (CRLF, no `src/`, single-default-export
       screens, locale JSON, risk-tagged rules file) and replay the field session's three
       gate episodes end-to-end asserting the new behavior.
+      **It found something on its first run, which is the only reason to build one.**
+      `ack` refused a body-only move on a contested component with the OWNERSHIP demand:
+      a registry edit to settle a wake ADR 020 no longer raises, and one `review` does
+      not report — so the command was the last surface still charging for it. "Can I
+      sign this move" is now answered before "who owns it". Step 4(a) fixed this shape
+      in the verdict and left it standing in the refusal; only a repo shaped like the
+      field met both at once.
+      Second correction, from the mutation pass rather than the run: the CRLF equality
+      assertion was vacuous. The fixture's docs were too short for the section split to
+      change any answer, so the comparison held however blind the parser was. One doc is
+      now sized so that reading a whole file as one section crosses the threshold.
 - [ ] Step 11: Docs and guidance sweep: change-control-gate.md invariants rewritten to the
       new scope, AGENTS.md/CLAUDE.md/skills/scaffold two-way-call wording updated (contract
       changed → doc; internal only → nothing owed), README, CHANGELOG 0.18.0.
