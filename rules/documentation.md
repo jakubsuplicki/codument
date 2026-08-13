@@ -20,7 +20,7 @@ When you create or modify ANY source file, documentation MUST be handled as part
 - Read the corresponding doc file.
 - Make the two-way call on what changed:
   - **A documented contract or behavior changed** → update the matching section at **intent altitude** — the contract, the why, the shape callers depend on. Never mirror the code or restate symbol names (a doc that just renames functions as sentences, like "readRegistry reads the registry", is the rubbish this gate exists to prevent).
-  - **A pure-internal refactor changed no documented contract** → do NOT edit prose to clear the gate. Record it: `codument ack <path>::<symbol> --reason "<the invariant that stayed constant>"`. Default to updating the doc; ack only when you can name in one clause what stayed constant.
+  - **A move that changed no documented contract** → nothing is owed. The gate reports it and never blocks, so editing prose to clear it would be writing a doc change for a gate that is already green. Where the gate DOES still block and cannot judge for you — an added or removed export, a declared tree's decay, a change to a file no adapter reads whose owner declared a risk — it prints the exact `codument ack` line; run that one, naming in a clause what stayed constant.
 - If your change affects the public interface (exported functions, types, or behavior), flag dependent features via `depends_on`.
 
 **If the file is NOT in the registry** and contains significant logic (not just types, configs, or one-line re-exports):

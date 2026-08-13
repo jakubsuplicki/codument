@@ -7,6 +7,110 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+A block must be provable — plan 47, ADR 020.
+
+Three field reports in a row put the same subsystem in their worst finding, and the
+design error behind all of them states in one line: **the gate charged the same toll
+whether or not it could see.** An agent cannot be made to exercise judgment by blocking
+its path — only to produce whatever artifact clears the block. Where that artifact is
+checkable (a doc changed, a file mapped) the compliance is real work. Where it is a
+signature over "no contract changed", the compliance is the cheapest string that parses.
+The field ledger is 72 acknowledgments, 38 already dead, twelve of them the same cosmetic
+sentence pasted across one visual tweak — and the reporter's own accounting says the
+treadmill produced two doc edits written to make the gate green rather than for a reader.
+
+So the gate now blocks only where the triggering event is structurally contract-grade AND
+the demanded fix is checkable. Everything else is reported — on the verdict line, where a
+reader who pipes still sees it — and never blocks. Roughly 50 of those 72 entries were
+tolls on wakes this release deletes. What survives is rare enough to be real: an added or
+removed export, a governed tree decaying, a change to a file the project itself declared
+dangerous. Each one an event the parser proved; each signature over content the command
+shows you first.
+
+The honest cost, named where it can be weighed: a body-only change that silently alters
+documented behaviour no longer blocks. The co-movement telemetry keeps measuring exactly
+that class, so if doc rot rises the data says so and a reversal is informed rather than
+faith.
+
+Two things behind the change rather than in it. Every routing surface now renders from
+**one condition→remedy catalog** — six consecutive releases shipped a capability and left
+some surface pointing elsewhere, because two hand-written sentences about one condition
+are not a copy but two claims that can disagree. And the conformance battery was
+**inverted**: it used to judge the routes the tool printed, while every new field failure
+was a route it never printed. It now walks the catalog and fails when a condition has no
+routed remedy. A **field-shaped fixture** — CRLF, no `src/`, default-export screens,
+locale JSON, a risk-tagged rules file — replays the field session's three gate episodes
+and pins their cost at one acknowledgment where that session paid five.
+
+### Added
+
+- **A condition→remedy catalog** every routing surface renders from, holding for each
+  condition whether it gates, what clears it, and which acknowledgment grains reach it —
+  a set rather than a flag, because the honest answer is routinely mixed. An added export
+  refuses the per-symbol grain and accepts the file grain; a symbol under a concept
+  umbrella is woken whole so only the file grain settles it. Modelling that as one boolean
+  is how "no ack applies" and "no per-symbol ack applies" became the same sentence meaning
+  different things in different files.
+- **A field-shaped fixture repository** with the properties this project does not have,
+  replaying the field session's three gate episodes end to end. It found a defect on its
+  first run: `ack` refused a body-only move on a contested component with an *ownership*
+  demand — a registry edit to settle a wake that no longer happens.
+- **A migration note on upgrade** naming what an upgrade leaves behind: the sweep for dead
+  records, the mechanical registry cleanup, and the one block that got quieter, so a repo
+  moving to this release is not left to discover the change by its absence.
+- **`doctor --fix` clears out-of-scope source claims** where the *project's own*
+  declarations contradict them — git's ignore set, the project's `exclude` block. It never
+  clears one on a codument heuristic: acting on a guess would write the corruption the
+  command exists to detect.
+
+### Changed
+
+- **A body-only move is reported and never gates.** The largest wake volume, the entire
+  per-edit re-signing treadmill, and the class whose acknowledgments degrade into slugs.
+  It is still named, still attributed, still counted on the verdict line and in the ledger.
+- **A file no adapter can read gates only where its owner declared a `risk`.** Nothing in
+  such a file can be read, so the only artifact a block could demand is a signature over
+  content nobody looked at. A risk tag is the project saying the opposite out loud, and
+  that declaration turns the block on — one registry line, chosen by the people who know
+  what the file does. Its **deletion** still gates unconditionally: the file is gone, which
+  needs no reading to prove. The downgrade is never silent — every demoted file is named,
+  with the line that reverses it.
+- **`doctor --strict` fails only on findings this change produced.** Failing on inherited
+  debt it labels "nothing here gates anything" made the exit code meaningless; a green is
+  now achievable, and therefore required.
+- **`ack` answers "can I sign this move" before "who owns it".** On a contested file a
+  body-only move used to be refused with the ownership demand — real work, to settle a
+  wake that is no longer raised, and one no other surface reported.
+
+### Fixed
+
+- **A CRLF checkout is measured exactly as an LF one.** Every heading in every doc was
+  invisible to the bloat lint on a Windows checkout: the heading pattern anchors on `$`
+  and `.` never matches a carriage return, so whole documents read as one untitled section
+  and the field's 105 doctor findings included 55 fabricated ones.
+- **`watch` reads the whole change when asking whether a test came with it.** The
+  exclusion spec had already removed every test from the bucket it consulted, so the
+  aggravator had held the answer in scope and never looked — "no test yet" on every change
+  that carried one.
+- **The HTML report offers a command that runs.** It printed `codument ack <path>` with no
+  `--reason`, which the CLI refuses. It was the only surface never checked, which is what
+  made it the one broken longest.
+
+### Removed
+
+- **`--standing` (ADR 019, shipped in 0.17.0)** is refused with its reason. Body moves no
+  longer gate, so there is nothing left for a standing vouch to stand over. Existing
+  records still parse, `ack --list` labels them obsolete, and `ack --prune` sweeps them.
+  Three days old is not a reason to keep a dead limb.
+- **The per-symbol acknowledgment**, wherever an adapter reports a signature. Such a move
+  is either a signature move — which no ack of any grain has ever cleared — or provably
+  body-only, which no longer blocks. It survives only for the block-grained adapters that
+  report no signature at all, where nothing can prove the move stayed inside the
+  implementation.
+- **The release guide's accepted-baseline ritual**, which existed only because a green
+  `doctor --strict` was unreachable.
+
+
 ## [0.17.0] - 2026-08-11
 
 Say what you actually did — plan 46.

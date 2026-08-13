@@ -203,9 +203,17 @@ describe("buildManagedSection", () => {
     assert.ok(/symbol mirror/.test(section));
     // queryable-knowledge-base framing: link / estimate / scope
     assert.ok(section.includes("link features, estimate work, and understand scope"));
-    // the two-way call lives in the contract: update at altitude OR ack
-    assert.ok(section.includes("codument ack"));
-    assert.ok(/pure-internal refactor/.test(section));
+    // The two-way call lives in the contract, and ADR 020 changed what its second
+    // arm SAYS: a move that changed no contract owes nothing at all, because the
+    // gate reports it and never blocks. The contract used to send that reader to
+    // `codument ack` — a command the tool now refuses on every adapter that reports
+    // a signature — so the guard is inverted: the old instruction must be gone.
+    assert.ok(/owes nothing at all/.test(section));
+    assert.ok(!/pure-internal refactor/.test(section));
+    assert.ok(
+      !/codument ack <path>::<symbol>/.test(section),
+      "the contract must not hand an agent a per-symbol ack as the routine second arm",
+    );
     // regression guard: the removed last_updated mandate must never re-enter the contract
     assert.ok(!/last_updated/.test(section));
   });

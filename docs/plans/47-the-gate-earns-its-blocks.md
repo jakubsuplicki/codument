@@ -243,9 +243,20 @@ Status: awaiting approval.
       assertion was vacuous. The fixture's docs were too short for the section split to
       change any answer, so the comparison held however blind the parser was. One doc is
       now sized so that reading a whole file as one section crosses the threshold.
-- [ ] Step 11: Docs and guidance sweep: change-control-gate.md invariants rewritten to the
+- [x] Step 11: Docs and guidance sweep: change-control-gate.md invariants rewritten to the
       new scope, AGENTS.md/CLAUDE.md/skills/scaffold two-way-call wording updated (contract
       changed → doc; internal only → nothing owed), README, CHANGELOG 0.18.0.
+      **The sweep was a correctness fix, not tidying.** Nine places across the shipped
+      guidance, the dogfooded copies and the scaffold told an agent to run
+      `codument ack <path>::<symbol>` for a pure-internal refactor — a command 0.18
+      refuses on every adapter that reports a signature. An instruction that routes into a
+      refusal is worse than a missing one: the agent obeys, is refused, and improvises.
+      The second arm now says what is true — nothing is owed — and names the three events
+      where an ack still applies.
+      Two stale invariants in the feature doc were rewritten rather than left: the
+      opening still described three routine resolutions with the per-symbol ack first,
+      and the standing vouch was still documented as live. The retirement is recorded
+      with its reason rather than deleted, per the decision-chain rule.
 
 ```feature-map
 src/lib/remedies.ts | change-control-gate | feature | single condition→remedy catalog every gating surface renders routes from
