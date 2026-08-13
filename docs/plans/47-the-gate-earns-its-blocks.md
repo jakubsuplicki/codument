@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 47: the gate earns its blocks
@@ -132,164 +132,51 @@ What it deliberately does not do:
   gates.
 - **It does not touch the docs standard, the registry model, or plan/step machinery.**
 
-## Delivery Plan
+## How it landed
 
-Status: awaiting approval.
+Eleven steps, twelve commits (one off-plan, at the user's request), in the order written.
+Five things are worth keeping.
 
-- [x] Step 1: Fix CRLF heading blindness in the doc parsers (bloat sections, invariant
-      headers, feature-map heading, plan scope) with CRLF fixtures proving each; re-measure
-      and correct the release guide's doctor baseline.
-- [x] Step 2: `doctor --strict` fails only on findings attributed to this change;
-      inherited findings stay reported, exit 0; releasing.md drops the accepted-baseline
-      ritual and demands green.
-- [x] Step 3: Write ADR 020 — a block must be provable; the gate demands a checkable fix
-      or it does not block — with the field evidence and the honest ceiling.
-- [x] Step 4: Re-scope the drift verdict: body-only moves become advisory (verdict-line
-      count, report detail, ledger tally; never a staleDocs/strict input); signature,
-      added, removed unchanged.
-      **Delivered wider than written, in two places the adversarial pass forced.**
-      (a) The unowned/ambiguous passthrough takes the same predicate: it gated a body
-      move while the umbrella above it did not, so one file's one move had two
-      answers — and the field's worst episode (a body edit on a contested component)
-      would have survived as an ownership demand instead of a doc demand.
-      (b) The verdict-line disclosure counts the whole in-scope anchor diff rather
-      than the owned findings, because a file no feature claims is exactly where
-      silence would read as "the tool saw nothing" — scoped by the exclusion spec,
-      since a declared build tree is not something the gate may report having read.
-- [x] Step 5: Re-scope blind-file governance: non-risk coarse governed files advisory;
-      risk-declared blind files gate with changed-line disclosure and the file-ack escape.
-      This partially supersedes ADR 017 (its motivating false-green returns for non-risk
-      blind files); ADR 020 records the supersession, and the downgrade is never silent —
-      the 0.18 migration names every governed blind file losing its gate, with the
-      risk-tag line that restores it.
-- [x] Step 6: Narrow `ack`: refuse a body-move per-symbol ack (nothing gates it) and
-      retire `--standing` (refused with reason); obsolete records labeled in `--list`,
-      swept by `--prune`, old files parse harmlessly.
-      **Merged into step 4 during delivery.** Once a body-only move stops gating, the
-      per-symbol acknowledgment has nothing left to clear on any adapter that reports a
-      signature — so the two are one contract change, not two. Split across commits it
-      would have shipped a command writing records that clear nothing, and forced the
-      same ack tests to be rewritten twice: once to describe that one-commit state, once
-      to delete it. The step boundary existed to keep each commit reviewable, and here it
-      did the opposite.
-- [x] Step 7: Upgrade cleanup: extend `doctor --fix` to remove excluded-file source
-      claims (removal-only, decidable); `codument update` prints the 0.18 migration note
-      naming the two cleanup commands.
-      **Delivered narrower than written in one place, and wider in another.**
-      (a) "Excluded-file claims" splits three ways, and only two are decidable. Git's
-      ignore set and the project's own `exclude` block are the project contradicting
-      itself, so removing the line transcribes a decision already made. A built-in
-      exclusion is codument GUESSING from a filename — the same rule that catches build
-      output calls a hand-authored `*.seed.json` generated — so clearing a registration
-      on it would be the tool overruling a human claim with a heuristic, which is the
-      corruption `--fix` exists to detect. The analyzer therefore marks each finding
-      rather than the command matching lint ids, since one lint lands on either side.
-      (b) The note was suppressed on `adopt`, the command whose whole job is bringing an
-      older project forward: it stamps the new version into the metadata and only then
-      delegates the sync, so the delegate re-read the file and concluded there was
-      nothing to migrate from. Re-deriving state a caller has already overwritten is the
-      shape of the bug; a caller that knows now hands the prior version over — and says
-      "there was no earlier install" as a distinct answer from "could not tell", so a
-      first-time adopter is not told to clean up after a release it never ran.
-- [x] Step 8: Build the condition→remedy table — one catalog of every gating condition
-      and its remedy — and render every review/ack/doctor route from it.
-      **Two corrections the build forced, and one boundary named rather than implied.**
-      (a) "Does an ack apply" is not a boolean. An added export refuses the per-symbol
-      grain and accepts the file grain; a symbol under a concept umbrella is woken whole
-      so only the file grain settles it. A single flag is exactly how "no ack applies"
-      and "no per-symbol ack applies" came to be one sentence meaning two things, so a
-      condition names the GRAINS that reach it.
-      (b) Writing the catalog surfaced a live condition nobody had named: a symbol move
-      on an adapter that reports no signature cannot be PROVEN body-only, so it still
-      gates and the per-symbol ack is what clears it. That is the one surviving home of
-      the per-symbol grain after ADR 020, and it existed only as an `else` branch.
-      (c) The catalog owns the routes with more than one renderer — the drift, stale-doc,
-      pointer, ownership and blind-file families that `review`, `ack` and `doctor` all
-      speak about. A `doctor` lint that carries its fix inside its own message and is
-      rendered in exactly one place has no twin to drift from; folding those in would be
-      indirection bought with nothing. Step 9's battery asserts that boundary rather than
-      leaving it to be re-argued.
-- [x] Step 9: Invert the surfaces battery: enumerate the condition catalog exhaustively —
-      every condition routes, every route prints, pastes, clears, and reaches the verdict
-      line; proven to bite against a seeded unrouted condition.
-      **Delivered wider than written, because the inversion is only worth having if what
-      it finds gets fixed.** Walking the catalog found five conditions it held that no
-      surface rendered, and six sites across three surfaces still writing routes the
-      catalog already owned — two of them printing the SAME pair of labels at two
-      different column widths. All of them are converted, so the boundary named in step
-      8(c) is now enforced rather than described: no source outside the catalog may build
-      a `codument` command out of a variable.
-      Three further things the step forced.
-      (a) The label column is derived, not declared. A hand-written width is right until a
-      label is renamed past it, and the block then misaligns — which no assertion about
-      WHICH route printed can see. The battery asks the arrows themselves.
-      (b) The reasons were unguarded where the routes were not: `ack` could print
-      `undefined does not parse` to the one reader who is already stuck, because only the
-      route half was ever rendered against an empty context.
-      (c) The HTML report was offering `codument ack <path>` with no `--reason` — a command
-      the CLI refuses. It was the only surface never checked, which is what made it the one
-      that had been broken longest.
-- [x] Step 10: Build the field-shaped fixture repo (CRLF, no `src/`, single-default-export
-      screens, locale JSON, risk-tagged rules file) and replay the field session's three
-      gate episodes end-to-end asserting the new behavior.
-      **It found something on its first run, which is the only reason to build one.**
-      `ack` refused a body-only move on a contested component with the OWNERSHIP demand:
-      a registry edit to settle a wake ADR 020 no longer raises, and one `review` does
-      not report — so the command was the last surface still charging for it. "Can I
-      sign this move" is now answered before "who owns it". Step 4(a) fixed this shape
-      in the verdict and left it standing in the refusal; only a repo shaped like the
-      field met both at once.
-      Second correction, from the mutation pass rather than the run: the CRLF equality
-      assertion was vacuous. The fixture's docs were too short for the section split to
-      change any answer, so the comparison held however blind the parser was. One doc is
-      now sized so that reading a whole file as one section crosses the threshold.
-- [x] Step 11: Docs and guidance sweep: change-control-gate.md invariants rewritten to the
-      new scope, AGENTS.md/CLAUDE.md/skills/scaffold two-way-call wording updated (contract
-      changed → doc; internal only → nothing owed), README, CHANGELOG 0.18.0.
-      **The sweep was a correctness fix, not tidying.** Nine places across the shipped
-      guidance, the dogfooded copies and the scaffold told an agent to run
-      `codument ack <path>::<symbol>` for a pure-internal refactor — a command 0.18
-      refuses on every adapter that reports a signature. An instruction that routes into a
-      refusal is worse than a missing one: the agent obeys, is refused, and improvises.
-      The second arm now says what is true — nothing is owed — and names the three events
-      where an ack still applies.
-      Two stale invariants in the feature doc were rewritten rather than left: the
-      opening still described three routine resolutions with the per-symbol ack first,
-      and the standing vouch was still documented as live. The retirement is recorded
-      with its reason rather than deleted, per the decision-chain rule.
+**Merging step 6 into step 4 was right, and the reason generalizes.** Once a body-only move
+stops gating, the per-symbol acknowledgment has nothing left to clear on any adapter that
+reports a signature — so the two were one contract change, not two. Split across commits it
+would have shipped a command writing records that clear nothing, and forced the same tests
+to be rewritten twice: once to describe that intermediate state, once to delete it. A step
+boundary exists to keep each commit reviewable; here it would have done the opposite.
 
-```feature-map
-src/lib/remedies.ts | change-control-gate | feature | single condition→remedy catalog every gating surface renders routes from
-```
+**Writing the condition catalog corrected the model it was meant to record.** "Does an
+acknowledgment apply" is not a boolean: an added export refuses the per-symbol grain and
+accepts the file grain, and a symbol under a concept umbrella is woken whole so only the
+file grain settles it. A single flag is exactly how "no ack applies" and "no per-symbol ack
+applies" came to be one sentence meaning two things in different files. Enumerating the
+conditions also surfaced one nobody had named — a move on an adapter that reports no
+signature cannot be *proven* body-only, so it still gates and the per-symbol ack still
+clears it. It had existed only as an unlabelled `else`.
 
-Acceptance criteria:
+**The inverted battery found five conditions with no routed surface and six sites still
+authoring routes the catalog owned** — two of them printing the same pair of labels at two
+different column widths. A battery that judges only what a surface prints cannot see the
+route nobody printed, which was every one of this round's field failures. The boundary is
+now enforced rather than described: no source outside the catalog may build a `codument`
+command out of a variable.
 
-- A body-only move on an owned precise file: reported, counted on the verdict line,
-  `--strict` exits 0, `ack` refuses it by name.
-- A signature move, deletion, added/removed export, unmapped source: gate exactly as
-  today, byte-comparable routes.
-- A content change to a risk-declared blind file: gates; the clearing ack names the
-  changed lines; the same file non-risk: advisory.
-- A CRLF checkout measures sections identically to an LF checkout.
-- `doctor --strict` on a repo with only inherited findings: exit 0; introduce one
-  attributed finding: exit 1.
-- The inverted battery fails when a gating condition is seeded with no routed remedy.
-- The field fixture's three episodes pass with zero acknowledgments demanded where the
-  field session recorded five.
+**The field fixture earned itself on its first run.** `ack` refused a body-only move on a
+contested component with the *ownership* demand — a registry edit to settle a wake ADR 020
+no longer raises, and one `review` does not report, so the command was the last surface
+still charging for it. Step 4 had fixed that shape in the verdict and left it standing in
+the refusal. Only a repository shaped like the field met both at once. The mutation pass
+then caught the fixture's own CRLF assertion being vacuous: its docs were too short for the
+section split to change any answer.
 
-Verification: the full suite plus the new battery and fixture e2e; mutation-proof each
-new test by seeding the defect it pins; `codument review --strict --require-review`
-clean per step.
+**The guidance sweep was a correctness fix, not tidying.** Nine places told an agent to run
+a command this release refuses, and the test guarding that text asserted the stale
+instruction — it would have gone red on the correct wording and green on the wrong one. An
+instruction that routes into a refusal is worse than a missing one: the agent follows it,
+is refused mid-step, and improvises the resolution nobody specified, which in the field
+means prose written to clear a gate.
 
-Open questions (recommendation first):
-
-1. Risk gating breadth — recommend blind files only (precise files keep the
-   signature/body split as their contract boundary; feature-level risk tags are too
-   coarse to block body moves, per the field's provider-mount false positive).
-   Alternative: any file of a risk-tagged feature gates on any move.
-2. Added/removed exports — recommend keep gating with the file-ack escape (the event is
-   proven; the escape prevents forced mirror prose). Alternative: demote additive moves
-   to advisory too, leaving only signature/deletion/unmapped/risk gating.
-3. `--standing` — recommend full retirement (nothing left to stand over). Alternative:
-   keep it solely for risk-file recurring judgments, at the cost of carrying ADR 019's
-   machinery for one narrow case.
+Left standing, deliberately: all three open questions were answered as recommended — risk
+gating on blind files only, added/removed exports keeping the file-ack escape, and
+`--standing` fully retired. The `--require-review` confirm runner still times out on slow
+suites, so findings there read "unrunnable" rather than judged; that is a separate defect
+with its own fix, not this plan's.
