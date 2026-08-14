@@ -47,7 +47,8 @@ Nothing here is automated. Run it top to bottom.
    recorded baseline as a claim to interrogate once, never as a number to carry forward.**
 
    The suite has the one **real** baseline: **27** known Windows path-separator failures across
-   14 suites as of 0.18.0. The bar is *no movement against it*, not zero. Say what you measured
+   14 suites as of 0.18.0 — measured again at the 0.18.0 release commit and unmoved (1713 tests,
+   1678 passing, 27 failing, 8 skipped). The bar is *no movement against it*, not zero. Say what you measured
    when you check it, treat any change as a blocker, and **write what you measured back here** —
    the direction matters, since a stale high baseline hides a real regression underneath it.
 

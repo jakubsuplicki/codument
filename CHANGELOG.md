@@ -7,6 +7,8 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-08-14
+
 A block must be provable — plan 47, ADR 020.
 
 Three field reports in a row put the same subsystem in their worst finding, and the

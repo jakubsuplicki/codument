@@ -1,5 +1,5 @@
 {
-  "version": "0.17.0",
+  "version": "0.18.0",
   "initialized": "2026-03-29",
   "project": {
     "language": "typescript",
@@ -31,10 +31,10 @@
     ".claude/skills/plan-with-docs/SKILL.md": "a044b9937c3ee78b",
     ".claude/skills/tdd/SKILL.md": "121de0703b9f0f25",
     ".claude/skills/work-step/SKILL.md": "14004ee9da3c3003",
-    ".claude/skills/review-work/SKILL.md": "f06ca05e78c5cf44",
+    ".claude/skills/review-work/SKILL.md": "83c621c7e49294e0",
     ".claude/skills/commit-work/SKILL.md": "9e9b69ec2c960ff3",
-    ".claude/skills/update-docs/SKILL.md": "dd6798175cf4bb3c",
-    ".claude/rules/documentation.md": "ad8c7b46c26844d1",
+    ".claude/skills/update-docs/SKILL.md": "4a23b71fc95928b1",
+    ".claude/rules/documentation.md": "330b9233a117cbba",
     ".claude/agents/doc-writer.md": "aafdbda0721efad1",
     ".claude/agents/doc-scanner.md": "0dc3127f8fab8276",
     ".claude/agents/code-reviewer.md": "f499dcaf04d6f571",
