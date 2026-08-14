@@ -174,11 +174,11 @@ program
 program
   .command("ack")
   .description(
-    "Acknowledge a change that owes no doc change — records a fingerprint-bound, auto-invalidating decision so review stops flagging it. A moved symbol: <path>::<symbol>. A whole file's additive/concept residue: <path> (never masks a moved symbol)",
+    "Acknowledge a change that owes no doc change — records a fingerprint-bound, auto-invalidating decision so review stops flagging it. Most changes never need one: a move the parser proves left the contract alone is reported and never blocks. A whole file's additive/concept residue: <path>. A move on an adapter that reports no signature (Vue/Svelte/Astro template and style): <path>::<symbol>",
   )
   .argument(
     "[anchor]",
-    "the moved anchor <path>::<symbol> (run the exact line `codument review` prints, or <path>::<bareName>), OR a bare <path> for a file-grain ack of additive/concept staleness",
+    "a bare <path> for a file-grain ack of additive/concept/blind-risk staleness, OR <path>::<symbol> where no signature can be compared — run the exact line `codument review` prints rather than composing one",
   )
   .option("--reason <text>", "why no doc change is owed — name the contract that stayed constant")
   .option(

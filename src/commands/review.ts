@@ -1173,9 +1173,22 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       others.some(anyRemoved) ? whyNoAck("owned-file-deleted") : null,
       others.some(movedContract) ? `a signature moved, and ${whyNoAck("signature-move")}` : null,
     ].filter((s): s is string => s !== null);
+    // WHICH grains this summary may name is decided by what actually fired, not by
+    // the shape of the command. The per-symbol form reaches exactly one condition
+    // now — a move no adapter could prove body-only — so naming it beside an
+    // additive residue or a concept umbrella offers a form the catalog refuses:
+    // the reader pastes it and is told the symbol "has no per-symbol transition to
+    // sign". A placeholder is exempt from "it must run and clear" because it cannot
+    // be run; it is NOT exempt from "it must not be offered where nothing it names
+    // can work", which is the rule this line was breaking in its own release.
+    const perSymbolApplies = report.drift.some(
+      (d) => d.gates && !d.acknowledged && !d.signatureChanged && d.kind === "changed",
+    );
     if (ackable > 0)
       routes.push(
-        "    Resolve each stale doc: update it at intent altitude, or acknowledge a change that owes no doc line (`codument ack <path>` / `codument ack <path>::<symbol>`).",
+        `    Resolve each stale doc: update it at intent altitude, or acknowledge a change that owes no doc line (\`codument ack <path>\`${
+          perSymbolApplies ? " / `codument ack <path>::<symbol>`" : ""
+        }) — the exact line is printed with each finding above.`,
       );
     else if (why.length > 0)
       routes.push(

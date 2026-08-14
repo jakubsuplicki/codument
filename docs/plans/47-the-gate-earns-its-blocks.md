@@ -134,7 +134,8 @@ What it deliberately does not do:
 
 ## How it landed
 
-Eleven steps, twelve commits (one off-plan, at the user's request), in the order written.
+Eleven steps in ten commits — step 6 merged into step 4 — plus one off-plan fix at the
+user's request and this compaction, in the order written.
 Five things are worth keeping.
 
 **Merging step 6 into step 4 was right, and the reason generalizes.** Once a body-only move

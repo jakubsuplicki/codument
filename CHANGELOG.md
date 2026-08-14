@@ -68,6 +68,15 @@ and pins their cost at one acknowledgment where that session paid five.
 - **A body-only move is reported and never gates.** The largest wake volume, the entire
   per-edit re-signing treadmill, and the class whose acknowledgments degrade into slugs.
   It is still named, still attributed, still counted on the verdict line and in the ledger.
+- **An edit confined to a file's non-exported top-level code no longer gates.** Every
+  precise adapter but Python emits its whole-file residual with no signature to compare,
+  and what lands there is by definition what did not anchor as an export — imports, side
+  effects, unreferenced private declarations, C# top-level statements, Go `init`, Rust
+  item-position macros and inline `mod`, SFC custom blocks. Nothing about such a move can
+  be proven contract-grade, so under ADR 020 it is reported in the drift tally rather than
+  blocked, and a concept umbrella over the file no longer wakes on it. It is deliberately
+  absent from the verdict line's body-only COUNT: that number must be one a reader can
+  account for, and no symbol in the diff would account for the residual.
 - **A file no adapter can read gates only where its owner declared a `risk`.** Nothing in
   such a file can be read, so the only artifact a block could demand is a signature over
   content nobody looked at. A risk tag is the project saying the opposite out loud, and

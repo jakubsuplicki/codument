@@ -1361,6 +1361,13 @@ describe("coarse-file ack signpost", () => {
       out.includes("acknowledge a change that owes no doc line"),
       "strict epilogue must name the ack path",
     );
+    // A coarse JS file is settled at file grain, so the epilogue names that form
+    // and NOT the per-symbol one — see the dedicated pair below for why.
+    assert.ok(out.includes("`codument ack <path>`"), "the grain that clears this is named");
+    assert.ok(
+      !out.includes("codument ack <path>::<symbol>"),
+      "no per-symbol form: nothing here accepts one",
+    );
   });
 
   it("a precise stale doc gets no file-grain line (per-symbol drift owns it)", async () => {
@@ -2095,6 +2102,113 @@ describe("an unclaimed shared file says how to stop being one (plan 36)", () => 
 // with no resolution at all. The same global test failed the other way in the field:
 // it printed the file route under a doc whose own symbol had moved, and the ack the
 // reader pasted came back "1 moved symbol(s) here are NOT cleared by a file ack".
+describe("the strict epilogue names only the grains that fired (plan 47)", () => {
+  // The defect this pins shipped IN the release written to end its class. The
+  // epilogue offered `codument ack <path>::<symbol>` over every ackable stale doc,
+  // but the per-symbol grain now reaches exactly one condition — a move no adapter
+  // could prove body-only. Over an added export the reader pasted it and was told
+  // the symbol "has no per-symbol transition to sign".
+  //
+  // The surfaces battery could not see it. A placeholder is a POINTER, exempt from
+  // "it must run and clear" because it cannot be run, and the battery's own rule —
+  // a pointer "is NOT exempt from 'it must not be offered where nothing it names
+  // can work'" — is asked only of scenarios declared `no-ack-route`. So it is
+  // asked here, of the two conditions that answer it in opposite directions.
+  function runStrict(): { code: number; out: string } {
+    try {
+      return {
+        code: 0,
+        out: execFileSync("node", [CLI, "review", "--strict"], {
+          cwd: tmp,
+          encoding: "utf-8",
+          env: { ...process.env, NO_COLOR: "1" },
+        }),
+      };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { code: e.status ?? 1, out: e.stdout ?? "" };
+    }
+  }
+
+  const epilogueOf = (out: string): string => out.split("--strict:")[1] ?? "";
+
+  const registryFor = (sources: string[]) =>
+    JSON.stringify(
+      {
+        features: {
+          x: {
+            doc: "docs/features/x.md",
+            type: "feature",
+            primary_sources: sources,
+            status: "current",
+          },
+        },
+      },
+      null,
+      2,
+    );
+
+  const DOC = "# x\n\n## In plain terms\nA thing.\n";
+
+  it("an added export is settled at file grain, so no per-symbol form is offered", async () => {
+    await scaffold({
+      "docs/features/x.md": DOC,
+      "docs/.registry.json": registryFor(["src/shapes.ts"]),
+      "src/shapes.ts": "export function area(w: number) {\n  return w;\n}\n",
+    });
+    gitInit(tmp);
+    await scaffold({
+      "src/shapes.ts":
+        "export function area(w: number) {\n  return w;\n}\n\nexport function diag(w: number) {\n  return w;\n}\n",
+    });
+
+    const r = runStrict();
+    assert.equal(r.code, 1, `an added export must still gate:\n${r.out}`);
+    const epilogue = epilogueOf(r.out);
+    assert.match(epilogue, /codument ack <path>`/, "the grain that does clear it is named");
+    assert.doesNotMatch(
+      epilogue,
+      /codument ack <path>::<symbol>/,
+      "the per-symbol form is refused for an added symbol, so it must not be offered",
+    );
+
+    // The refusal the old wording walked the reader into, proven rather than
+    // assumed: the exact form the epilogue used to name does not work here.
+    let refusal = "";
+    try {
+      execFileSync("node", [CLI, "ack", "src/shapes.ts::diag", "--reason", "new helper"], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: { ...process.env, NO_COLOR: "1" },
+      });
+    } catch (err) {
+      const e = err as { stderr?: string; stdout?: string };
+      refusal = `${e.stdout ?? ""}${e.stderr ?? ""}`;
+    }
+    assert.match(refusal, /no per-symbol transition to sign/, "the per-symbol ack is refused");
+  });
+
+  it("a move no adapter can prove body-only keeps the per-symbol form", async () => {
+    // The one surviving home of the grain. Withholding it everywhere would be the
+    // same defect from the other side — a working route denied.
+    await scaffold({
+      "docs/features/x.md": DOC,
+      "docs/.registry.json": registryFor(["src/App.vue"]),
+      "src/App.vue": "<template>\n  <p>hello</p>\n</template>\n",
+    });
+    gitInit(tmp);
+    await scaffold({ "src/App.vue": "<template>\n  <p>hello there</p>\n</template>\n" });
+
+    const r = runStrict();
+    assert.equal(r.code, 1, `a move with no signature to compare must gate:\n${r.out}`);
+    assert.match(
+      epilogueOf(r.out),
+      /codument ack <path>::<symbol>/,
+      "this is the condition the per-symbol grain still reaches",
+    );
+  });
+});
+
 describe("the file-ack route is decided per doc, not per file (plan 42)", () => {
   function runReview(): { code: number; out: string } {
     try {
