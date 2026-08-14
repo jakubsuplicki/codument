@@ -519,6 +519,14 @@ export function cleanNodeTestEnv(source: NodeJS.ProcessEnv = process.env): NodeJ
   return env;
 }
 
+// Evidence the runner actually EXECUTED tests — not that they passed. node:test,
+// tsx, vitest and jest all emit this; a toolchain error emits none of it.
+const RAN_TESTS = /^(?:TAP version|ok\b|not ok\b|# tests\b|# pass\b|# fail\b|# Subtest)/m;
+// Evidence a test FAILED. Indent-tolerant, because node:test prints subtests nested
+// under their parent and that is where a real failure appears first — the sibling
+// above can afford to be strict since it also matches the unindented summary lines.
+const TEST_FAILED = /^\s*not ok\b/m;
+
 // The real runner: resolve the test file, run it through the configured command,
 // and map the result. A missing file, a spawn error, or a kill/timeout is
 // `unrunnable` (never a pass); exit 0 is `passed`; any nonzero exit is `failed`.
@@ -543,17 +551,27 @@ export function makeTestRunner(opts: TestRunnerOptions): TestRunner {
     // win32-safe: a .cmd shim (npx/npm/vitest) needs a shell since Node's
     // CVE-2024-27980 hardening; POSIX spawns exactly as before.
     const res = spawnArgvSync(argv, { cwd: opts.root, timeout, encoding: "utf8", env });
+    // Whatever the child wrote before it stopped — a timeout kill preserves it, which
+    // is what makes the partial-evidence rule below possible.
+    const out = `${res.stdout ?? ""}\n${res.stderr ?? ""}`;
     // A timeout is not a toolchain gap and must not be described as one: the runner
     // was present, the command was right, and the test was running. What expired was
     // OUR clock — so it is named as itself, with the budget the reader would raise.
     // Left as the raw spawn error it read `spawnSync C:\WINDOWS\system32\cmd.exe
     // ETIMEDOUT`, which names a shell the reader never asked for.
     if ((res.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT") {
-      return {
-        outcome: "unrunnable",
-        cause: "timeout",
-        detail: `timed out after ${Math.round(timeout / 1000)}s`,
-      };
+      const budget = `timed out after ${Math.round(timeout / 1000)}s`;
+      // An expired clock proves nothing about the tests that never ran — but it does
+      // not erase what the child already put on the wire. Where a failure is ALREADY
+      // in the captured output, the reproduction happened and throwing it away would
+      // downgrade a demonstrated bug to a shrug because the file had more to do
+      // afterwards. One-directional by construction: a timeout can become a block,
+      // never a pass, because the tests that did not get to run are precisely the
+      // ones a green reading would be making a claim about.
+      if (TEST_FAILED.test(out)) {
+        return { outcome: "failed", cause: "timeout", detail: `${budget}, a test having already failed` };
+      }
+      return { outcome: "unrunnable", cause: "timeout", detail: budget };
     }
     if (res.error) {
       return { outcome: "unrunnable", detail: String(res.error.message ?? res.error) };
@@ -578,9 +596,7 @@ export function makeTestRunner(opts: TestRunnerOptions): TestRunner {
     // The residual trust limit is now one-directional and named: a runner that
     // exits 0 AND prints TAP without truly executing the file would still read as
     // passed — accepting a fabricated pass is the soak/audit limit, not a false block.
-    const out = `${res.stdout ?? ""}\n${res.stderr ?? ""}`;
-    const ranTests = /^(?:TAP version|ok\b|not ok\b|# tests\b|# pass\b|# fail\b|# Subtest)/m.test(out);
-    if (!ranTests) {
+    if (!RAN_TESTS.test(out)) {
       return {
         outcome: "unrunnable",
         detail: `runner exited ${res.status} without producing test results (toolchain error?)`,

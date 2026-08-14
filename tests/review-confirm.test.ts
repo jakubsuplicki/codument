@@ -701,6 +701,62 @@ describe("makeTestRunner names a timeout as itself (the clock is ours, not the p
     assert.doesNotMatch(res.detail ?? "", /cmd\.exe|spawnSync/i);
   });
 
+  it("a timeout whose child already emitted a failure is JUDGED red, not shrugged at", () => {
+    // The reproduction happened. Throwing it away because the file had more to do
+    // afterwards would downgrade a demonstrated bug to an advisory, which is the
+    // gate discarding evidence it already holds.
+    writeFileSync(
+      join(tmp, "red-then-hang.test.js"),
+      "console.log('TAP version 13');\nconsole.log('    not ok 1 - the bug reproduces');\nsetTimeout(() => {}, 6_000);\n",
+    );
+    const res = makeTestRunner({ root: tmp, command: ["node", "{file}"], timeoutMs: 1000 })(
+      "red-then-hang.test.js",
+    );
+    assert.equal(res.outcome, "failed", "the failure was on the wire before the clock ran out");
+    assert.equal(res.cause, "timeout");
+    assert.match(res.detail ?? "", /already failed/);
+  });
+
+  it("holds against the REAL runner's output, not just hand-written TAP", () => {
+    // The hand-printed fixtures above test the rule against my own idea of what a
+    // runner emits. This one runs node:test for real, in the shape that actually
+    // strands a run in the field — a failing test in a file that leaks a live handle,
+    // so the tests report and the process then refuses to exit. The evidence the rule
+    // reads is therefore the evidence a runner really produces, YAML block and all.
+    writeFileSync(
+      join(tmp, "real.test.js"),
+      [
+        'const { test } = require("node:test");',
+        'const assert = require("node:assert");',
+        'test("really fails", () => { assert.equal(1, 2); });',
+        "setTimeout(() => {}, 30_000);",
+        "",
+      ].join("\n"),
+    );
+    const res = makeTestRunner({
+      root: tmp,
+      command: ["node", "--test", "{file}"],
+      timeoutMs: 2500,
+    })("real.test.js");
+    assert.equal(res.outcome, "failed");
+    assert.equal(res.cause, "timeout");
+  });
+
+  it("a timeout with only passes on the wire is never read as a pass", () => {
+    // The other direction, and the one that must never soften: the tests that did not
+    // get to run are exactly the ones a green reading would be claiming something
+    // about, so partial success proves nothing at all.
+    writeFileSync(
+      join(tmp, "green-then-hang.test.js"),
+      "console.log('TAP version 13');\nconsole.log('ok 1 - fine so far');\nsetTimeout(() => {}, 6_000);\n",
+    );
+    const res = makeTestRunner({ root: tmp, command: ["node", "{file}"], timeoutMs: 1000 })(
+      "green-then-hang.test.js",
+    );
+    assert.equal(res.outcome, "unrunnable");
+    assert.equal(res.cause, "timeout");
+  });
+
   it("leaves every other unrunnable cause uncaused, so only the timeout reroutes", () => {
     // A missing file and a broken toolchain still belong to the runner remedy; giving
     // them a cause would hand them the budget route, which fixes neither.

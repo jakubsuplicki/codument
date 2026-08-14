@@ -91,7 +91,7 @@ Status: approved (2026-08-14), pre-approved by the user for an autopilot run.
   offers **only the routes that apply** — the timeout route for a timeout, the runner route
   for everything else, both when both fired. The verdict does not move: a timeout is still
   unrunnable and still never blocks.
-- [ ] **Step 3 — a timeout that already proved red is judged red.** If the output captured
+- [x] **Step 3 — a timeout that already proved red is judged red.** If the output captured
   before the kill already carries a failing TAP line, the file went red before the clock ran
   out and the reproduction is on the wire — so the finding is `failed`, not unrunnable. This
   is one-directional by construction: a timeout can become a block, never a pass, because a
