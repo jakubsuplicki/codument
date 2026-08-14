@@ -371,11 +371,15 @@ export function resolveTestCommand(root: string, flag?: readonly string[]): Reso
 /**
  * The confirm gate's per-test budget, in SECONDS.
  *
- * 300 is a measurement, not a round guess: this repository's largest test file takes
- * 230 seconds under the default runner, and a budget its own suite cannot fit leaves
- * the tool unable to gate itself — every finding naming that file came back
- * unadjudicated while the project's toolchain was perfectly fine. Re-measure it
- * rather than inherit it.
+ * 300 is a measurement plus headroom, not a round guess. This repository's largest test
+ * file takes ~165 seconds under the default runner — over the 120 it used to be given,
+ * so a finding naming it could never be adjudicated and the tool could not gate itself.
+ * The default is roughly double the measurement rather than just above it, because a
+ * budget with no headroom fails on a loaded CI box and fails as a silent advisory.
+ *
+ * Measure it the way the runner spawns it — captured to a buffer. Timing it through a
+ * shell pipeline charges per output line and reads ~40% high on a chatty TAP stream,
+ * which is how this constant was first justified by a number that was not real.
  */
 export const DEFAULT_TEST_TIMEOUT_SECONDS = 300;
 

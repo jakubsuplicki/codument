@@ -325,7 +325,7 @@ It reports separate channels, never blended into one number:
 
 `doctor` is warning-only by default: neither findings nor notes change the exit code. Add `--strict` to make findings exit 1 — but only findings **this change produced**; debt you inherited stays reported and never gates (notes never do either). Failing on a pile the current change did not create makes the exit code mean nothing, so a green is achievable and therefore worth requiring in CI.
 
-`--verify-invariants` is a separate, opt-in mode: it parses each doc's `## Invariants & boundaries` test pointers and *runs* those tests, so "this doc's invariants are enforced" becomes a checkable claim rather than a decoration. It touches your environment (it shells out to your test runner, overridable with `--test-command`), which is why it is off by default; its results fold into the `--strict` exit and appear in `--json` only when the mode is on.
+`--verify-invariants` is a separate, opt-in mode: it parses each doc's `## Invariants & boundaries` test pointers and *runs* those tests, so "this doc's invariants are enforced" becomes a checkable claim rather than a decoration. It touches your environment (it shells out to your test runner, overridable with `--test-command`, under a budget you set with `--test-timeout`), which is why it is off by default; its results fold into the `--strict` exit and appear in `--json` only when the mode is on.
 
 </details>
 
@@ -354,11 +354,12 @@ npx codument review --bundle          # emit the adversarial-review bundle as JS
 npx codument review --record findings.json   # record a fingerprint-bound review from a findings JSON, then enforce it
 npx codument review --require-review  # exit 1 if a non-trivial diff has no current review artifact, or one with unresolved findings
 npx codument review --require-review --test-command "npx tsx --test {file}"   # how a finding's named test is re-run ({file} = resolved path)
+npx codument review --require-review --test-timeout 600   # how long ONE test file may run before the gate gives up on it
 ```
 
 - **`--strict`** is the **step-sync gate**: it exits 1 while a step left a new source unmapped or a mapped doc stale. It is what Autopilot runs before checking a step off — materialize the file(s) and update the stale doc(s), then re-run until clean.
 - **`--base <ref>`** reviews the whole branch's drift (merge-base..working-tree), not just uncommitted changes — pair it with `codument ack --base <ref>` so a symbol move resolves against the same ref.
-- **`--bundle`** emits the adversarial-review bundle (the documented invariants + their tests + the diff) as JSON — the contract an independent reviewer attacks. The deterministic oracle that *decides* is the re-run of a finding's named test, never the bundle itself. **`--record <file>`** records a fingerprint-bound review from a findings JSON (`{invariantsChecked, findings, signer}`) that **`--require-review`** then enforces — exiting 1 on a non-trivial diff with no current artifact, or one carrying unresolved confirmed findings. A finding **blocks only** when its named test is red on a live re-run (`--test-command`, `{file}` = the resolved path; default `npx --no-install tsx --test {file}` — resolved locally, **never fetched from the network**); point it at a TAP-emitting runner for non-`node:test` projects. Declare your runner once as `testCommand` in `.codument-meta.json` (see [Declaring your test runner](#declaring-your-test-runner)); the flag overrides it. Whenever a finding's test cannot be adjudicated the summary says how many went unjudged, by name, instead of silently reading advisory — keyed on the outcome, so pointing at a runner that emits no test evidence does not quietly buy you a clean gate. Opt-in today; the default-on flip is soak-deferred.
+- **`--bundle`** emits the adversarial-review bundle (the documented invariants + their tests + the diff) as JSON — the contract an independent reviewer attacks. The deterministic oracle that *decides* is the re-run of a finding's named test, never the bundle itself. **`--record <file>`** records a fingerprint-bound review from a findings JSON (`{invariantsChecked, findings, signer}`) that **`--require-review`** then enforces — exiting 1 on a non-trivial diff with no current artifact, or one carrying unresolved confirmed findings. A finding **blocks only** when its named test is red on a live re-run (`--test-command`, `{file}` = the resolved path; default `npx --no-install tsx --test {file}` — resolved locally, **never fetched from the network**); point it at a TAP-emitting runner for non-`node:test` projects. Declare your runner once as `testCommand` in `.codument-meta.json` (see [Declaring your test runner](#declaring-your-test-runner)); the flag overrides it. Whenever a finding's test cannot be adjudicated the summary says how many went unjudged, by name, instead of silently reading advisory — keyed on the outcome, so pointing at a runner that emits no test evidence does not quietly buy you a clean gate. Each cause is routed to its own fix: a test cut off by the budget (`--test-timeout <seconds>`, or `testTimeoutSeconds`) is named as a timeout and sent to the clock, never to your test command, which was never the problem. Opt-in today; the default-on flip is soak-deferred.
 
 After you fix a finding, re-running `--bundle` scopes the next attack to what actually moved (`scope: "delta"`), carrying the untouched files and the earlier findings as context; `--full` forces the whole change set. This narrows what the reviewer reads, never what the gate accepts — coverage is still one artifact over every file in the change set, and it still voids on any edit.
 
@@ -678,13 +679,16 @@ The same file is where you say how one test file runs, for the two modes that ex
 
 ```json
 {
-  "testCommand": "vitest run {file}"
+  "testCommand": "vitest run {file}",
+  "testTimeoutSeconds": 300
 }
 ```
 
 `{file}` is the literal token codument replaces with the resolved test path, and it is required: a command without it would run your whole suite once per finding, which reads as a working gate while adjudicating nothing. Declare it here rather than passing `--test-command` on every run — your runner is a fact about the project, and re-typing it is how the "confirm step could not run" warning turns into background noise you stop reading. `--test-command` still overrides it for a one-off, and the default stays `npx --no-install tsx --test {file}` (local-only, never a network fetch).
 
-A malformed declaration does not break `scan` or `doctor`: the runner falls back to the default and says out loud that it did.
+`testTimeoutSeconds` is how long **one** test file may run before the gate gives up on it, and it is here for the same reason: how slow your suite is, like how it is run, is a fact about the project. Raise it if your files are slow — a test cut off by the budget is reported as unjudged, never as a pass. `--test-timeout <seconds>` overrides it for a run. The default is 300, which is a measurement plus headroom rather than a round number: codument's own largest test file takes about 165 seconds, more than the 120 it used to be given, so the tool could not adjudicate a finding naming its own biggest suite. The default is roughly double the measurement rather than just above it, because a budget with no headroom expires on a loaded CI box — and expires as a silent advisory.
+
+A malformed declaration of either does not break `scan` or `doctor`: the runner falls back to the default and says out loud that it did — and it says which one, since a refused budget and a refused command need opposite fixes.
 
 </details>
 

@@ -1,5 +1,5 @@
 ---
-status: approved
+status: shipped
 ---
 
 # Plan 48: the confirm gate owns its own clock
@@ -9,10 +9,10 @@ offered only where it can work. The **confirm gate** — the half of the adversa
 gate that adjudicates a finding by running the test it names — never learned either one.
 
 Its budget is a hardcoded 120 seconds that no caller sets and no surface exposes. Measured
-on this repository: `tests/review.test.ts` takes **230 seconds**. So a finding naming the
-largest test file in codument's own suite cannot be adjudicated by codument, and the tool
-cannot review itself with the gate it ships. That is not a slow-machine edge case; it is
-the ordinary path on the ordinary repo.
+on this repository: `tests/review.test.ts` takes about **165 seconds**. So a finding naming
+the largest test file in codument's own suite cannot be adjudicated by codument, and the
+tool cannot review itself with the gate it ships. That is not a slow-machine edge case; it
+is the ordinary path on the ordinary repo.
 
 What happens when the clock expires is the worse half. `spawnSync` returns `ETIMEDOUT`, the
 runner reads a truthy `error` and returns `unrunnable`, and `unrunnable` is the bucket that
@@ -43,8 +43,9 @@ Each of these was reproduced against the code before being written.
    defaults it to 120 seconds; no caller in the codebase passes it and neither `review` nor
    `doctor` exposes it. There is no meta key either. The only way to change it is to edit
    codument's source.
-2. **The default is under half of what this repo needs.** `npx --no-install tsx --test
-   tests/review.test.ts` — the default command, the real file — takes 230 seconds.
+2. **The default is under what this repo needs.** `npx --no-install tsx --test
+   tests/review.test.ts` — the default command, the real file — takes ~165 seconds against
+   a 120-second budget, reproducibly, timed the way the runner spawns it.
 3. **A timeout is distinguishable, and the partial output survives.** On expiry `spawnSync`
    sets `error.code === "ETIMEDOUT"`, `signal === "SIGTERM"`, `status === null`, and
    **returns whatever the child had already written**. Verified both directly and through
@@ -70,44 +71,14 @@ were. On this repository, on its biggest test file, by default.
 - `src/cli.ts` — `--test-timeout <seconds>` on both commands
 - `src/lib/codemod.ts` — `testTimeoutSeconds` in the meta file
 
-## Delivery Plan
-
-Status: approved (2026-08-14), pre-approved by the user for an autopilot run.
-
-- [x] **Step 1 — the budget is reachable, and adequate.** `resolveTestTimeout` beside
-  `resolveTestCommand`, same precedence (flag > `testTimeoutSeconds` in
-  `.codument-meta.json` > default) and the same refusal discipline: anything that is not a
-  positive number of seconds — and anything over a day, which is the milliseconds slip — is
-  refused out loud and degrades to the default, never silently obeyed. The unit is **seconds and says so in the key**, because a millisecond value read
-  as seconds makes every test time out and every finding advisory — a silent always-green,
-  which is the exact failure this gate exists to prevent. Expose `--test-timeout <seconds>`
-  on `review` and `doctor`, and thread it through `makeTestRunner` and `invariantProbes`
-  (which drops it today). Raise the default to **300s**, the smallest round number above
-  this repo's measured worst file, so the tool can adjudicate its own suite.
-- [x] **Step 2 — a timeout is its own cause, with a route that can work.** Name it:
-  `TestRunResult.cause`, set from `ETIMEDOUT`, carried onto the confirmed finding and the
-  invariant result so both surfaces can count it. `confirmCondition` then takes every
-  refused declaration and the timeout count, names each cause that is actually present, and
-  offers **only the routes that apply** — the timeout route for a timeout, the runner route
-  for everything else, both when both fired. The verdict does not move: a timeout is still
-  unrunnable and still never blocks.
-- [x] **Step 3 — a timeout that already proved red is judged red.** If the output captured
-  before the kill already carries a failing TAP line, the file went red before the clock ran
-  out and the reproduction is on the wire — so the finding is `failed`, not unrunnable. This
-  is one-directional by construction: a timeout can become a block, never a pass, because a
-  clock that expired proves nothing about the tests that never ran. Proven with a real
-  fixture that fails and then hangs.
-- [ ] **Step 4 — say it where the reader is.** README and CHANGELOG, and an end-to-end proof
-  on this repository rather than a fixture: a recorded finding naming the 230-second test
-  file is judged by `--require-review` instead of timing out.
-
 ## Outcome
 
 **A project can set the gate's clock, and codument's own default fits codument.** The
 budget is `--test-timeout <seconds>` for one run and `testTimeoutSeconds` in
 `.codument-meta.json` for the project, resolved by the same precedence as the test command
 and refused just as loudly when it is garbage. The default moves 120s → 300s, so a finding
-naming this repo's largest test file is adjudicated rather than abandoned.
+naming this repo's largest test file is adjudicated rather than abandoned, with headroom
+for a loaded machine rather than a margin sized to an idle one.
 
 **When the clock does expire, the reader is told that, and given something that works.**
 Today a timeout reads as "the runner produced no test evidence" and routes to
@@ -126,46 +97,52 @@ and left, because reaping the tree needs an async spawn and a job object — a r
 the runner for a symptom the raised budget makes rare. Bare `doctor` and the meaning of
 `unrunnable` for every other cause are untouched.
 
-### Acceptance criteria
+## How it landed
 
-- `--test-timeout` and `testTimeoutSeconds` both reach the runner, with the flag winning;
-  a garbage declaration is reported and falls back to the default.
-- A timed-out finding's condition line names the timeout and the budget, and offers the
-  timeout route — and does not offer `--test-command` unless a non-timeout cause also fired.
-- A run mixing a timeout with a no-evidence failure names both causes and both routes.
-- A test that emits a failure and then hangs is `failed`; a test that hangs having emitted
-  nothing, or only passes, is `unrunnable` — never `passed`.
-- `doctor --verify-invariants` words the same incident identically to
-  `review --require-review` (the existing parity contract).
-- On this repository, a finding naming `tests/review.test.ts` is judged rather than timed
-  out under the new default.
+**The measurement was the argument — and the first measurement was wrong.** Nothing here
+needed a design debate, only a stopwatch: the default budget was under what this
+repository's own slowest test file needs, so the tool could not adjudicate a finding naming
+it. But the number that justified the new default, 230 seconds, was an artefact of how it
+was taken. Timing the file through a shell pipeline charges per output line, and on a chatty
+TAP stream that reads about 40% high; measured the way the runner actually spawns it —
+captured to a buffer — the file takes 165 seconds, reproducibly. The conclusion did not move
+(165 is still over the old 120, so the file could never finish), but the margin did, and the
+release guide's own rule applies to the author as much as to anyone: a recorded number is a
+claim to interrogate once, never a figure to carry forward. Corrected in the code comment,
+the pinning test, the README and the changelog; the step commit messages still carry the
+first figure, which is what a corrected record looks like.
 
-### Verification strategy
+The default is deliberately about double the measurement rather than just above it. A budget
+sized to an idle machine expires on a loaded one — and it expires as a silent advisory,
+which is the failure this plan exists to remove.
 
-- Unit tests in `review-confirm.test.ts` for the resolver's precedence and refusals, the
-  named cause, the per-cause routes in every combination, and the partial-TAP rule against a
-  real fixture process.
-- The existing `adversarial-review-testcommand-parity.test.ts` contract extended to the
-  timeout, so the two surfaces cannot diverge on the new cause.
-- `npm run typecheck`, `npm run build`, `npm test`, `codument review --strict`,
-  `codument doctor --strict` on every step.
-- Step 4 verifies against the built CLI on this repo, not a fixture.
+**Two holes turned up under attack, both in the guard rather than the feature.** A
+sub-millisecond declared budget passed the positive-number refusal and then rounded to zero
+milliseconds — which `spawnSync` reads as *no* timeout, so the guard against a gate that
+never blocks would have produced a gate that never stops. And the first real-runner fixture
+for the partial-evidence rule was passing for the wrong reason: it assumed `node:test` hangs
+on a never-settling test, which it does not — it reports the test and exits in 130ms, so no
+budget ever expired and only the outcome assertion carried. Asserting the *cause* alongside
+the outcome is what caught it; the fixture became the shape that actually strands a run in
+the field, a failing test in a file that leaks a live handle.
 
-### Non-goals
+**The gate blocked its own plan, and it was right to.** Step 1's `--require-review` came back
+red because the test file pinning the fix ran red — for a Windows shim that test could never
+execute, shadowing `npx` with a `#!/bin/sh` file behind a colon-joined PATH. That failure had
+been sitting in the baseline invisibly, because the confirm runner timed out before ever
+reaching a verdict. Fixing the clock is what exposed it: known-Windows-failure baseline 27 →
+26. A gate that cannot finish its own check does not report a problem; it reports nothing,
+which reads the same as clean.
 
-- No parallel or async confirm runs; the classifier stays pure over a synchronous runner.
-- No process-tree reaping on win32 (named boundary, above).
-- No change to the fail-open stance for genuinely unverifiable claims.
-- No new blocking condition beyond the one the reproduction proves.
+**The partial-evidence rule is not a new standard.** A run cut off by the clock proves
+nothing about the tests that never ran, but it does not erase what the child already put on
+the wire — and the completed-run path had always accepted exactly that evidence (a nonzero
+exit counts as red only with TAP). Applying the same rule to an interrupted run makes a
+cut-off file behave as the finished file would have, rather than inventing a second standard
+for the same question. The one-directionality is the load-bearing half: a timeout can become
+a block and never a pass.
 
-### Open questions
-
-None. The two that could have been open are settled by measurement and by ADR 020: the
-default is 300s because this repo's worst file is 230s, and a bare timeout stays
-non-blocking because a block must be provable.
-
-### Independent plan pass
-
-The plan introduces no source files — every change lands in an existing registered file — so
-there is no Feature Map and nothing for a grounded plan adversary to attack. Skipped, per
-the `plan-with-docs` contract.
+This closes the defect plan 47 named and deliberately left standing in its own last
+paragraph. Still open from that note: the surfaces battery's pointer rule is asked only of
+scenarios declared unackable, so a placeholder offered where nothing it names can work is
+caught by targeted tests rather than by the catalog walk.

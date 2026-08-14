@@ -470,13 +470,15 @@ describe("resolveTestTimeout (the gate's clock is the project's to set)", () => 
     assert.deepEqual(resolveTestTimeout(tmp), { timeoutMs: DEFAULT_MS, problem: null });
   });
 
-  it("the default fits this repository's own slowest test file", () => {
-    // Measured at 230s under the default runner. A budget its own suite cannot fit is
-    // a budget that leaves the tool unable to gate itself — which is the whole reason
-    // this resolver exists, so the number is pinned rather than left to drift back.
+  it("the default leaves real headroom over this repository's own slowest test file", () => {
+    // A budget its own suite cannot fit leaves the tool unable to gate itself, which is
+    // the whole reason this resolver exists — so the reasoning is pinned rather than
+    // left to drift back. Headroom rather than a bare margin: a budget sized exactly to
+    // an idle machine expires on a loaded one, and it expires as a silent advisory.
+    const SLOWEST_FILE_SECONDS = 165; // tests/review.test.ts, timed as the runner spawns it
     assert.ok(
-      DEFAULT_TEST_TIMEOUT_SECONDS >= 240,
-      `default is ${DEFAULT_TEST_TIMEOUT_SECONDS}s, under the 230s this repo measures`,
+      DEFAULT_TEST_TIMEOUT_SECONDS >= SLOWEST_FILE_SECONDS * 1.5,
+      `default is ${DEFAULT_TEST_TIMEOUT_SECONDS}s, too close to the ${SLOWEST_FILE_SECONDS}s this repo measures`,
     );
   });
 

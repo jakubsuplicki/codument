@@ -7,6 +7,69 @@ remains pre-1.0.
 
 ## [Unreleased]
 
+The confirm gate owns its own clock — plan 48.
+
+0.18.0 taught the change-control gate that a block must be provable and a route is offered
+only where it can work. The **confirm gate** — the half of the adversarial review gate that
+adjudicates a finding by running the test it names — had learned neither.
+
+Its budget was a hardcoded 120 seconds that no caller passed and no surface exposed.
+Codument's own largest test file takes about 165, so a finding naming it could never be
+adjudicated: the tool could not review itself with the gate it ships, and the only way to
+change the number was to edit codument. When the clock expired, the gate reported it as
+*"the runner produced no test evidence"* and sent the reader to fix their test command —
+which had been correct, present and running the whole time. Codument ran out of patience
+and filed it as a defect in the project.
+
+### Added
+
+- **The gate's clock is the project's to set.** `testTimeoutSeconds` in
+  `.codument-meta.json`, or `--test-timeout <seconds>` for one run, on both
+  `review --require-review` and `doctor --verify-invariants`. Same precedence as
+  `testCommand` and the same loud-refusal discipline: anything that is not a positive
+  number of seconds, or is over a day (the milliseconds slip), falls back to the default
+  and says so. The unit is in the key name for the same reason — a millisecond value read
+  as seconds expires instantly and turns every finding advisory, which is a silently green
+  gate.
+
+### Changed
+
+- **The default budget is 300s, up from 120.** A measurement plus headroom, not a round
+  number: roughly double this repository's own slowest test file, because a tool whose gate
+  cannot adjudicate a finding naming its own largest suite cannot gate itself, and a budget
+  sized to an idle machine expires on a loaded one — as a silent advisory.
+- **A timeout is named as itself and routed to the clock.** It is now a typed cause on the
+  run result, counted apart from a toolchain gap on both surfaces, and reported with the
+  budget that expired rather than as `spawnSync C:\WINDOWS\system32\cmd.exe ETIMEDOUT`. Each
+  cause carries its own remedy and only the remedies that apply are offered — a run that hit
+  both a broken runner and the clock says both and offers both; a run that hit one offers
+  one.
+- **A timeout that already proved red is judged red.** Where the child had reported a
+  failing test before the kill, the reproduction is on the wire and the finding blocks
+  instead of being downgraded. One-directional by construction: a timeout can become a
+  block, never a pass. It is the same TAP-evidence rule the completed-run path always used,
+  applied to a run that was interrupted — so a cut-off file behaves as the finished file
+  would have. **A repo whose leaky invariant test also fails will see `doctor --strict` go
+  red on this release with no edit of its own; that block is provable, which is the point.**
+
+### Fixed
+
+- A sub-millisecond declared budget rounded to `timeoutMs: 0`, which `spawnSync` reads as
+  *no* timeout — the silent always-green arriving through the arithmetic rather than the
+  guard meant to prevent it. Clamped to a floor of 1ms.
+- `defaultCommandAvailable`'s fallback test shadowed `npx` with a `#!/bin/sh` file and a
+  colon-joined PATH, neither of which Windows can use, so the real `npx` answered and the
+  assertion quietly became a question about the developer's machine. It was invisible until
+  now because the runner timed out before ever reaching a verdict.
+
+### Known boundaries
+
+- On Windows a timed-out child is orphaned: Node kills `cmd.exe` and the test process it
+  started runs on, one survivor per timeout. Measured, not assumed. Reaping the tree needs
+  an asynchronous spawn holding a job object, which would trade the runner's synchronous
+  purity for a symptom a settable budget makes rare. POSIX has no shell in the path and so
+  no orphan.
+
 ## [0.18.0] - 2026-08-14
 
 A block must be provable — plan 47, ADR 020.

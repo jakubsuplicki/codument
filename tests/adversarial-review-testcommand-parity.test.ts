@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { doctor } from "../src/commands/doctor.js";
-import { makeTestRunner } from "../src/lib/review-confirm.js";
+import { confirmCondition, makeTestRunner } from "../src/lib/review-confirm.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, "..", "dist", "cli.js");
@@ -104,6 +104,79 @@ describe("doctor --verify-invariants silently drops the testCommand refusal reas
     // never appears — contradicting "the two consumers of one runner cannot report
     // a toolchain gap differently."
     assert.match(out, /no \{file\} token/);
+  });
+});
+
+describe("doctor --verify-invariants routes a timed-out invariant to the clock, not the runner", () => {
+  let tmp: string;
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-doctor-timeout-"));
+    await mkdir(join(tmp, "docs", "features"), { recursive: true });
+    await writeFile(
+      join(tmp, "docs", ".registry.json"),
+      JSON.stringify({
+        features: {
+          f: { doc: "docs/features/f.md", type: "feature", primary_sources: [], status: "current" },
+        },
+      }),
+    );
+    await writeFile(
+      join(tmp, "docs", "features", "f.md"),
+      ["# F", "## Invariants & boundaries", "- **thing.** *(test: slow.test.js)*", ""].join("\n"),
+    );
+    // A cited test that outlives the budget: the runner is fine, the command is fine,
+    // and the only thing that goes wrong is codument's own clock.
+    await writeFile(join(tmp, "slow.test.js"), "setTimeout(() => {}, 30_000);\n");
+    await writeFile(
+      join(tmp, ".codument-meta.json"),
+      JSON.stringify({
+        version: "0.18.0",
+        initialized: "2026-08-14",
+        project: {},
+        testCommand: "node {file}",
+        testTimeoutSeconds: 1,
+      }),
+    );
+  });
+  afterEach(async () => {
+    // The win32 orphan holds this directory as its cwd until the child exits on its own.
+    await rm(tmp, { recursive: true, force: true, maxRetries: 60, retryDelay: 300 });
+  });
+
+  it("words it byte-identically to the shared builder, so the two surfaces cannot drift", async () => {
+    const lines: string[] = [];
+    const origLog = console.log;
+    console.log = (...a: unknown[]) => {
+      lines.push(a.map(String).join(" "));
+    };
+    try {
+      await doctor({ root: tmp, verifyInvariants: true });
+    } finally {
+      console.log = origLog;
+    }
+    const out = lines.join("\n");
+    // The exact sentence the builder produces for this incident. Asserting equality
+    // with the builder rather than a regex over the prose is what makes this a parity
+    // test: doctor cannot word a timeout its own way without going red here.
+    const expected = confirmCondition({
+      commandProblem: null,
+      timeoutProblem: null,
+      unadjudicated: 1,
+      timedOut: 1,
+      budgetMs: 1000,
+      noun: "invariant",
+      consequence: "excluded from the score",
+      defaultUnavailable: false,
+    });
+    assert.ok(expected, "the builder must produce a condition for this incident");
+    assert.ok(
+      out.includes(expected),
+      `doctor did not render the shared wording.\nexpected to contain: ${expected}\ngot:\n${out}`,
+    );
+    // And the half that is the whole point: the runner remedy must not be offered for
+    // a runner that was never the problem.
+    assert.doesNotMatch(out, /--test-command/);
   });
 });
 
