@@ -81,6 +81,7 @@ import {
   makeTestRunner,
   resolveTestCommand,
   resolveTestPath,
+  resolveTestTimeout,
 } from "../lib/review-confirm.js";
 import { emitCaught } from "../lib/review-events.js";
 import {
@@ -121,6 +122,7 @@ interface ReviewOptions {
    *  re-confirmation step is not hardcoded to one toolchain. Accepts either real
    *  argv or a single whitespace-joined string (see `normalizeTestCommand`). */
   testCommand?: string[];
+  testTimeout?: string;
   /** Emit the adversarial-review BUNDLE (the oracle: touched features' invariants +
    *  their test pointers, the diff, ownership/blast facts) as JSON and exit. This is
    *  what an adversarial reviewer attacks; it adds no new source of truth. */
@@ -941,6 +943,10 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // Flag > `testCommand` in .codument-meta.json > the built-in default. A project
     // declares its runner once instead of re-typing it on every gated run.
     const resolvedTest = resolveTestCommand(root, options.testCommand);
+    // Same precedence, same refusal discipline: how slow the suite is, like how it is
+    // run, is a fact about the project. Codument's own budget expiring is codument's
+    // fact and never the project's fault, so it must be the project's to set.
+    const resolvedTimeout = resolveTestTimeout(root, options.testTimeout);
     const { set: realChangeSet, realDeletions } = computeRealChange(
       report,
       report.deletions,
@@ -955,8 +961,14 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // status the artifact merely claims. A red test re-promotes to confirmed; a
     // toolchain failure (missing runner, resolution error) is unrunnable → advisory.
     const confirmedFindings = covering
-      ? confirmFindings(covering.findings, makeTestRunner({ root, command: resolvedTest.command }))
-          .findings
+      ? confirmFindings(
+          covering.findings,
+          makeTestRunner({
+            root,
+            command: resolvedTest.command,
+            timeoutMs: resolvedTimeout.timeoutMs,
+          }),
+        ).findings
       : null;
     // The honesty condition is keyed on OUTCOMES, not on which flag was passed.
     // Keying it on flag-absence meant supplying any command silenced it, working or
@@ -966,7 +978,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // many claims went unjudged, whatever the reason.
     const unadjudicated = confirmedFindings?.filter((f) => f.testOutcome === "unrunnable") ?? [];
     confirmUnavailable = confirmCondition({
-      problem: resolvedTest.problem,
+      problems: [resolvedTest.problem, resolvedTimeout.problem],
       unadjudicated: unadjudicated.length,
       noun: "finding",
       consequence: "advisory rather than judged",

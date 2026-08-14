@@ -37,6 +37,7 @@ import {
   confirmCondition,
   defaultCommandAvailable,
   resolveTestCommand,
+  resolveTestTimeout,
 } from "../lib/review-confirm.js";
 
 interface DoctorOptions {
@@ -48,6 +49,7 @@ interface DoctorOptions {
   strict?: boolean;
   verifyInvariants?: boolean;
   testCommand?: string[];
+  testTimeout?: string;
   maxDocLines?: string | number;
   maxSectionLines?: string | number;
   maxCompletedLog?: string | number;
@@ -429,11 +431,15 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
   const resolvedTest = options.verifyInvariants
     ? resolveTestCommand(root, options.testCommand)
     : null;
+  const resolvedTimeout = options.verifyInvariants
+    ? resolveTestTimeout(root, options.testTimeout)
+    : null;
   const invReport = options.verifyInvariants
     ? runInvariantCheck(
         root,
         readRegistrySync(join(root, "docs", ".registry.json")),
         resolvedTest?.command,
+        resolvedTimeout?.timeoutMs,
       )
     : null;
   // Built from the SAME helper the review gate uses, so a refused declaration and
@@ -443,7 +449,7 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
   // only its `{file}` slot was missing.
   const invCondition = invReport
     ? confirmCondition({
-        problem: resolvedTest?.problem ?? null,
+        problems: [resolvedTest?.problem ?? null, resolvedTimeout?.problem ?? null],
         unadjudicated: invReport.results.filter((r) => r.verdict === "unrunnable").length,
         noun: "invariant",
         consequence: "excluded from the score",

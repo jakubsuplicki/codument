@@ -307,9 +307,13 @@ export function checkInvariants(
 // containment rules the runner uses, so "unpinned" means exactly "the runner
 // would not find this file". `command` overrides the default test command
 // (`review`'s `--test-command` contract).
-export function invariantProbes(root: string, command?: readonly string[]): InvariantProbes {
+export function invariantProbes(
+  root: string,
+  command?: readonly string[],
+  timeoutMs?: number,
+): InvariantProbes {
   return {
-    run: makeTestRunner({ root, command, searchDirs: DEFAULT_TEST_SEARCH_DIRS }),
+    run: makeTestRunner({ root, command, timeoutMs, searchDirs: DEFAULT_TEST_SEARCH_DIRS }),
     exists: (ref) => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS) !== null,
   };
 }
@@ -348,6 +352,10 @@ export function runInvariantCheck(
   root: string,
   registry: Registry,
   command?: readonly string[],
+  timeoutMs?: number,
 ): InvariantCheckReport {
-  return checkInvariants(gatherDocInvariants(root, registry), invariantProbes(root, command));
+  return checkInvariants(
+    gatherDocInvariants(root, registry),
+    invariantProbes(root, command, timeoutMs),
+  );
 }

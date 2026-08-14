@@ -51,6 +51,14 @@ export interface MetaFile {
    * when given. Absent = codument's local-only default (`npx --no-install tsx`).
    */
   testCommand?: string;
+  /**
+   * How long ONE test file may run before the gate gives up on it, in seconds — the
+   * unit is in the key because a millisecond value read as seconds would make every
+   * test time out and every finding advisory, a silently green gate. Declared here
+   * for the same reason as `testCommand`: suite speed is a fact about the project.
+   * `--test-timeout` still wins when given. Absent = codument's measured default.
+   */
+  testTimeoutSeconds?: number;
 }
 
 const EXCLUDE_KEYS = new Set(["dirs", "globs"]);

@@ -134,7 +134,9 @@ export interface TestRunnerOptions {
    *  replaced with the resolved test path. Defaults to node:test via tsx, which
    *  is codument's own convention; a consumer project overrides it. */
   command?: readonly string[];
-  /** Per-test timeout (ms). A timeout counts as unrunnable, never as a pass. */
+  /** Per-test budget (ms). A timeout counts as unrunnable, never as a pass. Omitted
+   *  means the project's own declared budget, resolved inside `makeTestRunner` — a
+   *  caller that leaves it out must not silently get codument's default. */
   timeoutMs?: number;
   /** Directories to resolve a bare test name against (default repo root + tests). */
   searchDirs?: readonly string[];
@@ -208,8 +210,10 @@ export function normalizeTestCommand(command?: readonly string[]): string[] | un
  * gap differently.
  */
 export function confirmCondition(input: {
-  /** A refused declaration from `resolveTestCommand`, if any. */
-  problem: string | null;
+  /** Refused declarations from the resolvers (`resolveTestCommand`,
+   *  `resolveTestTimeout`); nulls are ignored. A project can get both wrong at once,
+   *  and dropping either would report half an incident. */
+  problems: readonly (string | null)[];
   /** How many claims the runner could not decide. */
   unadjudicated: number;
   /** What went unjudged, singular: "finding" or "invariant". */
@@ -221,7 +225,7 @@ export function confirmCondition(input: {
   defaultUnavailable: boolean;
 }): string | null {
   const parts: string[] = [];
-  if (input.problem) parts.push(input.problem);
+  for (const problem of input.problems) if (problem) parts.push(problem);
   if (input.unadjudicated > 0) {
     const n = input.unadjudicated;
     parts.push(
@@ -290,6 +294,86 @@ export function resolveTestCommand(root: string, flag?: readonly string[]): Reso
     };
   }
   return { command: argv, problem: null };
+}
+
+/**
+ * The confirm gate's per-test budget, in SECONDS.
+ *
+ * 300 is a measurement, not a round guess: this repository's largest test file takes
+ * 230 seconds under the default runner, and a budget its own suite cannot fit leaves
+ * the tool unable to gate itself — every finding naming that file came back
+ * unadjudicated while the project's toolchain was perfectly fine. Re-measure it
+ * rather than inherit it.
+ */
+export const DEFAULT_TEST_TIMEOUT_SECONDS = 300;
+
+// A budget above a day for ONE test file is the seconds/milliseconds slip the key
+// name exists to prevent, arriving anyway. Refusing it is the difference between a
+// named fallback and a gate that appears to hang for three days.
+const MAX_TEST_TIMEOUT_SECONDS = 86_400;
+
+export interface ResolvedTestTimeout {
+  /** The budget to hand the runner. */
+  timeoutMs: number;
+  /** Set when a DECLARED budget was refused and the default used instead. The caller
+   *  must surface it, for the same reason a refused command is surfaced. */
+  problem: string | null;
+}
+
+/**
+ * How long one test file may run, resolved once for every consumer.
+ *
+ * Precedence mirrors `resolveTestCommand` exactly — `--test-timeout` > `testTimeoutSeconds`
+ * in `.codument-meta.json` > the built-in default — because how slow a suite is, like how
+ * it is run, is a fact about the project rather than a per-invocation choice.
+ *
+ * A declaration that cannot mean what its author intended is REFUSED and reported, never
+ * silently obeyed: a budget of zero or less would make every test read unrunnable, which
+ * is a silent always-green — the precise failure this gate exists to prevent.
+ */
+export function resolveTestTimeout(root: string, flag?: string | number): ResolvedTestTimeout {
+  const fallbackMs = DEFAULT_TEST_TIMEOUT_SECONDS * 1000;
+  const settle = (parsed: number | string): ResolvedTestTimeout =>
+    typeof parsed === "number"
+      ? // Never below 1ms: `spawnSync` reads a timeout of 0 as NO timeout, so a
+        // sub-millisecond budget would round to a clock that is switched off — the
+        // silent always-green the refusal above exists to prevent, arriving through
+        // the rounding instead of through the guard.
+        { timeoutMs: Math.max(1, Math.round(parsed * 1000)), problem: null }
+      : { timeoutMs: fallbackMs, problem: parsed };
+
+  if (flag !== undefined && String(flag).trim() !== "") {
+    return settle(parseTimeoutSeconds(flag, "--test-timeout"));
+  }
+  let declared: unknown;
+  try {
+    declared = readMetaSync(root)?.testTimeoutSeconds;
+  } catch {
+    // Same degrade as the command resolver: a malformed meta file is reported by the
+    // commands that validate it, and must not add a second failure mode here.
+    return { timeoutMs: fallbackMs, problem: null };
+  }
+  if (declared === undefined) return { timeoutMs: fallbackMs, problem: null };
+  return settle(parseTimeoutSeconds(declared, "testTimeoutSeconds in .codument-meta.json"));
+}
+
+/** Seconds, or the sentence explaining why the declaration was refused. A numeric
+ *  string is accepted from either source — the flag can only deliver one, and refusing
+ *  it in JSON would be a rule the reader has to learn for nothing. */
+function parseTimeoutSeconds(value: unknown, source: string): number | string {
+  const seconds =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value.trim()) : NaN;
+  // JSON-shaped for non-strings so a refusal never reads as empty parentheses
+  // (`String([])` is ""), which looks like the tool losing the value it refused.
+  const shown = typeof value === "string" ? value.trim() : (JSON.stringify(value) ?? String(value));
+  const fell = `the default ${DEFAULT_TEST_TIMEOUT_SECONDS}s budget is used instead`;
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return `${source} is not a positive number of seconds (${shown}) — ${fell}`;
+  }
+  if (seconds > MAX_TEST_TIMEOUT_SECONDS) {
+    return `${source} is ${shown}, over a day for one test file — the unit is seconds, not milliseconds, so ${fell}`;
+  }
+  return seconds;
 }
 
 // Resolve a test reference (a bare name like `foo.test.ts` or a repo-relative
@@ -372,7 +456,9 @@ export function makeTestRunner(opts: TestRunnerOptions): TestRunner {
   // project's declared runner rather than silently falling back to codument's own.
   const command = opts.command ?? resolveTestCommand(opts.root).command ?? DEFAULT_TEST_COMMAND;
   const searchDirs = opts.searchDirs ?? DEFAULT_TEST_SEARCH_DIRS;
-  const timeout = opts.timeoutMs ?? 120_000;
+  // Resolved here for the same reason the command is: a caller that omits the budget
+  // must get the PROJECT's, not codument's own guess about how slow its tests are.
+  const timeout = opts.timeoutMs ?? resolveTestTimeout(opts.root).timeoutMs;
   // Spawn the child in a clean env (see cleanNodeTestEnv) so its verdict is a pure
   // function of the project, never the ambient shell: strips the parent test-runner
   // context AND ambient NODE_OPTIONS, incl. an IDE debugger's auto-attach injection

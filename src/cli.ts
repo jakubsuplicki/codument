@@ -80,6 +80,10 @@ program
     "--test-command <argv...>",
     'How to run a cited invariant test under --verify-invariants; the literal {file} token is the resolved path. Pass as ONE quoted string, e.g. --test-command "vitest run {file}". OVERRIDES "testCommand" in .codument-meta.json (default: npx --no-install tsx --test {file} — local-only, never a network fetch)',
   )
+  .option(
+    "--test-timeout <seconds>",
+    'How long ONE invariant test may run before it is given up on, in seconds. OVERRIDES "testTimeoutSeconds" in .codument-meta.json, which is where a project should declare it once (default: 300). A test that runs out of budget is excluded from the score and says so — it is never read as a pass',
+  )
   .action(doctor);
 
 program
@@ -103,6 +107,10 @@ program
   .option(
     "--test-command <argv...>",
     'how to run a finding\'s named test under --require-review; the literal {file} token is the resolved path. Pass the whole command as ONE quoted string, e.g. --test-command "npx tsx --test {file}" or "vitest run {file}". OVERRIDES "testCommand" in .codument-meta.json, which is where a project should declare its runner once (default: npx --no-install tsx --test {file} — local-only, never a network fetch). Point at a TAP-emitting runner for non-node:test projects',
+  )
+  .option(
+    "--test-timeout <seconds>",
+    'How long ONE finding\'s test may run before it is given up on, in seconds. OVERRIDES "testTimeoutSeconds" in .codument-meta.json, which is where a project should declare it once (default: 300). Raise it for a slow suite: a finding whose test runs out of budget is reported as unjudged, never as a pass',
   )
   .option(
     "--bundle",

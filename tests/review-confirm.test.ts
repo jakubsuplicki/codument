@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { writeFileSync, mkdtempSync, symlinkSync, rmSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   cleanNodeTestEnv,
@@ -11,10 +11,12 @@ import {
   confirmCondition,
   resolveTestCommand,
   resolveTestPath,
+  resolveTestTimeout,
   makeTestRunner,
   spawnArgvSync,
   winCommandLine,
   DEFAULT_TEST_COMMAND,
+  DEFAULT_TEST_TIMEOUT_SECONDS,
   type TestRunner,
   type TestRunResult,
 } from "../src/lib/review-confirm.js";
@@ -336,17 +338,24 @@ describe("default command is local-only (no network on the verdict path)", () =>
     // Deterministic on any machine: shadow npx with a shim so the probe's answer
     // is controlled — exit 1 → unavailable, exit 0 → available (a machine whose
     // real npx can resolve tsx without a fetch genuinely CAN run the confirm step).
+    // The shim has to be one the PLATFORM will execute and reach through the
+    // platform's own PATH separator: a `#!/bin/sh` file called `npx` joined with a
+    // colon is invisible to cmd.exe, so on Windows the real npx answered and the
+    // assertion became a question about the developer's machine.
     const tmp = await mkdtemp(join(tmpdir(), "codument-cmd-avail-"));
     const fakeBin = await mkdtemp(join(tmpdir(), "codument-fake-npx-"));
     const origPath = process.env.PATH;
+    const win = process.platform === "win32";
+    const shim = join(fakeBin, win ? "npx.cmd" : "npx");
+    const exiting = (code: number) => (win ? `@echo off\r\nexit /b ${code}\r\n` : `#!/bin/sh\nexit ${code}\n`);
     try {
       const { chmod } = await import("node:fs/promises");
-      writeFileSync(join(fakeBin, "npx"), "#!/bin/sh\nexit 1\n");
-      await chmod(join(fakeBin, "npx"), 0o755);
-      process.env.PATH = `${fakeBin}:${origPath ?? ""}`;
+      writeFileSync(shim, exiting(1));
+      if (!win) await chmod(shim, 0o755);
+      process.env.PATH = `${fakeBin}${delimiter}${origPath ?? ""}`;
       assert.equal(defaultCommandAvailable(tmp), false, "npx cannot resolve it: unavailable");
 
-      writeFileSync(join(fakeBin, "npx"), "#!/bin/sh\nexit 0\n");
+      writeFileSync(shim, exiting(0));
       assert.equal(defaultCommandAvailable(tmp), true, "npx resolves it (global/hoisted): available");
     } finally {
       process.env.PATH = origPath;
@@ -435,9 +444,106 @@ describe("resolveTestCommand (flag > project config > built-in default)", () => 
   });
 });
 
+describe("resolveTestTimeout (the gate's clock is the project's to set)", () => {
+  let tmp: string;
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-testtimeout-"));
+  });
+  afterEach(async () => {
+    // Retried, because the hanging-process test below leaves the child holding this
+    // directory as its cwd: on win32 the timeout kills the shell and the grandchild
+    // survives it (the runner's named boundary), so the first rmdir hits EBUSY.
+    await rm(tmp, { recursive: true, force: true, maxRetries: 40, retryDelay: 300 });
+  });
+
+  const meta = (extra: Record<string, unknown>) =>
+    writeFileSync(
+      join(tmp, ".codument-meta.json"),
+      JSON.stringify({ version: "0.18.0", initialized: "2026-08-14", project: {}, ...extra }),
+    );
+
+  const DEFAULT_MS = DEFAULT_TEST_TIMEOUT_SECONDS * 1000;
+
+  it("falls back to the measured default when nothing is declared", () => {
+    assert.deepEqual(resolveTestTimeout(tmp), { timeoutMs: DEFAULT_MS, problem: null });
+    meta({});
+    assert.deepEqual(resolveTestTimeout(tmp), { timeoutMs: DEFAULT_MS, problem: null });
+  });
+
+  it("the default fits this repository's own slowest test file", () => {
+    // Measured at 230s under the default runner. A budget its own suite cannot fit is
+    // a budget that leaves the tool unable to gate itself — which is the whole reason
+    // this resolver exists, so the number is pinned rather than left to drift back.
+    assert.ok(
+      DEFAULT_TEST_TIMEOUT_SECONDS >= 240,
+      `default is ${DEFAULT_TEST_TIMEOUT_SECONDS}s, under the 230s this repo measures`,
+    );
+  });
+
+  it("reads testTimeoutSeconds from project config, and lets the flag win", () => {
+    meta({ testTimeoutSeconds: 45 });
+    assert.deepEqual(resolveTestTimeout(tmp), { timeoutMs: 45_000, problem: null });
+    assert.deepEqual(resolveTestTimeout(tmp, "90"), { timeoutMs: 90_000, problem: null });
+  });
+
+  it("accepts a numeric string from either source (the flag can only deliver one)", () => {
+    meta({ testTimeoutSeconds: "60" });
+    assert.deepEqual(resolveTestTimeout(tmp), { timeoutMs: 60_000, problem: null });
+  });
+
+  it("refuses a budget that would make every test unrunnable, rather than obeying it", () => {
+    // Zero or less is a silently-green gate: nothing can finish, so every finding
+    // reads advisory and the commit sails through. Refusing loudly is the only
+    // reading of it that is not a lie.
+    for (const bad of [0, -5, "nope", null, true]) {
+      meta({ testTimeoutSeconds: bad });
+      const r = resolveTestTimeout(tmp);
+      assert.equal(r.timeoutMs, DEFAULT_MS, `${JSON.stringify(bad)} must fall back`);
+      assert.match(r.problem ?? "", /not a positive number of seconds/);
+    }
+  });
+
+  it("never rounds a tiny budget down to a clock that is switched off", () => {
+    // spawnSync reads timeout: 0 as NO timeout, so a sub-millisecond declaration
+    // would pass the positive-number guard and then disable the gate entirely —
+    // the silent always-green arriving through the rounding rather than the guard.
+    meta({ testTimeoutSeconds: 0.0001 });
+    assert.equal(resolveTestTimeout(tmp).timeoutMs, 1);
+  });
+
+  it("refuses an over-a-day budget and names the unit that was confused", () => {
+    meta({ testTimeoutSeconds: 300_000 });
+    const r = resolveTestTimeout(tmp);
+    assert.equal(r.timeoutMs, DEFAULT_MS);
+    assert.match(r.problem ?? "", /seconds, not milliseconds/);
+  });
+
+  it("degrades to the default on an unreadable meta file instead of throwing", () => {
+    writeFileSync(join(tmp, ".codument-meta.json"), "{ not json");
+    assert.deepEqual(resolveTestTimeout(tmp), { timeoutMs: DEFAULT_MS, problem: null });
+  });
+
+  it("makeTestRunner picks the declared budget up on its own, so an omitted one is not silently 300s", () => {
+    // Proven by wall-clock against a REAL hanging process, not by reading the option
+    // back: a runner that ignored the declaration would sit here for five minutes.
+    // The child outlives the declared budget but exits well inside any default, so
+    // the assertion is the DECLARATION and not merely "some timeout exists": a runner
+    // ignoring it would sit here for the child's own six seconds. It also dies soon
+    // enough that the orphan it becomes on win32 releases this temp dir for the
+    // retrying cleanup above.
+    writeFileSync(join(tmp, "hang.test.js"), "setTimeout(() => {}, 6_000);\n");
+    meta({ testTimeoutSeconds: 1, testCommand: "node {file}" });
+    const started = Date.now();
+    const res = makeTestRunner({ root: tmp })("hang.test.js");
+    const elapsedMs = Date.now() - started;
+    assert.equal(res.outcome, "unrunnable", "a budget that expired is never a pass");
+    assert.ok(elapsedMs < 3_500, `waited ${elapsedMs}ms for a 1s budget — the declaration was ignored`);
+  });
+});
+
 describe("confirmCondition (one wording for every surface that runs tests)", () => {
   const base = {
-    problem: null,
+    problems: [],
     unadjudicated: 0,
     noun: "finding",
     consequence: "advisory rather than judged",
@@ -454,11 +560,27 @@ describe("confirmCondition (one wording for every surface that runs tests)", () 
     // drops the cause, which is the bug this shape exists to prevent.
     const msg = confirmCondition({
       ...base,
-      problem: "testCommand in .codument-meta.json has no {file} token (npm test) — …",
+      problems: ["testCommand in .codument-meta.json has no {file} token (npm test) — …"],
       unadjudicated: 2,
     });
     assert.match(msg ?? "", /no \{file\} token/);
     assert.match(msg ?? "", /2 findings could not be adjudicated/);
+  });
+
+  it("carries EVERY refused declaration, because a project can get two wrong at once", () => {
+    // The runner takes two declarations now. Reporting one and dropping the other
+    // sends the reader to fix a setting that was never the problem — the same
+    // half-an-incident failure that made this builder shared in the first place.
+    const msg = confirmCondition({
+      ...base,
+      problems: [
+        "testCommand in .codument-meta.json has no {file} token (npm test) — …",
+        "testTimeoutSeconds in .codument-meta.json is not a positive number (nope) — …",
+      ],
+      unadjudicated: 1,
+    });
+    assert.match(msg ?? "", /no \{file\} token/);
+    assert.match(msg ?? "", /not a positive number/);
   });
 
   it("keeps the default-runner probe as a last resort, never alongside a real cause", () => {
