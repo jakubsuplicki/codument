@@ -449,8 +449,13 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
   // only its `{file}` slot was missing.
   const invCondition = invReport
     ? confirmCondition({
-        problems: [resolvedTest?.problem ?? null, resolvedTimeout?.problem ?? null],
+        commandProblem: resolvedTest?.problem ?? null,
+        timeoutProblem: resolvedTimeout?.problem ?? null,
         unadjudicated: invReport.results.filter((r) => r.verdict === "unrunnable").length,
+        timedOut: invReport.results.filter(
+          (r) => r.verdict === "unrunnable" && r.cause === "timeout",
+        ).length,
+        budgetMs: resolvedTimeout?.timeoutMs ?? 0,
         noun: "invariant",
         consequence: "excluded from the score",
         defaultUnavailable: !resolvedTest?.command && !defaultCommandAvailable(root),

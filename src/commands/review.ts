@@ -978,8 +978,14 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // many claims went unjudged, whatever the reason.
     const unadjudicated = confirmedFindings?.filter((f) => f.testOutcome === "unrunnable") ?? [];
     confirmUnavailable = confirmCondition({
-      problems: [resolvedTest.problem, resolvedTimeout.problem],
+      commandProblem: resolvedTest.problem,
+      timeoutProblem: resolvedTimeout.problem,
       unadjudicated: unadjudicated.length,
+      // Counted, not inferred from the note's prose: which remedy this reader is
+      // offered turns on it, and sniffing a message for the word "timeout" is exactly
+      // the kind of guess a routing decision must never rest on.
+      timedOut: unadjudicated.filter((f) => f.testCause === "timeout").length,
+      budgetMs: resolvedTimeout.timeoutMs,
       noun: "finding",
       consequence: "advisory rather than judged",
       defaultUnavailable: !resolvedTest.command && !defaultCommandAvailable(root),

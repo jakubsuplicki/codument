@@ -5,6 +5,7 @@ import {
   DEFAULT_TEST_SEARCH_DIRS,
   makeTestRunner,
   resolveTestPath,
+  type TestRunCause,
   type TestRunner,
   type TestRunResult,
 } from "./review-confirm.js";
@@ -205,6 +206,9 @@ export interface InvariantResult {
   line: number;
   verdict: InvariantVerdict;
   detail?: string;
+  /** Why an `unrunnable` verdict happened, when the reason has its own remedy — a
+   *  budget that expired routes to the clock, not to the project's test command. */
+  cause?: TestRunCause;
 }
 
 export interface DocInvariants {
@@ -247,7 +251,7 @@ function verdictFor(
   inv: ParsedInvariant,
   probes: InvariantProbes,
   runOnce: (ref: string) => TestRunResult,
-): { verdict: InvariantVerdict; detail?: string } {
+): { verdict: InvariantVerdict; detail?: string; cause?: TestRunCause } {
   const a = inv.annotation;
   if (a.kind === "untested") return { verdict: "untested" };
   if (a.kind === "none") return { verdict: "untested", detail: "no test marker" };
@@ -258,6 +262,7 @@ function verdictFor(
   let broken: string | undefined;
   let unpinned: string | undefined;
   let unrunnable: string | undefined;
+  let cause: TestRunCause | undefined;
   for (const p of a.pointers) {
     if (!probes.exists(p.file)) {
       unpinned = p.file;
@@ -265,11 +270,14 @@ function verdictFor(
     }
     const res = runOnce(p.file);
     if (res.outcome === "failed") broken = p.file;
-    else if (res.outcome === "unrunnable") unrunnable = res.detail ?? p.file;
+    else if (res.outcome === "unrunnable") {
+      unrunnable = res.detail ?? p.file;
+      cause = res.cause;
+    }
   }
   if (broken) return { verdict: "invariant-broken", detail: `${broken} ran red` };
   if (unpinned) return { verdict: "invariant-unpinned", detail: `test not found: ${unpinned}` };
-  if (unrunnable) return { verdict: "unrunnable", detail: unrunnable };
+  if (unrunnable) return { verdict: "unrunnable", detail: unrunnable, cause };
   return { verdict: "green" };
 }
 

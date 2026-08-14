@@ -76,15 +76,15 @@ Status: approved (2026-08-14), pre-approved by the user for an autopilot run.
 
 - [x] **Step 1 — the budget is reachable, and adequate.** `resolveTestTimeout` beside
   `resolveTestCommand`, same precedence (flag > `testTimeoutSeconds` in
-  `.codument-meta.json` > default) and the same refusal discipline: a non-integer, zero, or
-  negative declaration is refused out loud and degrades to the default, never silently
-  obeyed. The unit is **seconds and says so in the key**, because a millisecond value read
+  `.codument-meta.json` > default) and the same refusal discipline: anything that is not a
+  positive number of seconds — and anything over a day, which is the milliseconds slip — is
+  refused out loud and degrades to the default, never silently obeyed. The unit is **seconds and says so in the key**, because a millisecond value read
   as seconds makes every test time out and every finding advisory — a silent always-green,
   which is the exact failure this gate exists to prevent. Expose `--test-timeout <seconds>`
   on `review` and `doctor`, and thread it through `makeTestRunner` and `invariantProbes`
   (which drops it today). Raise the default to **300s**, the smallest round number above
   this repo's measured worst file, so the tool can adjudicate its own suite.
-- [ ] **Step 2 — a timeout is its own cause, with a route that can work.** Name it:
+- [x] **Step 2 — a timeout is its own cause, with a route that can work.** Name it:
   `TestRunResult.cause`, set from `ETIMEDOUT`, carried onto the confirmed finding and the
   invariant result so both surfaces can count it. `confirmCondition` then takes every
   refused declaration and the timeout count, names each cause that is actually present, and

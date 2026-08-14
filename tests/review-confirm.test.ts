@@ -543,12 +543,17 @@ describe("resolveTestTimeout (the gate's clock is the project's to set)", () => 
 
 describe("confirmCondition (one wording for every surface that runs tests)", () => {
   const base = {
-    problems: [],
+    commandProblem: null,
+    timeoutProblem: null,
     unadjudicated: 0,
+    timedOut: 0,
+    budgetMs: 300_000,
     noun: "finding",
     consequence: "advisory rather than judged",
     defaultUnavailable: false,
   };
+  const RUNNER_ROUTE = /--test-command/;
+  const BUDGET_ROUTE = /--test-timeout/;
 
   it("says nothing when nothing is wrong", () => {
     assert.equal(confirmCondition(base), null);
@@ -560,7 +565,7 @@ describe("confirmCondition (one wording for every surface that runs tests)", () 
     // drops the cause, which is the bug this shape exists to prevent.
     const msg = confirmCondition({
       ...base,
-      problems: ["testCommand in .codument-meta.json has no {file} token (npm test) — …"],
+      commandProblem: "testCommand in .codument-meta.json has no {file} token (npm test) — …",
       unadjudicated: 2,
     });
     assert.match(msg ?? "", /no \{file\} token/);
@@ -573,14 +578,59 @@ describe("confirmCondition (one wording for every surface that runs tests)", () 
     // half-an-incident failure that made this builder shared in the first place.
     const msg = confirmCondition({
       ...base,
-      problems: [
-        "testCommand in .codument-meta.json has no {file} token (npm test) — …",
-        "testTimeoutSeconds in .codument-meta.json is not a positive number (nope) — …",
-      ],
+      commandProblem: "testCommand in .codument-meta.json has no {file} token (npm test) — …",
+      timeoutProblem: "testTimeoutSeconds in .codument-meta.json is not a positive number (nope) — …",
       unadjudicated: 1,
     });
     assert.match(msg ?? "", /no \{file\} token/);
     assert.match(msg ?? "", /not a positive number/);
+    assert.match(msg ?? "", RUNNER_ROUTE);
+    assert.match(msg ?? "", BUDGET_ROUTE);
+  });
+
+  it("offers the budget route for a timeout, and NOT the runner it was never about", () => {
+    // The defect this whole step exists to remove: a test that ran out of codument's
+    // clock was described as producing no test evidence and routed to --test-command,
+    // so a reader whose runner was perfect went and rewrote their runner.
+    const msg =
+      confirmCondition({ ...base, unadjudicated: 2, timedOut: 2, budgetMs: 300_000 }) ?? "";
+    assert.match(msg, /ran out of the 300s budget/);
+    assert.match(msg, BUDGET_ROUTE);
+    assert.doesNotMatch(msg, RUNNER_ROUTE, "the runner was never the problem");
+    assert.doesNotMatch(msg, /no test evidence/, "the runner produced plenty; it was cut off");
+  });
+
+  it("offers the runner route alone when nothing timed out", () => {
+    // The other direction, so the split cannot be satisfied by always naming both.
+    const msg = confirmCondition({ ...base, unadjudicated: 2, timedOut: 0 }) ?? "";
+    assert.match(msg, RUNNER_ROUTE);
+    assert.doesNotMatch(msg, BUDGET_ROUTE, "no budget expired, so raising one fixes nothing");
+  });
+
+  it("names both causes and both routes when the run hit both", () => {
+    const msg = confirmCondition({ ...base, unadjudicated: 3, timedOut: 1 }) ?? "";
+    assert.match(msg, /1 finding ran out of the 300s budget/);
+    assert.match(msg, /2 findings could not be adjudicated/);
+    assert.match(msg, RUNNER_ROUTE);
+    assert.match(msg, BUDGET_ROUTE);
+  });
+
+  it("states the budget that actually expired, not a constant", () => {
+    // The number is the one thing the reader needs to pick a bigger one.
+    assert.match(
+      confirmCondition({ ...base, unadjudicated: 1, timedOut: 1, budgetMs: 45_000 }) ?? "",
+      /ran out of the 45s budget/,
+    );
+  });
+
+  it("a refused budget routes to the budget, never to the test command", () => {
+    const msg =
+      confirmCondition({
+        ...base,
+        timeoutProblem: "testTimeoutSeconds in .codument-meta.json is not a positive number (nope) — …",
+      }) ?? "";
+    assert.match(msg, BUDGET_ROUTE);
+    assert.doesNotMatch(msg, RUNNER_ROUTE);
   });
 
   it("keeps the default-runner probe as a last resort, never alongside a real cause", () => {
@@ -610,5 +660,55 @@ describe("confirmCondition (one wording for every surface that runs tests)", () 
       }) ?? "",
       /3 invariants could not be adjudicated.*they read excluded from the score/,
     );
+    // The timeout half has to speak both nouns and both numbers too, or a surface
+    // that runs invariants ends up with a sentence written for findings.
+    assert.match(
+      confirmCondition({
+        ...base,
+        unadjudicated: 1,
+        timedOut: 1,
+        noun: "invariant",
+        consequence: "excluded from the score",
+      }) ?? "",
+      /1 invariant ran out of the 300s budget.*it reads excluded from the score/,
+    );
+  });
+});
+
+describe("makeTestRunner names a timeout as itself (the clock is ours, not the project's)", () => {
+  let tmp: string;
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-timeout-cause-"));
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true, maxRetries: 40, retryDelay: 300 });
+  });
+
+  it("reports cause 'timeout' and the budget, never the shell it happened to spawn", () => {
+    // Before this, the detail read `spawnSync C:\WINDOWS\system32\cmd.exe ETIMEDOUT`
+    // — a shell the reader never asked for, and no clue that a budget was the thing
+    // that ran out. The cause is a FIELD rather than a phrase in the detail because a
+    // routing decision must not rest on sniffing prose for the word "timeout".
+    writeFileSync(join(tmp, "hang.test.js"), "setTimeout(() => {}, 6_000);\n");
+    const res = makeTestRunner({
+      root: tmp,
+      command: ["node", "{file}"],
+      timeoutMs: 1000,
+    })("hang.test.js");
+    assert.equal(res.outcome, "unrunnable", "an expired budget proves nothing, so it never blocks");
+    assert.equal(res.cause, "timeout");
+    assert.match(res.detail ?? "", /timed out after 1s/);
+    assert.doesNotMatch(res.detail ?? "", /cmd\.exe|spawnSync/i);
+  });
+
+  it("leaves every other unrunnable cause uncaused, so only the timeout reroutes", () => {
+    // A missing file and a broken toolchain still belong to the runner remedy; giving
+    // them a cause would hand them the budget route, which fixes neither.
+    const runner = makeTestRunner({ root: tmp, command: ["node", "{file}"] });
+    assert.equal(runner("nope.test.js").cause, undefined);
+    writeFileSync(join(tmp, "boom.test.js"), "process.exit(7);\n");
+    const boom = runner("boom.test.js");
+    assert.equal(boom.outcome, "unrunnable");
+    assert.equal(boom.cause, undefined);
   });
 });

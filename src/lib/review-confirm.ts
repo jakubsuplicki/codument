@@ -66,10 +66,22 @@ export function spawnArgvSync(
 
 export type TestOutcome = "failed" | "passed" | "unrunnable";
 
+/**
+ * Why a run could not be adjudicated, when that reason has its OWN remedy.
+ *
+ * Only a timeout does today, and it is the one that matters most: every other
+ * unrunnable cause is a fact about the project's toolchain, but an expired budget is
+ * codument's own clock running out on a runner that was working perfectly. Collapsing
+ * it into the same bucket sent the reader to fix a test command that was never wrong.
+ */
+export type TestRunCause = "timeout";
+
 export interface TestRunResult {
   outcome: TestOutcome;
   /** Diagnostic for display/audit (exit code, error message). Never a verdict. */
   detail?: string;
+  /** Set when the reason needs a different remedy from the rest of `unrunnable`. */
+  cause?: TestRunCause;
 }
 
 /** Runs one named test and reports red/green/unrunnable. Injected so the pure
@@ -82,6 +94,8 @@ export type TestRunner = (testRef: string) => TestRunResult;
 export interface ConfirmedFinding extends ReviewFinding {
   /** What running the test produced; null when there was no test to run. */
   testOutcome: TestOutcome | null;
+  /** Why, when the reason carries its own remedy (a timeout). Null otherwise. */
+  testCause: TestRunCause | null;
   /** A short diagnostic when the test could not be run or to explain the outcome. */
   note: string | null;
 }
@@ -106,21 +120,37 @@ export function confirmFindings(
       // "confirmed" with no test is invalid — nothing verifies it — so it
       // downgrades rather than blocking.
       const status: ReviewFindingStatus = f.status === "resolved" ? "resolved" : "advisory";
-      return { ...f, status, testOutcome: null, note: null };
+      return { ...f, status, testOutcome: null, testCause: null, note: null };
     }
     const res = run(f.failingTest);
+    const cause = res.cause ?? null;
     if (res.outcome === "failed") {
-      return { ...f, status: "confirmed", testOutcome: "failed", note: res.detail ?? null };
+      return {
+        ...f,
+        status: "confirmed",
+        testOutcome: "failed",
+        testCause: cause,
+        note: res.detail ?? null,
+      };
     }
     if (res.outcome === "passed") {
-      return { ...f, status: "resolved", testOutcome: "passed", note: res.detail ?? null };
+      return {
+        ...f,
+        status: "resolved",
+        testOutcome: "passed",
+        testCause: cause,
+        note: res.detail ?? null,
+      };
     }
     // unrunnable: we cannot verify the claim, so it never blocks — surfaced as
-    // advisory with the reason, so a broken test reference is visible.
+    // advisory with the reason, so a broken test reference is visible. The cause
+    // rides along because an expired budget and a broken toolchain need different
+    // advice, and one bucket cannot give both.
     return {
       ...f,
       status: "advisory",
       testOutcome: "unrunnable",
+      testCause: cause,
       note: res.detail ?? "named test could not be run",
     };
   });
@@ -199,23 +229,46 @@ export function normalizeTestCommand(command?: readonly string[]): string[] | un
  * The one place the "could not run" condition is worded, for every surface that
  * runs tests.
  *
- * Two things can go wrong independently — the project's declared runner was
- * refused, and some claims came back unadjudicated — and they are usually the SAME
- * incident: a slotless `testCommand` falls back to the default, the default cannot
- * emit evidence, and every claim reads unrunnable. Reporting only the count would
- * name the symptom and drop the cause ("point your runner at TAP" is bad advice
- * when the declared runner was fine and only the `{file}` slot was missing), so
- * both are said. Building the line here rather than at each call site is the
- * point: two consumers of one runner must not be able to describe one toolchain
- * gap differently.
+ * Several things can go wrong independently — a declared runner refused, a declared
+ * budget refused, claims that ran out of that budget, claims the runner could not
+ * decide — and some are usually the SAME incident: a slotless `testCommand` falls back
+ * to the default, the default cannot emit evidence, and every claim reads unrunnable.
+ * Reporting only the count would name the symptom and drop the cause ("point your
+ * runner at TAP" is bad advice when the declared runner was fine and only the `{file}`
+ * slot was missing), so every cause present is said.
+ *
+ * **Each cause carries its own remedy, and only the remedies that apply are offered.**
+ * One route stapled to the end of every cause is how this line came to tell a reader
+ * whose test command was perfect to go and fix their test command: their tests had
+ * simply run out of codument's clock, which is not a fact about their project at all.
+ * A route offered where nothing it names can work is the failure the change-control
+ * gate spent a release removing ([020](../../docs/architecture/decisions/020-a-block-must-be-provable.md));
+ * this is the same rule, in the other gate.
+ *
+ * Building the line here rather than at each call site is the other half: two consumers
+ * of one runner must not be able to describe one toolchain gap differently.
  */
+type Remedy = "runner" | "budget";
+
+const REMEDIES: Record<Remedy, string> = {
+  runner: 'set testCommand in .codument-meta.json, or pass --test-command "<your runner> {file}"',
+  budget: "raise the budget with --test-timeout <seconds>, or set testTimeoutSeconds in .codument-meta.json",
+};
+
 export function confirmCondition(input: {
-  /** Refused declarations from the resolvers (`resolveTestCommand`,
-   *  `resolveTestTimeout`); nulls are ignored. A project can get both wrong at once,
-   *  and dropping either would report half an incident. */
-  problems: readonly (string | null)[];
-  /** How many claims the runner could not decide. */
+  /** A refused `testCommand` declaration, if any. */
+  commandProblem: string | null;
+  /** A refused `testTimeoutSeconds` declaration, if any. Named separately from the
+   *  command's because the two route to different remedies, and a project can get
+   *  both wrong at once. */
+  timeoutProblem: string | null;
+  /** How many claims the runner could not decide, for any reason. */
   unadjudicated: number;
+  /** How many of `unadjudicated` ran out of the budget rather than failing at the
+   *  toolchain — the ones whose remedy is the clock, not the command. */
+  timedOut: number;
+  /** The budget that expired, so the reader knows the number they are raising. */
+  budgetMs: number;
   /** What went unjudged, singular: "finding" or "invariant". */
   noun: string;
   /** What that costs the reader, verb-free so it reads in both numbers:
@@ -224,23 +277,42 @@ export function confirmCondition(input: {
   /** True when the BUILT-IN default is in play and cannot resolve locally. */
   defaultUnavailable: boolean;
 }): string | null {
-  const parts: string[] = [];
-  for (const problem of input.problems) if (problem) parts.push(problem);
-  if (input.unadjudicated > 0) {
-    const n = input.unadjudicated;
-    parts.push(
-      `${n} ${input.noun}${n === 1 ? "" : "s"} could not be adjudicated: the runner produced no test evidence, so ${n === 1 ? "it reads " : "they read "}${input.consequence}`,
-    );
+  const causes: { text: string; remedy: Remedy }[] = [];
+  const count = (n: number) => `${n} ${input.noun}${n === 1 ? "" : "s"}`;
+  const reads = (n: number) => (n === 1 ? "it reads " : "they read ");
+
+  if (input.commandProblem) causes.push({ text: input.commandProblem, remedy: "runner" });
+  if (input.timeoutProblem) causes.push({ text: input.timeoutProblem, remedy: "budget" });
+
+  // Split by cause, never by total: the two halves need opposite advice, and a reader
+  // handed the wrong one composes a fix that cannot work.
+  const timedOut = Math.min(input.timedOut, input.unadjudicated);
+  if (timedOut > 0) {
+    causes.push({
+      text: `${count(timedOut)} ran out of the ${Math.round(input.budgetMs / 1000)}s budget before the test finished, so ${reads(timedOut)}${input.consequence}`,
+      remedy: "budget",
+    });
+  }
+  const noEvidence = input.unadjudicated - timedOut;
+  if (noEvidence > 0) {
+    causes.push({
+      text: `${count(noEvidence)} could not be adjudicated: the runner produced no test evidence, so ${reads(noEvidence)}${input.consequence}`,
+      remedy: "runner",
+    });
   }
   // Only when nothing else already explains it: a project that declared a runner is
-  // judged by the outcome above, never by a probe of codument's own default.
-  if (parts.length === 0 && input.defaultUnavailable) {
-    parts.push(
-      "confirm step could not run: no local tsx (the default runner resolves local-only, never the network)",
-    );
+  // judged by the outcomes above, never by a probe of codument's own default.
+  if (causes.length === 0 && input.defaultUnavailable) {
+    causes.push({
+      text: "confirm step could not run: no local tsx (the default runner resolves local-only, never the network)",
+      remedy: "runner",
+    });
   }
-  if (parts.length === 0) return null;
-  return `${parts.join("; ")} — set testCommand in .codument-meta.json, or pass --test-command "<your runner> {file}"`;
+  if (causes.length === 0) return null;
+  // Deduped in the order the causes raised them, so the first remedy answers the first
+  // thing the reader is told.
+  const routes = [...new Set(causes.map((c) => c.remedy))].map((r) => REMEDIES[r]);
+  return `${causes.map((c) => c.text).join("; ")} — ${routes.join("; or ")}`;
 }
 
 export interface ResolvedTestCommand {
@@ -471,6 +543,18 @@ export function makeTestRunner(opts: TestRunnerOptions): TestRunner {
     // win32-safe: a .cmd shim (npx/npm/vitest) needs a shell since Node's
     // CVE-2024-27980 hardening; POSIX spawns exactly as before.
     const res = spawnArgvSync(argv, { cwd: opts.root, timeout, encoding: "utf8", env });
+    // A timeout is not a toolchain gap and must not be described as one: the runner
+    // was present, the command was right, and the test was running. What expired was
+    // OUR clock — so it is named as itself, with the budget the reader would raise.
+    // Left as the raw spawn error it read `spawnSync C:\WINDOWS\system32\cmd.exe
+    // ETIMEDOUT`, which names a shell the reader never asked for.
+    if ((res.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT") {
+      return {
+        outcome: "unrunnable",
+        cause: "timeout",
+        detail: `timed out after ${Math.round(timeout / 1000)}s`,
+      };
+    }
     if (res.error) {
       return { outcome: "unrunnable", detail: String(res.error.message ?? res.error) };
     }
