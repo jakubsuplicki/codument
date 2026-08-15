@@ -6,11 +6,28 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildReview, dependentLines, normalizeTestCommand } from "../src/commands/review.js";
+import {
+  VERDICT_ALSO_LIMIT,
+  VERDICT_RANKS,
+  buildReview,
+  dependentLines,
+  normalizeTestCommand,
+  renderAlsoTrue,
+} from "../src/commands/review.js";
 import { writeAck } from "../src/lib/acknowledgment.js";
 import { fileContentTransition } from "../src/lib/fingerprint.js";
 import { forgetWorkspace, getWorkingTreeChanges } from "../src/lib/git.js";
 import { worktreeChangesSince } from "../src/lib/two-ref.js";
+
+// This file asserts on human output, so it must not depend on how it was invoked.
+// The npm script sets NO_COLOR for the whole run, but nothing else does — and the
+// confirm gate re-runs one file directly, without it. Under a colouring terminal
+// that made four of these tests red under `--require-review` and green under
+// `npm test`, which the gate can only read as four confirmed findings: codument's
+// own gate reporting bugs in codument that do not exist. Set once here rather than
+// per spawn — every child inherits this process's environment, and the same drift
+// is how a third of the spawns below already carry it and the rest do not.
+process.env.NO_COLOR = "1";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, "..", "dist", "cli.js");
@@ -773,9 +790,11 @@ describe("codument review (CLI)", () => {
     assert.doesNotMatch(out, /covers this diff/, "it did not cover what it never checked");
     assert.match(out, /is on record for this diff/);
     assert.match(out, /2 of 2 reproducible finding\(s\) unadjudicated/);
-    // And it survives the habit the field actually has.
+    // And it survives the habit the field actually has — carrying the CONDITION,
+    // cause and remedy included, rather than a count that says half of it twice.
     const last = out.trimEnd().split("\n").at(-1) ?? "";
-    assert.match(last, /2 review finding\(s\) unadjudicated/, `last line was: ${last}`);
+    assert.match(last, /2 findings could not be adjudicated/, `last line was: ${last}`);
+    assert.match(last, /--test-command/, `last line was: ${last}`);
   });
 
   it("a review of judgment calls alone still covers the diff — the warning is for a broken runner", async () => {
@@ -927,9 +946,15 @@ describe("review from a subdirectory of a repo (fail closed)", () => {
     // The message must name BOTH paths: the offending root and the toplevel to
     // run from. The child realpaths its cwd (macOS /var → /private/var), so
     // compare against the canonical spelling.
+    // The toplevel comes back from git in git's own separator, so the assertion is
+    // about which path is named, never about which slash names it.
     const top = realpathSync.native(tmp);
+    const slashAgnostic = (s: string) => s.replace(/\\/g, "/");
     assert.ok(stdout.includes(join(top, "src")), "names the offending subdirectory");
-    assert.ok(stdout.includes(`run it from ${top}`), "names the toplevel as the fix");
+    assert.ok(
+      slashAgnostic(stdout).includes(`run it from ${slashAgnostic(top)}`),
+      "names the toplevel as the fix",
+    );
     assert.doesNotMatch(stdout, /Working tree clean/);
   });
 
@@ -3602,5 +3627,53 @@ describe("review names registry rot it did not cause (plan 44)", () => {
       "the deletion this change made gates, as before",
     );
     assert.deepStrictEqual(report.registryRot, [], "and is not also listed as inherited rot");
+  });
+});
+
+describe("the line a pipe keeps is ranked and bounded (plan 49)", () => {
+  // Conditions are built FROM the rank list rather than from rank names retyped
+  // here. Nothing typechecks this file — tsx strips types without checking them —
+  // so a misspelled rank would not fail to compile, it would sort first (unknown
+  // ranks index to -1) and let the assertion pass for the wrong reason. Deriving
+  // them also makes the tests exhaustive: a rank added later is covered by every
+  // assertion below the moment it exists, rather than quietly going unpinned.
+  type Condition = Parameters<typeof renderAlsoTrue>[0][number];
+  const label = (rank: Condition["rank"]) => rank.toUpperCase();
+  const conds = (ranks: readonly Condition["rank"][]): Condition[] =>
+    ranks.map((rank) => ({ rank, text: label(rank) }));
+
+  it("orders by rank and bounds the line, whatever order the conditions arrive in", () => {
+    // Fed in REVERSE: if arrival order leaked through, the sharpest condition would
+    // be exactly the one the bound drops.
+    const out = renderAlsoTrue(conds([...VERDICT_RANKS].reverse()));
+    const shown = VERDICT_RANKS.slice(0, VERDICT_ALSO_LIMIT).map(label);
+    assert.match(out, new RegExp(shown.join(".*")), `line was: ${out}`);
+
+    const dropped = VERDICT_RANKS.length - VERDICT_ALSO_LIMIT;
+    // Counted, never silently cut: every condition past the bound is printed above
+    // in full, so what the line owes the reader is how much is up there.
+    assert.match(out, new RegExp(`\\+${dropped} more above`), `line was: ${out}`);
+    for (const rank of VERDICT_RANKS.slice(VERDICT_ALSO_LIMIT)) {
+      assert.ok(!out.includes(label(rank)), `${rank} past the bound must be counted, not named`);
+    }
+  });
+
+  it("says the same thing whichever order the conditions arrive in", () => {
+    const a = conds(VERDICT_RANKS.slice(0, 2));
+    assert.equal(renderAlsoTrue(a), renderAlsoTrue([...a].reverse()));
+  });
+
+  it("adds no counter when everything fits, and nothing at all when there is nothing", () => {
+    const out = renderAlsoTrue(conds(VERDICT_RANKS.slice(0, VERDICT_ALSO_LIMIT)));
+    assert.doesNotMatch(out, /more above/);
+    assert.equal(renderAlsoTrue([]), "", "a clean run's verdict is the bare word, as before");
+  });
+
+  it("ranks the one conditionally-printed condition first, so the counter never points at nothing", () => {
+    // Load-bearing, not cosmetic: every other condition prints above unconditionally,
+    // but a diff too trivial to need a review returns before the gate renders the
+    // confirm condition. Ranked first it is always named, so "+N more above" can
+    // never point at the one thing that is not up there.
+    assert.equal(VERDICT_RANKS[0], "confirm-unavailable");
   });
 });

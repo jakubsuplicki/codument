@@ -1245,19 +1245,21 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // behind printed on every invocation for five hours unseen. Neither gates — that
   // is settled and unchanged — but a fact worth printing at all is worth printing
   // where the reader is looking.
-  const alsoTrue: string[] = [];
+  const alsoTrue: VerdictCondition[] = [];
   if (report.registryRot.length > 0)
-    alsoTrue.push(
-      `${report.registryRot.length} registry path(s) missing (not this change; ungated)`,
-    );
-  if (versionSkewNotice(root)) alsoTrue.push("scaffold behind the installed version");
+    alsoTrue.push({
+      rank: "registry-rot",
+      text: `${report.registryRot.length} registry path(s) missing (not this change; ungated)`,
+    });
+  if (versionSkewNotice(root))
+    alsoTrue.push({ rank: "scaffold-skew", text: "scaffold behind the installed version" });
   // Body-only movement is reported and never gated (ADR 020). It rides the verdict
   // line because it changes what the reader does next — it is the one thing they
   // may still want to open a doc about — and because a demotion nobody can see is
   // indistinguishable from a gate that stopped noticing.
   const bodyOnly = report.reportedNotGated;
   if (bodyOnly > 0) {
-    alsoTrue.push(`${bodyOnly} body-only move(s) reported, not gated`);
+    alsoTrue.push({ rank: "body-only", text: `${bodyOnly} body-only move(s) reported, not gated` });
   }
   // The same rule one grain up: an owned file no adapter reads, changed, with no
   // owner declaring a risk. This is the sharper of the two demotions to disclose —
@@ -1265,15 +1267,23 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // way to know a claimed file moved unexamined.
   const unreadOwned = report.state.ungatedRegistered.filter((u) => u.kind === "unread").length;
   if (unreadOwned > 0) {
-    alsoTrue.push(`${unreadOwned} owned file(s) no adapter reads — reported, not gated`);
+    alsoTrue.push({
+      rank: "unread-owned",
+      text: `${unreadOwned} owned file(s) no adapter reads — reported, not gated`,
+    });
   }
   // A review that passed without reproducing anything is the sharpest case this line
   // exists for: the gate exits 0, so nothing else can carry it, and the honest
   // condition printed above the verdict is precisely what a `| tail -1` destroys.
-  if (reviewGate?.passed && reviewGate.unjudged > 0) {
-    alsoTrue.push(`${reviewGate.unjudged} review finding(s) unadjudicated`);
-  }
-  const also = alsoTrue.length > 0 ? pc.dim(` · ${alsoTrue.join(" · ")}`) : "";
+  //
+  // The CONDITION rides the line, not a count of it. `unjudged` is the same filter
+  // over the same findings the condition is built from, so a count beside it would
+  // say one thing twice and cost a slot; and the condition also covers a refused
+  // runner or budget declaration, which no count reaches. Not conditioned on the
+  // gate passing either: a run blocked on one finding while three others went
+  // unjudged is still a run whose reader must know the three were never decided.
+  if (confirmUnavailable) alsoTrue.push({ rank: "confirm-unavailable", text: confirmUnavailable });
+  const also = renderAlsoTrue(alsoTrue);
 
   const blocking = strictFail ? [...gateable] : [];
   if (reviewGateFail) blocking.push("adversarial review not covering this diff");
@@ -1315,6 +1325,61 @@ function computeRealChange(
     ...new Set([...report.state.changedSources, ...report.state.otherChanged, ...realDeletions]),
   ].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return { set, realDeletions };
+}
+
+// ── The verdict line's second half ───────────────────────────────────────
+//
+// Everything ungated that still changes what the reader does next rides the verdict
+// line, because `| tail -1` is what a reader keeps. Two rules keep that from
+// recreating the wall it was meant to escape.
+//
+// ORDER IS FIXED, not arrival. Which condition survives a bound must be a property
+// of the condition, never of the order the report happened to compute things in —
+// otherwise the same repo state says different things on different runs, and the
+// one that matters is the one that got dropped. Sharpest first: the tool could not
+// judge, then what it read but did not gate, then what is true of the repo rather
+// than of this change.
+//
+// AND IT IS BOUNDED. Six conditions at full length is a paragraph, which is the
+// unreadable surface this release exists to remove — arriving on the one line that
+// cannot afford it. Past the bound the remainder is COUNTED, never silently cut:
+// every condition is already printed above in full, so the line's job is to say
+// how much is up there, and a reader who sees "+2 more above" knows to scroll.
+//
+// That last claim is what makes the rank order load-bearing rather than cosmetic.
+// Every condition below the first prints above unconditionally; the confirm
+// condition is the one that does not, because a diff too trivial to need a review
+// returns before the gate renders it. Ranked first, it is shown whenever it exists
+// and can never be the thing "+N more above" points at — so the pointer is never a
+// promise the output above cannot keep.
+export const VERDICT_RANKS = [
+  "confirm-unavailable",
+  "unread-owned",
+  "body-only",
+  "registry-rot",
+  "scaffold-skew",
+] as const;
+
+type VerdictRank = (typeof VERDICT_RANKS)[number];
+
+interface VerdictCondition {
+  rank: VerdictRank;
+  text: string;
+}
+
+/** How many conditions the verdict line names in full before it starts counting. */
+export const VERDICT_ALSO_LIMIT = 3;
+
+/** The ` · `-joined tail of the verdict line: ranked, bounded, remainder counted. */
+export function renderAlsoTrue(conditions: readonly VerdictCondition[]): string {
+  if (conditions.length === 0) return "";
+  const ranked = [...conditions].sort(
+    (a, b) => VERDICT_RANKS.indexOf(a.rank) - VERDICT_RANKS.indexOf(b.rank),
+  );
+  const shown = ranked.slice(0, VERDICT_ALSO_LIMIT).map((c) => c.text);
+  const remainder = ranked.length - shown.length;
+  if (remainder > 0) shown.push(`+${remainder} more above`);
+  return pc.dim(` · ${shown.join(" · ")}`);
 }
 
 // Render the adversarial-review gate result. Advisory findings are surfaced even

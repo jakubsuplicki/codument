@@ -136,7 +136,7 @@ answers, the objection that narrowed it is named.
   versioned machine contract does not move. *(Contested: a cap would stop naming blind owned files,
   which is the one thing that finding exists to do; regrouping the emitter would break a versioned
   contract whose every prior change was additive.)*
-- [ ] **Step 2 — the line a pipe keeps carries every actionable condition, and is itself bounded.**
+- [x] **Step 2 — the line a pipe keeps carries every actionable condition, and is itself bounded.**
   Push `confirmUnavailable` onto `alsoTrue` — the print site only. The shared `confirmCondition`
   precedence stays exactly as it is, and so does its `doctor` parity. Then bound that line the way
   step 1 bounds doctor: fixed priority order, counted remainder. Pin the rule with a test, not with
