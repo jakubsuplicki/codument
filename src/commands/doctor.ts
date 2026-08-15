@@ -673,10 +673,15 @@ function printHuman(report: DoctorReport, strictFail: boolean, gatingCount: numb
     console.log(
       `  ${pc.dim("Notes:")} ${pc.dim(String(lint.notes.length) + " informational — review, not required to clear")}`,
     );
-    for (const note of lint.notes) {
-      console.log(
-        `    ${pc.cyan("ℹ")} ${pc.dim(note.id.padEnd(17))} ${pc.dim(note.message)}`,
-      );
+    for (const group of groupNotes(lint.notes)) {
+      // A group of one is not a group: it renders byte-identically to the flat line,
+      // subject back in front of the sentence it was stripped from. Only a repetition
+      // earns the split, and only then is the subject list worth its own lines.
+      const lead = group.subjects.length === 1 ? `${group.subjects[0]}: ${group.shared}` : group.shared;
+      console.log(`    ${pc.cyan("ℹ")} ${pc.dim(group.id.padEnd(17))} ${pc.dim(lead)}`);
+      if (group.subjects.length > 1) {
+        for (const line of wrapJoin(group.subjects, 96)) console.log(`      ${pc.dim(line)}`);
+      }
     }
   }
 
@@ -709,6 +714,74 @@ function printHuman(report: DoctorReport, strictFail: boolean, gatingCount: numb
       ),
     );
   }
+}
+
+// ── Notes, grouped ───────────────────────────────────────────────────────
+//
+// A note is emitted once per subject, and the whole remedy is composed into every
+// one of them — so a repo whose registry blindly owns eighty files gets eighty
+// near-identical ~250-character lines. Measured on a repo at 100% coverage with
+// zero findings: 268 notes, 68,420 characters, 96.7% of it repetitions of SIX
+// distinct sentences. That is the unreadable surface [018] already decided against
+// ("a wake per file trades a silent surface for an unreadable one, which is how a
+// gate gets disabled"), and the exact failure the warnings block a few lines above
+// was given an attribution split to avoid.
+//
+// Grouping is EXACT, never fuzzy: strip the subject each message names, then group
+// messages that are then byte-identical. Six sentences collapse to six lines with
+// their subjects listed under them. Nothing is summarised, capped or dropped —
+// every subject is still named, and `--json` is untouched, because the machine
+// contract is per-subject and a consumer that reads it must keep working.
+
+export interface NoteGroup {
+  id: string;
+  /** The sentence every member shares, subject removed. */
+  shared: string;
+  /** What each member was about — the file, or the message when there is no file. */
+  subjects: string[];
+}
+
+/** Group notes by (id, message-with-its-own-subject-removed). Order is preserved:
+ *  a group appears where its first member did, so the surface does not reshuffle
+ *  between runs. */
+export function groupNotes(notes: readonly LintFinding[]): NoteGroup[] {
+  const groups = new Map<string, NoteGroup>();
+  const order: string[] = [];
+  for (const note of notes) {
+    // Messages lead with `<subject>: ` by convention. Where they do, that prefix is
+    // the only part that differs; where they do not, the whole message is the group.
+    const lead = note.file ? `${note.file}: ` : null;
+    const shared = lead && note.message.startsWith(lead) ? note.message.slice(lead.length) : note.message;
+    const subject = shared === note.message ? null : note.file!;
+    const key = `${note.id}\u0000${shared}`;
+    const hit = groups.get(key);
+    if (hit) {
+      if (subject) hit.subjects.push(subject);
+      continue;
+    }
+    groups.set(key, { id: note.id, shared, subjects: subject ? [subject] : [] });
+    order.push(key);
+  }
+  return order.map((k) => groups.get(k)!);
+}
+
+/** Comma-join into lines no wider than `width`, so a long subject list is a few
+ *  lines rather than one per subject. A single subject longer than the width gets
+ *  its own line rather than being cut — a truncated path is not a named file. */
+export function wrapJoin(items: readonly string[], width: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const item of items) {
+    const next = line ? `${line}, ${item}` : item;
+    if (line && next.length > width) {
+      lines.push(`${line},`);
+      line = item;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 // ── Invariant-check output (opt-in --verify-invariants) ──────────────────

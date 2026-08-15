@@ -6,7 +6,14 @@ import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildReport, doctor, writeCoverageArtifacts } from "../src/commands/doctor.js";
+import {
+  buildReport,
+  doctor,
+  groupNotes,
+  wrapJoin,
+  writeCoverageArtifacts,
+} from "../src/commands/doctor.js";
+import type { LintFinding } from "../src/lib/analyze.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, "..", "dist", "cli.js");
@@ -679,10 +686,13 @@ describe("codument doctor --strict (CLI gating)", () => {
       assert.equal(sub.status, 1);
       assert.match(sub.stdout, /subdirectory/);
       assert.match(sub.stdout, /gate could not run/);
-      // Names both paths: the offending root and the toplevel to run from.
+      // Names both paths: the offending root and the toplevel to run from. The
+      // toplevel comes back from git in git's own separator, so the assertion is
+      // about which path is named, never about which slash names it.
       const top = realpathSync.native(repo);
+      const slashAgnostic = (s: string) => s.replace(/\\/g, "/");
       assert.ok(sub.stdout.includes(join(top, "packages", "app")));
-      assert.ok(sub.stdout.includes(`run it from ${top}`));
+      assert.ok(slashAgnostic(sub.stdout).includes(`run it from ${slashAgnostic(top)}`));
 
       // --json stays machine-readable: a discriminated shape, never human text
       // a JSON consumer would crash on.
@@ -844,27 +854,24 @@ describe("doctor discloses an unverified scope", () => {
     // Asserted through buildReport rather than the CLI on purpose: the command
     // layer's toplevel assertion refuses a broken git earlier and louder, which
     // is correct — this pins the analysis layer's own answer underneath it.
-    const { chmod, writeFile: wf } = await import("node:fs/promises");
-    const fakeBin = await mkdtemp(join(tmpdir(), "codument-fakegit-"));
+    // Broken with REAL git rather than a shim on PATH: a shell-script shim is
+    // unreachable on Windows (a bare command name is not resolved through PATHEXT,
+    // so `git` finds the real one and the branch is never entered), and a shim
+    // asserts against git's behavior as remembered rather than as it is. An index
+    // path that is not an index leaves `--is-inside-work-tree` answering true and
+    // makes the listing subcommand fatal — the exact third branch, on every host.
+    const origIndex = process.env.GIT_INDEX_FILE;
+    await mkdir(join(repo, "not-an-index"), { recursive: true });
+    process.env.GIT_INDEX_FILE = join(repo, "not-an-index");
     try {
-      await wf(
-        join(fakeBin, "git"),
-        `#!/bin/sh\nfor a in "$@"; do\n  if [ "$a" = "--is-inside-work-tree" ]; then echo true; exit 0; fi\ndone\nexit 3\n`,
-      );
-      await chmod(join(fakeBin, "git"), 0o755);
-      const orig = process.env.PATH;
-      process.env.PATH = `${fakeBin}:${orig ?? ""}`;
-      try {
-        const report = buildReport(nonRepo);
-        assert.equal(report.scope.gitIgnore, "unavailable");
-        // Matched, never compared exact: the tail is Node's child_process error
-        // text, an internal detail that is not stable across Node majors.
-        assert.match(report.scope.reason ?? "", /^git failed: /);
-      } finally {
-        process.env.PATH = orig;
-      }
+      const report = buildReport(repo);
+      assert.equal(report.scope.gitIgnore, "unavailable");
+      // Matched, never compared exact: the tail is git's own diagnostic, which is
+      // not stable across git versions.
+      assert.match(report.scope.reason ?? "", /^git failed: /);
     } finally {
-      await rm(fakeBin, { recursive: true, force: true });
+      if (origIndex === undefined) delete process.env.GIT_INDEX_FILE;
+      else process.env.GIT_INDEX_FILE = origIndex;
     }
   });
 
@@ -1207,5 +1214,109 @@ describe("a scaffold the tree has moved past is disclosed, never scored (plan 42
     });
     assert.match(out, /still `needs-review` from a scan the tree has moved past/);
     assert.equal(status, 0, "a scaffold disclosure is not an actionable finding");
+  });
+});
+
+describe("notes are grouped, and nothing is dropped (plan 49)", () => {
+  it("groupNotes collapses messages that differ only in the subject they name", () => {
+    // The measured shape: a repo whose registry blindly owns many files gets one
+    // near-identical ~250-character note per file. Six sentences, 262 repetitions.
+    const notes: LintFinding[] = [
+      { id: "unread-owned", severity: "info", feature: "ds", file: "a.html", message: "a.html: owned by ds — add risk" },
+      { id: "unread-owned", severity: "info", feature: "ds", file: "b.html", message: "b.html: owned by ds — add risk" },
+      { id: "unread-owned", severity: "info", feature: "cd", file: "c.yml", message: "c.yml: owned by cd — add risk" },
+    ];
+    const groups = groupNotes(notes);
+    assert.equal(groups.length, 2, "two distinct sentences, not three notes");
+    assert.deepEqual(groups[0].subjects, ["a.html", "b.html"]);
+    assert.equal(groups[0].shared, "owned by ds — add risk", "the remedy is said once, subject removed");
+    assert.deepEqual(groups[1].subjects, ["c.yml"]);
+  });
+
+  it("keeps the order the notes arrived in, so the surface does not reshuffle between runs", () => {
+    const notes: LintFinding[] = [
+      { id: "high-fanout", severity: "info", file: "z.ts", message: "z.ts: mapped across 3 entries" },
+      { id: "unread-owned", severity: "info", file: "a.html", message: "a.html: owned by ds — add risk" },
+      { id: "high-fanout", severity: "info", file: "y.ts", message: "y.ts: mapped across 3 entries" },
+    ];
+    assert.deepEqual(
+      groupNotes(notes).map((g) => g.id),
+      ["high-fanout", "unread-owned"],
+      "a group appears where its FIRST member did",
+    );
+  });
+
+  it("a note whose message does not lead with its own subject is its own group, unchanged", () => {
+    // Not every note names a file, and one that does not must render exactly as it
+    // always did rather than being folded into a neighbour by accident.
+    const notes: LintFinding[] = [
+      { id: "thin-doc", severity: "info", feature: "auth", message: "auth: doc has no narrated orientation layer" },
+      { id: "thin-doc", severity: "info", feature: "data", message: "data: doc has no narrated orientation layer" },
+    ];
+    const groups = groupNotes(notes);
+    assert.equal(groups.length, 2, "no file to strip, so nothing collapses");
+    assert.deepEqual(groups[0].subjects, [], "an ungrouped note lists no subject under itself");
+  });
+
+  it("wrapJoin never truncates a subject, even one wider than the line", () => {
+    const long = "a/very/long/path/that/exceeds/the/width/on/its/own.html";
+    const lines = wrapJoin([long, "b.html"], 20);
+    assert.ok(lines.join(" ").includes(long), "a truncated path is not a named file");
+    assert.deepEqual(lines, [`${long},`, "b.html"]);
+  });
+
+  it("the rendered surface names every file the flat one did, on a repo shaped like the field's", async () => {
+    // The anti-drop property, end to end: grouping must be a rendering of the same
+    // facts, never a summary of them. Proven by set equality on the paths, not by
+    // reading the output.
+    const root = await mkdtemp(join(tmpdir(), "codument-notes-flood-"));
+    try {
+      await mkdir(join(root, "docs", "features"), { recursive: true });
+      await mkdir(join(root, "blind"), { recursive: true });
+      await mkdir(join(root, "src"), { recursive: true });
+      const owned: string[] = [];
+      const features: Record<string, unknown> = {};
+      // `gamma` owns exactly ONE blind file, so its sentence never repeats. A group
+      // of one must still name its subject — that is the shape where a collapse
+      // silently eats the only thing the line was about.
+      for (const [feature, count] of [["alpha", 9], ["beta", 9], ["gamma", 1]] as const) {
+        const files = Array.from({ length: count }, (_, i) => `blind/${feature}-${i}.html`);
+        owned.push(...files);
+        for (const f of files) await writeFile(join(root, f), "x\n");
+        await writeFile(join(root, "src", `${feature}.ts`), `export const ${feature} = 1;\n`);
+        await writeFile(
+          join(root, "docs", "features", `${feature}.md`),
+          `---\ntitle: ${feature}\nstatus: current\ntype: feature\nlast_reviewed: 2026-08-15\n---\n\n# ${feature}\n\n## In plain terms\n\nIt does one thing.\n\n## Invariants & boundaries\n\n- **It holds.** *(untested)*\n\n## Key files\n\n- \`src/${feature}.ts\`\n`,
+        );
+        features[feature] = {
+          doc: `docs/features/${feature}.md`,
+          type: "feature",
+          primary_sources: [`src/${feature}.ts`, ...files],
+          related_sources: [],
+          docs: [],
+          depends_on: [],
+          risk: [],
+          status: "current",
+        };
+      }
+      await writeFile(join(root, "docs", ".registry.json"), JSON.stringify({ features }));
+
+      const out = execFileSync("node", [CLI, "doctor"], {
+        cwd: root,
+        encoding: "utf-8",
+        env: { ...process.env, NO_COLOR: "1" },
+      });
+      for (const file of owned) {
+        assert.ok(out.includes(file), `grouping dropped ${file} — it must be a rendering, not a summary`);
+      }
+      // And the point of the exercise: the surface is a fraction of one line per file.
+      const notesBlock = out.slice(out.indexOf("Notes:"));
+      assert.ok(
+        notesBlock.length < owned.length * 120,
+        `notes ran to ${notesBlock.length} chars for ${owned.length} files — the repetition survived`,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    }
   });
 });
