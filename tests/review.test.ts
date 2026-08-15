@@ -3979,3 +3979,50 @@ describe("a new file the source spec cannot see, beside an entry's sources (plan
     assert.doesNotMatch(r.out, /invisible to the source spec/, "an edit is not an arrival");
   });
 });
+
+describe("a doc's test pin that points at nothing is reported, never gated (plan 49)", () => {
+  const run = (args: string[], cwd: string): { status: number; out: string } => {
+    try {
+      return { status: 0, out: execFileSync("node", [CLI, ...args], { cwd, encoding: "utf-8" }) };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { status: e.status ?? 0, out: e.stdout ?? "" };
+    }
+  };
+
+  it("names the missing pin, keeps the resolvable one quiet, and does not touch the exit code", async () => {
+    // The standard asks every invariant to link its test, which makes the link a
+    // claim: a reader trusting it stops looking, and an adversary handed it as an
+    // oracle attacks a file that is not there.
+    await scaffold({
+      "docs/features/auth.md": [
+        "# auth",
+        "",
+        "## In plain terms",
+        "",
+        "auth signs people in.",
+        "",
+        "## Invariants & boundaries",
+        "",
+        '- **A session never outlives its token.** *(test: auth-pin.test.ts "session")*',
+        '- **And this one is gone.** *(tests: vanished.test.ts "nowhere")*',
+        "- **Prose only.** Both are pinned by alsogone.test.ts, allegedly.",
+        "",
+      ].join("\n"),
+      "tests/auth-pin.test.ts": 'import test from "node:test";\ntest("session", () => {});\n',
+      "src/auth/login.ts": "export const login = () => { return 31; };\n",
+    });
+
+    const r = run(["review"], tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.out, /Test pins that do not resolve/);
+    assert.match(r.out, /vanished\.test\.ts/);
+    assert.doesNotMatch(r.out, /auth-pin\.test\.ts/, "a pin that resolves is not a finding");
+    assert.doesNotMatch(r.out, /alsogone\.test\.ts/, "prose is not a pin — the stated limit");
+
+    // Never a gate input: a repo keeping its tests elsewhere would fail on every
+    // invariant in every doc it touched, which is a gate nobody would keep on.
+    const strict = run(["review", "--strict"], tmp);
+    assert.doesNotMatch(strict.out, /BLOCKED[^\n]*pin/);
+  });
+});

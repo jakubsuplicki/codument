@@ -137,14 +137,43 @@ export function extractDocSection(content: string, heading: string): string {
   return out.join("\n");
 }
 
+// What a test file is called, in one place, so every reader of a doc agrees on the
+// shape of the thing it is looking for and they differ only in WHERE they look.
+const TEST_FILE_TOKEN = /([\w./-]+\.test\.tsx?)\b/g;
+
 // Extract the test files an invariants section cites — `foo.test.ts`,
 // `path/to/bar.test.tsx` — deduped and sorted. These are the reviewer's
 // runnable oracle: a finding that claims an invariant is broken should make one
 // of these (or a new test) go red.
 export function extractTestPointers(sectionText: string): string[] {
   const found: string[] = [];
-  for (const m of sectionText.matchAll(/([\w./-]+\.test\.tsx?)\b/g)) {
+  for (const m of sectionText.matchAll(TEST_FILE_TOKEN)) {
     found.push(m[1]);
+  }
+  return sortStrings(found);
+}
+
+// A doc's structural test-pin marker: the `*(test: …)*` / `*(tests: …)*` span the
+// documentation standard uses to attach an invariant to the test that enforces it.
+const PIN_SPAN = /\*\(tests?:([\s\S]*?)\)\*/g;
+
+/**
+ * The test files an invariants section PINS — cited inside the standard's own
+ * `*(test: …)*` marker, not merely named somewhere in the prose.
+ *
+ * Structural on purpose, and the difference from `extractTestPointers` is the whole
+ * point. That one hands a reviewer everything the section mentions, which is right
+ * for an oracle: a spare name costs a reader nothing. This one feeds a FINDING, and
+ * a finding needs a claim the doc actually made. Loosening the grammar to any
+ * sentence naming a test file turns a citation into a lexical guess — which means
+ * the honest limit is stated rather than closed: a bare-prose claim like "both are
+ * pinned by X.test.tsx" stays uncaught here, because the doc never marked it as a
+ * pin and inferring one from prose is the kind of judgment this gate does not make.
+ */
+export function extractPinnedTests(sectionText: string): string[] {
+  const found: string[] = [];
+  for (const span of sectionText.matchAll(PIN_SPAN)) {
+    for (const m of span[1].matchAll(TEST_FILE_TOKEN)) found.push(m[1]);
   }
   return sortStrings(found);
 }

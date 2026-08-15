@@ -180,7 +180,7 @@ answers, the objection that narrowed it is named.
   [ADR 020](../architecture/decisions/020-a-block-must-be-provable.md) governs. *(Contested: as first
   written it would have fired on every new file under `src/lib`, and lived somewhere `review` cannot
   read.)*
-- [ ] **Step 9 — the pin check reaches the loop, and reports.** `review` names a structurally-marked
+- [x] **Step 9 — the pin check reaches the loop, and reports.** `review` names a structurally-marked
   test pin that does not resolve, in the docs this change touched. It never gates: the runner searches
   two directories, so an unresolved citation is a fact about the toolchain, and a repo keeping tests
   in `src/__tests__/` would otherwise fail on every invariant in every doc it edits. The parser stays

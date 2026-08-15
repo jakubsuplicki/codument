@@ -75,6 +75,8 @@ import {
   type Route,
 } from "../lib/remedies.js";
 import {
+  extractDocSection,
+  extractPinnedTests,
   gatherReviewBundle,
   oracleFingerprint,
   type ReviewBundleDelta,
@@ -218,6 +220,33 @@ export interface ReviewReport {
    *  from the tuple of member heads the way a plain repo's is from one sha. Null in
    *  the ordinary single-repo case, which is byte-identical to before. */
   workspace: { members: string[]; bases: Array<{ prefix: string; sha: string }> } | null;
+  /** Test pins in the touched features' docs that resolve to no file (see
+   *  `UnresolvedPin`). Reported, never a gate input. */
+  unresolvedPins: UnresolvedPin[];
+}
+
+/**
+ * An invariant whose doc names the test that enforces it, pointing at a file that
+ * is not there.
+ *
+ * The standard asks every invariant to link the test that pins it, which makes the
+ * pin a load-bearing claim: a reader trusting it stops looking, and an adversary
+ * handed it as an oracle attacks a file that does not exist. Nothing checked it,
+ * so a renamed or deleted test left the claim standing in prose indefinitely.
+ *
+ * **It never gates**, and that is a judgment about the checker rather than about
+ * the claim. Resolution asks the two directories the confirm runner searches, so an
+ * unresolved pin is as much a fact about the toolchain as about the doc — a repo
+ * keeping its tests in `src/__tests__/` would fail on every invariant in every doc
+ * it touched, which is a gate nobody would keep on. And it is scoped to the docs
+ * this change touched, because the alternative is arriving with a repo-wide bill on
+ * an unrelated edit.
+ */
+export interface UnresolvedPin {
+  feature: string;
+  doc: string;
+  /** The pin as the doc wrote it. */
+  test: string;
 }
 
 /** One acknowledgment adjudicating this change — the shape both the `review` card and
@@ -524,6 +553,7 @@ export function buildReview(
     // one removal set, so they cannot disagree about what is gone.
     docPointers: resolveDocPointers(root, registry, removedInChange(renames, changes, deletions)),
   });
+  const unresolvedPins = findUnresolvedPins(root, registry, state);
   // The acks adjudicating this change — the audit card both the human review and the
   // HTML report read. Computed from the FULL ack set (not `honoredAcks`), so under
   // `--require-independent-ack` a self-ack that did NOT clear its finding is still
@@ -616,6 +646,7 @@ export function buildReview(
     coveringAcks,
     requireIndependentAck,
     independenceUnverifiable,
+    unresolvedPins,
     workspace: ws.isWorkspace
       ? { members: ws.members.map((m) => m.prefix || "<root>"), bases: workspaceBases(ws) }
       : null,
@@ -1397,6 +1428,43 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
 }
 
 /**
+ * Test pins in the touched features' docs that point at no file.
+ *
+ * Impure by necessity (it reads docs and asks the filesystem), and beside the
+ * command rather than in the analyzer for exactly that reason. Resolution uses the
+ * same resolver the confirm runner uses, so "the pin does not resolve" and "the
+ * gate could not run this test" are one question with one answer — a second
+ * resolver here would let a doc pass this check and still hand the adversary a
+ * path nothing can run.
+ */
+function findUnresolvedPins(
+  root: string,
+  registry: Registry,
+  state: ChangeState,
+): UnresolvedPin[] {
+  const out: UnresolvedPin[] = [];
+  for (const group of state.byFeature) {
+    const entry = registry.features[group.feature];
+    if (!entry) continue;
+    let invariants: string;
+    try {
+      invariants = extractDocSection(
+        readFileSync(join(root, entry.doc), "utf8"),
+        "Invariants & boundaries",
+      );
+    } catch {
+      continue; // an unreadable doc is the staleness surface's problem, not this one's
+    }
+    for (const test of extractPinnedTests(invariants)) {
+      if (!resolveTestPath(root, test, DEFAULT_TEST_SEARCH_DIRS)) {
+        out.push({ feature: group.feature, doc: entry.doc, test });
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * Today's oracle digest for the features this change touches.
  *
  * Taken from the bundle's own feature projection, never re-derived from the docs
@@ -2009,6 +2077,20 @@ function printHuman(report: ReviewReport): void {
         feature: u.owners.map((o) => o.feature).join(" or "),
       }).map((r) => `      ${routeLine(r, labelWidth("blind-unread-file"))}`),
     ]),
+  );
+
+  // A documented invariant pointing at a test that is not there. The standard asks
+  // every invariant to link its test, which makes the link a claim: a reader trusting
+  // it stops looking, and an adversary handed it as an oracle attacks a file that does
+  // not exist. Reported and never gated, because resolution asks the two directories
+  // the runner searches — an unresolved pin is as much a fact about the toolchain as
+  // about the doc, and a repo keeping tests elsewhere would fail on every invariant in
+  // every doc it touched.
+  section(
+    pc.dim("Test pins that do not resolve (reported, not gated — the doc names a test that is not there)"),
+    report.unresolvedPins.map(
+      (p) => `${pc.dim("•")} ${p.feature} ${pc.dim(`— ${p.test} → ${p.doc}`)}`,
+    ),
   );
 
   // New files that landed where an entry's own sources live and that the source spec

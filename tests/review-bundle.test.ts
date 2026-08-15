@@ -5,6 +5,7 @@ import {
   bundleStamp,
   oracleFingerprint,
   extractDocSection,
+  extractPinnedTests,
   extractTestPointers,
 } from "../src/lib/review-bundle.js";
 import type { ChangeState } from "../src/lib/change-state.js";
@@ -438,5 +439,33 @@ describe("the oracle is bound, and it is the oracle the bundle handed over (plan
     assert.equal(oracleFingerprint(featuresOf(both)), oracleFingerprint(featuresOf(both)));
     const fs = featuresOf(both);
     assert.equal(oracleFingerprint(fs), oracleFingerprint([...fs].reverse()));
+  });
+});
+
+describe("extractPinnedTests is structural, never lexical (plan 49)", () => {
+  it("reads a pin out of the standard's own marker, in both spellings", () => {
+    const section = [
+      '- **It holds.** *(test: alpha.test.ts "it holds")*',
+      '- **It also holds.** *(tests: `beta.test.tsx` "one"; gamma.test.ts "two")*',
+    ].join("\n");
+    assert.deepEqual(extractPinnedTests(section), [
+      "alpha.test.ts",
+      "beta.test.tsx",
+      "gamma.test.ts",
+    ]);
+  });
+
+  it("ignores a test file merely named in prose — the stated limit, not an oversight", () => {
+    // Loosening the grammar to any sentence naming a test file turns a citation into
+    // a lexical guess, and this feeds a FINDING: it needs a claim the doc made.
+    const section = "- **It holds.** Both halves are pinned by nowhere.test.tsx, allegedly.";
+    assert.deepEqual(extractPinnedTests(section), []);
+    // …while the oracle extractor, which costs a reader nothing when it is generous,
+    // still hands it over.
+    assert.deepEqual(extractTestPointers(section), ["nowhere.test.tsx"]);
+  });
+
+  it("is empty for a section with no pins at all", () => {
+    assert.deepEqual(extractPinnedTests("- **Untested on purpose.** *(untested)*"), []);
   });
 });
