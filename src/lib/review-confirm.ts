@@ -4,7 +4,7 @@ import {
   type SpawnSyncReturns,
 } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { delimiter, join, resolve, sep } from "node:path";
 import { readMetaSync } from "./codemod.js";
 import type { ReviewFinding, ReviewFindingStatus } from "./review-artifact.js";
 
@@ -208,6 +208,63 @@ export function defaultCommandAvailable(root: string): boolean {
   return !probe.error && probe.status === 0;
 }
 
+// Executable suffixes a bare command name may carry on Windows, where a runner is
+// almost always a `.cmd` shim rather than the bare name. `PATHEXT` is the system's
+// own answer and is preferred; the list is the fallback when it is unset.
+const WINDOWS_EXEC_SUFFIXES = [".cmd", ".exe", ".bat", ".ps1", ""];
+
+function resolvesAsExecutable(root: string, name: string): boolean {
+  const suffixes =
+    process.platform === "win32"
+      ? [...new Set([...(process.env.PATHEXT ?? "").toLowerCase().split(";").filter(Boolean), ...WINDOWS_EXEC_SUFFIXES])]
+      : [""];
+  const candidates: string[] = [];
+  // A path-ish command is taken literally; a bare name is looked up where a runner
+  // actually lives — the project's own bin directory first, then the system PATH.
+  if (name.includes("/") || name.includes("\\")) candidates.push(join(root, name), name);
+  else {
+    candidates.push(join(root, "node_modules", ".bin", name));
+    for (const dir of (process.env.PATH ?? "").split(delimiter).filter(Boolean)) {
+      candidates.push(join(dir, name));
+    }
+  }
+  return candidates.some((base) => suffixes.some((ext) => existsSync(base + ext)));
+}
+
+/**
+ * Why the resolved runner cannot run, or null when it can.
+ *
+ * The confirm step's availability was only ever asked about the BUILT-IN default,
+ * so a project that declared its own `testCommand` was never probed at all — and
+ * that is the project most likely to have got it wrong, since the built-in default
+ * is at least maintained here. A declared runner that does not exist produced the
+ * identical surface as one that ran and found nothing: every finding advisory, and
+ * a verdict that never said the reason.
+ *
+ * The two cases are probed differently because they are different questions. The
+ * default's `argv[0]` is `npx`, which resolves on every Node install, so the real
+ * question is whether `tsx` is reachable WITHOUT a network fetch. A declared
+ * command's `argv[0]` is the project's own binary, and the honest check is whether
+ * it exists — resolved, never EXECUTED, because running an arbitrary declared
+ * command with arbitrary arguments to see whether it works is a side effect this
+ * gate has no business causing.
+ *
+ * A runner that resolves may still emit no test evidence; that is a different fact,
+ * already carried by the outcome-keyed causes, and it is why this reason is only
+ * consulted when nothing else already explains the silence.
+ */
+export function runnerUnavailable(root: string, command: readonly string[] | undefined): string | null {
+  if (!command || command.length === 0) {
+    return defaultCommandAvailable(root)
+      ? null
+      : "confirm step could not run: no local tsx (the default runner resolves local-only, never the network)";
+  }
+  const bin = command[0];
+  return resolvesAsExecutable(root, bin)
+    ? null
+    : `confirm step could not run: the declared runner \`${bin}\` was not found (checked node_modules/.bin and PATH)`;
+}
+
 // Where a bare test name is resolved (repo root, then `tests/`). Shared so the
 // gate's fingerprint resolver and the runner look in the same places.
 export const DEFAULT_TEST_SEARCH_DIRS: readonly string[] = ["", "tests"];
@@ -274,8 +331,11 @@ export function confirmCondition(input: {
   /** What that costs the reader, verb-free so it reads in both numbers:
    *  "advisory rather than judged", "excluded from the score". */
   consequence: string;
-  /** True when the BUILT-IN default is in play and cannot resolve locally. */
-  defaultUnavailable: boolean;
+  /** Why the RESOLVED runner cannot run, or null when it can (`runnerUnavailable`).
+   *  Asked of whatever runner is actually in play, not only the built-in default:
+   *  a project that declared its own is the one least likely to be probed and most
+   *  likely to have got it wrong. */
+  runnerUnavailable: string | null;
 }): string | null {
   const causes: { text: string; remedy: Remedy }[] = [];
   const count = (n: number) => `${n} ${input.noun}${n === 1 ? "" : "s"}`;
@@ -300,13 +360,12 @@ export function confirmCondition(input: {
       remedy: "runner",
     });
   }
-  // Only when nothing else already explains it: a project that declared a runner is
-  // judged by the outcomes above, never by a probe of codument's own default.
-  if (causes.length === 0 && input.defaultUnavailable) {
-    causes.push({
-      text: "confirm step could not run: no local tsx (the default runner resolves local-only, never the network)",
-      remedy: "runner",
-    });
+  // Only when nothing else already explains it: a run whose outcomes are on the
+  // table is judged by those outcomes, never by a probe. A runner that resolved and
+  // then emitted nothing is already named above, and saying "not found" beside it
+  // would be false.
+  if (causes.length === 0 && input.runnerUnavailable) {
+    causes.push({ text: input.runnerUnavailable, remedy: "runner" });
   }
   if (causes.length === 0) return null;
   // Deduped in the order the causes raised them, so the first remedy answers the first

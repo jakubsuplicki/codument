@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
-import { writeFileSync, mkdtempSync, symlinkSync, rmSync, realpathSync } from "node:fs";
+import { writeFileSync, mkdirSync, mkdtempSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -9,6 +9,7 @@ import {
   confirmFindings,
   defaultCommandAvailable,
   confirmCondition,
+  runnerUnavailable,
   resolveTestCommand,
   resolveTestPath,
   resolveTestTimeout,
@@ -552,7 +553,7 @@ describe("confirmCondition (one wording for every surface that runs tests)", () 
     budgetMs: 300_000,
     noun: "finding",
     consequence: "advisory rather than judged",
-    defaultUnavailable: false,
+    runnerUnavailable: null,
   };
   const RUNNER_ROUTE = /--test-command/;
   const BUDGET_ROUTE = /--test-timeout/;
@@ -637,12 +638,12 @@ describe("confirmCondition (one wording for every surface that runs tests)", () 
 
   it("keeps the default-runner probe as a last resort, never alongside a real cause", () => {
     assert.match(
-      confirmCondition({ ...base, defaultUnavailable: true }) ?? "",
+      confirmCondition({ ...base, runnerUnavailable: "confirm step could not run: no local tsx (the default runner resolves local-only, never the network)" }) ?? "",
       /no local tsx/,
     );
     // A declared runner is judged by outcomes, so the probe must not also fire.
     assert.doesNotMatch(
-      confirmCondition({ ...base, unadjudicated: 1, defaultUnavailable: true }) ?? "",
+      confirmCondition({ ...base, unadjudicated: 1, runnerUnavailable: "confirm step could not run: no local tsx (the default runner resolves local-only, never the network)" }) ?? "",
       /no local tsx/,
     );
   });
@@ -768,5 +769,50 @@ describe("makeTestRunner names a timeout as itself (the clock is ours, not the p
     const boom = runner("boom.test.js");
     assert.equal(boom.outcome, "unrunnable");
     assert.equal(boom.cause, undefined);
+  });
+});
+
+describe("runner availability is asked of the runner in play (plan 49)", () => {
+  let tmp: string;
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), "codument-runner-"));
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  it("names a declared runner that does not exist", () => {
+    // The gap this closes: availability was only ever asked about the built-in
+    // default, so a project that declared its own runner was never probed at all —
+    // and a declared runner that does not exist produced the identical surface as
+    // one that ran and found nothing.
+    const why = runnerUnavailable(tmp, ["definitely-not-a-real-runner", "--test", "{file}"]);
+    assert.match(why ?? "", /definitely-not-a-real-runner/);
+    assert.match(why ?? "", /not found/);
+  });
+
+  it("accepts a declared runner that resolves, without executing it", () => {
+    // Resolved, never run: executing an arbitrary declared command with arbitrary
+    // arguments to see whether it works is a side effect this gate has no business
+    // causing. `node` is the one binary guaranteed present wherever this suite runs.
+    assert.equal(runnerUnavailable(tmp, ["node", "--test", "{file}"]), null);
+  });
+
+  it("finds a runner in the project's own bin directory, not only on PATH", () => {
+    const bin = join(tmp, "node_modules", ".bin");
+    mkdirSync(bin, { recursive: true });
+    // Named as this platform would name it, since a runner on Windows is almost
+    // always a shim with an executable suffix rather than the bare name.
+    const name = process.platform === "win32" ? "my-runner.cmd" : "my-runner";
+    writeFileSync(join(bin, name), "");
+    assert.equal(runnerUnavailable(tmp, ["my-runner", "{file}"]), null);
+  });
+
+  it("still probes tsx for the built-in default, which is a different question", () => {
+    // The default's argv[0] is `npx`, which resolves on every Node install, so
+    // "does argv[0] exist" would answer yes and mean nothing. The real question
+    // there is whether tsx is reachable WITHOUT a network fetch.
+    const why = runnerUnavailable(tmp, undefined);
+    if (why !== null) assert.match(why, /no local tsx/);
   });
 });

@@ -159,7 +159,7 @@ answers, the objection that narrowed it is named.
   that changed the step most: refusing would dead-end the first review of any diff, whose own printed
   route never mentions `--bundle`, and would be bypassable by deleting one untracked file under a
   directory the change-state cannot see. A guard that only binds the honest actor is not a guard.)*
-- [ ] **Step 6 — the verdict says whether the runner could have adjudicated anything.** Not "zero
+- [x] **Step 6 — the verdict says whether the runner could have adjudicated anything.** Not "zero
   adjudications": an empty review and a judgment-calls-only review legitimately *do* cover, that was
   decided deliberately with a cries-wolf rationale, and two tests lock it. The missing fact is
   **runner availability**, which never enters the verdict at all — and is not even probed when a

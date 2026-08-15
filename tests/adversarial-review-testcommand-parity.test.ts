@@ -167,7 +167,7 @@ describe("doctor --verify-invariants routes a timed-out invariant to the clock, 
       budgetMs: 1000,
       noun: "invariant",
       consequence: "excluded from the score",
-      defaultUnavailable: false,
+      runnerUnavailable: null,
     });
     assert.ok(expected, "the builder must produce a condition for this incident");
     assert.ok(

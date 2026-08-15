@@ -35,7 +35,7 @@ import {
 } from "../lib/invariant-check.js";
 import {
   confirmCondition,
-  defaultCommandAvailable,
+  runnerUnavailable,
   resolveTestCommand,
   resolveTestTimeout,
 } from "../lib/review-confirm.js";
@@ -458,7 +458,7 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
         budgetMs: resolvedTimeout?.timeoutMs ?? 0,
         noun: "invariant",
         consequence: "excluded from the score",
-        defaultUnavailable: !resolvedTest?.command && !defaultCommandAvailable(root),
+        runnerUnavailable: runnerUnavailable(root, resolvedTest?.command),
       })
     : null;
 

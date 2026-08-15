@@ -3806,3 +3806,34 @@ describe("an unstamped review is disclosed, never refused (plan 49)", () => {
     assert.equal(existsSync(join(tmp, ".codument", "reviews")), false, "nothing was written");
   });
 });
+
+describe("a declared runner that does not exist reaches the verdict (plan 49)", () => {
+  const run = (args: string[], cwd: string): { stdout: string } => {
+    try {
+      return { stdout: execFileSync("node", [CLI, ...args], { cwd, encoding: "utf-8" }) };
+    } catch (err) {
+      return { stdout: (err as { stdout?: string }).stdout ?? "" };
+    }
+  };
+
+  it("names it on the line a pipe keeps, where the built-in probe never looked", async () => {
+    // Before this, availability was asked only of the built-in default, so a project
+    // that declared its own runner got no signal at all — and that is the project
+    // most likely to have got it wrong. The surface was identical to a runner that
+    // ran and found nothing: every finding advisory, and no reason given.
+    await scaffold({
+      "src/auth/login.ts": "export const login = () => { return 14; };\n",
+      "src/lib/db.ts": "export const db = { v: 14 };\n",
+    });
+    const { stdout } = run(
+      ["review", "--require-review", "--test-command", "definitely-not-a-real-runner {file}"],
+      tmp,
+    );
+    assert.match(stdout, /definitely-not-a-real-runner/);
+    const last = stdout.trimEnd().split("\n").at(-1) ?? "";
+    assert.match(last, /not found/, `last line was: ${last}`);
+    // Routed to the runner, never to the clock: the budget never expired.
+    assert.match(last, /--test-command/);
+    assert.doesNotMatch(last, /--test-timeout/);
+  });
+});

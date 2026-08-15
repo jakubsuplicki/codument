@@ -78,7 +78,7 @@ import {
   confirmCondition,
   confirmFindings,
   DEFAULT_TEST_SEARCH_DIRS,
-  defaultCommandAvailable,
+  runnerUnavailable,
   makeTestRunner,
   resolveTestCommand,
   resolveTestPath,
@@ -1023,7 +1023,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       budgetMs: resolvedTimeout.timeoutMs,
       noun: "finding",
       consequence: "advisory rather than judged",
-      defaultUnavailable: !resolvedTest.command && !defaultCommandAvailable(root),
+      runnerUnavailable: runnerUnavailable(root, resolvedTest.command),
     });
     reviewGate = evaluateReviewGate(
       {
