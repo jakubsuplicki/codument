@@ -143,7 +143,7 @@ answers, the objection that narrowed it is named.
   care. *(Contested: loosening the builder's per-cause precedence would start telling projects with
   their own runner about codument's tsx probe, and an unbounded verdict line recreates the wall step
   1 removes.)*
-- [ ] **Step 3 — a command that changed state says what it recorded.** `emit review` echoes the tier,
+- [x] **Step 3 — a command that changed state says what it recorded.** `emit review` echoes the tier,
   resolution and label it wrote, marked as self-reported — not a codument verdict over an agent's
   claim about its own work. *(Contested: a bare green tick over a self-reported fix is a fourth
   success message of the kind this plan exists to remove.)*

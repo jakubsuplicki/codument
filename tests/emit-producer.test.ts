@@ -248,3 +248,77 @@ describe("codument emit tokens (CLI)", () => {
     assert.equal(Object.prototype.hasOwnProperty.call(data, "step"), false);
   });
 });
+
+describe("emit review says what it recorded (plan 49)", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const CLI = join(here, "..", "dist", "cli.js");
+  const run = (args: string[]) =>
+    execFileSync("node", [CLI, "emit", "review", ...args], {
+      cwd: tmp,
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+
+  it("echoes the record it wrote, field for field", () => {
+    // Echoed from the appended record rather than re-derived beside the writer, so
+    // this asserts the log and the line agree rather than that two code paths
+    // happened to build the same string.
+    const out = run([
+      "--tier", "correctness",
+      "--resolution", "fixed",
+      "--feature", "auth",
+      "--step", "3",
+      "--summary", "the token was not cleared on logout",
+    ]);
+    const data = readRecentEvents(tmp)[0].data as Record<string, unknown>;
+    for (const value of Object.values(data)) {
+      assert.ok(out.includes(String(value)), `the echo dropped ${String(value)}`);
+    }
+    assert.ok(out.includes("step 3"), "the step is labelled, not a bare number");
+  });
+
+  it("marks the claim self-reported and never as a codument verdict", () => {
+    // The whole point: this line is an agent's claim about its own work, which
+    // codument stores and does not check. A success mark would read as codument
+    // vouching for it — one more confident green in a loop whose greens were the
+    // problem.
+    const out = run(["--tier", "minor", "--resolution", "deferred"]);
+    assert.match(out, /self-reported/);
+    assert.doesNotMatch(out, /[✓✔]/, "a tick would read as codument endorsing the claim");
+    assert.match(out, /minor · deferred/);
+  });
+
+  it("omits attribution it was not given, rather than echoing empty fields", () => {
+    const out = run(["--tier", "minor", "--resolution", "fixed"]);
+    // Asserted against the line, not against silence: two doesNotMatch checks pass
+    // on no output at all, which would make this test agree with the bug.
+    assert.match(out, /recorded, self-reported: minor · fixed/);
+    assert.doesNotMatch(out, /step/);
+    assert.doesNotMatch(out, /undefined/);
+  });
+
+  it("echoes a field that was recorded even when its value is empty", () => {
+    // The writer keys on `!== undefined`, so `--feature ""` reaches the log. An echo
+    // keyed on truthiness would drop it and disagree with the record on exactly the
+    // invocation where the caller most needs to see what landed.
+    const out = run(["--tier", "minor", "--resolution", "fixed", "--feature", "", "--step", "0"]);
+    const data = readRecentEvents(tmp)[0].data as Record<string, unknown>;
+    assert.equal(data.feature, "", "the empty feature is in the record");
+    assert.ok(out.includes("minor · fixed ·  · step 0"), `line was: ${out}`);
+  });
+
+  it("says nothing on a refusal — a malformed flag records nothing to echo", () => {
+    let stdout = "";
+    let status = 0;
+    try {
+      run(["--tier", "bogus", "--resolution", "fixed"]);
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      status = e.status ?? 1;
+      stdout = e.stdout ?? "";
+    }
+    assert.equal(status, 1);
+    assert.doesNotMatch(stdout, /recorded/, "nothing was recorded, so nothing is echoed");
+    assert.equal(existsSync(logPath(tmp)), false, "and nothing reached the log");
+  });
+});

@@ -35,12 +35,19 @@ export interface EmitMeta {
   ts?: string;
 }
 
+/** Exactly what was appended, returned so a caller can echo the RECORD rather than
+ *  re-derive an echo from the inputs. The two would be the same today and would not
+ *  stay the same: an echo built beside the writer is a second definition of what
+ *  was written, and the surface that reports a thing must not be able to disagree
+ *  with the thing. Keys absent from the record are absent here too. */
+export type RecordedReview = Readonly<ReviewFix>;
+
 /**
  * Append a `review` event — the self-reported line of the impact ledger. Throws
  * on an invalid tier/resolution rather than writing a malformed event, so the
  * aggregator only ever sees well-formed fixes.
  */
-export function emitReview(root: string, fix: ReviewFix, meta: EmitMeta = {}): void {
+export function emitReview(root: string, fix: ReviewFix, meta: EmitMeta = {}): RecordedReview {
   if (!TIERS.includes(fix.tier)) {
     throw new Error(`invalid review tier "${fix.tier}" (expected: ${TIERS.join(", ")})`);
   }
@@ -49,7 +56,10 @@ export function emitReview(root: string, fix: ReviewFix, meta: EmitMeta = {}): v
       `invalid review resolution "${fix.resolution}" (expected: ${RESOLUTIONS.join(", ")})`,
     );
   }
-  const data: Record<string, unknown> = {
+  // Typed as the record's own shape rather than a bag of unknowns, so the value
+  // that is appended and the value that is returned are the same value with the
+  // same type — no cast standing between the log and the echo of it.
+  const data: ReviewFix = {
     tier: fix.tier,
     resolution: fix.resolution,
   };
@@ -61,9 +71,10 @@ export function emitReview(root: string, fix: ReviewFix, meta: EmitMeta = {}): v
   appendEvent(root, {
     type: "review",
     message: fix.summary ?? `${fix.tier} ${fix.resolution}`,
-    data,
+    data: { ...data },
     ...(meta.ts !== undefined ? { ts: meta.ts } : {}),
   });
+  return data;
 }
 
 /** Per-snapshot tally of the per-symbol drift findings — the soak / calibration
