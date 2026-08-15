@@ -303,7 +303,14 @@ mechanical half — a registry line your project's own declarations already cont
 path that is not on disk, a declared tree matching nothing, a file git ignores, a file
 your `exclude` block covers — and names every finding it deliberately left, because
 those need a decision it should not make for you. It never clears a line on codument's
-own heuristic: acting on a guess would write the corruption the command exists to find.
+own heuristic: acting on a guess would write the corruption the command exists to find. It
+also sweeps the acknowledgments auto-invalidation has already killed — named as notes on the
+bare run, removed only here, so `doctor` itself stays pure and reproducible.
+
+Notes that differ only in the subject they name are printed as one line with their subjects
+listed beneath. Nothing is capped or dropped: every file is still named, and `--json` is
+unchanged. A repo at full coverage used to print sixty-eight thousand characters of the same
+six sentences.
 
 <details>
 <summary>Coverage / lint / notes / scope channels, and every flag</summary>
@@ -359,9 +366,21 @@ npx codument review --require-review --test-timeout 600   # how long ONE test fi
 
 - **`--strict`** is the **step-sync gate**: it exits 1 while a step left a new source unmapped or a mapped doc stale. It is what Autopilot runs before checking a step off — materialize the file(s) and update the stale doc(s), then re-run until clean.
 - **`--base <ref>`** reviews the whole branch's drift (merge-base..working-tree), not just uncommitted changes — pair it with `codument ack --base <ref>` so a symbol move resolves against the same ref.
-- **`--bundle`** emits the adversarial-review bundle (the documented invariants + their tests + the diff) as JSON — the contract an independent reviewer attacks. The deterministic oracle that *decides* is the re-run of a finding's named test, never the bundle itself. **`--record <file>`** records a fingerprint-bound review from a findings JSON (`{invariantsChecked, findings, signer}`) that **`--require-review`** then enforces — exiting 1 on a non-trivial diff with no current artifact, or one carrying unresolved confirmed findings. A finding **blocks only** when its named test is red on a live re-run (`--test-command`, `{file}` = the resolved path; default `npx --no-install tsx --test {file}` — resolved locally, **never fetched from the network**); point it at a TAP-emitting runner for non-`node:test` projects. Declare your runner once as `testCommand` in `.codument-meta.json` (see [Declaring your test runner](#declaring-your-test-runner)); the flag overrides it. Whenever a finding's test cannot be adjudicated the summary says how many went unjudged, by name, instead of silently reading advisory — keyed on the outcome, so pointing at a runner that emits no test evidence does not quietly buy you a clean gate. Each cause is routed to its own fix: a test cut off by the budget (`--test-timeout <seconds>`, or `testTimeoutSeconds`) is named as a timeout and sent to the clock, never to your test command, which was never the problem. Opt-in today; the default-on flip is soak-deferred.
+- **`--bundle`** emits the adversarial-review bundle (the documented invariants + their tests + the diff) as JSON — the contract an independent reviewer attacks. The deterministic oracle that *decides* is the re-run of a finding's named test, never the bundle itself. The bundle carries a **`stamp`** of its own content; copy it into the findings JSON as `bundleStamp` so the record says which oracle it answered. A review that records none is still accepted and cleared — it is reported on the verdict line, never refused. **`--record <file>`** records a fingerprint-bound review from a findings JSON (`{invariantsChecked, findings, signer, bundleStamp?}`) that **`--require-review`** then enforces — exiting 1 on a non-trivial diff with no current artifact, or one carrying unresolved confirmed findings. A finding **blocks only** when its named test is red on a live re-run (`--test-command`, `{file}` = the resolved path; default `npx --no-install tsx --test {file}` — resolved locally, **never fetched from the network**); point it at a TAP-emitting runner for non-`node:test` projects. Declare your runner once as `testCommand` in `.codument-meta.json` (see [Declaring your test runner](#declaring-your-test-runner)); the flag overrides it. Whenever a finding's test cannot be adjudicated the summary says how many went unjudged, by name, instead of silently reading advisory — keyed on the outcome, so pointing at a runner that emits no test evidence does not quietly buy you a clean gate. Each cause is routed to its own fix: a test cut off by the budget (`--test-timeout <seconds>`, or `testTimeoutSeconds`) is named as a timeout and sent to the clock, never to your test command, which was never the problem. Availability is asked of the runner actually in play — a declared runner that does not exist is named, resolved against your bin directory and PATH and never executed. Opt-in today; the default-on flip is soak-deferred.
 
 After you fix a finding, re-running `--bundle` scopes the next attack to what actually moved (`scope: "delta"`), carrying the untouched files and the earlier findings as context; `--full` forces the whole change set. This narrows what the reviewer reads, never what the gate accepts — coverage is still one artifact over every file in the change set, and it still voids on any edit.
+
+**An artifact is identified by what it attests, and binds the oracle it attacked** (ADR 021). Two genuinely different reviews of one change set are two files that both stand, and the gate enforces every covering one rather than the first it finds — re-recording no longer overwrites a record whose loss would be the *invariants someone checked*, not the findings. And the fingerprint folds in the documented contract and invariants the bundle handed over, so rewriting them reopens the gate exactly as rewriting a source does. **Upgrading:** artifacts recorded before 0.19.0 bound no oracle, so an in-flight review reopens once and must be re-recorded.
+
+**Two things `review` reports and never gates.** A **new file the source spec cannot see**
+landing where an entry's own sources live — a locale pack, a mockup, a workflow — is named
+once per entry with its files beneath. It is the one class neither the unmapped-source
+finding nor governance can reach, and it is deliberately narrow: only new files, only
+extensions the spec drops, only where the entry declares no covering name. And a **test pin
+that does not resolve** — an invariant whose doc names the test enforcing it, pointing at a
+file that is not there — is named for the docs this change touched. Neither gates: proximity
+is an inference, and an unresolved pin is as much a fact about where your tests live as about
+the doc.
 
 **Per-symbol drift.** Staleness is resolved **per symbol**, not per whole file. `review` fingerprints each exported declaration's token stream across two git refs; when a documented symbol's move is contract-grade — its signature moved, or the symbol appeared or vanished — and its owning doc did not change, only that symbol's owning feature wakes; the old whole-file cascade is dissolved. A move the parser proves left the signature alone is reported and never wakes anything (ADR 020). The verdict is a pure, reproducible function of `(base, head, codument version, algoStamp)` with no clock input. It enforces that a moved documented symbol and its owning doc stay **in sync** (waking the feature when they don't), not that the prose is correct — a born-wrong or already-drifted doc is out of scope by construction. A separate name-match signal (does the doc even mention the symbol) is kept as **info-only telemetry**, never a verdict input. Before hashing, each declaration's token stream is **canonicalized**: a name bound within the declaration (a parameter, a block local, a destructured or catch binding, a generic type parameter) is rewritten to a positional index, so a meaning-preserving local rename does not move the fingerprint at all. What still fires is a real change — a different free/imported/global reference, a type or contract-name change (a property key, an object shorthand, a constructor parameter property), or a structural edit.
 
@@ -430,6 +449,7 @@ npx codument ack src/App.vue::template --reason "markup only; the props contract
 npx codument ack --list                 # list recorded acks with their handles
 npx codument ack --remove <handle>      # remove one by handle
 npx codument ack --prune                # remove every auto-invalidated ack in one pass
+npx codument doctor --fix               # …or sweep them where the loop already looks
 npx codument ack src/App.vue::template --base main --signer alice   # match review --base; attribute the signer
 ```
 

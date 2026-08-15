@@ -7,67 +7,162 @@ remains pre-1.0.
 
 ## [Unreleased]
 
-The confirm gate owns its own clock — plan 48.
+The rule is written; the surface is not — plan 49, ADR 021.
 
-0.18.0 taught the change-control gate that a block must be provable and a route is offered
-only where it can work. The **confirm gate** — the half of the adversarial review gate that
-adjudicates a finding by running the test it names — had learned neither.
+0.18.0 made the change-control gate say only what it could prove, and plan 48 gave the
+confirm gate a clock the project owns. A 0.18.0 field session then reported something the
+rules could not fix: the tool was mostly right and almost unreadable. `doctor` on a repo at
+full coverage with zero findings printed 68,420 characters, 96.7% of it repetitions of six
+sentences. Behaviour the tool has and prints was written up as *missing* across fourteen
+runs, because it printed above the verdict and the reader pipes to `tail -1`. A second
+`review --record` silently destroyed the first. `emit review` was run many times into total
+silence. None of that is a wrong rule. All of it is a rule nobody could read.
 
-Its budget was a hardcoded 120 seconds that no caller passed and no surface exposed.
-Codument's own largest test file takes about 165, so a finding naming it could never be
-adjudicated: the tool could not review itself with the gate it ships, and the only way to
-change the number was to edit codument. When the clock expired, the gate reported it as
-*"the runner produced no test evidence"* and sent the reader to fix their test command —
-which had been correct, present and running the whole time. Codument ran out of patience
-and filed it as a defect in the project.
+So this release is about surfaces telling the truth about themselves: what the tool
+printed, what it recorded, and what its attestations actually mean.
 
 ### Added
 
-- **The gate's clock is the project's to set.** `testTimeoutSeconds` in
-  `.codument-meta.json`, or `--test-timeout <seconds>` for one run, on both
-  `review --require-review` and `doctor --verify-invariants`. Same precedence as
-  `testCommand` and the same loud-refusal discipline: anything that is not a positive
-  number of seconds, or is over a day (the milliseconds slip), falls back to the default
-  and says so. The unit is in the key name for the same reason — a millisecond value read
-  as seconds expires instantly and turns every finding advisory, which is a silently green
-  gate.
+- **`doctor` notes are grouped, and nothing is dropped.** Notes differing only in the
+  subject they name collapse to one line with their subjects listed beneath. The collapse
+  is exact, never fuzzy, and it is rendering only — nothing capped, summarised or dropped,
+  every file still named, a sentence that never repeats rendered exactly as it always was,
+  and `--json` untouched. On the measured shape: 15,199 characters to 5,055, with
+  byte-identical file sets either way.
+- **The verdict line carries the condition, ranked and bounded.** `| tail -1` is what a
+  reader keeps, so a fact reachable only above it is in practice not reachable. The confirm
+  condition rides it now — cause and remedy included, not a bare count — beside the ungated
+  facts it already carried. Order is fixed rather than arrival, so which condition survives
+  the bound is a property of the condition; past the bound the remainder is counted, never
+  cut, because all of it is printed above in full.
+- **`emit review` says what it recorded.** The record itself, returned by the writer rather
+  than rebuilt beside it, marked *self-reported* and deliberately not a success mark: this
+  is an agent's claim about its own work, which codument stores and does not check.
+- **An attestation says what it was grounded in.** `review --bundle` stamps its own content;
+  `--record` records the stamp it answers, or records explicitly that there was none. A
+  review without one still clears the gate and says so — refusing would dead-end the first
+  review of any diff and would be walked past by anyone willing to omit a field.
+- **Runner availability is asked of the runner in play.** It was only ever asked of the
+  built-in default, leaving the project that declared its own runner — the one most likely
+  to have got it wrong — with no signal at all. A declared runner is resolved against the
+  project's bin directory and PATH, never executed.
+- **A new file the source spec cannot see, beside an entry's own sources, is named.** The
+  one class neither `unmapped` nor governance could reach. One line per entry with its files
+  beneath; only new files, only spec-invisible extensions, only where the entry declares no
+  covering name. Reported, never gated — proximity is an inference (020).
+- **A doc's test pin that points at nothing is named.** The standard asks every invariant to
+  link its test, which makes the link a claim; nothing checked it. Structural: only a pin
+  inside the standard's own marker counts. Never gates, because resolution asks the two
+  directories the runner searches, so an unresolved pin is as much a fact about the
+  toolchain as about the doc.
+- **Dead acknowledgments are named where the loop looks.** `ack --list` showed the pile and
+  the loop runs neither it nor `--prune`; a field session ended with 44 of 80 dead and
+  nothing that would ever say so. `doctor` names them as info notes — never a warning, since
+  a dead ack's subject file is by construction in the change set — and `doctor --fix` sweeps
+  them. `review` and bare `doctor` stay pure.
 
 ### Changed
 
-- **The default budget is 300s, up from 120.** A measurement plus headroom, not a round
-  number: roughly double this repository's own slowest test file, because a tool whose gate
-  cannot adjudicate a finding naming its own largest suite cannot gate itself, and a budget
-  sized to an idle machine expires on a loaded one — as a silent advisory.
-- **A timeout is named as itself and routed to the clock.** It is now a typed cause on the
-  run result, counted apart from a toolchain gap on both surfaces, and reported with the
-  budget that expired rather than as `spawnSync C:\WINDOWS\system32\cmd.exe ETIMEDOUT`. Each
-  cause carries its own remedy and only the remedies that apply are offered — a run that hit
-  both a broken runner and the clock says both and offers both; a run that hit one offers
-  one.
-- **A timeout that already proved red is judged red.** Where the child had reported a
-  failing test before the kill, the reproduction is on the wire and the finding blocks
-  instead of being downgraded. One-directional by construction: a timeout can become a
-  block, never a pass. It is the same TAP-evidence rule the completed-run path always used,
-  applied to a run that was interrupted — so a cut-off file behaves as the finished file
-  would have. **A repo whose leaky invariant test also fails will see `doctor --strict` go
-  red on this release with no edit of its own; that block is provable, which is the point.**
+- **An attestation is identified by what it attests** (ADR 021). The stored review file was
+  named after the diff fingerprint alone, so a second review of one change set overwrote the
+  first — and what went missing was ten *checked invariants*, not ten findings. The name is
+  now a digest of the whole attestation. Two genuine reviews of one change set are two files
+  that both stand, and the gate enforces **every** covering artifact rather than the first it
+  finds: an arbitrary pick is a verdict, and it is the lenient one.
+- **The review fingerprint binds the oracle** (ADR 021). It bound the sources and the tests
+  the findings named, and said nothing about what the reviewer was told to attack — so the
+  documented contract and the must-not-break list could be rewritten under a recorded review.
+  A rewritten invariant now reopens the gate exactly as a rewritten source does. It is a
+  separate component and never joins the real-change set, which also counts the change's
+  size: folding docs in would make every loop-compliant edit two real changes and retire the
+  trivial fast-path.
 
 ### Fixed
 
-- A sub-millisecond declared budget rounded to `timeoutMs: 0`, which `spawnSync` reads as
-  *no* timeout — the silent always-green arriving through the arithmetic rather than the
-  guard meant to prevent it. Clamped to a floor of 1ms.
-- `defaultCommandAvailable`'s fallback test shadowed `npx` with a `#!/bin/sh` file and a
-  colon-joined PATH, neither of which Windows can use, so the real `npx` answered and the
-  assertion quietly became a question about the developer's machine. It was invisible until
-  now because the runner timed out before ever reaching a verdict.
+- The review suite was green under `npm test` and red under the confirm gate on the same
+  tree: a third of its CLI spawns pinned `NO_COLOR` and the rest inherited the terminal's, so
+  under a colouring one, four tests went red and the gate read four confirmed findings —
+  codument reporting bugs in codument that did not exist.
+- Two Windows portability defects in the suite: the only test covering "git ran and failed"
+  never entered that branch (a shell-script shim on a colon-joined PATH, which Windows
+  resolves through neither), and two subdirectory-refusal tests compared git's own
+  forward-slash toplevel against a native-separator path.
 
-### Known boundaries
+### Upgrading
 
-- On Windows a timed-out child is orphaned: Node kills `cmd.exe` and the test process it
-  started runs on, one survivor per timeout. Measured, not assumed. Reaping the tree needs
-  an asynchronous spawn holding a job object, which would trade the runner's synchronous
-  purity for a symptom a settable budget makes rare. POSIX has no shell in the path and so
+- **Every review artifact recorded before this release reopens once.** Their fingerprints
+  were computed without the oracle component, so an in-flight review must be re-recorded.
+  Fail-closed and correct — those reviews genuinely did not bind what they were handed.
+- **Re-recording over an unchanged change set no longer replaces the earlier artifact.** Both
+  stand and both are enforced until the earlier file is removed. That is the price of never
+  destroying an attestation silently; the window is narrow, because any fix to a reviewed
+  source or named test retires the old artifact on its own.
+- Reviews recorded without a `bundleStamp` still clear the gate. They are reported on the
+  verdict line, with the route that fills the gap.
+
+---
+
+### Also in this release — the confirm gate owns its own clock (plan 48)
+
+0.18.0 taught the change-control gate that a block must be provable and a route is offered
+only where it can work. The **confirm gate** — the half of the adversarial review gate that
+adjudicates a finding by running the test it names — had learned neither.
+
+Its budget was a hardcoded 120 seconds that no caller passed and no surface exposed.
+Codument's own largest test file takes about 165, so a finding naming it could never be
+adjudicated: the tool could not review itself with the gate it ships, and the only way to
+change the number was to edit codument. When the clock expired, the gate reported it as
+*"the runner produced no test evidence"* and sent the reader to fix their test command —
+which had been correct, present and running the whole time. Codument ran out of patience
+and filed it as a defect in the project.
+
+### Added
+
+- **The gate's clock is the project's to set.** `testTimeoutSeconds` in
+  `.codument-meta.json`, or `--test-timeout <seconds>` for one run, on both
+  `review --require-review` and `doctor --verify-invariants`. Same precedence as
+  `testCommand` and the same loud-refusal discipline: anything that is not a positive
+  number of seconds, or is over a day (the milliseconds slip), falls back to the default
+  and says so. The unit is in the key name for the same reason — a millisecond value read
+  as seconds expires instantly and turns every finding advisory, which is a silently green
+  gate.
+
+### Changed
+
+- **The default budget is 300s, up from 120.** A measurement plus headroom, not a round
+  number: roughly double this repository's own slowest test file, because a tool whose gate
+  cannot adjudicate a finding naming its own largest suite cannot gate itself, and a budget
+  sized to an idle machine expires on a loaded one — as a silent advisory.
+- **A timeout is named as itself and routed to the clock.** It is now a typed cause on the
+  run result, counted apart from a toolchain gap on both surfaces, and reported with the
+  budget that expired rather than as `spawnSync C:\WINDOWS\system32\cmd.exe ETIMEDOUT`. Each
+  cause carries its own remedy and only the remedies that apply are offered — a run that hit
+  both a broken runner and the clock says both and offers both; a run that hit one offers
+  one.
+- **A timeout that already proved red is judged red.** Where the child had reported a
+  failing test before the kill, the reproduction is on the wire and the finding blocks
+  instead of being downgraded. One-directional by construction: a timeout can become a
+  block, never a pass. It is the same TAP-evidence rule the completed-run path always used,
+  applied to a run that was interrupted — so a cut-off file behaves as the finished file
+  would have. **A repo whose leaky invariant test also fails will see `doctor --strict` go
+  red on this release with no edit of its own; that block is provable, which is the point.**
+
+### Fixed
+
+- A sub-millisecond declared budget rounded to `timeoutMs: 0`, which `spawnSync` reads as
+  *no* timeout — the silent always-green arriving through the arithmetic rather than the
+  guard meant to prevent it. Clamped to a floor of 1ms.
+- `defaultCommandAvailable`'s fallback test shadowed `npx` with a `#!/bin/sh` file and a
+  colon-joined PATH, neither of which Windows can use, so the real `npx` answered and the
+  assertion quietly became a question about the developer's machine. It was invisible until
+  now because the runner timed out before ever reaching a verdict.
+
+### Known boundaries
+
+- On Windows a timed-out child is orphaned: Node kills `cmd.exe` and the test process it
+  started runs on, one survivor per timeout. Measured, not assumed. Reaping the tree needs
+  an asynchronous spawn holding a job object, which would trade the runner's synchronous
+  purity for a symptom a settable budget makes rare. POSIX has no shell in the path and so
   no orphan.
 
 ## [0.18.0] - 2026-08-14
