@@ -275,6 +275,12 @@ export function gatherReviewFingerprint(
   changeSetPaths: string[],
   findings: readonly ReviewFinding[],
   resolveTest: (ref: string) => string | null,
+  /** A digest of the oracle the reviewer was handed (`oracleFingerprint`). Folded
+   *  in so a rewritten contract or invariant list reopens the gate exactly as a
+   *  rewritten source does — a review of invariants that no longer exist is not a
+   *  review of this change. Defaulted so a caller with no oracle to bind (a unit
+   *  test of the source/test binding alone) keeps the pre-oracle value. */
+  oracleFp = "",
 ): string {
   const sourcesFp = gatherDiffFingerprint(root, base, changeSetPaths);
   // Each distinct named test, keyed by the finding's raw ref (stable across the
@@ -298,8 +304,11 @@ export function gatherReviewFingerprint(
     return `${ref}\0${body}`;
   });
   const testsFp = createHash("sha256").update(testParts.join("\n"), "utf8").digest("hex").slice(0, 32);
+  // Appended rather than mixed into either half: an empty oracle reproduces the
+  // pre-oracle value exactly, so the one caller that binds no oracle is unchanged
+  // and the component is legible in the hash's own structure.
   return createHash("sha256")
-    .update(`${sourcesFp}\n${testsFp}`, "utf8")
+    .update(`${sourcesFp}\n${testsFp}${oracleFp ? `\n${oracleFp}` : ""}`, "utf8")
     .digest("hex")
     .slice(0, 32);
 }
@@ -461,11 +470,14 @@ export function findCoveringReviews(
   base: string,
   changeSetPaths: string[],
   resolveTest: (ref: string) => string | null,
+  /** The current oracle digest, identical for every artifact because it describes
+   *  today's docs rather than the artifact. */
+  oracleFp = "",
 ): ReviewArtifact[] {
   return readReviews(root).filter(
     (r) =>
       r.diffFingerprint ===
-      gatherReviewFingerprint(root, base, changeSetPaths, r.findings, resolveTest),
+      gatherReviewFingerprint(root, base, changeSetPaths, r.findings, resolveTest, oracleFp),
   );
 }
 

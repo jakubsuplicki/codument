@@ -3837,3 +3837,94 @@ describe("a declared runner that does not exist reaches the verdict (plan 49)", 
     assert.doesNotMatch(last, /--test-timeout/);
   });
 });
+
+
+describe("rewriting the oracle reopens the gate, without inflating the change (plan 49)", () => {
+  const run = (args: string[], cwd: string): { status: number; out: string } => {
+    try {
+      return { status: 0, out: execFileSync("node", [CLI, ...args], { cwd, encoding: "utf-8" }) };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { status: e.status ?? 0, out: e.stdout ?? "" };
+    }
+  };
+  const AUTH_DOC = (invariant: string) =>
+    `# auth\n\n## In plain terms\n\nauth signs people in.\n\n## Invariants & boundaries\n\n- **${invariant}** *(untested)*\n`;
+
+  it("a rewritten invariant voids a recorded review, exactly as a rewritten source does", async () => {
+    await scaffold({
+      "docs/features/auth.md": AUTH_DOC("A session never outlives its token."),
+      "src/auth/login.ts": "export const login = () => { return 21; };\n",
+    });
+    await writeFile(
+      join(tmp, "findings.json"),
+      JSON.stringify({
+        invariantsChecked: ["a session never outlives its token"],
+        findings: [],
+        signer: "test",
+      }),
+    );
+    assert.equal(run(["review", "--record", "findings.json"], tmp).status, 0);
+    assert.equal(run(["review", "--require-review"], tmp).status, 0, "the review covers the diff");
+
+    // Rewrite the must-not-break list the reviewer was handed. No source moved;
+    // what moved is what the review was a review OF.
+    await scaffold({ "docs/features/auth.md": AUTH_DOC("A session may outlive its token.") });
+
+    const after = run(["review", "--require-review"], tmp);
+    assert.equal(after.status, 1, "a review of invariants that no longer exist is not a review");
+    assert.match(after.out, /no current adversarial review/);
+  });
+
+  it("but a doc edit beside its source is still ONE real change, so the trivial fast-path survives", async () => {
+    // The trap this step had to avoid: the loop requires the owning doc to move in
+    // the same step, so folding docs into the real-change set — which also counts
+    // the change's SIZE — would make every compliant edit two real changes and
+    // retire the trivial fast-path entirely.
+    //
+    // Its own repo, because the shared fixture has no risk-free source: everything
+    // in it is either risk-tagged or related to something that is, and a risk touch
+    // requires a review whatever the count says. What is under test here is the
+    // count alone.
+    const solo = await mkdtemp(join(tmpdir(), "codument-solo-"));
+    try {
+      const write = async (rel: string, content: string) => {
+        await mkdir(join(solo, rel, ".."), { recursive: true });
+        await writeFile(join(solo, rel), content);
+      };
+      await write(
+        "docs/.registry.json",
+        JSON.stringify({
+          features: {
+            solo: {
+              doc: "docs/features/solo.md",
+              type: "feature",
+              primary_sources: ["src/solo.ts"],
+              related_sources: [],
+              docs: [],
+              depends_on: [],
+              risk: [],
+              status: "current",
+            },
+          },
+        }),
+      );
+      await write("docs/features/solo.md", "# solo\n\n## In plain terms\n\nsolo does one thing.\n");
+      await write("src/solo.ts", "export const solo = () => { return 1; };\n");
+      gitInit(solo);
+
+      // A body-only edit plus the doc the loop requires beside it.
+      await write("src/solo.ts", "export const solo = () => { return 2; };\n");
+      await write(
+        "docs/features/solo.md",
+        "# solo\n\n## In plain terms\n\nsolo does one thing, carefully.\n",
+      );
+
+      const out = run(["review", "--require-review"], solo).out;
+      assert.match(out, /trivial diff — none required/, `one source plus its own doc: ${out}`);
+    } finally {
+      forgetWorkspace();
+      await rm(solo, { recursive: true, force: true });
+    }
+  });
+});

@@ -73,7 +73,11 @@ import {
   type Palette,
   type Route,
 } from "../lib/remedies.js";
-import { gatherReviewBundle, type ReviewBundleDelta } from "../lib/review-bundle.js";
+import {
+  gatherReviewBundle,
+  oracleFingerprint,
+  type ReviewBundleDelta,
+} from "../lib/review-bundle.js";
 import {
   confirmCondition,
   confirmFindings,
@@ -841,6 +845,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       realChangeSet,
       provisional.findings,
       resolveTest,
+      currentOracle(root, effectiveBase, report.state),
     );
     // `files` rides along as scoping information for the NEXT `--bundle` (what moved
     // since this recording), computed by the CLI like the fingerprint is — an agent
@@ -857,7 +862,13 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // be told what actually happened — and that the reviews now standing are enforced
     // together, not chosen between. Counted through the gate's own definition of
     // covering rather than a second one written beside it.
-    const onRecord = findCoveringReviews(root, effectiveBase, realChangeSet, resolveTest).length;
+    const onRecord = findCoveringReviews(
+      root,
+      effectiveBase,
+      realChangeSet,
+      resolveTest,
+      currentOracle(root, effectiveBase, report.state),
+    ).length;
     if (onRecord > 1) {
       console.log(
         pc.dim(
@@ -987,7 +998,13 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // EVERY covering artifact, not the first found: two attestations of one change
     // set can now coexist, and picking one of them would pick a verdict — in the
     // lenient direction, since the loser's findings would go unenforced.
-    const covering = findCoveringReviews(root, effectiveBase, realChangeSet, resolveTest);
+    const covering = findCoveringReviews(
+      root,
+      effectiveBase,
+      realChangeSet,
+      resolveTest,
+      currentOracle(root, effectiveBase, report.state),
+    );
     // A missing key and an explicit null both mean the same thing to a reader: this
     // artifact does not say what oracle it answered.
     unstampedCovering = covering.filter((r) => !r.bundleStamp).length;
@@ -1357,6 +1374,20 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // bare word, exactly as before.
     console.log(pc.green("codument review: clean") + also);
   }
+}
+
+/**
+ * Today's oracle digest for the features this change touches.
+ *
+ * Taken from the bundle's own feature projection, never re-derived from the docs
+ * beside it: the thing bound has to be literally the thing handed over, or the
+ * gate ends up enforcing a second reading of "the oracle" that can drift from the
+ * one the reviewer saw. Built at full scope with no plan — neither affects the
+ * per-feature contract blocks, which the delta deliberately never narrows.
+ */
+function currentOracle(root: string, base: string, state: ChangeState): string {
+  const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+  return oracleFingerprint(gatherReviewBundle(root, base, state, registry, null, null).features);
 }
 
 // The full real-change set the adversarial-review gate scopes to: changed sources +

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildReviewBundle,
   bundleStamp,
+  oracleFingerprint,
   extractDocSection,
   extractTestPointers,
 } from "../src/lib/review-bundle.js";
@@ -392,5 +393,50 @@ describe("the bundle stamps what it handed over (plan 49)", () => {
     const bundle = build(["src/a.ts"]);
     const { stamp, ...body } = bundle;
     assert.equal(stamp, bundleStamp(body));
+  });
+});
+
+describe("the oracle is bound, and it is the oracle the bundle handed over (plan 49)", () => {
+  const registry: Registry = {
+    features: { a: entry({ doc: "docs/features/a.md" }), b: entry({ doc: "docs/features/b.md" }) },
+  };
+  const featuresOf = (docs: Map<string, string>) =>
+    buildReviewBundle({
+      base: "HEAD",
+      changeState: cs({
+        changedSources: ["src/a.ts", "src/b.ts"],
+        byFeature: [
+          { feature: "a", files: ["src/a.ts"] },
+          { feature: "b", files: ["src/b.ts"] },
+        ],
+      }),
+      registry,
+      docContents: docs,
+      plan: null,
+    }).features;
+  const both = new Map<string, string>([
+    ["docs/features/a.md", DOC_A],
+    ["docs/features/b.md", DOC_B],
+  ]);
+
+  it("moves when an invariant the reviewer was shown is rewritten", () => {
+    // The gap: the fingerprint bound the sources and the named tests and stopped
+    // there, so the one thing the adversary was told to attack could be rewritten
+    // after the review was recorded and the artifact went on covering the diff.
+    const rewritten = new Map(both);
+    rewritten.set("docs/features/a.md", DOC_A.replace("X holds always", "X holds sometimes"));
+    assert.notEqual(oracleFingerprint(featuresOf(both)), oracleFingerprint(featuresOf(rewritten)));
+  });
+
+  it("moves when a feature's orientation layer is emptied", () => {
+    const gutted = new Map(both);
+    gutted.set("docs/features/a.md", DOC_A.replace(/A does the thing[^\n]*/, ""));
+    assert.notEqual(oracleFingerprint(featuresOf(both)), oracleFingerprint(featuresOf(gutted)));
+  });
+
+  it("is stable across runs and independent of the order features arrive in", () => {
+    assert.equal(oracleFingerprint(featuresOf(both)), oracleFingerprint(featuresOf(both)));
+    const fs = featuresOf(both);
+    assert.equal(oracleFingerprint(fs), oracleFingerprint([...fs].reverse()));
   });
 });

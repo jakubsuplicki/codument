@@ -230,6 +230,36 @@ export function bundleStamp(body: Omit<ReviewBundle, "stamp">): string {
   return createHash("sha256").update(JSON.stringify(body), "utf8").digest("hex").slice(0, 32);
 }
 
+/**
+ * A digest of the ORACLE alone: per touched feature, the contract and the
+ * invariants the bundle handed the reviewer.
+ *
+ * The review fingerprint bound the reviewed sources and the tests the findings
+ * named, and stopped there. So the one thing the adversary was actually told to
+ * attack — the documented contract and the must-not-break list — could be rewritten
+ * after the review was recorded and the artifact went on covering the diff. A
+ * review of invariants that no longer exist is not a review of this change, and it
+ * is the shape the loop produces routinely, since updating the owning doc in the
+ * same step is exactly what the workflow asks for.
+ *
+ * Taken from the bundle's own projection rather than re-derived from the docs, so
+ * "the oracle" has one definition and the thing bound is literally the thing handed
+ * over. It is folded into the review fingerprint as a SEPARATE component and never
+ * into the real-change set: that set also counts the change's size, and the loop
+ * requires the owning doc to move in the same step, so folding docs in would make
+ * every compliant edit two real changes and retire the trivial fast-path the
+ * proportionality rule exists to keep.
+ */
+export function oracleFingerprint(features: readonly ReviewBundleFeature[]): string {
+  const parts = [...features]
+    .sort((a, b) => (a.feature < b.feature ? -1 : a.feature > b.feature ? 1 : 0))
+    // NUL-separated for the same reason the diff fingerprint uses it: doc prose
+    // contains every other separator a scheme might pick, and NUL is the one
+    // character that cannot appear in the feature name or the path beside it.
+    .map((f) => `${f.feature}\0${f.doc}\0${f.contract}\0${f.invariants}`);
+  return createHash("sha256").update(parts.join("\n"), "utf8").digest("hex").slice(0, 32);
+}
+
 // Impure wrapper: read each touched feature's doc off disk, then build the pure
 // bundle. Kept thin and beside the pure core, exactly like change-state pairs
 // its analyzer with `detectApprovedPlanScope`.

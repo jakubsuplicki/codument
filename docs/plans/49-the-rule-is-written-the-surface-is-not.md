@@ -166,7 +166,7 @@ answers, the objection that narrowed it is named.
   project declares its own `testCommand`, so the surface that most needs it is the one with no signal
   to give. Probe the resolved runner; let the verdict carry it. *(Contested: the step as first
   written reversed a decided invariant and retired nothing.)*
-- [ ] **Step 7 — the fingerprint binds the oracle, without touching proportionality.** A separate
+- [x] **Step 7 — the fingerprint binds the oracle, without touching proportionality.** A separate
   fingerprint component over the exact doc sections the bundle carried — the orientation layer and
   the invariants layer, not whole files. It must not enter `computeRealChange`'s set, which also
   drives `realChangeCount`: the loop requires the owning doc to move in the same step, so folding
