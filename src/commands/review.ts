@@ -53,10 +53,11 @@ import {
   sourceMatcher,
 } from "../lib/registry.js";
 import {
-  findCoveringReview,
+  findCoveringReviews,
   findLatestReviewForBase,
   gatherReviewedFiles,
   gatherReviewFingerprint,
+  mergeCoveringFindings,
   parseReviewArtifact,
   reviewedDelta,
   writeReview,
@@ -761,7 +762,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // Delta scope: when a review of this same base was already recorded, the
     // reviewer attacks only what moved since — the fix, not the eleven files the
     // fix did not touch. That is where the re-review round's cost actually goes.
-    // The gate is untouched by this: it still requires ONE artifact covering every
+    // The gate is untouched by this: it still requires an artifact covering every
     // byte of the change set, so a narrow read can never buy a broad pass.
     let delta: ReviewBundleDelta | null = null;
     if (!options.full) {
@@ -840,6 +841,19 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       files: gatherReviewedFiles(root, realChangeSet),
     });
     console.log(`  ${pc.green("✓")} Recorded adversarial review → ${path}`);
+    // A recording used to replace whatever was there, because the filename was keyed
+    // on the diff alone. It no longer does, so a reader expecting a replacement must
+    // be told what actually happened — and that the reviews now standing are enforced
+    // together, not chosen between. Counted through the gate's own definition of
+    // covering rather than a second one written beside it.
+    const onRecord = findCoveringReviews(root, effectiveBase, realChangeSet, resolveTest).length;
+    if (onRecord > 1) {
+      console.log(
+        pc.dim(
+          `    ${onRecord} reviews now cover this change set — the gate enforces every one of their findings.`,
+        ),
+      );
+    }
     return;
   }
 
@@ -956,20 +970,24 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // name; resolveTest locates a finding's test exactly as the runner does, so a
     // tampered or deleted test moves the fingerprint and reopens the gate.
     const resolveTest = (ref: string) => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS);
-    const covering = findCoveringReview(root, effectiveBase, realChangeSet, resolveTest);
+    // EVERY covering artifact, not the first found: two attestations of one change
+    // set can now coexist, and picking one of them would pick a verdict — in the
+    // lenient direction, since the loser's findings would go unenforced.
+    const covering = findCoveringReviews(root, effectiveBase, realChangeSet, resolveTest);
     // Re-derive each finding's status by RUNNING its named test — never trust a
     // status the artifact merely claims. A red test re-promotes to confirmed; a
     // toolchain failure (missing runner, resolution error) is unrunnable → advisory.
-    const confirmedFindings = covering
-      ? confirmFindings(
-          covering.findings,
-          makeTestRunner({
-            root,
-            command: resolvedTest.command,
-            timeoutMs: resolvedTimeout.timeoutMs,
-          }),
-        ).findings
-      : null;
+    const confirmedFindings =
+      covering.length > 0
+        ? confirmFindings(
+            mergeCoveringFindings(covering),
+            makeTestRunner({
+              root,
+              command: resolvedTest.command,
+              timeoutMs: resolvedTimeout.timeoutMs,
+            }),
+          ).findings
+        : null;
     // The honesty condition is keyed on OUTCOMES, not on which flag was passed.
     // Keying it on flag-absence meant supplying any command silenced it, working or
     // not: a project pointing at a runner that emits no TAP got every finding
@@ -1007,7 +1025,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // the verdict above is already decided. Without it the gate says "review this
     // diff" after every one-line fix, which is what made a three-finding step cost
     // three whole-diff attacks.
-    if (!covering) {
+    if (covering.length === 0) {
       const prior = findLatestReviewForBase(root, effectiveBase);
       if (prior?.files) {
         const moved = reviewedDelta(prior.files, gatherReviewedFiles(root, realChangeSet));

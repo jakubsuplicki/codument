@@ -16,7 +16,8 @@ import {
   reviewFileName,
   readReviews,
   writeReview,
-  findCoveringReview,
+  findCoveringReviews,
+  mergeCoveringFindings,
   type ReviewArtifact,
   type ReviewFinding,
 } from "../src/lib/review-artifact.js";
@@ -152,20 +153,48 @@ describe("reviewCoversDiff (auto-invalidation)", () => {
   });
 });
 
-describe("reviewFileName", () => {
-  it("is keyed on the diff fingerprint only (idempotent re-review)", () => {
+describe("reviewFileName is keyed on what the artifact attests (plan 49)", () => {
+  it("is idempotent for an identical attestation", () => {
     assert.equal(
       reviewFileName(artifact({ diffFingerprint: "fp1" })),
-      reviewFileName(artifact({ diffFingerprint: "fp1", signer: "someone-else" })),
+      reviewFileName(artifact({ diffFingerprint: "fp1" })),
     );
     assert.notEqual(
       reviewFileName(artifact({ diffFingerprint: "fp1" })),
       reviewFileName(artifact({ diffFingerprint: "fp2" })),
     );
   });
+
+  it("separates two genuine reviews of one change set", () => {
+    // The field's loss: a second review of the same diff silently overwrote the
+    // first. Each of these differs from the base artifact in exactly one attested
+    // way, and each must land in its own file.
+    const base = artifact({ diffFingerprint: "fp1" });
+    const differing = [
+      artifact({ diffFingerprint: "fp1", signer: "someone-else" }),
+      artifact({ diffFingerprint: "fp1", invariantsChecked: ["a different invariant"] }),
+      artifact({
+        diffFingerprint: "fp1",
+        findings: [{ citation: "x.ts:1", detail: "d", status: "advisory", failingTest: null }],
+      }),
+    ];
+    for (const other of differing) {
+      assert.notEqual(reviewFileName(base), reviewFileName(other));
+    }
+    // And they are distinct from each other, not merely from the base.
+    const names = new Set([base, ...differing].map(reviewFileName));
+    assert.equal(names.size, differing.length + 1);
+  });
+
+  it("ignores `files`, which scopes the next bundle and attests nothing", () => {
+    assert.equal(
+      reviewFileName(artifact({ diffFingerprint: "fp1" })),
+      reviewFileName(artifact({ diffFingerprint: "fp1", files: [{ path: "a.ts", hash: "h" }] })),
+    );
+  });
 });
 
-describe("read/write + findCoveringReview", () => {
+describe("read/write + findCoveringReviews", () => {
   let tmp: string;
   beforeEach(async () => {
     tmp = await mkdtemp(join(tmpdir(), "codument-review-"));
@@ -186,15 +215,86 @@ describe("read/write + findCoveringReview", () => {
     const all = readReviews(tmp);
     assert.equal(all.length, 1);
     assert.deepEqual(all[0], a);
-    assert.deepEqual(findCoveringReview(tmp, "HEAD", ["a.ts"], resolve), a);
+    assert.deepEqual(findCoveringReviews(tmp, "HEAD", ["a.ts"], resolve), [a]);
     // a moved source finds no covering review (auto-invalidated)
     writeFileSync(join(tmp, "a.ts"), "source two");
-    assert.equal(findCoveringReview(tmp, "HEAD", ["a.ts"], resolve), null);
+    assert.deepEqual(findCoveringReviews(tmp, "HEAD", ["a.ts"], resolve), []);
   });
 
   it("returns empty / null when the reviews dir is absent", () => {
     assert.deepEqual(readReviews(tmp), []);
-    assert.equal(findCoveringReview(tmp, "HEAD", [], makeResolver(tmp)), null);
+    assert.deepEqual(findCoveringReviews(tmp, "HEAD", [], makeResolver(tmp)), []);
+  });
+
+  it("keeps two reviews of one change set, and returns both", () => {
+    // The field's loss, end to end: recording a second review used to overwrite the
+    // first, and what went with it was the invariants that review had enumerated.
+    writeFileSync(join(tmp, "a.ts"), "source one");
+    const resolve = makeResolver(tmp);
+    const shared: ReviewFinding[] = [
+      { citation: "a.ts:1", detail: "d", status: "advisory", failingTest: null },
+    ];
+    const fp = gatherReviewFingerprint(tmp, "HEAD", ["a.ts"], shared, resolve);
+    const first = artifact({ diffFingerprint: fp, findings: shared, signer: "alice" });
+    const second = artifact({
+      diffFingerprint: fp,
+      findings: shared,
+      signer: "bob",
+      invariantsChecked: ["something else entirely"],
+    });
+    assert.notEqual(writeReview(tmp, first), writeReview(tmp, second));
+    assert.equal(readReviews(tmp).length, 2, "neither review destroyed the other");
+
+    const covering = findCoveringReviews(tmp, "HEAD", ["a.ts"], resolve);
+    assert.equal(covering.length, 2, "both cover this diff, so both are enforced");
+    assert.deepEqual(
+      covering.map((r) => r.signer).sort(),
+      ["alice", "bob"],
+      "neither signer's review is the one that lost a toss",
+    );
+  });
+});
+
+describe("mergeCoveringFindings (plan 49)", () => {
+  const finding = (partial: Partial<ReviewFinding> = {}): ReviewFinding => ({
+    citation: "a.ts:1",
+    detail: "the same claim",
+    status: "advisory",
+    failingTest: null,
+    ...partial,
+  });
+  const withFindings = (findings: ReviewFinding[]) => artifact({ findings });
+
+  it("folds a claim two reviewers raised identically into one", () => {
+    // Otherwise its test runs twice and the adjudicated/unjudged tallies count how
+    // many people looked rather than what they found.
+    const merged = mergeCoveringFindings([
+      withFindings([finding()]),
+      withFindings([finding()]),
+    ]);
+    assert.equal(merged.length, 1);
+  });
+
+  it("keeps claims that differ in any field, however slightly", () => {
+    const merged = mergeCoveringFindings([
+      withFindings([finding()]),
+      withFindings([finding({ detail: "a different reading of the same line" })]),
+      withFindings([finding({ failingTest: "a.test.ts", status: "confirmed" })]),
+      withFindings([finding({ citation: "a.ts:2" })]),
+    ]);
+    assert.equal(merged.length, 4, "a different claim is a different claim");
+  });
+
+  it("is empty for no reviews, and preserves each review's own order", () => {
+    assert.deepEqual(mergeCoveringFindings([]), []);
+    const merged = mergeCoveringFindings([
+      withFindings([finding({ citation: "a.ts:1" }), finding({ citation: "a.ts:2" })]),
+      withFindings([finding({ citation: "a.ts:3" })]),
+    ]);
+    assert.deepEqual(
+      merged.map((f) => f.citation),
+      ["a.ts:1", "a.ts:2", "a.ts:3"],
+    );
   });
 });
 
@@ -386,10 +486,10 @@ describe("reviewed files (scoping information, never coverage)", () => {
     const paths = ["a.ts", "b.ts"];
     const fp = gatherReviewFingerprint(tmp, "HEAD", paths, [], resolve);
     writeReview(tmp, artifact({ diffFingerprint: fp, files: gatherReviewedFiles(tmp, paths) }));
-    assert.ok(findCoveringReview(tmp, "HEAD", paths, resolve));
+    assert.equal(findCoveringReviews(tmp, "HEAD", paths, resolve).length, 1);
     // Editing ONE recorded file voids the whole artifact — the per-file hashes are
     // scoping information and must never let the untouched file stay covered.
     writeFileSync(join(tmp, "a.ts"), "fixed");
-    assert.equal(findCoveringReview(tmp, "HEAD", paths, resolve), null);
+    assert.deepEqual(findCoveringReviews(tmp, "HEAD", paths, resolve), []);
   });
 });

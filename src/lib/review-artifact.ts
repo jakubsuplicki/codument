@@ -291,13 +291,35 @@ export function reviewCoversDiff(
   return artifact.diffFingerprint === currentDiffFingerprint;
 }
 
-// A deterministic filename keyed on the diff fingerprint (no clock / no
-// randomness), so re-reviewing the same diff is idempotent and overwrites in place.
+// A deterministic filename keyed on WHAT THE ARTIFACT ATTESTS (no clock / no
+// randomness), so re-recording an identical review is still idempotent and
+// overwrites in place, while two genuinely different attestations of one change set
+// are two files.
+//
+// Keyed on the diff alone, the name was a claim the artifact never made. The
+// fingerprint says which change set was reviewed; it says nothing about who
+// reviewed it, what they enumerated as checked, or what they found — so a second
+// review of the same diff silently overwrote the first, and in the field that
+// destroyed a record whose loss was ten CHECKED INVARIANTS, not ten findings.
+// Keying on findings alone would not have saved it either: a finding's named test
+// is already folded into the fingerprint, so what collides is precisely the part
+// that was not — the invariants and the signer.
+//
+// `files` is deliberately excluded: it is scoping information for the next
+// bundle, not part of the attestation, and including it would split one review
+// into two files whenever the change set moved beneath an unchanged verdict.
 export function reviewFileName(artifact: ReviewArtifact): string {
-  const h = createHash("sha256")
-    .update(artifact.diffFingerprint, "utf8")
-    .digest("hex")
-    .slice(0, 16);
+  // JSON of an ordered array: no key-order ambiguity, and its escaping makes the
+  // serialization unambiguous even when a detail contains the separators a
+  // hand-rolled scheme would need.
+  const attested = JSON.stringify([
+    artifact.base,
+    artifact.diffFingerprint,
+    artifact.signer,
+    artifact.invariantsChecked,
+    artifact.findings.map((f) => [f.citation, f.detail, f.failingTest, f.status]),
+  ]);
+  const h = createHash("sha256").update(attested, "utf8").digest("hex").slice(0, 16);
   return `${h}.json`;
 }
 
@@ -395,22 +417,49 @@ export function findLatestReviewForBase(root: string, base: string): ReviewArtif
   return matching[0].artifact;
 }
 
-// The review (if any) whose binding covers the current diff. Recomputed PER review
-// because each review's binding folds in the tests ITS findings name
-// (`gatherReviewFingerprint`): a stored review covers iff the reviewed sources AND
-// the tests it relied on are all unchanged since it was recorded. The gate (step 4)
-// uses this: a covering review with all blocking findings resolved clears the gate;
-// none means the diff is unreviewed (or its review auto-invalidated).
-export function findCoveringReview(
+// EVERY review whose binding covers the current diff, in `readReviews` order.
+// Recomputed PER review because each review's binding folds in the tests ITS
+// findings name (`gatherReviewFingerprint`): a stored review covers iff the
+// reviewed sources AND the tests it relied on are all unchanged since it was
+// recorded. The gate uses this: covering reviews with every blocking finding
+// resolved clear it; none means the diff is unreviewed (or its review
+// auto-invalidated).
+//
+// All of them, not the first one found. Once two attestations of one change set can
+// coexist, picking one is picking a verdict — and the arbitrary pick is the lenient
+// direction, since a finding raised by the review that lost the toss would go
+// unenforced. Every covering artifact is a genuine review of exactly this diff, so
+// every one of their findings is owed a run.
+export function findCoveringReviews(
   root: string,
   base: string,
   changeSetPaths: string[],
   resolveTest: (ref: string) => string | null,
-): ReviewArtifact | null {
-  for (const r of readReviews(root)) {
-    if (r.diffFingerprint === gatherReviewFingerprint(root, base, changeSetPaths, r.findings, resolveTest)) {
-      return r;
+): ReviewArtifact[] {
+  return readReviews(root).filter(
+    (r) =>
+      r.diffFingerprint ===
+      gatherReviewFingerprint(root, base, changeSetPaths, r.findings, resolveTest),
+  );
+}
+
+/** The findings of every covering review, with the literally-identical ones folded
+ *  together. Two reviewers raising the same claim about the same place with the same
+ *  test is one claim, and counting it twice would run its test twice and make the
+ *  adjudicated/unjudged tallies depend on how many people looked rather than on what
+ *  they found. Anything that differs in any field is a different claim and survives. */
+export function mergeCoveringFindings(
+  reviews: readonly ReviewArtifact[],
+): ReviewFinding[] {
+  const seen = new Set<string>();
+  const merged: ReviewFinding[] = [];
+  for (const r of reviews) {
+    for (const f of r.findings) {
+      const key = JSON.stringify([f.citation, f.detail, f.failingTest, f.status]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(f);
     }
   }
-  return null;
+  return merged;
 }

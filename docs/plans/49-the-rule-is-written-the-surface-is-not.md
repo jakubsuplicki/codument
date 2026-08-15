@@ -147,7 +147,7 @@ answers, the objection that narrowed it is named.
   resolution and label it wrote, marked as self-reported — not a codument verdict over an agent's
   claim about its own work. *(Contested: a bare green tick over a self-reported fix is a fourth
   success message of the kind this plan exists to remove.)*
-- [ ] **Step 4 — no attestation is ever silently destroyed.** Key the artifact on what it attests —
+- [x] **Step 4 — no attestation is ever silently destroyed.** Key the artifact on what it attests —
   `invariantsChecked` and signer included, not the diff alone. Named tests are already folded into
   the fingerprint, so keying on findings alone would still have destroyed the field's own record:
   what it lost was ten checked invariants, not ten findings. Two genuine reviews of one change set

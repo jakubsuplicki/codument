@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { realpathSync, rmSync } from "node:fs";
+import { readdirSync, realpathSync, rmSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -3675,5 +3675,73 @@ describe("the line a pipe keeps is ranked and bounded (plan 49)", () => {
     // confirm condition. Ranked first it is always named, so "+N more above" can
     // never point at the one thing that is not up there.
     assert.equal(VERDICT_RANKS[0], "confirm-unavailable");
+  });
+});
+
+describe("two reviews of one change set both stand, and both are enforced (plan 49)", () => {
+  // The field's loss: a second `--record` over the same diff replaced the first,
+  // and what went with it was the invariants that review had enumerated — not its
+  // findings, which the fingerprint already bound.
+  const run = (args: string[]): { status: number; out: string } => {
+    try {
+      return {
+        status: 0,
+        out: execFileSync("node", [CLI, ...args], { cwd: tmp, encoding: "utf-8" }),
+      };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { status: e.status ?? 0, out: e.stdout ?? "" };
+    }
+  };
+
+  it("keeps both attestations and blocks on a finding from either one", async () => {
+    await scaffold({ "src/auth/login.ts": "export const login = () => { return 7; };\n" });
+    // One red test, named by BOTH reviews. Two reviews cover one diff only when
+    // their findings name the same tests — the fingerprint folds the named tests
+    // in — so this is the shape in which the arbitrary pick was actually reachable.
+    await writeFile(
+      join(tmp, "red.test.mjs"),
+      'import test from "node:test";\nimport assert from "node:assert";\ntest("red", () => assert.equal(1, 2));\n',
+    );
+    const findings = (citation: string) => [
+      { citation, detail: `raised at ${citation}`, status: "confirmed", failingTest: "red.test.mjs" },
+    ];
+    await writeFile(
+      join(tmp, "alice.json"),
+      JSON.stringify({
+        invariantsChecked: ["login returns a constant"],
+        findings: findings("src/auth/login.ts:1"),
+        signer: "alice",
+      }),
+    );
+    await writeFile(
+      join(tmp, "bob.json"),
+      JSON.stringify({
+        invariantsChecked: ["login is not called before init"],
+        findings: findings("src/auth/login.ts:2"),
+        signer: "bob",
+      }),
+    );
+
+    const first = run(["review", "--record", "alice.json"]);
+    assert.equal(first.status, 0);
+    const second = run(["review", "--record", "bob.json"]);
+    assert.equal(second.status, 0);
+    assert.match(
+      second.out,
+      /2 reviews now cover this change set/,
+      `a reader expecting a replacement must be told: ${second.out}`,
+    );
+
+    const stored = readdirSync(join(tmp, ".codument", "reviews"));
+    assert.equal(stored.length, 2, "neither attestation was destroyed by the other");
+
+    const gate = run(["review", "--require-review", "--test-command", "node --test {file}"]);
+    assert.equal(gate.status, 1);
+    // Both, not whichever was found first — an arbitrary pick is a verdict, and it
+    // is the lenient one, since the loser's finding would go unenforced.
+    assert.match(gate.out, /src\/auth\/login\.ts:1/, `alice's finding: ${gate.out}`);
+    assert.match(gate.out, /src\/auth\/login\.ts:2/, `bob's finding: ${gate.out}`);
+    assert.match(gate.out, /2 confirmed finding\(s\) unresolved/);
   });
 });
