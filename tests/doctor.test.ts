@@ -1320,3 +1320,104 @@ describe("notes are grouped, and nothing is dropped (plan 49)", () => {
     }
   });
 });
+
+describe("dead acks are named where the loop looks, and swept where sweeping is asked for (plan 49)", () => {
+  let repo: string;
+  const run = (args: string[]) => {
+    try {
+      return {
+        status: 0,
+        out: execFileSync("node", [CLI, ...args], {
+          cwd: repo,
+          encoding: "utf-8",
+          env: { ...process.env, NO_COLOR: "1" },
+        }),
+      };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { status: e.status ?? 1, out: e.stdout ?? "" };
+    }
+  };
+  const writeSrc = async (body: string) => writeFile(join(repo, "src", "alpha.ts"), body);
+
+  beforeEach(async () => {
+    repo = await mkdtemp(join(tmpdir(), "codument-deadack-"));
+    await mkdir(join(repo, "docs", "features"), { recursive: true });
+    await mkdir(join(repo, "src"), { recursive: true });
+    await writeFile(
+      join(repo, "docs", ".registry.json"),
+      JSON.stringify({
+        features: {
+          alpha: {
+            doc: "docs/features/alpha.md",
+            type: "feature",
+            primary_sources: ["src/alpha.ts"],
+            related_sources: [],
+            docs: [],
+            depends_on: [],
+            risk: [],
+            status: "current",
+          },
+        },
+      }),
+    );
+    await writeFile(
+      join(repo, "docs", "features", "alpha.md"),
+      "# alpha\n\n## In plain terms\n\nIt keeps a promise about ordering.\n",
+    );
+    await writeSrc("export const one = 1;\nexport const two = 2;\n");
+    const git = (args: string[]) => execFileSync("git", args, { cwd: repo, stdio: "ignore" });
+    git(["init", "-q"]);
+    git(["add", "-A"]);
+    git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base"]);
+  });
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  });
+
+  const acked = async () => {
+    // Ack an additive move, then move the file again so the ack is auto-invalidated.
+    await writeSrc("export const one = 1;\nexport const two = 2;\nexport const three = 3;\n");
+    run(["ack", "src/alpha.ts", "--reason", "additive only"]);
+    await writeSrc("export const one = 1;\nexport const two = 9;\nexport const three = 3;\n");
+  };
+
+  it("names it as a NOTE, so the loop's most ordinary shape is never gated on it", async () => {
+    // A dead ack's subject file is by construction in the change set — that is why
+    // the ack died — so a warning would gate "edit a file you acked last step".
+    await acked();
+    const r = run(["doctor"]);
+    assert.match(r.out, /dead-ack/);
+    assert.match(r.out, /auto-invalidated/);
+    const strict = run(["doctor", "--strict"]);
+    assert.equal(strict.status, 0, "an info finding never moves the exit code");
+  });
+
+  it("leaves the record alone until sweeping is asked for", async () => {
+    // `review` and bare `doctor` are both tested for producing the same output twice
+    // on the same tree; a command that quietly deleted records would break that for
+    // every reader, not only the one who wanted the sweep.
+    await acked();
+    run(["doctor"]);
+    assert.match(run(["doctor"]).out, /dead-ack/, "bare doctor is pure — the ack is still there");
+    assert.equal(readdirSync(join(repo, ".codument", "acks")).length, 1);
+  });
+
+  it("--fix sweeps it, says so, and the note is gone next run", async () => {
+    await acked();
+    const fixed = run(["doctor", "--fix"]);
+    assert.match(fixed.out, /swept 1 auto-invalidated acknowledgment/);
+    assert.deepEqual(readdirSync(join(repo, ".codument", "acks")), []);
+    assert.doesNotMatch(run(["doctor"]).out, /dead-ack/);
+  });
+
+  it("never touches an ack that still covers", async () => {
+    // The sweep is judged by the same function the list is, so it can never remove
+    // something another surface calls covering.
+    await writeSrc("export const one = 1;\nexport const two = 2;\nexport const three = 3;\n");
+    run(["ack", "src/alpha.ts", "--reason", "additive only"]);
+    assert.doesNotMatch(run(["doctor"]).out, /dead-ack/, "a covering ack is not a note");
+    run(["doctor", "--fix"]);
+    assert.equal(readdirSync(join(repo, ".codument", "acks")).length, 1, "and not swept");
+  });
+});

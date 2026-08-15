@@ -1513,6 +1513,11 @@ export const FINDING_ORDER = [
   "path-enumeration",
   "fenced-mirror",
   "unsourced-decision",
+  // Not produced by the analyzer: `doctor` contributes it from the recorded acks,
+  // which are a control-plane fact rather than a repo-shape one. It is in this list
+  // because the id type and the render order are one thing, and a finding the
+  // ordering does not know sorts to the front of every surface by accident.
+  "dead-ack",
 ] as const;
 
 function sortFindings(findings: LintFinding[]): LintFinding[] {

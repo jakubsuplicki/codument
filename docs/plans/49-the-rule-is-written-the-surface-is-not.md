@@ -188,7 +188,7 @@ answers, the objection that narrowed it is named.
   ("both are pinned by X.test.tsx") stays uncaught, because loosening the grammar to any sentence
   naming a test file turns a citation into a lexical guess. *(Contested three ways, all fatal to the
   first draft.)*
-- [ ] **Step 10 — dead acks are named where the loop looks, swept only where sweeping is asked for.**
+- [x] **Step 10 — dead acks are named where the loop looks, swept only where sweeping is asked for.**
   An **info**-severity finding, never an exit-code input — a dead ack's subject file is by
   construction in the change set, so a warn would gate the loop's most ordinary shape on inherited
   state. The sweep rides `doctor --fix`, already the explicitly-invoked mutating surface, so `review`

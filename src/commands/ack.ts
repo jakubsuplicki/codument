@@ -839,16 +839,37 @@ function listAcksJson(root: string): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
-// Sweep every ack the working tree has already moved past. Validity is recomputed
-// here exactly as `--list` recomputes it — one function, so the command can never
-// remove something the list called covering. It is deliberately narrow: an
-// INDETERMINATE ack is not dead, it is unreadable (the file does not parse), and
-// deleting it would destroy a judgment on the strength of a parse error the user
-// still has to fix. Removals ride the same audit path a manual `--remove` does, so
-// a swept ack is as traceable as a hand-removed one.
+/** Every recorded ack the working tree has already moved past. Validity is
+ *  recomputed exactly as `--list` recomputes it — one function, so no surface can
+ *  call dead what another calls covering. Deliberately narrow: an INDETERMINATE ack
+ *  is not dead, it is unreadable (the file does not parse), and treating it as dead
+ *  would discard a judgment on the strength of a parse error the user still has to
+ *  fix. Exported so `doctor` can NAME the pile where the loop actually looks
+ *  without owning a second definition of what "dead" means. */
+export function deadAcks(root: string): Acknowledgment[] {
+  return readAcks(root).filter((a) => ackValidity(root, a) === "invalidated");
+}
+
+/** Remove every dead ack, returning what went. Silent: the caller words the report,
+ *  because `ack --prune` and `doctor --fix` speak to readers who arrived for
+ *  different reasons. Removals ride the same audit path a manual `--remove` does,
+ *  so a swept ack is exactly as traceable as a hand-removed one. */
+export function sweepDeadAcks(root: string): Array<{ handle: string; anchorId: string }> {
+  const removed: Array<{ handle: string; anchorId: string }> = [];
+  for (const a of deadAcks(root)) {
+    const handle = handleOf(a);
+    rmSync(join(root, ACKS_DIR, `${handle}.json`), { force: true });
+    emitAckRemove(root, handle, a.anchorId);
+    removed.push({ handle, anchorId: a.anchorId });
+  }
+  return removed;
+}
+
+// Sweep every ack the working tree has already moved past — see `deadAcks` for what
+// counts and why the narrowness is deliberate.
 function pruneAcks(root: string): void {
   const acks = readAcks(root);
-  const dead = acks.filter((a) => ackValidity(root, a) === "invalidated");
+  const dead = deadAcks(root);
   if (dead.length === 0) {
     console.log(
       pc.dim(
@@ -859,11 +880,8 @@ function pruneAcks(root: string): void {
     );
     return;
   }
-  for (const a of dead) {
-    const handle = handleOf(a);
-    rmSync(join(root, ACKS_DIR, `${handle}.json`), { force: true });
-    emitAckRemove(root, handle, a.anchorId);
-    console.log(`  ${pc.dim("removed")} ${pc.bold(handle)}  ${a.anchorId}`);
+  for (const r of sweepDeadAcks(root)) {
+    console.log(`  ${pc.dim("removed")} ${pc.bold(r.handle)}  ${r.anchorId}`);
   }
   // The count that remains is stated because the point of the sweep is the pile,
   // not the individual ack: "52 removed, 290 still standing" is the shape a reader

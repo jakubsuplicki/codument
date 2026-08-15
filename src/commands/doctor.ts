@@ -11,6 +11,7 @@ import {
   isGitRepo,
   resolveWorkspace,
 } from "../lib/git.js";
+import { deadAcks, sweepDeadAcks } from "./ack.js";
 import { GateError } from "../lib/two-ref.js";
 import { versionSkewNotice } from "../lib/version.js";
 import { normalizeRelPath, readRegistrySync } from "../lib/registry.js";
@@ -170,6 +171,34 @@ function missingRegistryFinding(): LintFinding {
  * analysis still runs (everything is unmapped) and a missing-registry warning
  * is prepended rather than failing the run.
  */
+/**
+ * The acks auto-invalidation has left behind, as awareness-only notes.
+ *
+ * Auto-invalidation is the trust model working, and the pile it leaves was visible
+ * only from `ack --list` — a command the delivery loop never runs. A field session
+ * ended with 44 of 80 acknowledgments dead and nothing in the loop that would ever
+ * say so, which is how a control plane fills with records that look like judgments
+ * and adjudicate nothing.
+ *
+ * **Info, never a warning**, and the reason is specific rather than squeamish: a
+ * dead ack's subject file is by construction in the change set — that is WHY the ack
+ * died — so a warn would gate the loop's most ordinary shape (edit a file you acked
+ * last step) on inherited state. That is the failure `--strict` was already taught
+ * to avoid, and re-introducing it through the notes channel would be the same defect
+ * wearing a different id.
+ *
+ * The message leads with its subject so the notes channel groups them: one sentence
+ * for the pile, every handle named beneath it.
+ */
+function deadAckNotes(root: string): LintFinding[] {
+  return deadAcks(root).map((a) => ({
+    id: "dead-ack",
+    severity: "info" as const,
+    file: a.anchorId,
+    message: `${a.anchorId}: acknowledgment auto-invalidated — the anchor moved past what it vouched for, so it clears nothing; \`codument doctor --fix\` sweeps them (or \`codument ack --prune\`)`,
+  }));
+}
+
 export function buildReport(
   root: string,
   opts: ReportOptions = {},
@@ -193,8 +222,8 @@ export function buildReport(
     highFanoutThreshold: opts.highFanoutThreshold,
   });
   const all = registryExists
-    ? result.lint
-    : [missingRegistryFinding(), ...result.lint];
+    ? [...result.lint, ...deadAckNotes(root)]
+    : [missingRegistryFinding(), ...result.lint, ...deadAckNotes(root)];
 
   // Split actionable warnings from awareness-only notes: "clean" is defined over
   // warnings, so an info finding can never keep the registry from going green.
@@ -305,6 +334,8 @@ interface FixOutcome {
   removed: Array<{ feature: string; source: string; id: string }>;
   /** Findings it deliberately left, grouped by lint id with a count. */
   left: Array<{ id: string; count: number }>;
+  /** Acknowledgments auto-invalidation had already killed, swept here. */
+  sweptAcks: Array<{ handle: string; anchorId: string }>;
 }
 
 /**
@@ -327,6 +358,11 @@ function applyFix(root: string, findings: LintFinding[]): FixOutcome {
     left: [...left.entries()]
       .map(([id, count]) => ({ id, count }))
       .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+    // The sweep rides the surface a user already invoked to change files. `review`
+    // and bare `doctor` stay pure — both are tested for producing the same output
+    // twice on the same tree, and a command that quietly deleted records would
+    // break that contract for every reader, not only the one who wanted the sweep.
+    sweptAcks: sweepDeadAcks(root),
   };
   if (fixable.length === 0) return outcome;
 
@@ -354,7 +390,13 @@ function printFix(outcome: FixOutcome): void {
   console.log(pc.bold("codument doctor --fix"));
   console.log();
   if (outcome.removed.length === 0) {
-    console.log(pc.dim("  Nothing mechanical to clear."));
+    console.log(
+      pc.dim(
+        outcome.sweptAcks.length > 0
+          ? "  No registry pointer to clear."
+          : "  Nothing mechanical to clear.",
+      ),
+    );
   } else {
     console.log(`  ${pc.green("✓")} dropped ${outcome.removed.length} false registry pointer(s):`);
     for (const r of outcome.removed) {
@@ -363,6 +405,15 @@ function printFix(outcome: FixOutcome): void {
   }
   // What it did NOT do, always, and with the count. A fix that clears part of a pile
   // and says nothing about the rest reads as having cleared the pile.
+  if (outcome.sweptAcks.length > 0) {
+    console.log();
+    console.log(
+      `  ${pc.green("✓")} swept ${outcome.sweptAcks.length} auto-invalidated acknowledgment(s):`,
+    );
+    for (const a of outcome.sweptAcks) {
+      console.log(`      ${pc.dim(a.handle)} ${a.anchorId}`);
+    }
+  }
   if (outcome.left.length > 0) {
     const total = outcome.left.reduce((n, l) => n + l.count, 0);
     console.log();
