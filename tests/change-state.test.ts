@@ -1360,3 +1360,70 @@ describe("the change buckets partition the change set (plan 44)", () => {
     assert.deepStrictEqual(s.excludedChanged, [], "the common case stays silent");
   });
 });
+
+describe("a new file the source spec cannot see, beside an entry's own sources (plan 49)", () => {
+  const reg = (primary: string[]): Registry => ({
+    features: {
+      design: {
+        doc: "docs/features/design.md",
+        type: "feature",
+        primary_sources: primary,
+        related_sources: [],
+        docs: [],
+        depends_on: [],
+        risk: [],
+        status: "current",
+      } as RegistryEntry,
+    },
+  });
+  const additions = (added: string[], primary = ["src/design/theme.ts"]) =>
+    computeChangeState({
+      registry: reg(primary),
+      changedFiles: added,
+      addedFiles: added,
+    }).specInvisibleAdditions;
+
+  it("names it, once per entry, with the doc that claims the directory", () => {
+    // Neither existing signal reaches this: the spec drops the extension before
+    // ownership is ever asked, so `unmapped` never sees it and governance never
+    // claims it. In the field that is how a directory an entry described filled up
+    // with files its doc had never heard of.
+    const out = additions(["src/design/mockup.html", "src/design/spec.pdf"]);
+    assert.equal(out.length, 1, "one line per entry, never one per file");
+    assert.equal(out[0].feature, "design");
+    assert.equal(out[0].doc, "docs/features/design.md");
+    assert.equal(out[0].directory, "src/design");
+    assert.deepEqual(out[0].files, ["src/design/mockup.html", "src/design/spec.pdf"]);
+  });
+
+  it("stays silent for a file the spec CAN see — that one is already unmapped", () => {
+    // A second finding over one file is two surfaces disagreeing about it.
+    assert.deepEqual(additions(["src/design/extra.ts"]), []);
+  });
+
+  it("stays silent where the entry already declares a covering pattern", () => {
+    // Asking again asks a project to re-declare what it declared.
+    assert.deepEqual(
+      additions(["src/design/mockup.html"], ["src/design/theme.ts", "src/design/*.html"]),
+      [],
+    );
+  });
+
+  it("stays silent for a file the entry names outright — that one is governed", () => {
+    assert.deepEqual(
+      additions(["src/design/mockup.html"], ["src/design/theme.ts", "src/design/mockup.html"]),
+      [],
+    );
+  });
+
+  it("stays silent for a MODIFIED file, and for a directory no entry's sources live in", () => {
+    // Firing on modification would put a line on every edit of every locale file
+    // forever, which is the wall this release exists to remove.
+    const modified = computeChangeState({
+      registry: reg(["src/design/theme.ts"]),
+      changedFiles: ["src/design/mockup.html"],
+    }).specInvisibleAdditions;
+    assert.deepEqual(modified, [], "changed is not added");
+    assert.deepEqual(additions(["elsewhere/mockup.html"]), [], "not beside anything an entry owns");
+  });
+});

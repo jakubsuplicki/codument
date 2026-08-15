@@ -36,6 +36,7 @@ import {
   getWorkingTreeChanges,
   getWorkingTreeDeletions,
   getWorkingTreeRenames,
+  listTrackedFiles,
   isGateableRoot,
   isGitRepo,
   movesOnly,
@@ -103,6 +104,7 @@ import {
   readBlobAtRef,
   refReachable,
   resolveBase,
+  worktreeAdditionsSince,
   worktreeChangesSince,
   worktreeDeletionsSince,
   worktreeRenamesSince,
@@ -363,6 +365,10 @@ export function buildReview(
      *  caller passes its own ref-ranged list, exactly as it does for changes and
      *  deletions. */
     renames?: RenamePair[];
+    /** Paths this change ADDED. Same caller contract as `renames`: the
+     *  working-tree view by default, the `--base` caller's ref-ranged list when
+     *  it has one. Only the spec-invisible addition signal reads it. */
+    addedFiles?: string[];
   } = {},
 ): ReviewReport {
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
@@ -389,6 +395,15 @@ export function buildReview(
   // and launder its whole contract as unchanged, and the pointer finding would
   // demand the registry stop naming a file that exists.
   const renames = movesOnly(opts.renames ?? getWorkingTreeRenames(root), new Set(changes));
+  // What this change ADDED, for the one signal that must tell a new file from an
+  // edited one. Derived rather than asked for a second time: a changed path that
+  // git does not track at the base did not exist there. The listing fails soft, and
+  // an undeterminable one yields no additions — the signal goes silent rather than
+  // guessing, which is the right direction for something reported and never gated.
+  const tracked = listTrackedFiles(root, ws);
+  const additions =
+    opts.addedFiles ??
+    (tracked.ok ? changes.filter((f) => !new Set(tracked.paths).has(f)) : []);
   const plan = detectApprovedPlanScope(root);
   // Per-symbol anchor diffs for the precise (TS) changed files, base ref vs the
   // working tree — this is what dissolves the shared-file cascade in the verdict.
@@ -497,6 +512,7 @@ export function buildReview(
     unevaluable,
     fileGrainAcked,
     deletedFiles: deletions,
+    addedFiles: additions,
     renames,
     unchangedMoves,
     // Deleted files resolve ownership against the registry AT THE BASE — the
@@ -709,6 +725,10 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       report = buildReview(root, changes, baseRef, worktreeDeletionsSince(root, options.base), {
         ...reviewOpts,
         renames: worktreeRenamesSince(root, options.base),
+        // The ref-ranged view of what is new, for the same reason this caller passes
+        // its own changes and deletions: "added" against HEAD answers a different
+        // question from "added since the branch diverged".
+        addedFiles: worktreeAdditionsSince(root, options.base),
       });
       effectiveBase = baseRef;
     } else {
@@ -1988,6 +2008,22 @@ function printHuman(report: ReviewReport): void {
         file: u.file,
         feature: u.owners.map((o) => o.feature).join(" or "),
       }).map((r) => `      ${routeLine(r, labelWidth("blind-unread-file"))}`),
+    ]),
+  );
+
+  // New files that landed where an entry's own sources live and that the source spec
+  // drops before ownership is ever asked — the one class neither `unmapped` nor
+  // governance can reach. One line per entry with its files beneath, because the fact
+  // is about the ENTRY: a doc claims to describe that directory and has never heard of
+  // what just arrived in it. Reported, never gated (ADR 020): proximity is an
+  // inference, and a block must be provable.
+  section(
+    pc.dim(
+      "New beside an entry's sources, invisible to the source spec (reported, not gated — name them in the entry, or declare a covering pattern)",
+    ),
+    state.specInvisibleAdditions.flatMap((a) => [
+      `${pc.dim("•")} ${a.feature} ${pc.dim(`— ${a.files.length} new file(s) in ${a.directory}/ → ${a.doc}`)}`,
+      ...a.files.map((f) => `      ${pc.dim(f)}`),
     ]),
   );
 

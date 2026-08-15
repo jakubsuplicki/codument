@@ -7,6 +7,7 @@ import {
   isSourcePattern,
   registeredPatterns,
   sourceMatcher,
+  sourceNames,
 } from "./registry.js";
 import {
   DEFAULT_EXCLUSION_SPEC,
@@ -104,6 +105,13 @@ export interface ChangeStateInput {
    *  (see `resolveDocPointers`) — the analyzer never reads a file. Absent → no doc
    *  pointer was looked for, which is byte-identical to a tree that removed nothing. */
   docPointers?: DocPointer[];
+  /** Paths this change ADDED (repo-relative, POSIX), as the caller's own git view
+   *  reports them — untracked-or-added against the working tree, status `A` against
+   *  a ref. Only `specInvisibleAdditions` reads it, and only to tell a new file from
+   *  an edited one: firing that signal on modification would put a line on every
+   *  edit of every locale file forever. Absent → nothing is treated as new, so the
+   *  signal is silent rather than wrong. */
+  addedFiles?: string[];
 }
 
 export interface FeatureGroup {
@@ -300,6 +308,49 @@ export interface ChangeState {
    *  removed. Wakes its owners with no ack fast-path, the same stance ADR 012
    *  takes for a deleted source: a removal owes doc attention. */
   governedDeleted: string[];
+  /** New files landing beside an entry's own sources that the source spec drops
+   *  entirely, one entry per line with a count (see `SpecInvisibleAddition`).
+   *  Reported, never gated. */
+  specInvisibleAdditions: SpecInvisibleAddition[];
+}
+
+/**
+ * A batch of new files that landed where an entry's own sources live and that the
+ * source spec cannot see at all.
+ *
+ * The gate has two ways to notice a new file, and this class falls through both.
+ * `unmapped` reaches a new file the spec DOES see but no entry claims; governance
+ * reaches a file an entry names. A new locale pack, mockup, or workflow beside the
+ * code an entry governs is neither: the spec drops the extension before ownership
+ * is ever asked, so nothing anywhere says it arrived. In the field that is how a
+ * directory an entry claimed to describe filled up with files its doc had never
+ * heard of.
+ *
+ * Deliberately narrow on three axes, because each is a way this signal could
+ * become the noise it is meant to prevent:
+ *
+ *   - **Only spec-EXCLUDED extensions.** A visible extension is already reachable
+ *     by `unmapped-source` one function away, and a second finding over the same
+ *     file is two surfaces disagreeing about one fact.
+ *   - **Only NEW files.** Firing on modification would put a line on every edit of
+ *     every locale file forever, which is the wall this release exists to remove.
+ *   - **Only where the entry declares no covering pattern.** An entry that already
+ *     names the tree with a glob has answered the question; asking again is asking
+ *     a project to re-declare what it declared.
+ *
+ * One line per entry with a count, never one per file, for the same reason the
+ * notes channel groups: the fact is about the entry, and repeating it per file is
+ * how a surface stops being read.
+ */
+export interface SpecInvisibleAddition {
+  /** The registry entry whose sources these landed beside. */
+  feature: string;
+  /** That entry's doc, so the reader knows what to go and update. */
+  doc: string;
+  /** The directory the new files share with the entry's own sources. */
+  directory: string;
+  /** Every new file in that directory the spec cannot see, sorted. */
+  files: string[];
 }
 
 export interface UngatedRegisteredChange {
@@ -850,6 +901,12 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     outOfPlan = changedSources.filter((f) => !scope.has(f));
   }
 
+  const specInvisibleAdditions = findSpecInvisibleAdditions(
+    input.addedFiles ?? [],
+    entries,
+    exclusion,
+  );
+
   return {
     changedSources,
     changedDocs,
@@ -873,7 +930,63 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
     docPointers: input.docPointers ?? [],
     governedRegistered: sortStrings(governedRegistered),
     governedDeleted: sortStrings(governedDeletedSet),
+    specInvisibleAdditions,
   };
+}
+
+/** The directory part of a repo-relative POSIX path, or "" at the root. */
+function dirOf(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i === -1 ? "" : path.slice(0, i);
+}
+
+/**
+ * New files the source spec drops entirely, grouped by the entry whose own sources
+ * share their directory. See `SpecInvisibleAddition` for why each bound is here.
+ *
+ * Pure, and in the analyzer rather than beside one command, so `review` and `watch`
+ * report the same thing — a signal that lived in only one of them would be a fact
+ * the loop sees or does not depending on which surface the reader happened to open.
+ */
+export function findSpecInvisibleAdditions(
+  addedFiles: readonly string[],
+  entries: ReadonlyArray<[string, RegistryEntry]>,
+  exclusion: ExclusionSpec,
+): SpecInvisibleAddition[] {
+  // Only what the spec cannot see. Anything it CAN see is either owned or already
+  // reachable as unmapped, and a second finding over one file is two surfaces
+  // disagreeing about it.
+  const invisible = addedFiles.filter((f) => !isSourceFile(f, exclusion));
+  if (invisible.length === 0) return [];
+
+  const out: SpecInvisibleAddition[] = [];
+  for (const [feature, entry] of entries) {
+    const literals = entry.primary_sources.filter((s) => !isSourcePattern(s));
+    if (literals.length === 0) continue;
+    const owned = new Set(literals.map(dirOf));
+    for (const dir of [...owned].sort()) {
+      const files = invisible
+        .filter((f) => dirOf(f) === dir)
+        // Anything the entry already names is not invisible: a literal path makes
+        // the file governed, and a glob means the project declared the tree, so
+        // asking again asks it to re-declare what it declared. `sourceNames` answers
+        // both — one matcher, so "does this entry name this path" cannot get two
+        // answers here and somewhere else.
+        .filter((f) => !entry.primary_sources.some((s) => sourceNames(s, f)));
+      if (files.length > 0) out.push({ feature, doc: entry.doc, directory: dir, files: sortStrings(files) });
+    }
+  }
+  return out.sort((a, b) =>
+    a.feature !== b.feature
+      ? a.feature < b.feature
+        ? -1
+        : 1
+      : a.directory < b.directory
+        ? -1
+        : a.directory > b.directory
+          ? 1
+          : 0,
+  );
 }
 
 /**

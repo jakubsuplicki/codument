@@ -3928,3 +3928,54 @@ describe("rewriting the oracle reopens the gate, without inflating the change (p
     }
   });
 });
+
+describe("a new file the source spec cannot see, beside an entry's sources (plan 49)", () => {
+  const run = (args: string[], cwd: string): { status: number; out: string } => {
+    try {
+      return { status: 0, out: execFileSync("node", [CLI, ...args], { cwd, encoding: "utf-8" }) };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { status: e.status ?? 0, out: e.stdout ?? "" };
+    }
+  };
+
+  it("names it and does not gate on it, while the two neighbouring signals keep their own files", async () => {
+    // Three files land in one change, and each must be reached by exactly one
+    // surface: the spec cannot see the mockup (this signal), it can see the .ts
+    // (unmapped), and the entry's own pattern already claims the locale file
+    // (governed). A file reported twice is two surfaces disagreeing about it.
+    await scaffold({
+      "src/auth/mockup.html": "<html></html>\n",
+      "src/auth/extra.ts": "export const extra = 1;\n",
+    });
+
+    const r = run(["review"], tmp);
+    assert.equal(r.status, 0, "reported, never gated — proximity is an inference, not proof");
+    assert.match(r.out, /invisible to the source spec/);
+    assert.match(r.out, /src\/auth\/mockup\.html/);
+    assert.match(r.out, /auth — 1 new file\(s\) in src\/auth\//);
+
+    // The visible one belongs to unmapped, and must not appear in this block too.
+    assert.match(r.out, /Unmapped changes/);
+    const block = r.out.slice(r.out.indexOf("invisible to the source spec"));
+    const upToNext = block.slice(0, block.indexOf("Unmapped changes"));
+    assert.doesNotMatch(upToNext, /extra\.ts/, "a visible extension is unmapped's file, not this one's");
+
+    // And --strict still exits on what it always did, never on this.
+    const strict = run(["review", "--strict"], tmp);
+    assert.equal(strict.status, 1, "the unmapped .ts gates, as before");
+    assert.doesNotMatch(strict.out, /BLOCKED[^\n]*invisible/);
+  });
+
+  it("says nothing when the file is merely edited rather than added", async () => {
+    await scaffold({ "src/auth/mockup.html": "<html></html>\n" });
+    execFileSync("git", ["add", "-A"], { cwd: tmp });
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "add"], {
+      cwd: tmp,
+    });
+    await scaffold({ "src/auth/mockup.html": "<html> </html>\n" });
+
+    const r = run(["review"], tmp);
+    assert.doesNotMatch(r.out, /invisible to the source spec/, "an edit is not an arrival");
+  });
+});

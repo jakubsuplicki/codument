@@ -172,7 +172,7 @@ answers, the objection that narrowed it is named.
   drives `realChangeCount`: the loop requires the owning doc to move in the same step, so folding
   docs there would make every loop-compliant edit two real changes and kill the trivial fast-path the
   proportionality invariant exists to preserve. *(Contested: one shared variable, two consumers.)*
-- [ ] **Step 8 — a new file the source spec cannot see, beside files an entry governs, is named.**
+- [x] **Step 8 — a new file the source spec cannot see, beside files an entry governs, is named.**
   Restricted to extensions the spec excludes — the only case `unmapped-source` cannot already reach,
   so the signal never duplicates a finding one function away. Emitted once per entry with a count,
   suppressed where the entry already declares a covering pattern, and living in `change-state.ts` so

@@ -359,6 +359,26 @@ export function worktreeDeletionsSince(root: string, base: string): string[] {
   return [...files].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
+/**
+ * Paths ADDED between the merge-base of (base, HEAD) and the working tree — the
+ * ref-ranged twin of the working-tree addition view. Only the spec-invisible
+ * addition signal reads it, and only to tell a new file from an edited one.
+ * Silent on an unavailable diff, the same advisory stance the change view takes.
+ */
+export function worktreeAdditionsSince(root: string, base: string): string[] {
+  const { sha } = resolveBase(root, base, "HEAD");
+  const files = new Set<string>();
+  try {
+    const out = git(root, ["diff", "--name-status", "-M", "-z", sha]);
+    for (const e of parseDiffNameStatusZ(out)) {
+      if (e.code.startsWith("A")) files.add(e.path);
+    }
+  } catch {
+    // no diff available
+  }
+  return [...files].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
 // Renames between the merge-base of (base, HEAD) and the working tree — the
 // ref-ranged twin of the working-tree rename view. `worktreeChangesSince` already
 // reports a rename's DESTINATION as a change; this reports the pair, so a caller
