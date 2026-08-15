@@ -802,21 +802,32 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       process.exitCode = 1;
       return;
     }
-    const r = (raw ?? {}) as { invariantsChecked?: unknown; findings?: unknown; signer?: unknown };
+    const r = (raw ?? {}) as {
+      invariantsChecked?: unknown;
+      findings?: unknown;
+      signer?: unknown;
+      bundleStamp?: unknown;
+    };
     // Validate the shape first (placeholder fingerprint), then compute the real
     // fingerprint from the VALIDATED findings, so a malformed review is rejected
     // before anything is written.
+    //
+    // The stamp is recorded either way, and its ABSENCE is recorded explicitly:
+    // "this review said nothing about what it was given" and "this artifact predates
+    // stamps" are different facts, and folding them together would let the first
+    // hide inside the second forever.
     const provisional = parseReviewArtifact({
       base: effectiveBase,
       diffFingerprint: "pending",
       invariantsChecked: r.invariantsChecked,
       findings: r.findings,
       signer: r.signer,
+      bundleStamp: r.bundleStamp ?? null,
     });
     if (!provisional) {
       console.log(
         pc.red(
-          "  ✗ invalid review: need a non-empty invariantsChecked, a signer, and well-formed findings (citation, detail, status).",
+          "  ✗ invalid review: need a non-empty invariantsChecked, a signer, well-formed findings (citation, detail, status), and — if given at all — a bundleStamp that is a string.",
         ),
       );
       process.exitCode = 1;
@@ -953,6 +964,9 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // step. Still non-blocking (the documented fail-open stance for unverifiable
   // claims) but rendered where the human decides — never a silent advisory.
   let confirmUnavailable: string | null = null;
+  // How many of the reviews clearing this gate never said what they were given to
+  // attack. Disclosure, never a refusal: see `ReviewArtifact.bundleStamp`.
+  let unstampedCovering = 0;
   if (options.requireReview) {
     // Flag > `testCommand` in .codument-meta.json > the built-in default. A project
     // declares its runner once instead of re-typing it on every gated run.
@@ -974,6 +988,9 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // set can now coexist, and picking one of them would pick a verdict — in the
     // lenient direction, since the loser's findings would go unenforced.
     const covering = findCoveringReviews(root, effectiveBase, realChangeSet, resolveTest);
+    // A missing key and an explicit null both mean the same thing to a reader: this
+    // artifact does not say what oracle it answered.
+    unstampedCovering = covering.filter((r) => !r.bundleStamp).length;
     // Re-derive each finding's status by RUNNING its named test — never trust a
     // status the artifact merely claims. A red test re-promotes to confirmed; a
     // toolchain failure (missing runner, resolution error) is unrunnable → advisory.
@@ -1236,7 +1253,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   }
 
   if (reviewGate) {
-    printReviewGate(reviewGate, confirmUnavailable, unreviewedCount);
+    printReviewGate(reviewGate, confirmUnavailable, unreviewedCount, unstampedCovering);
     if (reviewGateFail) process.exitCode = 1;
   }
 
@@ -1301,6 +1318,20 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // gate passing either: a run blocked on one finding while three others went
   // unjudged is still a run whose reader must know the three were never decided.
   if (confirmUnavailable) alsoTrue.push({ rank: "confirm-unavailable", text: confirmUnavailable });
+  // What cleared the gate, and on what grounds it will not say. Beside the condition
+  // above rather than below the ungated facts: both are about how far the verdict
+  // can be trusted, not about what the repo still owes.
+  // Keyed on `required` exactly as the block above the verdict is. A trivial diff
+  // needs no review, so an artifact lying around beside it clears nothing and is not
+  // worth a line — and if the two conditions disagreed, this one could ride the
+  // verdict line while nothing printed above it, which is the promise the counted
+  // remainder makes.
+  if (unstampedCovering > 0 && reviewGate?.required) {
+    alsoTrue.push({
+      rank: "unstamped-review",
+      text: `${unstampedCovering} covering review(s) recorded no bundle stamp — what they were given to attack is unrecorded`,
+    });
+  }
   const also = renderAlsoTrue(alsoTrue);
 
   const blocking = strictFail ? [...gateable] : [];
@@ -1372,6 +1403,7 @@ function computeRealChange(
 // promise the output above cannot keep.
 export const VERDICT_RANKS = [
   "confirm-unavailable",
+  "unstamped-review",
   "unread-owned",
   "body-only",
   "registry-rot",
@@ -1406,6 +1438,7 @@ function printReviewGate(
   gate: ReviewGateResult,
   confirmUnavailable: string | null = null,
   unreviewedCount: number | null = null,
+  unstampedCovering = 0,
 ): void {
   console.log();
   if (!gate.required) {
@@ -1417,6 +1450,17 @@ function printReviewGate(
     // named tests will read advisory not because they were adjudicated but
     // because nothing could run them.
     console.log(pc.yellow(`  ⚠ ${confirmUnavailable}`));
+  }
+  if (unstampedCovering > 0) {
+    // Printed here as well as on the verdict line, and that is load-bearing rather
+    // than duplication: the verdict line's counted remainder promises the reader
+    // that everything past the bound is above, and only the condition ranked first
+    // is allowed to be missing from up here.
+    console.log(
+      pc.dim(
+        `  ${unstampedCovering} covering review(s) recorded no bundle stamp — run \`codument review --bundle\` and carry its \`stamp\` into the findings JSON, so the record says what was attacked.`,
+      ),
+    );
   }
   if (gate.passed) {
     const advisory =

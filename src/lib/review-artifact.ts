@@ -62,6 +62,14 @@ export interface ReviewArtifact {
   findings: ReviewFinding[];
   /** Who attested. An identity; second-party independence is the spawn's job. */
   signer: string;
+  /** The `--bundle` stamp this review answers, or null when it recorded none.
+   *  Optional and NEVER required: refusing an unstamped review would dead-end the
+   *  first review of any diff — whose own printed route never mentions `--bundle` —
+   *  and would be trivially bypassed by anyone willing to omit the field, so the
+   *  guard would bind only the honest actor. It is disclosure: an artifact that
+   *  says what oracle it answered can be checked against one, and an artifact that
+   *  says nothing is reported as saying nothing. */
+  bundleStamp?: string | null;
   /** Per-file hashes of the change set at record time. SCOPING INFORMATION ONLY —
    *  the gate never reads it, so this cannot become a per-file coverage claim. Its
    *  one job is letting `--bundle` compute what moved since the last recording, so
@@ -149,14 +157,29 @@ export function parseReviewArtifact(value: unknown): ReviewArtifact | null {
     }
   }
 
+  // A stamp is optional, but a present one must be a real token: a non-string or a
+  // blank is corruption, and accepting it as "unstamped" would let a broken writer
+  // read as an honest one.
+  let bundleStamp: string | null | undefined;
+  if (v.bundleStamp !== undefined) {
+    if (v.bundleStamp === null) bundleStamp = null;
+    else {
+      bundleStamp = nonEmptyStr(v.bundleStamp);
+      if (!bundleStamp) return null;
+    }
+  }
+
   // Spread conditionally: an artifact without `files` must round-trip to an object
-  // without the key, so deep-equality against a legacy artifact still holds.
+  // without the key, so deep-equality against a legacy artifact still holds. Same
+  // for `bundleStamp` — an artifact written before stamps existed is not the same
+  // as one that explicitly recorded having none.
   return {
     base,
     diffFingerprint,
     invariantsChecked,
     findings,
     signer,
+    ...(bundleStamp !== undefined ? { bundleStamp } : {}),
     ...(files ? { files } : {}),
   };
 }
@@ -318,6 +341,9 @@ export function reviewFileName(artifact: ReviewArtifact): string {
     artifact.signer,
     artifact.invariantsChecked,
     artifact.findings.map((f) => [f.citation, f.detail, f.failingTest, f.status]),
+    // What it was grounded in is part of what it attests: two reviews of one change
+    // set that answered different oracles are two different claims about it.
+    artifact.bundleStamp ?? null,
   ]);
   const h = createHash("sha256").update(attested, "utf8").digest("hex").slice(0, 16);
   return `${h}.json`;

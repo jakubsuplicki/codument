@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Registry } from "./registry.js";
@@ -84,6 +85,14 @@ export interface ReviewBundle {
   outOfPlan: string[];
   /** The approved plan in force, when detectable. */
   plan: { path: string; scope: string[] } | null;
+  /** A digest of everything above — what this bundle handed over, as one token a
+   *  reviewer copies into its findings so the recorded attestation says what it was
+   *  grounded in. Without it an artifact records only a verdict: which invariants
+   *  the reviewer was shown, which tests it was pointed at, and which files it was
+   *  told to attack all went unrecorded, so a review of a stale or empty oracle is
+   *  indistinguishable from a thorough one. Derived from the bundle's own content,
+   *  so it is reproducible and no reviewer can mint one. */
+  stamp: string;
 }
 
 function sortStrings(values: Iterable<string>): string[] {
@@ -187,9 +196,9 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
     });
   }
 
-  return {
+  const body = {
     base,
-    scope: delta ? "delta" : "full",
+    scope: (delta ? "delta" : "full") as "full" | "delta",
     // Re-sorted here so the projection's determinism is self-guaranteed, not
     // merely inherited from computeChangeState's output ordering. The structured
     // facts below are passed through as the analyzer already ordered them.
@@ -207,6 +216,18 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
     outOfPlan: changeState.outOfPlan,
     plan,
   };
+  // Over the body, never over itself. JSON.stringify walks the literal above in
+  // declaration order, which is fixed here rather than inherited from any caller —
+  // so the same repo state stamps identically on every machine and every run, the
+  // same determinism every other digest in this system is held to.
+  return { ...body, stamp: bundleStamp(body) };
+}
+
+/** The digest of a bundle's content. Exported so the writer and any checker share
+ *  one definition — a second implementation of "what this bundle was" is how the
+ *  stamp would come to mean two things. */
+export function bundleStamp(body: Omit<ReviewBundle, "stamp">): string {
+  return createHash("sha256").update(JSON.stringify(body), "utf8").digest("hex").slice(0, 32);
 }
 
 // Impure wrapper: read each touched feature's doc off disk, then build the pure

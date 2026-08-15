@@ -153,7 +153,7 @@ answers, the objection that narrowed it is named.
   what it lost was ten checked invariants, not ten findings. Two genuine reviews of one change set
   become two files, and the gate enforces every matching artifact's findings rather than an
   arbitrary one.
-- [ ] **Step 5 — an attestation discloses what it was grounded in.** `--bundle` stamps what it handed
+- [x] **Step 5 — an attestation discloses what it was grounded in.** `--bundle` stamps what it handed
   over; `--record` records the stamp it answers, or records that there was none. An unstamped review
   is **disclosed, never refused** — on the line a pipe keeps. *(Contested, and this is the objection
   that changed the step most: refusing would dead-end the first review of any diff, whose own printed

@@ -493,3 +493,32 @@ describe("reviewed files (scoping information, never coverage)", () => {
     assert.deepEqual(findCoveringReviews(tmp, "HEAD", paths, resolve), []);
   });
 });
+
+describe("an artifact records the oracle it answered, or records that it had none (plan 49)", () => {
+  it("round-trips a stamp, and keeps 'said none' distinct from 'never said'", () => {
+    // Three different facts, and folding any two of them together lets the weakest
+    // hide inside a stronger one: a review that named its oracle, one that recorded
+    // explicitly that it had none, and an artifact written before stamps existed.
+    assert.equal(parseReviewArtifact({ ...artifact(), bundleStamp: "abc" })?.bundleStamp, "abc");
+    assert.equal(parseReviewArtifact({ ...artifact(), bundleStamp: null })?.bundleStamp, null);
+    const legacy = parseReviewArtifact(artifact());
+    assert.ok(legacy && !("bundleStamp" in legacy), "a pre-stamp artifact carries no key at all");
+  });
+
+  it("refuses a stamp that is present but not a token", () => {
+    // Corruption, not absence. Accepting it as "unstamped" would let a broken writer
+    // read as an honest one.
+    assert.equal(parseReviewArtifact({ ...artifact(), bundleStamp: 42 }), null);
+    assert.equal(parseReviewArtifact({ ...artifact(), bundleStamp: "   " }), null);
+  });
+
+  it("is part of what the artifact attests, so two oracles are two attestations", () => {
+    assert.notEqual(
+      reviewFileName(artifact({ bundleStamp: "one" })),
+      reviewFileName(artifact({ bundleStamp: "two" })),
+    );
+    // And an explicit "none" names the same file a legacy artifact would: both say
+    // nothing about an oracle, and neither claims to.
+    assert.equal(reviewFileName(artifact({ bundleStamp: null })), reviewFileName(artifact()));
+  });
+});

@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildReviewBundle,
+  bundleStamp,
   extractDocSection,
   extractTestPointers,
 } from "../src/lib/review-bundle.js";
@@ -355,5 +356,41 @@ describe("buildReviewBundle", () => {
     // Every touched feature keeps its invariants and test pointers — scoping the
     // oracle is how a narrow review becomes a shallow one.
     assert.deepEqual(bundle.features.map((f) => f.feature).sort(), ["a", "b"]);
+  });
+});
+
+describe("the bundle stamps what it handed over (plan 49)", () => {
+  const registry: Registry = {
+    features: { a: entry({ doc: "docs/features/a.md", risk: ["auth"] }) },
+  };
+  const docContents = new Map<string, string>([["docs/features/a.md", DOC_A]]);
+  const build = (changed: string[], docs = docContents) =>
+    buildReviewBundle({
+      base: "HEAD",
+      changeState: cs({ changedSources: changed, byFeature: [{ feature: "a", files: changed }] }),
+      registry,
+      docContents: docs,
+      plan: null,
+    });
+
+  it("stamps identically for identical content, on every run", () => {
+    assert.equal(build(["src/a.ts"]).stamp, build(["src/a.ts"]).stamp);
+  });
+
+  it("moves when what was handed over moves", () => {
+    // Both halves matter: the files the reviewer was told to attack, and the
+    // invariants it was shown. A stamp that only tracked the file list would let a
+    // review of an emptied oracle claim the same grounding as a review of a full one.
+    assert.notEqual(build(["src/a.ts"]).stamp, build(["src/a.ts", "src/b.ts"]).stamp);
+    const emptied = new Map<string, string>([["docs/features/a.md", "# A\n"]]);
+    assert.notEqual(build(["src/a.ts"]).stamp, build(["src/a.ts"], emptied).stamp);
+  });
+
+  it("is a digest of the bundle's own content, computed over the body it ships", () => {
+    // One definition, shared: a checker recomputing it must land on the same value,
+    // or a stamp means one thing to the writer and another to the reader.
+    const bundle = build(["src/a.ts"]);
+    const { stamp, ...body } = bundle;
+    assert.equal(stamp, bundleStamp(body));
   });
 });

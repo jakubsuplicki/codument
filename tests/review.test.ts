@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readdirSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -3743,5 +3743,66 @@ describe("two reviews of one change set both stand, and both are enforced (plan 
     assert.match(gate.out, /src\/auth\/login\.ts:1/, `alice's finding: ${gate.out}`);
     assert.match(gate.out, /src\/auth\/login\.ts:2/, `bob's finding: ${gate.out}`);
     assert.match(gate.out, /2 confirmed finding\(s\) unresolved/);
+  });
+});
+
+describe("an unstamped review is disclosed, never refused (plan 49)", () => {
+  const run = (args: string[]): { status: number; out: string } => {
+    try {
+      return {
+        status: 0,
+        out: execFileSync("node", [CLI, ...args], { cwd: tmp, encoding: "utf-8" }),
+      };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string };
+      return { status: e.status ?? 0, out: e.stdout ?? "" };
+    }
+  };
+  const record = async (extra: Record<string, unknown>) => {
+    await writeFile(
+      join(tmp, "findings.json"),
+      JSON.stringify({
+        invariantsChecked: ["login returns a constant"],
+        findings: [],
+        signer: "test",
+        ...extra,
+      }),
+    );
+    return run(["review", "--record", "findings.json"]);
+  };
+
+  it("clears the gate without a stamp, and says so on the line a pipe keeps", async () => {
+    // Refusing would dead-end the first review of any diff — the route the gate
+    // itself prints never mentions --bundle — and anyone willing to omit the field
+    // would walk past it, so the guard would bind only the honest actor.
+    await scaffold({ "src/auth/login.ts": "export const login = () => { return 11; };\n" });
+    assert.equal((await record({})).status, 0, "an unstamped review is recorded, not refused");
+
+    const gate = run(["review", "--require-review"]);
+    assert.equal(gate.status, 0, "and it still clears the gate");
+    const last = gate.out.trimEnd().split("\n").at(-1) ?? "";
+    assert.match(last, /recorded no bundle stamp/, `last line was: ${last}`);
+    // …and above it too, with the route that fixes it — the verdict line's counted
+    // remainder promises everything past the bound is up there.
+    assert.match(gate.out, /codument review --bundle/);
+  });
+
+  it("says nothing once the review records the stamp the bundle handed it", async () => {
+    await scaffold({ "src/auth/login.ts": "export const login = () => { return 12; };\n" });
+    const bundle = JSON.parse(run(["review", "--bundle"]).out);
+    assert.ok(typeof bundle.stamp === "string" && bundle.stamp.length > 0, "the bundle stamps");
+    assert.equal((await record({ bundleStamp: bundle.stamp })).status, 0);
+
+    const gate = run(["review", "--require-review"]);
+    assert.equal(gate.status, 0);
+    assert.doesNotMatch(gate.out, /recorded no bundle stamp/);
+  });
+
+  it("refuses a stamp that is present but malformed, and writes nothing", async () => {
+    await scaffold({ "src/auth/login.ts": "export const login = () => { return 13; };\n" });
+    const r = await record({ bundleStamp: 42 });
+    assert.equal(r.status, 1);
+    assert.match(r.out, /bundleStamp/);
+    assert.equal(existsSync(join(tmp, ".codument", "reviews")), false, "nothing was written");
   });
 });
