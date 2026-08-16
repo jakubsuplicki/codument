@@ -5,7 +5,7 @@ All notable changes to Codument are recorded here. The format follows
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while it
 remains pre-1.0.
 
-## [Unreleased]
+## [0.19.0] - 2026-08-16
 
 The rule is written; the surface is not — plan 49, ADR 021.
 
