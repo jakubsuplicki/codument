@@ -4,6 +4,10 @@ title: Project overview
 
 # Project overview
 
+Codument is a serious, maintained developer tool intended to ship and evolve without sacrificing
+deterministic local behavior. Its stack is a Git-native Node.js ESM CLI in TypeScript, distributed
+through npm and verified in GitHub Actions, with repository files and Git history as its state.
+
 ## What this project is
 
 Codument is a git-native change-control layer for AI-assisted engineering, shipped as an npm package. One source of truth — the source-to-doc registry (`docs/.registry.json`) — feeds three parts:

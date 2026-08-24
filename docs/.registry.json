@@ -79,6 +79,7 @@
         "src/lib/codemod.ts"
       ],
       "docs": [
+        "docs/charter.md",
         "skills/establish-charter/SKILL.md",
         "templates/charter.md"
       ],
@@ -430,6 +431,7 @@
         "src/lib/jvm-adapter.ts",
         "src/lib/ownership.ts",
         "src/lib/py-adapter.ts",
+        "src/lib/remedies.ts",
         "src/lib/report-html.ts",
         "src/lib/rust-adapter.ts",
         "src/lib/sarif.ts",
@@ -439,8 +441,7 @@
         "src/lib/ts-canonicalize.ts",
         "src/lib/two-ref.ts",
         "tests/adapter-conformance.ts",
-        "tests/surface-conformance.ts",
-        "src/lib/remedies.ts"
+        "tests/surface-conformance.ts"
       ],
       "related_sources": [],
       "docs": [
@@ -463,6 +464,42 @@
         "data-loss"
       ],
       "status": "current"
+    },
+    "step-verification": {
+      "doc": "docs/features/step-verification.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/lib/change-set.ts"
+      ],
+      "related_sources": [
+        "src/cli.ts",
+        "src/commands/ack.ts",
+        "src/commands/review.ts",
+        "src/lib/change-state.ts",
+        "src/lib/git-hooks.ts",
+        "src/lib/git.ts",
+        "src/lib/remedies.ts",
+        "src/lib/review-artifact.ts",
+        "src/lib/review-bundle.ts",
+        "src/lib/review-gate.ts"
+      ],
+      "docs": [
+        "docs/architecture/decisions/022-the-local-delivery-boundary-is-the-git-index.md",
+        "skills/commit-work/SKILL.md",
+        "skills/review-work/SKILL.md",
+        "skills/work-step/SKILL.md"
+      ],
+      "depends_on": [
+        "adversarial-review-gate",
+        "agent-delivery-workflow",
+        "change-control-gate",
+        "cli",
+        "hooks",
+        "lib",
+        "plan-step-mirroring"
+      ],
+      "risk": [],
+      "status": "draft"
     },
     "history-audit": {
       "doc": "docs/features/history-audit.md",

@@ -168,6 +168,15 @@ export interface RenamePair {
   to: string;
 }
 
+/** One entry in the snapshot currently held by a repository's Git index. */
+export interface IndexChange {
+  path: string;
+  status: "added" | "modified" | "deleted" | "renamed";
+  oldPath?: string;
+  /** Git's blob object id for the indexed content. Absent for deletions. */
+  contentOid?: string;
+}
+
 // A COPY is not a move. Git reports `C` alongside `R` when copy detection is on
 // (`status.renames copies`), and both carry an origin path — but a copy's origin
 // is still right there, so treating one as a rename says a present file was
@@ -415,6 +424,94 @@ function getWorkingTreeRenamesIn(root: string): RenamePair[] {
     if (isRenameEntry(e) && e.origin) pairs.push({ from: e.origin, to: e.path });
   }
   return sortRenames(pairs);
+}
+
+function parseDiffNameStatusZ(out: string): Array<{
+  code: string;
+  path: string;
+  oldPath?: string;
+}> {
+  const tokens = out.split("\0");
+  const entries: Array<{ code: string; path: string; oldPath?: string }> = [];
+  let i = 0;
+  while (i < tokens.length) {
+    const code = tokens[i];
+    if (!code) {
+      i++;
+      continue;
+    }
+    if (code.startsWith("R") || code.startsWith("C")) {
+      entries.push({ code, oldPath: tokens[i + 1], path: tokens[i + 2] });
+      i += 3;
+    } else {
+      entries.push({ code, path: tokens[i + 1] });
+      i += 2;
+    }
+  }
+  return entries;
+}
+
+function indexBlobOids(root: string): Map<string, string> {
+  let out: string;
+  try {
+    out = git(root, ["ls-files", "--stage", "-z"]);
+  } catch (err) {
+    throw new GateError(`git ls-files --stage failed: ${(err as Error).message}`, "git-failed");
+  }
+  const oids = new Map<string, string>();
+  for (const record of out.split("\0")) {
+    if (!record) continue;
+    const tab = record.indexOf("\t");
+    if (tab < 0) continue;
+    const header = record.slice(0, tab).split(" ");
+    if (header[2] !== "0") continue;
+    oids.set(record.slice(tab + 1), header[1]);
+  }
+  return oids;
+}
+
+function getStagedChangesIn(root: string): IndexChange[] {
+  if (!isGitRepo(root)) return [];
+  let out: string;
+  try {
+    out = git(root, ["diff", "--cached", "--name-status", "-M", "-z"]);
+  } catch (err) {
+    throw new GateError(`git diff --cached failed: ${(err as Error).message}`, "git-failed");
+  }
+  const oids = indexBlobOids(root);
+  const changes: IndexChange[] = [];
+  for (const entry of parseDiffNameStatusZ(out)) {
+    if (entry.code.startsWith("R")) {
+      changes.push({
+        path: entry.path,
+        status: "renamed",
+        oldPath: entry.oldPath,
+        contentOid: oids.get(entry.path),
+      });
+    } else if (entry.code.startsWith("A")) {
+      changes.push({ path: entry.path, status: "added", contentOid: oids.get(entry.path) });
+    } else if (entry.code.startsWith("D")) {
+      changes.push({ path: entry.path, status: "deleted" });
+    } else {
+      changes.push({ path: entry.path, status: "modified", contentOid: oids.get(entry.path) });
+    }
+  }
+  return changes.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+function worktreeDiffersFromIndexIn(root: string, change: IndexChange): boolean {
+  if (change.status === "deleted") return existsSync(join(root, change.path));
+  try {
+    git(root, ["diff", "--quiet", "--", change.path]);
+    return false;
+  } catch (err) {
+    const status = (err as { status?: number }).status;
+    if (status === 1) return true;
+    throw new GateError(
+      `git diff --quiet -- ${change.path} failed: ${(err as Error).message}`,
+      "git-failed",
+    );
+  }
 }
 
 function sortRenames(pairs: RenamePair[]): RenamePair[] {
@@ -770,6 +867,73 @@ export function getWorkingTreeRenames(
     }
   }
   return sortRenames(pairs);
+}
+
+/**
+ * The complete staged snapshot across the workspace. Paths are workspace-relative
+ * and content object ids name the exact bytes Git will commit.
+ */
+export function getStagedChanges(
+  root: string,
+  workspace: Workspace = resolveWorkspace(root),
+): IndexChange[] {
+  const changes: IndexChange[] = [];
+  for (const member of workspace.members) {
+    for (const change of getStagedChangesIn(member.root)) {
+      changes.push({
+        ...change,
+        path: prefixed(member.prefix, change.path),
+        ...(change.oldPath ? { oldPath: prefixed(member.prefix, change.oldPath) } : {}),
+      });
+    }
+  }
+  return changes.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/** Selected staged paths whose filesystem bytes no longer equal the index. */
+export function getIndexWorktreeOverlaps(
+  root: string,
+  changes: readonly IndexChange[],
+  workspace: Workspace = resolveWorkspace(root),
+): string[] {
+  const overlaps: string[] = [];
+  for (const change of changes) {
+    const owner = repoFor(workspace, change.path);
+    if (!owner) {
+      throw new GateError(`no repository owns staged path ${change.path}`, "wrong-topology");
+    }
+    const local: IndexChange = {
+      ...change,
+      path: owner.relPath,
+      ...(change.oldPath
+        ? {
+            oldPath:
+              owner.member.prefix.length > 0
+                ? change.oldPath.slice(owner.member.prefix.length + 1)
+                : change.oldPath,
+          }
+        : {}),
+    };
+    if (worktreeDiffersFromIndexIn(owner.member.root, local)) overlaps.push(change.path);
+  }
+  return sortPaths(overlaps);
+}
+
+/** Git's blob object id for a path at a ref, routed through workspace members. */
+export function getBlobOidAtRef(
+  root: string,
+  ref: string,
+  path: string,
+  workspace: Workspace = resolveWorkspace(root),
+): string | null {
+  const owner = repoFor(workspace, path);
+  if (!owner) return null;
+  try {
+    const oid = git(owner.member.root, ["rev-parse", "--verify", `${ref}:${owner.relPath}`]).trim();
+    return oid.length > 0 ? oid : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
