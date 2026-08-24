@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  type ChangeSet,
+  type ChangeSetBinding,
+  changeSetBinding,
+} from "./change-set.js";
 import type { Registry } from "./registry.js";
 import type { ReviewFinding } from "./review-artifact.js";
 import type {
@@ -85,6 +90,8 @@ export interface ReviewBundle {
   outOfPlan: string[];
   /** The approved plan in force, when detectable. */
   plan: { path: string; scope: string[] } | null;
+  /** Exact focused projection handed to the reviewer. Omitted from legacy bundles. */
+  boundary?: ChangeSetBinding;
   /** A digest of everything above — what this bundle handed over, as one token a
    *  reviewer copies into its findings so the recorded attestation says what it was
    *  grounded in. Without it an artifact records only a verdict: which invariants
@@ -191,6 +198,7 @@ export interface ReviewBundleInput {
    *  computes it from the last recorded review's per-file hashes; absent or null
    *  means full scope and a byte-identical bundle to the pre-delta behavior. */
   delta?: ReviewBundleDelta | null;
+  boundary?: ChangeSetBinding;
 }
 
 export interface ReviewBundleDelta {
@@ -205,7 +213,7 @@ export interface ReviewBundleDelta {
 // Pure, deterministic projection of a change-state into the reviewer's contract
 // bundle. No I/O, no clock — same inputs, same bundle.
 export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
-  const { base, changeState, registry, docContents, plan, delta } = input;
+  const { base, changeState, registry, docContents, plan, delta, boundary } = input;
 
   const features: ReviewBundleFeature[] = [];
   for (const group of changeState.byFeature) {
@@ -244,6 +252,7 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
     dependents: changeState.dependentsSummary,
     outOfPlan: changeState.outOfPlan,
     plan,
+    ...(boundary ? { boundary } : {}),
   };
   // Over the body, never over itself. JSON.stringify walks the literal above in
   // declaration order, which is fixed here rather than inherited from any caller —
@@ -299,17 +308,24 @@ export function gatherReviewBundle(
   registry: Registry,
   plan: ApprovedPlan | null,
   delta?: ReviewBundleDelta | null,
+  boundary?: ChangeSet,
+  readText?: (path: string) => string | null,
 ): ReviewBundle {
   const docContents = new Map<string, string>();
   for (const group of changeState.byFeature) {
     const entry = registry.features[group.feature];
     if (!entry) continue;
-    const docPath = join(root, entry.doc);
-    if (!existsSync(docPath)) continue;
-    try {
-      docContents.set(entry.doc, readFileSync(docPath, "utf8"));
-    } catch {
-      // unreadable doc → empty contract for that feature, never a throw
+    if (readText) {
+      const content = readText(entry.doc);
+      if (content !== null) docContents.set(entry.doc, content);
+    } else {
+      const docPath = join(root, entry.doc);
+      if (!existsSync(docPath)) continue;
+      try {
+        docContents.set(entry.doc, readFileSync(docPath, "utf8"));
+      } catch {
+        // unreadable doc → empty contract for that feature, never a throw
+      }
     }
   }
   return buildReviewBundle({
@@ -319,5 +335,6 @@ export function gatherReviewBundle(
     docContents,
     plan: plan ? { path: plan.plan, scope: plan.scope } : null,
     delta,
+    ...(boundary ? { boundary: changeSetBinding(boundary) } : {}),
   });
 }

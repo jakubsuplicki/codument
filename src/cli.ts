@@ -201,6 +201,15 @@ program
     "--base <ref>",
     "resolve the move against the merge-base with <ref> (match the ref `review --base` used)",
   )
+  .option("--staged", "resolve and bind the decision to the complete Git index snapshot")
+  .option(
+    "--paths <paths...>",
+    "resolve and bind the decision to an explicit staged-path projection",
+  )
+  .option(
+    "--boundary <fingerprint>",
+    "expected projection fingerprint copied from review; refuse if the staged boundary moved",
+  )
   .option(
     "--signer <id>",
     "attribution (defaults to the git author; an independent signer is what strict-mode independence checks)",

@@ -51,7 +51,12 @@ ownership.
   parity)*
 - Every boundary consumer receives the same base, paths, transitions, and fingerprint. An
   acknowledgment, review artifact, or verification receipt from another boundary never clears this
-  one. *(planned: `review-artifact.test.ts`, `ack.test.ts`, `verify.test.ts`)*
+  one. Printed acknowledgment remedies reproduce that boundary and refuse if it moves before the
+  decision is recorded. Review bundles disclose the compact projection identity they hand to the
+  reviewer, and artifacts persist the same binding. Unrelated diagnostic churn is deliberately not
+  part of either stamp. *(tests: `review-boundary.test.ts` focused remedy,
+  moved-boundary refusal, bundle, and artifact flow; `review-artifact.test.ts` exact-binding
+  round-trip and coverage; planned: `verify.test.ts` receipt parity)*
 - Staged tests affect evidence attribution, blast reporting, and review fingerprints while remaining
   excluded from documentation ownership and staleness. *(planned: `test-impact.test.ts` plus review
   integration fixtures)*
@@ -98,7 +103,7 @@ Status: approved 2026-08-24.
 
 - [x] **Step 1 — Change-set substrate.** Add the staged, range, and explicit-staged boundary model, index change enumeration, overlap refusal, deterministic fingerprint, and focused unit/CLI fixtures.
 - [x] **Step 2 — Change-control integration.** Thread the boundary through drift, ownership, deletions, renames, plan-scope reporting, and detailed review output while preserving the existing working-tree and CI range contracts.
-- [ ] **Step 3 — Boundary-bound decisions and attestations.** Make acknowledgments, review bundles, review artifacts, printed remedies, and their invalidation rules consume and reproduce the exact boundary context.
+- [x] **Step 3 — Boundary-bound decisions and attestations.** Make acknowledgments, review bundles, review artifacts, printed remedies, and their invalidation rules consume and reproduce the exact boundary context.
 - [ ] **Step 4 — Test evidence.** Attribute staged tests through invariant pins and supported direct imports, expose unattributed tests, and include test changes in impact and adversarial-review fingerprints without creating documentation obligations.
 - [ ] **Step 5 — One verification surface.** Add compact staged verification, deterministic detailed and JSON modes, automatic review worksheets for clean uncovered boundaries, record-and-verify, and exact-fingerprint pass receipts for the pre-commit arm.
 - [ ] **Step 6 — Workflow migration and field proof.** Stage before review in the installed skills, remove redundant per-step review invocations, teach the hook to reuse an exact receipt, update public guidance, and replay concurrent-dirty, test-change, Windows-command, and invocation-budget scenarios end to end.

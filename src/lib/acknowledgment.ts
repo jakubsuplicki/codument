@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { type ChangeSetBinding, parseChangeSetBinding } from "./change-set.js";
 import { atomicWriteFileSync } from "./events.js";
 import { isSourcePattern } from "./registry.js";
 
@@ -40,6 +41,9 @@ export interface Acknowledgment {
    *  present, `fromHash` and `toHash` are both the doc set's hash rather than a
    *  content transition, because the doc has one state at signing. */
   standing?: StandingBinding;
+  /** Exact delivery projection this decision answered. Absent only for the legacy
+   * working-tree/range surfaces, which remain isolated from focused decisions. */
+  boundary?: ChangeSetBinding;
 }
 
 /**
@@ -125,6 +129,11 @@ export function parseAck(value: unknown): Acknowledgment | null {
     if (fromHash !== toHash) return null;
     standing = { docs: (docs as string[]).slice().sort() };
   }
+  let boundary: ChangeSetBinding | undefined;
+  if (v.boundary !== undefined) {
+    boundary = parseChangeSetBinding(v.boundary) ?? undefined;
+    if (!boundary) return null;
+  }
   const base = {
     anchorId,
     fromHash,
@@ -133,6 +142,7 @@ export function parseAck(value: unknown): Acknowledgment | null {
     signer,
     ...lines,
     ...(standing ? { standing } : {}),
+    ...(boundary ? { boundary } : {}),
   };
   return covered ? { ...base, covered } : base;
 }
@@ -243,8 +253,9 @@ export function ackCoversTree(ack: Acknowledgment, current: readonly CoveredFile
 // of the anchor + transition, so re-recording the same decision is idempotent and
 // two acks for the same transition never collide-but-differ.
 export function ackFileName(ack: Acknowledgment): string {
+  const identity = `${ack.anchorId}\n${ack.fromHash}\n${ack.toHash}`;
   const h = createHash("sha256")
-    .update(`${ack.anchorId}\n${ack.fromHash}\n${ack.toHash}`, "utf8")
+    .update(ack.boundary ? `${identity}\n${ack.boundary.fingerprint}` : identity, "utf8")
     .digest("hex")
     .slice(0, 16);
   return `${h}.json`;

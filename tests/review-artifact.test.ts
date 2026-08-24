@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { writeFileSync, existsSync, rmSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type { ChangeSetBinding } from "../src/lib/change-set.js";
 import {
   parseReviewArtifact,
   diffFingerprint,
@@ -520,5 +521,43 @@ describe("an artifact records the oracle it answered, or records that it had non
     // And an explicit "none" names the same file a legacy artifact would: both say
     // nothing about an oracle, and neither claims to.
     assert.equal(reviewFileName(artifact({ bundleStamp: null })), reviewFileName(artifact()));
+  });
+});
+
+describe("focused review boundary binding", () => {
+  const binding = (fingerprint: string): ChangeSetBinding => ({
+    version: 1,
+    mode: "staged",
+    bases: [{ prefix: "", sha: "base-sha" }],
+    head: "INDEX",
+    paths: ["a.ts"],
+    fingerprint,
+  });
+
+  it("round-trips the projection and refuses malformed boundary metadata", () => {
+    const current = binding("a".repeat(64));
+    assert.deepEqual(parseReviewArtifact(artifact({ boundary: current }))?.boundary, current);
+    assert.equal(
+      parseReviewArtifact({ ...artifact(), boundary: { ...current, paths: undefined } }),
+      null,
+    );
+  });
+
+  it("covers only the exact projection used to compute and record it", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "codument-review-boundary-binding-"));
+    try {
+      writeFileSync(join(tmp, "a.ts"), "source one");
+      const resolve = makeResolver(tmp);
+      const first = binding("a".repeat(64));
+      const moved = binding("b".repeat(64));
+      const fp = gatherReviewFingerprint(tmp, "HEAD", ["a.ts"], [], resolve, "", first.fingerprint);
+      writeReview(tmp, artifact({ diffFingerprint: fp, boundary: first }));
+
+      assert.equal(findCoveringReviews(tmp, "HEAD", ["a.ts"], resolve, "", first).length, 1);
+      assert.deepEqual(findCoveringReviews(tmp, "HEAD", ["a.ts"], resolve, "", moved), []);
+      assert.deepEqual(findCoveringReviews(tmp, "HEAD", ["a.ts"], resolve), []);
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
   });
 });

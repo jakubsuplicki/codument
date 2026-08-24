@@ -61,6 +61,77 @@ export interface ChangeSet {
   fingerprint: string;
 }
 
+/** Durable identity of a change-set projection, without its diagnostic path lists. */
+export interface ChangeSetBinding {
+  version: 1;
+  mode: ChangeSetMode;
+  bases: ChangeSetBase[];
+  head: string;
+  paths: string[];
+  fingerprint: string;
+}
+
+export function changeSetBinding(set: ChangeSet): ChangeSetBinding {
+  return {
+    version: 1,
+    mode: set.mode,
+    bases: set.bases.map((base) => ({ ...base })),
+    head: set.head,
+    paths: sorted(set.changes.map((change) => change.path)),
+    fingerprint: set.fingerprint,
+  };
+}
+
+export function parseChangeSetBinding(value: unknown): ChangeSetBinding | null {
+  if (typeof value !== "object" || value === null) return null;
+  const candidate = value as Record<string, unknown>;
+  if (
+    candidate.version !== 1 ||
+    !["staged", "explicit-staged", "range"].includes(String(candidate.mode)) ||
+    typeof candidate.head !== "string" ||
+    candidate.head.length === 0 ||
+    typeof candidate.fingerprint !== "string" ||
+    !/^[a-f0-9]{64}$/.test(candidate.fingerprint) ||
+    !Array.isArray(candidate.bases) ||
+    !Array.isArray(candidate.paths) ||
+    candidate.paths.some((path) => typeof path !== "string" || path.length === 0)
+  ) {
+    return null;
+  }
+  const bases: ChangeSetBase[] = [];
+  for (const raw of candidate.bases) {
+    if (typeof raw !== "object" || raw === null) return null;
+    const base = raw as Record<string, unknown>;
+    if (typeof base.prefix !== "string" || typeof base.sha !== "string" || base.sha.length === 0) {
+      return null;
+    }
+    bases.push({ prefix: base.prefix, sha: base.sha });
+  }
+  return {
+    version: 1,
+    mode: candidate.mode as ChangeSetMode,
+    bases,
+    head: candidate.head,
+    paths: sorted(candidate.paths as string[]),
+    fingerprint: candidate.fingerprint,
+  };
+}
+
+export function sameChangeSetBinding(
+  left: ChangeSetBinding | undefined,
+  right: ChangeSetBinding | undefined,
+): boolean {
+  if (!left || !right) return left === right;
+  return (
+    left.version === right.version &&
+    left.mode === right.mode &&
+    left.head === right.head &&
+    left.fingerprint === right.fingerprint &&
+    JSON.stringify(left.paths) === JSON.stringify(right.paths) &&
+    JSON.stringify(left.bases) === JSON.stringify(right.bases)
+  );
+}
+
 export type ChangeSetErrorCode =
   | "invalid-path"
   | "path-not-staged"

@@ -7,6 +7,7 @@ import {
   isFileGrainAck,
   normalizeIdentity,
   readAcks,
+  shellArg,
 } from "../lib/acknowledgment.js";
 import {
   type ExclusionSpec,
@@ -17,8 +18,10 @@ import {
 import {
   ChangeSetError,
   type ChangeSet,
+  changeSetBinding,
   readChangeSetFile,
   resolveChangeSet,
+  sameChangeSetBinding,
 } from "../lib/change-set.js";
 import {
   type ApprovedPlan,
@@ -520,7 +523,10 @@ export function buildReview(
   // and wakes the owning doc for a change that moved no contract.
   const renamedFrom = renamedFromMap(renames, new Set(changes));
   const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, changes, renamedFrom);
-  const acks = readAcks(root);
+  const boundaryBinding = opts.boundary ? changeSetBinding(opts.boundary) : undefined;
+  const acks = readAcks(root).filter((ack) =>
+    sameChangeSetBinding(ack.boundary, boundaryBinding),
+  );
   // Change authorship (pure repo state) — the source of "the change author" for the
   // self-vs-independent split, computed once and shared by the card and the strict
   // independence gate below.
@@ -954,14 +960,20 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     process.exitCode = 1;
     return;
   }
+  const focusedBinding = report.boundary ? changeSetBinding(report.boundary) : undefined;
 
   // --bundle: emit the oracle an adversarial reviewer attacks (the touched features'
   // documented invariants + their test pointers, the diff, ownership/blast facts),
   // then exit. Pure JSON, no new source of truth — the host pipes it to a fresh
   // reviewer subagent (Claude) or reads it for the same-agent pass (Codex).
   if (options.bundle) {
-    const registry = readRegistrySync(join(root, "docs", ".registry.json"));
-    const plan = detectApprovedPlanScope(root);
+    const registry = report.boundary
+      ? registryForBoundary(root, report.boundary)
+      : readRegistrySync(join(root, "docs", ".registry.json"));
+    const plan = report.plan;
+    const readText = report.boundary
+      ? (path: string): string | null => readChangeSetFile(root, report.boundary as ChangeSet, path)
+      : undefined;
     // Delta scope: when a review of this same base was already recorded, the
     // reviewer attacks only what moved since — the fix, not the eleven files the
     // fix did not touch. That is where the re-review round's cost actually goes.
@@ -987,7 +999,16 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
         }
       }
     }
-    const bundle = gatherReviewBundle(root, effectiveBase, report.state, registry, plan, delta);
+    const bundle = gatherReviewBundle(
+      root,
+      effectiveBase,
+      report.state,
+      registry,
+      plan,
+      delta,
+      report.boundary,
+      readText,
+    );
     console.log(JSON.stringify(bundle, null, 2));
     return;
   }
@@ -1026,6 +1047,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       findings: r.findings,
       signer: r.signer,
       bundleStamp: r.bundleStamp ?? null,
+      ...(focusedBinding ? { boundary: focusedBinding } : {}),
     });
     if (!provisional) {
       console.log(
@@ -1044,7 +1066,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       realChangeSet,
       provisional.findings,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state),
+      currentOracle(root, effectiveBase, report.state, report.boundary),
+      focusedBinding?.fingerprint,
     );
     // `files` rides along as scoping information for the NEXT `--bundle` (what moved
     // since this recording), computed by the CLI like the fingerprint is — an agent
@@ -1066,7 +1089,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       effectiveBase,
       realChangeSet,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state),
+      currentOracle(root, effectiveBase, report.state, report.boundary),
+      focusedBinding,
     ).length;
     if (onRecord > 1) {
       console.log(
@@ -1204,7 +1228,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       effectiveBase,
       realChangeSet,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state),
+      currentOracle(root, effectiveBase, report.state, report.boundary),
+      focusedBinding,
     );
     // A missing key and an explicit null both mean the same thing to a reader: this
     // artifact does not say what oracle it answered.
@@ -1627,9 +1652,21 @@ function findUnresolvedPins(
  * one the reviewer saw. Built at full scope with no plan — neither affects the
  * per-feature contract blocks, which the delta deliberately never narrows.
  */
-function currentOracle(root: string, base: string, state: ChangeState): string {
-  const registry = readRegistrySync(join(root, "docs", ".registry.json"));
-  return oracleFingerprint(gatherReviewBundle(root, base, state, registry, null, null).features);
+function currentOracle(
+  root: string,
+  base: string,
+  state: ChangeState,
+  boundary?: ChangeSet,
+): string {
+  const registry = boundary
+    ? registryForBoundary(root, boundary)
+    : readRegistrySync(join(root, "docs", ".registry.json"));
+  const readText = boundary
+    ? (path: string): string | null => readChangeSetFile(root, boundary, path)
+    : undefined;
+  return oracleFingerprint(
+    gatherReviewBundle(root, base, state, registry, null, null, boundary, readText).features,
+  );
 }
 
 // The full real-change set the adversarial-review gate scopes to: changed sources +
@@ -1897,6 +1934,11 @@ function ownershipResolution(
 
 function printHuman(report: ReviewReport): void {
   const { state, plan } = report;
+  const ackArgs = report.boundary
+    ? report.boundary.mode === "staged"
+      ? `--staged --boundary ${report.boundary.fingerprint}`
+      : `--paths ${report.boundary.changes.map((change) => shellArg(change.path)).join(" ")} --boundary ${report.boundary.fingerprint}`
+    : undefined;
 
   console.log(pc.bold("codument review"));
   console.log();
@@ -2181,6 +2223,7 @@ function printHuman(report: ReviewReport): void {
             doc: d.doc,
             pattern,
             matched: matched.length,
+            ackArgs,
           });
           line += `\n        ${routeLine(treeAck, width)}`;
         }
@@ -2192,7 +2235,7 @@ function printHuman(report: ReviewReport): void {
           // the route offered and the signature taken describe one act.
           const [, fileAckRoute] = routesFor(
             blindGoverned.has(f) ? "blind-risk-file" : "stale-doc-file",
-            { doc: d.doc, file: f },
+            { doc: d.doc, file: f, ackArgs },
           );
           line += `\n        ${routeLine(fileAckRoute, width)}`;
         }
@@ -2257,6 +2300,7 @@ function printHuman(report: ReviewReport): void {
       ...routesFor("blind-unread-file", {
         file: u.file,
         feature: u.owners.map((o) => o.feature).join(" or "),
+        ackArgs,
       }).map((r) => `      ${routeLine(r, labelWidth("blind-unread-file"))}`),
     ]),
   );
@@ -2352,6 +2396,7 @@ function printHuman(report: ReviewReport): void {
         doc: d.doc,
         feature: d.feature,
         anchorId: d.anchorId,
+        ackArgs,
         // Only the signature arm reads this, and it is what withholds the
         // demotion route from a sole owner — demoting one would leave the file
         // unowned, trading a wake for a worse one.

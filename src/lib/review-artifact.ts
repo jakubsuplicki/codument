@@ -1,7 +1,12 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { atomicWriteFileSync } from "./events.js";
 import { join } from "node:path";
+import {
+  type ChangeSetBinding,
+  parseChangeSetBinding,
+  sameChangeSetBinding,
+} from "./change-set.js";
+import { atomicWriteFileSync } from "./events.js";
 import { byteNormalize } from "./two-ref.js";
 
 // A recorded, attributed, fingerprint-bound adversarial review of a diff — the
@@ -70,6 +75,8 @@ export interface ReviewArtifact {
    *  says what oracle it answered can be checked against one, and an artifact that
    *  says nothing is reported as saying nothing. */
   bundleStamp?: string | null;
+  /** Exact focused projection this attestation answered. Omitted for legacy review. */
+  boundary?: ChangeSetBinding;
   /** Per-file hashes of the change set at record time. SCOPING INFORMATION ONLY —
    *  the gate never reads it, so this cannot become a per-file coverage claim. Its
    *  one job is letting `--bundle` compute what moved since the last recording, so
@@ -168,6 +175,11 @@ export function parseReviewArtifact(value: unknown): ReviewArtifact | null {
       if (!bundleStamp) return null;
     }
   }
+  let boundary: ChangeSetBinding | undefined;
+  if (v.boundary !== undefined) {
+    boundary = parseChangeSetBinding(v.boundary) ?? undefined;
+    if (!boundary) return null;
+  }
 
   // Spread conditionally: an artifact without `files` must round-trip to an object
   // without the key, so deep-equality against a legacy artifact still holds. Same
@@ -180,6 +192,7 @@ export function parseReviewArtifact(value: unknown): ReviewArtifact | null {
     findings,
     signer,
     ...(bundleStamp !== undefined ? { bundleStamp } : {}),
+    ...(boundary ? { boundary } : {}),
     ...(files ? { files } : {}),
   };
 }
@@ -281,6 +294,8 @@ export function gatherReviewFingerprint(
    *  review of this change. Defaulted so a caller with no oracle to bind (a unit
    *  test of the source/test binding alone) keeps the pre-oracle value. */
   oracleFp = "",
+  /** Exact focused projection. Empty keeps the legacy fingerprint byte-identical. */
+  boundaryFp = "",
 ): string {
   const sourcesFp = gatherDiffFingerprint(root, base, changeSetPaths);
   // Each distinct named test, keyed by the finding's raw ref (stable across the
@@ -308,7 +323,10 @@ export function gatherReviewFingerprint(
   // pre-oracle value exactly, so the one caller that binds no oracle is unchanged
   // and the component is legible in the hash's own structure.
   return createHash("sha256")
-    .update(`${sourcesFp}\n${testsFp}${oracleFp ? `\n${oracleFp}` : ""}`, "utf8")
+    .update(
+      `${sourcesFp}\n${testsFp}${oracleFp ? `\n${oracleFp}` : ""}${boundaryFp ? `\n${boundaryFp}` : ""}`,
+      "utf8",
+    )
     .digest("hex")
     .slice(0, 32);
 }
@@ -344,7 +362,7 @@ export function reviewFileName(artifact: ReviewArtifact): string {
   // JSON of an ordered array: no key-order ambiguity, and its escaping makes the
   // serialization unambiguous even when a detail contains the separators a
   // hand-rolled scheme would need.
-  const attested = JSON.stringify([
+  const parts: unknown[] = [
     artifact.base,
     artifact.diffFingerprint,
     artifact.signer,
@@ -353,7 +371,9 @@ export function reviewFileName(artifact: ReviewArtifact): string {
     // What it was grounded in is part of what it attests: two reviews of one change
     // set that answered different oracles are two different claims about it.
     artifact.bundleStamp ?? null,
-  ]);
+  ];
+  if (artifact.boundary) parts.push(artifact.boundary);
+  const attested = JSON.stringify(parts);
   const h = createHash("sha256").update(attested, "utf8").digest("hex").slice(0, 16);
   return `${h}.json`;
 }
@@ -415,7 +435,11 @@ export function reviewedDelta(
 // they carry no order), tie-broken by filename for determinism. Using a clock here
 // is safe precisely because the result only scopes the bundle: a mis-picked prior
 // artifact can produce a differently-scoped read, never a different verdict.
-export function findLatestReviewForBase(root: string, base: string): ReviewArtifact | null {
+export function findLatestReviewForBase(
+  root: string,
+  base: string,
+  boundary?: ChangeSetBinding,
+): ReviewArtifact | null {
   const dir = join(root, REVIEWS_DIR);
   if (!existsSync(dir)) return null;
   let names: string[];
@@ -437,7 +461,9 @@ export function findLatestReviewForBase(root: string, base: string): ReviewArtif
   for (const c of candidates) {
     try {
       const r = parseReviewArtifact(JSON.parse(readFileSync(join(dir, c.name), "utf8")));
-      if (r && r.base === base) matching.push({ mtimeMs: c.mtimeMs, artifact: r });
+      if (r && r.base === base && sameChangeSetBinding(r.boundary, boundary)) {
+        matching.push({ mtimeMs: c.mtimeMs, artifact: r });
+      }
     } catch {
       // skip malformed/unreadable review file
     }
@@ -473,11 +499,21 @@ export function findCoveringReviews(
   /** The current oracle digest, identical for every artifact because it describes
    *  today's docs rather than the artifact. */
   oracleFp = "",
+  boundary?: ChangeSetBinding,
 ): ReviewArtifact[] {
   return readReviews(root).filter(
     (r) =>
+      sameChangeSetBinding(r.boundary, boundary) &&
       r.diffFingerprint ===
-      gatherReviewFingerprint(root, base, changeSetPaths, r.findings, resolveTest, oracleFp),
+      gatherReviewFingerprint(
+        root,
+        base,
+        changeSetPaths,
+        r.findings,
+        resolveTest,
+        oracleFp,
+        boundary?.fingerprint,
+      ),
   );
 }
 

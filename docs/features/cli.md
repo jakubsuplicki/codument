@@ -2,7 +2,7 @@
 title: CLI
 status: current
 type: feature
-last_reviewed: 2026-07-01
+last_reviewed: 2026-08-24
 ---
 
 # CLI
@@ -21,6 +21,11 @@ Focused review is an explicit extension of the existing command: `review --stage
 Git index, while `review --paths` selects staged paths for diagnosis. Bare `review` remains the
 working-tree compatibility surface, so existing scripts do not silently change meaning.
 
+The acknowledgment surface accepts the same `--staged` and `--paths` selectors plus an expected
+`--boundary` fingerprint. These flags are primarily copy-paste context emitted by focused review:
+they make the decision against the bytes and paths that raised it and refuse execution after that
+projection changes.
+
 A retired flag stays registered, and its help text says it is retired. Deleting the declaration outright would answer an old pasted command with an unknown-option error, which tells the reader their invocation is malformed when in fact their whole reason for running it is gone; keeping it parseable lets the command that owns it refuse with the reason instead. What must never happen is the third option — a flag that still parses and quietly does nothing, which reads as success.
 
 One command is a signpost, not an action: `run` (aliased `autopilot`) exists only to explain that codument does not run your coding agent. The CLI's whole remit is setup and deterministic checks; the delivery loop lives in the agent's instructions, so the binary's job is to redirect rather than to execute, and that boundary is stated in the command's own output. Since an approved plan runs on its own, the signpost has no trigger left to hand out — what it points at instead is the boundary itself and the way to slow the loop down, which keeps the command honest rather than vestigial.
@@ -36,6 +41,9 @@ One command is a signpost, not an action: `run` (aliased `autopilot`) exists onl
 - Focused review flags preserve one authority rule: the complete staged set can produce a strict
   verdict, while an explicit subset remains diagnostic until it covers that set. The legacy command
   and JSON shape remain unchanged when neither flag is present. *(test: `review-boundary.test.ts`)*
+- Every focused acknowledgment command printed by the CLI reproduces its real selector and expected
+  boundary fingerprint; the acknowledgment command rejects those flags in management modes and
+  refuses a stale copied command. *(test: `review-boundary.test.ts`)*
 
 ## Key files
 

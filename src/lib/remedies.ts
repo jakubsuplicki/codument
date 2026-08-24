@@ -134,6 +134,9 @@ export interface ConditionContext {
   where?: string;
   /** The path a renamed file moved to, when it moved rather than vanished. */
   renamedTo?: string;
+  /** Exact invocation context for an acknowledgment (`--staged --boundary …`, or
+   * an explicit staged-path projection). Empty on legacy working-tree/range routes. */
+  ackArgs?: string;
 }
 
 export interface Condition {
@@ -194,9 +197,12 @@ const docUpdate = (label: string, doc: string): Route => ({
   segments: [plain(`update ${doc}`), dim("at intent altitude")],
 });
 
-const fileAck = (label: string, file: string, note: string): Route => ({
+const ackCommand = (target: string, ctx: ConditionContext): string =>
+  `codument ack ${shellArg(target)}${ctx.ackArgs ? ` ${ctx.ackArgs}` : ""} --reason "..."`;
+
+const fileAck = (label: string, file: string, note: string, ctx: ConditionContext): Route => ({
   label,
-  segments: [cmd(`codument ack ${shellArg(file)} --reason "..."`), dim(note)],
+  segments: [cmd(ackCommand(file, ctx)), dim(note)],
 });
 
 const CONDITIONS: Record<ConditionId, Condition> = {
@@ -258,7 +264,7 @@ const CONDITIONS: Record<ConditionId, Condition> = {
       docUpdate("contract changed", ctx.doc ?? "the owning doc"),
       {
         label: "internal only",
-        segments: [cmd(`codument ack ${shellArg(slot(ctx.anchorId, "<path>::<symbol>"))} --reason "..."`)],
+        segments: [cmd(ackCommand(slot(ctx.anchorId, "<path>::<symbol>"), ctx))],
       },
     ],
   },
@@ -272,13 +278,14 @@ const CONDITIONS: Record<ConditionId, Condition> = {
     // only: there is no per-symbol transition to bind an ack to.
     ackGrains: ["file"],
     whyNoAck: (ctx) =>
-      `an added or removed symbol has no per-symbol transition to sign, so it needs doc attention: update the owning doc, or acknowledge the file's additive residue with \`codument ack ${shellArg(slot(ctx.file, "<file>"))} --reason "..."\``,
+      `an added or removed symbol has no per-symbol transition to sign, so it needs doc attention: update the owning doc, or acknowledge the file's additive residue with \`${ackCommand(slot(ctx.file, "<file>"), ctx)}\``,
     routes: (ctx) => [
       docUpdate("contract changed", ctx.doc ?? "the owning doc"),
       fileAck(
         "additive only",
         slot(ctx.file, "<file>"),
         "(file-grain; a per-symbol ack does not apply to added/removed)",
+        ctx,
       ),
     ],
   },
@@ -322,10 +329,15 @@ const CONDITIONS: Record<ConditionId, Condition> = {
     // because the thing that gates is a grain coarser than the ack.
     ackGrains: ["file"],
     whyNoAck: (ctx) =>
-      `it is narrated at file grain by a concept umbrella, which a per-symbol ack never clears: \`codument ack ${shellArg(slot(ctx.file, "<file>"))} --reason "..."\``,
+      `it is narrated at file grain by a concept umbrella, which a per-symbol ack never clears: \`${ackCommand(slot(ctx.file, "<file>"), ctx)}\``,
     routes: (ctx) => [
       docUpdate("doc impact", ctx.doc ?? "the owning doc"),
-      fileAck("no doc impact", slot(ctx.file, "<file>"), "(file-grain; expires when the file changes again)"),
+      fileAck(
+        "no doc impact",
+        slot(ctx.file, "<file>"),
+        "(file-grain; expires when the file changes again)",
+        ctx,
+      ),
     ],
   },
 
@@ -398,7 +410,12 @@ const CONDITIONS: Record<ConditionId, Condition> = {
     ackGrains: ["file"],
     routes: (ctx) => [
       docUpdate("doc impact", ctx.doc ?? "the owning doc"),
-      fileAck("no doc impact", slot(ctx.file, "<file>"), "(file-grain; expires when the file changes again)"),
+      fileAck(
+        "no doc impact",
+        slot(ctx.file, "<file>"),
+        "(file-grain; expires when the file changes again)",
+        ctx,
+      ),
     ],
   },
 
@@ -412,7 +429,7 @@ const CONDITIONS: Record<ConditionId, Condition> = {
       {
         label: "no doc impact",
         segments: [
-          cmd(`codument ack ${shellArg(slot(ctx.pattern, "<tree>"))} --reason "..."`),
+          cmd(ackCommand(slot(ctx.pattern, "<tree>"), ctx)),
           dim(
             `(tree-grain, ${ctx.matched ?? 0} files; expires when any of them changes again)`,
           ),
@@ -438,7 +455,12 @@ const CONDITIONS: Record<ConditionId, Condition> = {
     ackGrains: ["file"],
     routes: (ctx) => [
       docUpdate("doc impact", ctx.doc ?? "the owning doc"),
-      fileAck("no doc impact", slot(ctx.file, "<file>"), "(file-grain; signed over the disclosed lines)"),
+      fileAck(
+        "no doc impact",
+        slot(ctx.file, "<file>"),
+        "(file-grain; signed over the disclosed lines)",
+        ctx,
+      ),
     ],
   },
 

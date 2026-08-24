@@ -10,11 +10,21 @@ import {
   isIndependent,
   isTreeGrainAck,
   readAcks,
+  shellArg,
   treeSetHash,
   writeAck,
 } from "../lib/acknowledgment.js";
-import { resolveScopeSync } from "../lib/analyze.js";
+import { resolveScopeFromConfigured, resolveScopeSync } from "../lib/analyze.js";
+import {
+  type ChangeSet,
+  type ChangeSetBinding,
+  changeSetBinding,
+  readChangeSetFile,
+  resolveChangeSet,
+  sameChangeSetBinding,
+} from "../lib/change-set.js";
 import { treeCoverage } from "../lib/change-state.js";
+import { validateExclude } from "../lib/codemod.js";
 import { anchorGates } from "../lib/drift.js";
 import {
   labelWidth,
@@ -45,6 +55,7 @@ import { resolveOwner, splitAnchorId } from "../lib/ownership.js";
 import {
   isSourcePattern,
   normalizeRelPath,
+  parseRegistryOrThrow,
   type Registry,
   readRegistrySync,
   registeredPatterns,
@@ -72,8 +83,13 @@ import {
 // ack, while `ack` saw a file that never existed at that path, called it `added`, and
 // refused its own instruction. Advisory: a rename lister that cannot answer leaves the
 // map empty, which is exactly the pre-rename behavior.
-function renamedFromFor(root: string, base?: string): Map<string, string> {
+function renamedFromFor(
+  root: string,
+  base?: string,
+  boundary?: ChangeSet,
+): Map<string, string> {
   try {
+    if (boundary) return renamedFromMap(boundary.renames, new Set(boundary.changedFiles));
     return base
       ? renamedFromMap(worktreeRenamesSince(root, base), new Set(worktreeChangesSince(root, base)))
       : renamedFromMap(getWorkingTreeRenames(root), new Set(getWorkingTreeChanges(root)));
@@ -85,6 +101,10 @@ function renamedFromFor(root: string, base?: string): Map<string, string> {
 export interface AckCliOptions {
   reason?: string;
   base?: string;
+  staged?: boolean;
+  paths?: string[];
+  /** Expected projection identity copied from review; refuses if the index moved. */
+  boundary?: string;
   signer?: string;
   /** Bind the vouch to the owning doc's claims instead of the file's bytes, so it
    *  stands across content changes and dies when the doc moves. File grain only. */
@@ -94,6 +114,66 @@ export interface AckCliOptions {
   remove?: string;
   prune?: boolean;
   root?: string;
+}
+
+function resolveAckBoundary(
+  root: string,
+  options: AckCliOptions,
+): { ok: true; boundary?: ChangeSet } | { ok: false } {
+  const focused = options.staged || options.paths;
+  if (options.staged && options.paths) {
+    fail("--staged and --paths select different boundaries; pick one");
+    return { ok: false };
+  }
+  if (options.base && focused) {
+    fail("--base cannot combine with --staged or --paths; pick one boundary");
+    return { ok: false };
+  }
+  if (options.boundary && !focused) {
+    fail("--boundary requires --staged or --paths so the expected projection can be recomputed");
+    return { ok: false };
+  }
+  if (!focused) return { ok: true };
+  try {
+    const boundary = resolveChangeSet(
+      root,
+      options.paths
+        ? { mode: "explicit-staged", paths: options.paths }
+        : { mode: "staged" },
+    );
+    if (options.boundary && options.boundary !== boundary.fingerprint) {
+      fail(
+        `the staged boundary moved after this command was printed (expected ${options.boundary.slice(0, 12)}, now ${boundary.fingerprint.slice(0, 12)}); re-run the focused review and use its current remedy`,
+      );
+      return { ok: false };
+    }
+    return { ok: true, boundary };
+  } catch (error) {
+    fail((error as Error).message);
+    return { ok: false };
+  }
+}
+
+function registryForAck(root: string, boundary?: ChangeSet): Registry | null {
+  try {
+    if (!boundary) return readRegistrySync(join(root, "docs", ".registry.json"));
+    const raw = readChangeSetFile(root, boundary, "docs/.registry.json");
+    return raw === null ? null : parseRegistryOrThrow(raw, "docs/.registry.json@selected-boundary");
+  } catch {
+    return null;
+  }
+}
+
+function scopeForAck(root: string, boundary?: ChangeSet) {
+  if (!boundary) return resolveScopeSync(root).spec;
+  const raw = readChangeSetFile(root, boundary, ".codument-meta.json");
+  if (raw === null) return resolveScopeFromConfigured(null).spec;
+  const parsed = JSON.parse(raw) as { exclude?: unknown };
+  const configured =
+    parsed.exclude === undefined
+      ? null
+      : validateExclude(parsed.exclude, ".codument-meta.json@selected-boundary");
+  return resolveScopeFromConfigured(configured).spec;
 }
 
 // Versioned machine contract for `ack --list --json`: the recorded audit trail as
@@ -130,8 +210,29 @@ export interface AckJson {
   to: string;
   reason: string;
   signer: string;
+  boundary?: ChangeSetBinding;
   /** Recomputed against the working tree this run, never trusted from disk. */
   validity: AckValidity;
+}
+
+function currentAckValidity(root: string, ack: Acknowledgment): AckValidity {
+  if (!ack.boundary) return ackValidity(root, ack);
+  try {
+    const current =
+      ack.boundary.mode === "explicit-staged"
+        ? resolveChangeSet(root, { mode: "explicit-staged", paths: ack.boundary.paths })
+        : ack.boundary.mode === "staged"
+          ? resolveChangeSet(root, { mode: "staged" })
+          : resolveChangeSet(root, {
+              mode: "range",
+              base: ack.boundary.bases[0]?.sha ?? "HEAD",
+              head: ack.boundary.head,
+            });
+    if (current.fingerprint !== ack.boundary.fingerprint) return "invalidated";
+  } catch {
+    return "indeterminate";
+  }
+  return ackValidity(root, ack);
 }
 
 export interface AckListJson {
@@ -194,15 +295,27 @@ export async function ackCommand(
   await warmAdaptersForRepo(root);
 
   if (options.list) {
+    if (options.staged || options.paths || options.boundary) {
+      fail("--staged, --paths, and --boundary apply only when recording an acknowledgment");
+      return;
+    }
     if (options.json) listAcksJson(root);
     else listAcks(root);
     return;
   }
   if (options.remove !== undefined) {
+    if (options.staged || options.paths || options.boundary) {
+      fail("--staged, --paths, and --boundary apply only when recording an acknowledgment");
+      return;
+    }
     removeAck(root, options.remove);
     return;
   }
   if (options.prune) {
+    if (options.staged || options.paths || options.boundary) {
+      fail("--staged, --paths, and --boundary apply only when recording an acknowledgment");
+      return;
+    }
     pruneAcks(root);
     return;
   }
@@ -250,6 +363,10 @@ export async function ackCommand(
     return;
   }
 
+  const resolvedBoundary = resolveAckBoundary(root, options);
+  if (!resolvedBoundary.ok) return;
+  const boundary = resolvedBoundary.boundary;
+
   const sep = anchor.indexOf("::");
   if (sep === -1) {
     // A glob or trailing-slash directory is a TREE ack: one judgment over every file
@@ -257,12 +374,16 @@ export async function ackCommand(
     // ack: it vouches for the whole file's current content, clearing additive /
     // concept / coarse staleness a per-symbol ack cannot reach — while never masking
     // a moved symbol.
-    if (isSourcePattern(anchor)) ackTree(root, anchor, options);
-    else ackFile(root, anchor, options);
+    if (isSourcePattern(anchor)) ackTree(root, anchor, options, boundary);
+    else ackFile(root, anchor, options, boundary);
     return;
   }
   const file = anchor.slice(0, sep);
   const symbol = anchor.slice(sep + 2);
+  if (boundary && ![...boundary.changedFiles, ...boundary.deletions].includes(file)) {
+    fail(`${file} is outside the selected ${boundary.mode} boundary`);
+    return;
+  }
 
   let baseRef = "HEAD";
   if (options.base) {
@@ -274,7 +395,7 @@ export async function ackCommand(
     }
   }
 
-  const renamedFrom = renamedFromFor(root, options.base);
+  const renamedFrom = renamedFromFor(root, options.base, boundary);
   const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, [file], renamedFrom);
   if (unevaluable.includes(file)) {
     fail(String(whyNoAck("unevaluable-source", { file })));
@@ -332,12 +453,7 @@ export async function ackCommand(
   // route to the two registry edits that end the wake, exactly as `review` does.
   // Absent or unreadable registry → nothing is owned, so nothing is gated and
   // there is no guidance to give; the pre-ownership behavior stands.
-  let registry: Registry | null = null;
-  try {
-    registry = readRegistrySync(join(root, "docs", ".registry.json"));
-  } catch {
-    registry = null;
-  }
+  const registry = registryForAck(root, boundary);
   const owner = registry ? resolveOwner(registry, ch.id) : null;
   if (owner?.kind === "unowned") {
     // No FEATURE owns the symbol, so no per-symbol ack can clear anything. Which
@@ -388,6 +504,7 @@ export async function ackCommand(
     toHash: ch.to,
     reason: options.reason.trim(),
     signer,
+    ...(boundary ? { boundary: changeSetBinding(boundary) } : {}),
   };
   writeAck(root, ack);
   const kind = isIndependent(ack, author) ? "independent" : "self";
@@ -400,7 +517,16 @@ export async function ackCommand(
   );
   console.log(`  ${pc.dim("reason:")} ${ack.reason}`);
   console.log(`  ${pc.dim(`signer: ${signer} · handle ${handleOf(ack)}`)}`);
-  console.log(pc.dim("  Re-run `codument review` to confirm the finding cleared."));
+  const reviewArgs = boundary
+    ? boundary.mode === "staged"
+      ? " --staged"
+      : ` --paths ${boundary.changes.map((change) => shellArg(change.path)).join(" ")}`
+    : "";
+  console.log(
+    pc.dim(
+      `  Re-run \`codument review${reviewArgs}\` to confirm the finding cleared.`,
+    ),
+  );
 }
 
 // `codument ack <path>` — the file-grain surface. A purely-additive change (a new
@@ -411,7 +537,16 @@ export async function ackCommand(
 // no doc change, bound to the file's content transition so it auto-invalidates on the
 // next change to the file — exactly like a symbol ack. It never masks a moved symbol:
 // any still-unacknowledged moved anchor is named so it is resolved properly.
-function ackFile(root: string, file: string, options: AckCliOptions): void {
+function ackFile(
+  root: string,
+  file: string,
+  options: AckCliOptions,
+  boundary?: ChangeSet,
+): void {
+  if (boundary && ![...boundary.changedFiles, ...boundary.deletions].includes(file)) {
+    fail(`${file} is outside the selected ${boundary.mode} boundary`);
+    return;
+  }
   const baseLabel = options.base ? `merge-base with ${options.base}` : "HEAD";
   let baseRef = "HEAD";
   if (options.base) {
@@ -425,7 +560,7 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
 
   // A parse-unevaluable file is never acked into freshness (the fail-loud stance the
   // symbol path also takes) — fix the parse error, then ack.
-  const renamedFrom = renamedFromFor(root, options.base);
+  const renamedFrom = renamedFromFor(root, options.base, boundary);
   const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, [file], renamedFrom);
   if (unevaluable.includes(file)) {
     fail(String(whyNoAck("unevaluable-source", { file })));
@@ -475,12 +610,7 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
     console.log();
   }
 
-  let registry: Registry | null = null;
-  try {
-    registry = readRegistrySync(join(root, "docs", ".registry.json"));
-  } catch {
-    registry = null; // no registry → nothing is owned/gated → no guidance to give
-  }
+  const registry = registryForAck(root, boundary);
 
   const author = getGitAuthor(root) ?? "agent";
   const signer = options.signer ?? author;
@@ -491,6 +621,7 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
     reason: options.reason!.trim(),
     signer,
     ...(coveredLines && coveredLines.length > 0 ? { coveredLines } : {}),
+    ...(boundary ? { boundary: changeSetBinding(boundary) } : {}),
   };
   writeAck(root, ack);
   const kind = isIndependent(ack, author) ? "independent" : "self";
@@ -509,7 +640,8 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
   // is resolved (doc update or a per-symbol ack) rather than mistaken for covered. An
   // unowned move (a concept-only file) is fully cleared by the file ack, so it is not
   // warned about; a non-precise file has no per-symbol anchors at all.
-  const acks = readAcks(root);
+  const binding = boundary ? changeSetBinding(boundary) : undefined;
+  const acks = readAcks(root).filter((ack) => sameChangeSetBinding(ack.boundary, binding));
   const stillMoved = !registry
     ? []
     : (anchorChanges[file] ?? []).filter(
@@ -565,7 +697,12 @@ function ackFile(root: string, file: string, options: AckCliOptions): void {
 // a 380-file locale tree nobody registered, because answering for it cost 380
 // signatures. The width is real, so it is disclosed rather than hidden: the count is
 // stated as it writes, and one file moving again (or a new one appearing) decays it.
-function ackTree(root: string, pattern: string, options: AckCliOptions): void {
+function ackTree(
+  root: string,
+  pattern: string,
+  options: AckCliOptions,
+  boundary?: ChangeSet,
+): void {
   const baseLabel = options.base ? `merge-base with ${options.base}` : "HEAD";
   let baseRef = "HEAD";
   if (options.base) {
@@ -580,12 +717,7 @@ function ackTree(root: string, pattern: string, options: AckCliOptions): void {
   // Only a pattern some entry DECLARES is ackable. A wide vouch is earned by a
   // committed declaration (ADR 017), never by the argument typed at the prompt —
   // otherwise `codument ack "src/**"` would clear every coarse wake in the repo.
-  let registry: Registry | null = null;
-  try {
-    registry = readRegistrySync(join(root, "docs", ".registry.json"));
-  } catch {
-    registry = null;
-  }
+  const registry = registryForAck(root, boundary);
   const governed = registry ? registeredPatterns(registry) : [];
   const tree = normalizeRelPath(pattern);
   if (!governed.includes(tree)) {
@@ -599,19 +731,19 @@ function ackTree(root: string, pattern: string, options: AckCliOptions): void {
     .filter((e) => e.primary_sources.some((s) => normalizeRelPath(s) === tree))
     .map((e) => e.doc);
 
-  const changes = options.base
-    ? worktreeChangesSince(root, options.base)
-    : getWorkingTreeChanges(root);
-  const deletions = options.base
-    ? worktreeDeletionsSince(root, options.base)
-    : getWorkingTreeDeletions(root);
-  const renamedFrom = renamedFromFor(root, options.base);
+  const changes =
+    boundary?.changedFiles ??
+    (options.base ? worktreeChangesSince(root, options.base) : getWorkingTreeChanges(root));
+  const deletions =
+    boundary?.deletions ??
+    (options.base ? worktreeDeletionsSince(root, options.base) : getWorkingTreeDeletions(root));
+  const renamedFrom = renamedFromFor(root, options.base, boundary);
   const { files, unresolvable } = treeCoverage(
     root,
     baseRef,
     tree,
     [...changes, ...deletions],
-    resolveScopeSync(root).spec,
+    scopeForAck(root, boundary),
     renamedFrom,
   );
   if (files.length === 0 && unresolvable.length === 0) {
@@ -641,6 +773,7 @@ function ackTree(root: string, pattern: string, options: AckCliOptions): void {
     reason: options.reason!.trim(),
     signer,
     covered: files,
+    ...(boundary ? { boundary: changeSetBinding(boundary) } : {}),
   };
   writeAck(root, ack);
   const kind = isIndependent(ack, author) ? "independent" : "self";
@@ -671,7 +804,8 @@ function ackTree(root: string, pattern: string, options: AckCliOptions): void {
   // file ack clears and no more: a moved OWNED symbol inside the tree stays flagged.
   // Say so here, or a `src/**` tree would read as having settled a contract change it
   // never touched. Only precise files carry anchors, so a locale tree pays nothing.
-  const acks = readAcks(root);
+  const binding = boundary ? changeSetBinding(boundary) : undefined;
+  const acks = readAcks(root).filter((ack) => sameChangeSetBinding(ack.boundary, binding));
   const stillMoved = !registry
     ? []
     : Object.values(
@@ -756,7 +890,8 @@ function ackToJson(root: string, ack: Acknowledgment): AckJson {
     to: ack.toHash,
     reason: ack.reason,
     signer: ack.signer,
-    validity: ackValidity(root, ack),
+    ...(ack.boundary ? { boundary: ack.boundary } : {}),
+    validity: currentAckValidity(root, ack),
   };
 }
 
@@ -772,6 +907,9 @@ function validityTag(v: AckValidity, ack: Acknowledgment): string {
   if (ack.standing) {
     return pc.yellow(" (auto-invalidated — --standing is retired; codument ack --prune)");
   }
+  if (ack.boundary) {
+    return pc.yellow(" (auto-invalidated — the recorded delivery boundary moved)");
+  }
   return pc.yellow(" (auto-invalidated — the anchor moved past it; codument ack --remove)");
 }
 
@@ -784,7 +922,7 @@ function listAcks(root: string): void {
   console.log(pc.bold(`Acknowledgments (${acks.length})`));
   let invalidated = 0;
   for (const a of acks) {
-    const validity = ackValidity(root, a);
+    const validity = currentAckValidity(root, a);
     if (validity === "invalidated") invalidated += 1;
     // A tree ack's width is stated wherever it is shown: "one line, 120 files" is the
     // whole trade, and a reader who has to open the record to learn it will not.
@@ -795,6 +933,11 @@ function listAcks(root: string): void {
       )}${validityTag(validity, a)}`,
     );
     console.log(`    ${pc.dim(`${a.signer}:`)} ${a.reason}`);
+    if (a.boundary) {
+      console.log(
+        pc.dim(`      boundary: ${a.boundary.mode} · ${a.boundary.fingerprint.slice(0, 12)}`),
+      );
+    }
     // What the record used to answer for, in the past tense it now deserves. The
     // binding is still shown because it is the only thing that explains a signature
     // nobody can find a matching transition for.
@@ -847,7 +990,7 @@ function listAcksJson(root: string): void {
  *  fix. Exported so `doctor` can NAME the pile where the loop actually looks
  *  without owning a second definition of what "dead" means. */
 export function deadAcks(root: string): Acknowledgment[] {
-  return readAcks(root).filter((a) => ackValidity(root, a) === "invalidated");
+  return readAcks(root).filter((a) => currentAckValidity(root, a) === "invalidated");
 }
 
 /** Remove every dead ack, returning what went. Silent: the caller words the report,
