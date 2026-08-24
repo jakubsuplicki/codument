@@ -21,6 +21,11 @@ paths. The projection is passed through documentation drift, test impact, acknow
 grounding, review artifacts, and the final verdict so no surface silently widens back to the whole
 worktree.
 
+For a staged review, that projection is also the read boundary. Registry ownership, approved-plan
+scope, exclusions, source baselines, and documentation pointers are resolved from the selected Git
+snapshot, so an unrelated worktree edit cannot alter the verdict indirectly through control-plane
+state.
+
 The compact verification surface is the normal step gate. It combines documentation synchronization
 and required adversarial-review coverage, prints actionable failures by default, and keeps full
 diagnostics and a deterministic machine contract available on demand. When a clean non-trivial
@@ -36,11 +41,14 @@ ownership.
 ## Invariants & boundaries
 
 - The local authoritative verdict covers exactly the complete staged set; an explicit subset is
-  diagnostic until it equals that set. *(test: `change-set.test.ts` staged/subset matrix)*
+  diagnostic until it equals that set and cannot satisfy a strict gate. *(tests:
+  `change-set.test.ts` staged/subset matrix; `review-boundary.test.ts` strict subset refusal)*
 - A path changed both in the index and again in the working tree fails before analysis, because the
   committed bytes and inspected bytes differ. Dirty paths outside the staged set never block.
-  *(tests: `change-set.test.ts` overlap refusal and outside-churn fingerprint; planned:
-  `verify.test.ts` command-level partial-stage and concurrent-dirty fixtures)*
+  Registry, plan, exclusion, and doc reads follow the same snapshot. *(tests: `change-set.test.ts`
+  overlap refusal and outside-churn fingerprint; `review-boundary.test.ts` command-level overlap,
+  concurrent dirty work, and staged control-plane fixtures; planned: `verify.test.ts` compact-command
+  parity)*
 - Every boundary consumer receives the same base, paths, transitions, and fingerprint. An
   acknowledgment, review artifact, or verification receipt from another boundary never clears this
   one. *(planned: `review-artifact.test.ts`, `ack.test.ts`, `verify.test.ts`)*
@@ -80,8 +88,8 @@ ownership.
   consumer.
 - `src/lib/test-impact.ts` — planned test-evidence attribution.
 - `src/commands/verify.ts` — planned compact verification, worksheet, and receipt surface.
-- `src/commands/review.ts` — existing detailed change-control and adversarial-review engine reused by
-  the focused surface.
+- `src/commands/review.ts` — the detailed change-control and adversarial-review engine; it accepts a
+  selected boundary and reads its control-plane inputs from the same snapshot.
 - `src/lib/git.ts` — existing Git seam extended with index-scoped facts.
 
 ## Delivery Plan — Plan 50: the change is what will be committed
@@ -89,7 +97,7 @@ ownership.
 Status: approved 2026-08-24.
 
 - [x] **Step 1 — Change-set substrate.** Add the staged, range, and explicit-staged boundary model, index change enumeration, overlap refusal, deterministic fingerprint, and focused unit/CLI fixtures.
-- [ ] **Step 2 — Change-control integration.** Thread the boundary through drift, ownership, deletions, renames, plan-scope reporting, and detailed review output while preserving the existing working-tree and CI range contracts.
+- [x] **Step 2 — Change-control integration.** Thread the boundary through drift, ownership, deletions, renames, plan-scope reporting, and detailed review output while preserving the existing working-tree and CI range contracts.
 - [ ] **Step 3 — Boundary-bound decisions and attestations.** Make acknowledgments, review bundles, review artifacts, printed remedies, and their invalidation rules consume and reproduce the exact boundary context.
 - [ ] **Step 4 — Test evidence.** Attribute staged tests through invariant pins and supported direct imports, expose unattributed tests, and include test changes in impact and adversarial-review fingerprints without creating documentation obligations.
 - [ ] **Step 5 — One verification surface.** Add compact staged verification, deterministic detailed and JSON modes, automatic review worksheets for clean uncovered boundaries, record-and-verify, and exact-fingerprint pass receipts for the pre-commit arm.

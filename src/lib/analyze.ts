@@ -74,6 +74,24 @@ export async function resolveScope(root: string): Promise<ResolvedScope> {
   return resolveScopeSync(root);
 }
 
+/** Resolve an already-validated declaration from a caller-selected snapshot. */
+export function resolveScopeFromConfigured(
+  configured: ExcludeConfig | null | undefined,
+): ResolvedScope {
+  const dirs = configured?.dirs ?? [];
+  const globs = configured?.globs ?? [];
+  const union = (base: string[], extra: string[]): string[] =>
+    extra.length > 0 ? [...new Set([...base, ...extra])].sort() : [...base];
+  return {
+    spec: {
+      dirs: union(DEFAULT_EXCLUSION_SPEC.dirs, dirs),
+      globs: union(DEFAULT_EXCLUSION_SPEC.globs, globs),
+      extensions: [...DEFAULT_EXCLUSION_SPEC.extensions],
+    },
+    configured: dirs.length + globs.length > 0 ? { dirs, globs } : null,
+  };
+}
+
 /** The same resolution for callers that cannot await (the editor nudge hook). */
 export function resolveScopeSync(root: string): ResolvedScope {
   let configured: ExcludeConfig | undefined;
@@ -92,23 +110,8 @@ export function resolveScopeSync(root: string): ResolvedScope {
     if (!(err instanceof StateFileError)) throw err;
     unreadable = `${err.path} is unreadable, so a declared scope could not be read`;
   }
-  const dirs = configured?.dirs ?? [];
-  const globs = configured?.globs ?? [];
-  // Every returned array is freshly built, never the default's own. Handing back
-  // a shared array would let one caller's in-place edit rewrite the spec for the
-  // rest of the process — a determinism hole that no test could localize.
-  const union = (base: string[], extra: string[]): string[] =>
-    extra.length > 0 ? [...new Set([...base, ...extra])].sort() : [...base];
   return {
-    spec: {
-      dirs: union(DEFAULT_EXCLUSION_SPEC.dirs, dirs),
-      globs: union(DEFAULT_EXCLUSION_SPEC.globs, globs),
-      // Config can never widen the extension list: that list is the language
-      // matrix's truth, and letting a project add to it would let codument claim
-      // support for a language it has no adapter for.
-      extensions: [...DEFAULT_EXCLUSION_SPEC.extensions],
-    },
-    configured: dirs.length + globs.length > 0 ? { dirs, globs } : null,
+    ...resolveScopeFromConfigured(configured),
     ...(unreadable === undefined ? {} : { unreadable }),
   };
 }

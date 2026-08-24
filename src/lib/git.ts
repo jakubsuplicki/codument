@@ -936,6 +936,35 @@ export function getBlobOidAtRef(
   }
 }
 
+/** UTF-8 content of a path in the index, or null when the index has no stage-0 entry. */
+export function readIndexText(
+  root: string,
+  path: string,
+  workspace: Workspace = resolveWorkspace(root),
+): string | null {
+  const owner = repoFor(workspace, path);
+  if (!owner) return null;
+  let listing: string;
+  try {
+    listing = git(owner.member.root, ["ls-files", "--stage", "-z", "--", owner.relPath]);
+  } catch (err) {
+    throw new GateError(
+      `git ls-files --stage -- ${path} failed: ${(err as Error).message}`,
+      "git-failed",
+    );
+  }
+  const hasStageZero = listing
+    .split("\0")
+    .filter(Boolean)
+    .some((record) => record.slice(0, record.indexOf("\t")).split(" ")[2] === "0");
+  if (!hasStageZero) return null;
+  try {
+    return git(owner.member.root, ["show", `:${owner.relPath}`]);
+  } catch (err) {
+    throw new GateError(`git show :${path} failed: ${(err as Error).message}`, "git-failed");
+  }
+}
+
 /**
  * A root the gate can run over: a repository, or a workspace of member
  * repositories under a (possibly non-repo) root. The field monorepo — no

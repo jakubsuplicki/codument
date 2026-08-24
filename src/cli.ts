@@ -129,6 +129,14 @@ program
     "Review the branch's drift since it diverged from <ref> (merge-base..working-tree), not just uncommitted changes",
   )
   .option(
+    "--staged",
+    "Review the exact Git index snapshot instead of the whole dirty working tree",
+  )
+  .option(
+    "--paths <paths...>",
+    "Inspect explicit staged paths; diagnostic until the selection covers every staged path",
+  )
+  .option(
     "--require-independent-ack",
     "Strict mode (ADR 006): only an ack whose signer is independent of the change's commit author clears a finding — a self-signed ack leaves it open (and --strict fails on it)",
   )

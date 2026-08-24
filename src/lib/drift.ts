@@ -93,6 +93,7 @@ export function computeDrift(
   registry: Registry,
   anchorChanges: Record<string, AnchorChange[]>,
   acks: Acknowledgment[],
+  readHead?: (path: string) => string | null,
 ): DriftResult {
   const findings: DriftFinding[] = [];
   const filtered: Record<string, AnchorChange[]> = {};
@@ -108,10 +109,14 @@ export function computeDrift(
         base = null;
       }
       let head: string | null;
-      try {
-        head = byteNormalize(readFileSync(join(root, docPath), "utf-8"));
-      } catch {
-        head = null;
+      if (readHead) {
+        head = readHead(docPath);
+      } else {
+        try {
+          head = byteNormalize(readFileSync(join(root, docPath), "utf-8"));
+        } catch {
+          head = null;
+        }
       }
       c = { base, head };
       docCache.set(docPath, c);

@@ -8,7 +8,18 @@ import {
   normalizeIdentity,
   readAcks,
 } from "../lib/acknowledgment.js";
-import { type ExclusionSpec, isExcluded, resolveScopeSync } from "../lib/analyze.js";
+import {
+  type ExclusionSpec,
+  isExcluded,
+  resolveScopeFromConfigured,
+  resolveScopeSync,
+} from "../lib/analyze.js";
+import {
+  ChangeSetError,
+  type ChangeSet,
+  readChangeSetFile,
+  resolveChangeSet,
+} from "../lib/change-set.js";
 import {
   type ApprovedPlan,
   type ChangeState,
@@ -16,6 +27,7 @@ import {
   DEPENDENT_CAP,
   type DependentSummary,
   detectApprovedPlanScope,
+  detectApprovedPlanScopeFromDocuments,
   type OwnershipLint,
   removedInChange,
   resolveDocPointers,
@@ -23,6 +35,7 @@ import {
   standingTreeAcks,
   type UngatedRegisteredChange,
 } from "../lib/change-state.js";
+import { validateExclude } from "../lib/codemod.js";
 import { anchorGates, computeDrift, type DriftFinding } from "../lib/drift.js";
 import {
   fileContentTransition,
@@ -36,9 +49,9 @@ import {
   getWorkingTreeChanges,
   getWorkingTreeDeletions,
   getWorkingTreeRenames,
-  listTrackedFiles,
   isGateableRoot,
   isGitRepo,
+  listTrackedFiles,
   movesOnly,
   type RenamePair,
   renamedFromMap,
@@ -125,6 +138,11 @@ interface ReviewOptions {
   /** Diff against the merge-base with this ref (the branch's drift since it
    *  diverged), not just the uncommitted working tree. */
   base?: string;
+  /** Review the exact snapshot in Git's index instead of the whole working tree. */
+  staged?: boolean;
+  /** Focus the staged projection to explicit paths. Diagnostic until it covers
+   *  every staged transition. Implies `staged`. */
+  paths?: string[];
   /** Override the argv used to run a finding's named test (the literal `{file}`
    *  token is the resolved path). Defaults to codument's own `npx tsx --test`; a
    *  consumer project whose tests run differently sets this so the gate's
@@ -220,6 +238,9 @@ export interface ReviewReport {
    *  from the tuple of member heads the way a plain repo's is from one sha. Null in
    *  the ordinary single-repo case, which is byte-identical to before. */
   workspace: { members: string[]; bases: Array<{ prefix: string; sha: string }> } | null;
+  /** Present only for an explicitly focused invocation. Omitted from legacy
+   *  working-tree/range JSON so their established machine shape does not move. */
+  boundary?: ChangeSet;
   /** Test pins in the touched features' docs that resolve to no file (see
    *  `UnresolvedPin`). Reported, never a gate input. */
   unresolvedPins: UnresolvedPin[];
@@ -382,6 +403,48 @@ function registryRot(
     .map(([file, features]) => ({ file, features }));
 }
 
+function registryForBoundary(root: string, boundary: ChangeSet): Registry {
+  const raw = readChangeSetFile(root, boundary, "docs/.registry.json");
+  if (raw === null) {
+    throw new GateError(
+      "docs/.registry.json is absent from the selected Git snapshot",
+      "git-failed",
+    );
+  }
+  return parseRegistryOrThrow(raw, "docs/.registry.json@selected-boundary");
+}
+
+function planForBoundary(root: string, boundary: ChangeSet): ApprovedPlan | null {
+  const tracked = listTrackedFiles(root);
+  if (!tracked.ok) {
+    throw new GateError(`could not enumerate selected plan files: ${tracked.reason}`, "git-failed");
+  }
+  const documents: Array<{ path: string; content: string }> = [];
+  for (const path of tracked.paths.filter((candidate) => /^docs\/plans\/[^/]+\.md$/.test(candidate))) {
+    const content = readChangeSetFile(root, boundary, path);
+    if (content !== null) documents.push({ path, content });
+  }
+  return detectApprovedPlanScopeFromDocuments(documents);
+}
+
+function exclusionForBoundary(root: string, boundary: ChangeSet): ExclusionSpec {
+  const raw = readChangeSetFile(root, boundary, ".codument-meta.json");
+  if (raw === null) return resolveScopeFromConfigured(null).spec;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new GateError(".codument-meta.json is corrupt in the selected Git snapshot", "git-failed");
+  }
+  const exclude =
+    typeof parsed === "object" && parsed !== null
+      ? (parsed as { exclude?: unknown }).exclude
+      : undefined;
+  return resolveScopeFromConfigured(
+    exclude === undefined ? null : validateExclude(exclude, ".codument-meta.json@selected-boundary"),
+  ).spec;
+}
+
 export function buildReview(
   root: string,
   changedFiles?: string[],
@@ -398,9 +461,14 @@ export function buildReview(
      *  working-tree view by default, the `--base` caller's ref-ranged list when
      *  it has one. Only the spec-invisible addition signal reads it. */
     addedFiles?: string[];
+    /** A first-class focused boundary. Its path transitions replace every
+     *  independently gathered working-tree input below. */
+    boundary?: ChangeSet;
   } = {},
 ): ReviewReport {
-  const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+  const registry = opts.boundary
+    ? registryForBoundary(root, opts.boundary)
+    : readRegistrySync(join(root, "docs", ".registry.json"));
   const ws = resolveWorkspace(root);
   // The project's own exclusions. Resolved here by default rather than required
   // from every caller, because a caller who forgot to pass the spec would
@@ -411,10 +479,10 @@ export function buildReview(
   // Callers that already computed the working-tree changes (e.g. `watch`, which
   // also needs them for its activity tape) can pass them in to avoid a second
   // `git status` tree scan per refresh; default to computing them here.
-  const changes = changedFiles ?? getWorkingTreeChanges(root);
+  const changes = opts.boundary?.changedFiles ?? changedFiles ?? getWorkingTreeChanges(root);
   // Pure deletions are first-class: a deleted owned source must wake its doc
   // exactly like an edit would (the `--base` caller passes its own two-ref list).
-  const deletions = deletedFiles ?? getWorkingTreeDeletions(root);
+  const deletions = opts.boundary?.deletions ?? deletedFiles ?? getWorkingTreeDeletions(root);
   // A rename's origin reaches the verdict ONLY here: the destination rides
   // `changes`, but the vanished path is what a registry entry may still name.
   // Filtered to genuine MOVES before anything reads it: git pairs by similarity,
@@ -423,7 +491,10 @@ export function buildReview(
   // about it — the anchor map would read the new file's base from the original
   // and launder its whole contract as unchanged, and the pointer finding would
   // demand the registry stop naming a file that exists.
-  const renames = movesOnly(opts.renames ?? getWorkingTreeRenames(root), new Set(changes));
+  const renames = movesOnly(
+    opts.boundary?.renames ?? opts.renames ?? getWorkingTreeRenames(root),
+    new Set(changes),
+  );
   // What this change ADDED, for the one signal that must tell a new file from an
   // edited one. Derived rather than asked for a second time: a changed path that
   // git does not track at the base did not exist there. The listing fails soft, and
@@ -431,9 +502,15 @@ export function buildReview(
   // guessing, which is the right direction for something reported and never gated.
   const tracked = listTrackedFiles(root, ws);
   const additions =
+    opts.boundary?.additions ??
     opts.addedFiles ??
     (tracked.ok ? changes.filter((f) => !new Set(tracked.paths).has(f)) : []);
-  const plan = detectApprovedPlanScope(root);
+  const plan = opts.boundary
+    ? planForBoundary(root, opts.boundary)
+    : detectApprovedPlanScope(root);
+  const readSelected = opts.boundary
+    ? (path: string): string | null => readChangeSetFile(root, opts.boundary as ChangeSet, path)
+    : undefined;
   // Per-symbol anchor diffs for the precise (TS) changed files, base ref vs the
   // working tree — this is what dissolves the shared-file cascade in the verdict.
   // Best-effort: coarse/non-TS files degrade to file-grain ownership; parse-error
@@ -488,6 +565,7 @@ export function buildReview(
     registry,
     anchorChanges,
     honoredAcks,
+    readSelected,
   );
   // File-grain acks (`codument ack <path>`): a bare-path ack covering a file's
   // current content clears its additive/concept/coarse staleness (never a moved
@@ -551,9 +629,14 @@ export function buildReview(
     // The prose pointer beside the registry pointer. Resolved here because reading a
     // doc is impure and the analyzer never touches the filesystem; both findings read
     // one removal set, so they cannot disagree about what is gone.
-    docPointers: resolveDocPointers(root, registry, removedInChange(renames, changes, deletions)),
+    docPointers: resolveDocPointers(
+      root,
+      registry,
+      removedInChange(renames, changes, deletions),
+      readSelected,
+    ),
   });
-  const unresolvedPins = findUnresolvedPins(root, registry, state);
+  const unresolvedPins = findUnresolvedPins(root, registry, state, readSelected);
   // The acks adjudicating this change — the audit card both the human review and the
   // HTML report read. Computed from the FULL ack set (not `honoredAcks`), so under
   // `--require-independent-ack` a self-ack that did NOT clear its finding is still
@@ -650,6 +733,7 @@ export function buildReview(
     workspace: ws.isWorkspace
       ? { members: ws.members.map((m) => m.prefix || "<root>"), bases: workspaceBases(ws) }
       : null,
+    ...(opts.boundary ? { boundary: opts.boundary } : {}),
   };
 }
 
@@ -657,12 +741,20 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   const root = options.root ?? process.cwd();
   // The same resolution buildReview performs, for the gate paths that scope a
   // real-change set outside the report itself.
-  const { spec: exclusion } = resolveScopeSync(root);
+  let { spec: exclusion } =
+    options.staged || options.paths
+      ? resolveScopeFromConfigured(null)
+      : resolveScopeSync(root);
 
   // Output-format guard: SARIF is the only non-default format, and it cannot combine
   // with --json (two machine shapes, one stdout). A usage error is human text + exit 1,
   // never a half-valid document a consumer might parse.
   const sarifMode = options.format === "sarif";
+  if (options.base && (options.staged || options.paths)) {
+    console.log(pc.red("  ✗ --base cannot combine with --staged or --paths; pick one boundary."));
+    process.exitCode = 1;
+    return;
+  }
   if (options.format !== undefined && !sarifMode) {
     console.log(pc.red(`  ✗ unknown --format "${options.format}" (supported: sarif)`));
     process.exitCode = 1;
@@ -731,11 +823,24 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // The gate path below is synchronous; adapters that parse through a WASM
     // grammar load it here or fail loud when reached cold.
     await warmAdaptersForRepo(root);
-    const reviewOpts = {
-      requireIndependentAck: options.requireIndependentAck === true,
-      exclusion,
-    };
-    if (options.base) {
+    if (options.staged || options.paths) {
+      const boundary = resolveChangeSet(
+        root,
+        options.paths
+          ? { mode: "explicit-staged", paths: options.paths }
+          : { mode: "staged" },
+      );
+      exclusion = exclusionForBoundary(root, boundary);
+      report = buildReview(root, undefined, "HEAD", undefined, {
+        requireIndependentAck: options.requireIndependentAck === true,
+        exclusion,
+        boundary,
+      });
+      // The staged base is HEAD in each member. Artifact identity remains the
+      // single resolved base in a plain repo; Step 3 binds workspace tuples and
+      // the boundary fingerprint through the review artifacts themselves.
+      effectiveBase = getHeadSha(root) ?? EMPTY_TREE_SHA;
+    } else if (options.base) {
       // A single ref cannot name a state of several repositories, so ref-ranged
       // review is refused in a workspace rather than answered with a guess (a
       // per-member ref map, or diffing gitlink shas, would put a guess on the
@@ -754,7 +859,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       const baseRef = resolveBase(root, options.base, "HEAD").sha;
       const changes = worktreeChangesSince(root, options.base);
       report = buildReview(root, changes, baseRef, worktreeDeletionsSince(root, options.base), {
-        ...reviewOpts,
+        requireIndependentAck: options.requireIndependentAck === true,
+        exclusion,
         renames: worktreeRenamesSince(root, options.base),
         // The ref-ranged view of what is new, for the same reason this caller passes
         // its own changes and deletions: "added" against HEAD answers a different
@@ -767,7 +873,10 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       // real object name (the empty tree before the first commit) so the fingerprint
       // base is a stable sha, never the literal "HEAD" — the step-5 writer records
       // exactly this value, and a fresh-repo/first-commit boundary cannot flip it.
-      report = buildReview(root, undefined, "HEAD", undefined, reviewOpts);
+      report = buildReview(root, undefined, "HEAD", undefined, {
+        requireIndependentAck: options.requireIndependentAck === true,
+        exclusion,
+      });
       effectiveBase = getHeadSha(root) ?? EMPTY_TREE_SHA;
     }
   } catch (err) {
@@ -775,6 +884,35 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // clone, or a subdirectory root). Distinct from "ran and passed" so CI never
     // treats it as green. `--json` gets the same discriminated shape as the
     // non-git case, never broken output a consumer could misread.
+    if (err instanceof ChangeSetError) {
+      if (sarifMode) {
+        console.log(JSON.stringify(gateUnavailableSarif(err.message), null, 2));
+        process.exitCode = 1;
+        return;
+      }
+      if (options.json) {
+        console.log(
+          JSON.stringify(
+            {
+              version: 2,
+              gate: "unavailable",
+              reason: err.message,
+              kind: err.code,
+              isGitRepo: true,
+            },
+            null,
+            2,
+          ),
+        );
+        process.exitCode = 1;
+        return;
+      }
+      console.log(pc.bold("codument review"));
+      console.log();
+      console.log(pc.red(`  ✗ ${err.message} (focused boundary could not be inspected)`));
+      process.exitCode = 1;
+      return;
+    }
     if (err instanceof GateError) {
       if (sarifMode) {
         console.log(JSON.stringify(gateUnavailableSarif(err.message), null, 2));
@@ -805,6 +943,16 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       return;
     }
     throw err;
+  }
+
+  if (options.record && report.boundary?.complete === false) {
+    console.log(
+      pc.red(
+        "  ✗ cannot record a review for an explicit subset while other staged paths remain outside it",
+      ),
+    );
+    process.exitCode = 1;
+    return;
   }
 
   // --bundle: emit the oracle an adversarial reviewer attacks (the touched features'
@@ -990,9 +1138,11 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // gaps the step did not touch; it deliberately ignores dependents/risk
   // (informational) and depends_on (a separate concern), so the gate stays
   // satisfiable — a genuine leaf feature with no deps can still pass.
+  const boundaryIncomplete = report.boundary?.complete === false;
   const strictFail =
     !!options.strict &&
-    (report.state.unmapped.length > 0 ||
+    (boundaryIncomplete ||
+      report.state.unmapped.length > 0 ||
       report.state.staleDocs.length > 0 ||
       // A registry entry naming a path this change removed. The registry is the
       // control plane every other answer derives from, so letting a step commit a
@@ -1118,7 +1268,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       }
     }
   }
-  const reviewGateFail = !!reviewGate && !reviewGate.passed;
+  const reviewGateFail =
+    (boundaryIncomplete && !!options.requireReview) || (!!reviewGate && !reviewGate.passed);
 
   if (sarifMode) {
     // The gate verdict as SARIF for CI code-scanning upload. Stdout only: the exit
@@ -1441,20 +1592,23 @@ function findUnresolvedPins(
   root: string,
   registry: Registry,
   state: ChangeState,
+  readText?: (path: string) => string | null,
 ): UnresolvedPin[] {
   const out: UnresolvedPin[] = [];
   for (const group of state.byFeature) {
     const entry = registry.features[group.feature];
     if (!entry) continue;
-    let invariants: string;
-    try {
-      invariants = extractDocSection(
-        readFileSync(join(root, entry.doc), "utf8"),
-        "Invariants & boundaries",
-      );
-    } catch {
-      continue; // an unreadable doc is the staleness surface's problem, not this one's
+    let content: string | null;
+    if (readText) content = readText(entry.doc);
+    else {
+      try {
+        content = readFileSync(join(root, entry.doc), "utf8");
+      } catch {
+        content = null;
+      }
     }
+    if (content === null) continue;
+    const invariants = extractDocSection(content, "Invariants & boundaries");
     for (const test of extractPinnedTests(invariants)) {
       if (!resolveTestPath(root, test, DEFAULT_TEST_SEARCH_DIRS)) {
         out.push({ feature: group.feature, doc: entry.doc, test });
@@ -1747,6 +1901,32 @@ function printHuman(report: ReviewReport): void {
   console.log(pc.bold("codument review"));
   console.log();
 
+  if (report.boundary) {
+    const label =
+      report.boundary.mode === "explicit-staged" ? "explicit staged paths" : report.boundary.mode;
+    console.log(
+      pc.cyan(
+        `  boundary: ${label} · ${report.boundary.fingerprint.slice(0, 12)}` +
+          (report.boundary.complete ? "" : " · diagnostic subset"),
+      ),
+    );
+    if (report.boundary.unselectedStagedPaths.length > 0) {
+      console.log(
+        pc.yellow(
+          `    ${report.boundary.unselectedStagedPaths.length} staged path${report.boundary.unselectedStagedPaths.length === 1 ? "" : "s"} outside this projection — no commit pass can be minted`,
+        ),
+      );
+    }
+    if (report.boundary.dirtyOutside.length > 0) {
+      console.log(
+        pc.dim(
+          `    ${report.boundary.dirtyOutside.length} unrelated dirty path${report.boundary.dirtyOutside.length === 1 ? "" : "s"} reported, not analyzed`,
+        ),
+      );
+    }
+    console.log();
+  }
+
   if (report.workspace) {
     // A workspace verdict is over several repositories; name them and their base
     // heads so the run is reproducible from the tuple, the way a plain repo's is
@@ -1764,7 +1944,9 @@ function printHuman(report: ReviewReport): void {
   }
 
   if (report.changedFileCount === 0) {
-    console.log(`  ${pc.green("✓")} Working tree clean — nothing to review.`);
+    console.log(
+      `  ${pc.green("✓")} ${report.boundary ? "Selected boundary empty" : "Working tree clean"} — nothing to review.`,
+    );
     return;
   }
 

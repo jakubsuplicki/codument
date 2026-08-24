@@ -8,14 +8,17 @@ import {
   getWorkingTreeChanges,
   getWorkingTreeDeletions,
   repoFor,
+  readIndexText,
   resolveWorkspace,
   type IndexChange,
   type Workspace,
 } from "./git.js";
 import { GateError } from "./gate-error.js";
 import {
+  byteNormalize,
   changedPathsBetween,
   EMPTY_TREE_SHA,
+  readBlobAtRef,
   resolveBase,
 } from "./two-ref.js";
 
@@ -273,4 +276,11 @@ function resolveRange(
 /** Resolve the exact delivery boundary all later change-control consumers share. */
 export function resolveChangeSet(root: string, options: ChangeSetOptions): ChangeSet {
   return options.mode === "range" ? resolveRange(root, options) : resolveStaged(root, options);
+}
+
+/** Read a text file from the same snapshot the change set describes. */
+export function readChangeSetFile(root: string, set: ChangeSet, path: string): string | null {
+  if (set.mode === "range") return readBlobAtRef(root, set.head, path);
+  const content = readIndexText(root, path);
+  return content === null ? null : byteNormalize(content);
 }

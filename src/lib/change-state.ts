@@ -1038,6 +1038,7 @@ export function resolveDocPointers(
   root: string,
   registry: Registry,
   removed: readonly string[],
+  readText?: (path: string) => string | null,
 ): DocPointer[] {
   if (removed.length === 0) return [];
   const docs = sortStrings(
@@ -1045,12 +1046,17 @@ export function resolveDocPointers(
   );
   const out: DocPointer[] = [];
   for (const doc of docs) {
-    let text: string;
-    try {
-      text = readFileSync(join(root, doc), "utf-8");
-    } catch {
-      continue; // absent or unreadable — nothing to read a pointer out of
+    let text: string | null;
+    if (readText) {
+      text = readText(doc);
+    } else {
+      try {
+        text = readFileSync(join(root, doc), "utf-8");
+      } catch {
+        text = null;
+      }
     }
+    if (text === null) continue; // absent or unreadable — nothing to read a pointer out of
     const paths = removed.filter((p) => namesPath(text, p));
     if (paths.length > 0) out.push({ doc, paths });
   }
@@ -1201,6 +1207,24 @@ export interface ApprovedPlan {
   contenders: string[];
 }
 
+/** Pure approved-plan projection over an explicit document snapshot. */
+export function detectApprovedPlanScopeFromDocuments(
+  documents: readonly { path: string; content: string }[],
+): ApprovedPlan | null {
+  let winner: ApprovedPlan | null = null;
+  const contenders: string[] = [];
+  for (const { path, content } of [...documents].sort((a, b) =>
+    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+  )) {
+    if (!isApprovedPlan(content)) continue;
+    const scope = parseScopeSection(content);
+    if (scope.length === 0) continue;
+    contenders.push(path);
+    if (!winner) winner = { plan: path, scope, contenders };
+  }
+  return winner;
+}
+
 export function detectApprovedPlanScope(root: string): ApprovedPlan | null {
   const plansDir = join(root, "docs", "plans");
   if (!existsSync(plansDir)) return null;
@@ -1214,8 +1238,7 @@ export function detectApprovedPlanScope(root: string): ApprovedPlan | null {
     return null;
   }
 
-  let winner: ApprovedPlan | null = null;
-  const contenders: string[] = [];
+  const documents: Array<{ path: string; content: string }> = [];
   for (const file of files) {
     let content: string;
     try {
@@ -1223,13 +1246,9 @@ export function detectApprovedPlanScope(root: string): ApprovedPlan | null {
     } catch {
       continue;
     }
-    if (!isApprovedPlan(content)) continue;
-    const scope = parseScopeSection(content);
-    if (scope.length === 0) continue;
-    contenders.push(`docs/plans/${file}`);
-    if (!winner) winner = { plan: `docs/plans/${file}`, scope, contenders };
+    documents.push({ path: `docs/plans/${file}`, content });
   }
-  return winner;
+  return detectApprovedPlanScopeFromDocuments(documents);
 }
 
 // One shared approval predicate with `codument steps` (plan-steps.ts): the
