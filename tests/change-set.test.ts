@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import {
   ChangeSetError,
+  changeSetBinding,
+  parseVerificationReceipt,
   resolveChangeSet,
+  verificationReceiptCovers,
 } from "../src/lib/change-set.js";
 import { forgetWorkspace } from "../src/lib/git.js";
 
@@ -42,6 +45,35 @@ afterEach(async () => {
 });
 
 describe("resolveChangeSet", () => {
+  it("accepts a receipt only for the exact boundary and codument version", async () => {
+    await put("src/a.ts", "export const a = 2;\n");
+    git(["add", "src/a.ts"]);
+    const boundary = changeSetBinding(resolveChangeSet(repo, { mode: "staged" }));
+    const receipt = parseVerificationReceipt({
+      version: 1,
+      codumentVersion: "1.2.3",
+      boundary,
+    });
+
+    assert.ok(receipt);
+    assert.equal(verificationReceiptCovers(receipt, boundary, "1.2.3"), true);
+    assert.equal(
+      verificationReceiptCovers(
+        receipt,
+        changeSetBinding(resolveChangeSet(repo, { mode: "explicit-staged", paths: ["src/a.ts"] })),
+        "1.2.3",
+      ),
+      true,
+    );
+    assert.equal(verificationReceiptCovers(receipt, boundary, "1.2.4"), false);
+    assert.equal(parseVerificationReceipt({ version: 1, codumentVersion: "1.2.3" }), null);
+
+    await put("src/a.ts", "export const a = 3;\n");
+    git(["add", "src/a.ts"]);
+    const moved = changeSetBinding(resolveChangeSet(repo, { mode: "staged" }));
+    assert.equal(verificationReceiptCovers(receipt, moved, "1.2.3"), false);
+  });
+
   it("projects the exact staged additions, edits, deletions, and renames", async () => {
     await put("src/a.ts", "export const a = 2;\n");
     await put("src/new.ts", "export const fresh = true;\n");
@@ -163,10 +195,13 @@ describe("resolveChangeSet", () => {
     assert.deepEqual(set.changedFiles, ["packages/member/member.ts"]);
     assert.equal(set.bases.length, 1);
     assert.equal(set.bases[0]?.prefix, "packages/member");
-    assert.equal(set.bases[0]?.sha, execFileSync("git", ["rev-parse", "HEAD"], {
-      cwd: member,
-      encoding: "utf8",
-    }).trim());
+    assert.equal(
+      set.bases[0]?.sha,
+      execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: member,
+        encoding: "utf8",
+      }).trim(),
+    );
     assert.throws(
       () => resolveChangeSet(repo, { mode: "range", base: "HEAD" }),
       (error: unknown) => error instanceof ChangeSetError && error.code === "range-workspace",

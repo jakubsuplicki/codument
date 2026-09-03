@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { isAbsolute, posix, sep } from "node:path";
+import { GateError } from "./gate-error.js";
 import {
   getBlobOidAtRef,
   getHeadSha,
@@ -7,13 +8,12 @@ import {
   getStagedChanges,
   getWorkingTreeChanges,
   getWorkingTreeDeletions,
-  repoFor,
-  readIndexText,
-  resolveWorkspace,
   type IndexChange,
+  readIndexText,
+  repoFor,
+  resolveWorkspace,
   type Workspace,
 } from "./git.js";
-import { GateError } from "./gate-error.js";
 import {
   byteNormalize,
   changedPathsBetween,
@@ -71,6 +71,12 @@ export interface ChangeSetBinding {
   fingerprint: string;
 }
 
+export interface VerificationReceipt {
+  version: 1;
+  codumentVersion: string;
+  boundary: ChangeSetBinding;
+}
+
 export function changeSetBinding(set: ChangeSet): ChangeSetBinding {
   return {
     version: 1,
@@ -115,6 +121,36 @@ export function parseChangeSetBinding(value: unknown): ChangeSetBinding | null {
     paths: sorted(candidate.paths as string[]),
     fingerprint: candidate.fingerprint,
   };
+}
+
+export function parseVerificationReceipt(value: unknown): VerificationReceipt | null {
+  if (typeof value !== "object" || value === null) return null;
+  const candidate = value as Record<string, unknown>;
+  const boundary = parseChangeSetBinding(candidate.boundary);
+  if (
+    candidate.version !== 1 ||
+    typeof candidate.codumentVersion !== "string" ||
+    candidate.codumentVersion.length === 0 ||
+    !boundary
+  ) {
+    return null;
+  }
+  return { version: 1, codumentVersion: candidate.codumentVersion, boundary };
+}
+
+export function verificationReceiptCovers(
+  receipt: VerificationReceipt,
+  boundary: ChangeSetBinding,
+  codumentVersion: string,
+): boolean {
+  const normalizeStagedMode = (binding: ChangeSetBinding): ChangeSetBinding => ({
+    ...binding,
+    mode: binding.mode === "explicit-staged" ? "staged" : binding.mode,
+  });
+  return (
+    receipt.codumentVersion === codumentVersion &&
+    sameChangeSetBinding(normalizeStagedMode(receipt.boundary), normalizeStagedMode(boundary))
+  );
 }
 
 export function sameChangeSetBinding(
@@ -182,10 +218,7 @@ function currentDirty(root: string, workspace: Workspace): string[] {
   ]);
 }
 
-function basesForStaged(
-  workspace: Workspace,
-  changes: readonly ChangeSetEntry[],
-): ChangeSetBase[] {
+function basesForStaged(workspace: Workspace, changes: readonly ChangeSetEntry[]): ChangeSetBase[] {
   const prefixes = new Set<string>();
   for (const change of changes) {
     const owner = repoFor(workspace, change.path);
@@ -236,7 +269,9 @@ function project(
     head,
     complete,
     changes,
-    changedFiles: changes.filter((change) => change.status !== "deleted").map((change) => change.path),
+    changedFiles: changes
+      .filter((change) => change.status !== "deleted")
+      .map((change) => change.path),
     additions: changes.filter((change) => change.status === "added").map((change) => change.path),
     deletions: changes.filter((change) => change.status === "deleted").map((change) => change.path),
     renames: changes
@@ -253,7 +288,10 @@ function ensureContentOids(changes: readonly ChangeSetEntry[]): void {
     .filter((change) => change.status !== "deleted" && !change.contentOid)
     .map((change) => change.path);
   if (missing.length > 0) {
-    throw new GateError(`git could not resolve selected content for ${missing.join(", ")}`, "git-failed");
+    throw new GateError(
+      `git could not resolve selected content for ${missing.join(", ")}`,
+      "git-failed",
+    );
   }
 }
 
@@ -333,15 +371,7 @@ function resolveRange(
   }));
   ensureContentOids(entries);
   const bases = [{ prefix: "", sha: resolved.sha }];
-  return project(
-    "range",
-    bases,
-    head,
-    true,
-    entries,
-    [],
-    currentDirty(root, workspace),
-  );
+  return project("range", bases, head, true, entries, [], currentDirty(root, workspace));
 }
 
 /** Resolve the exact delivery boundary all later change-control consumers share. */

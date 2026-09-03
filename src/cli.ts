@@ -18,6 +18,7 @@ import { review } from "./commands/review.js";
 import { scan } from "./commands/scan.js";
 import { stepsCommand } from "./commands/steps.js";
 import { update } from "./commands/update.js";
+import { verify } from "./commands/verify.js";
 import { watch } from "./commands/watch.js";
 import { ExcludedSourceError, RegistryError } from "./lib/registry.js";
 import { ConfigValueError, StateFileError } from "./lib/state-io.js";
@@ -87,6 +88,45 @@ program
   .action(doctor);
 
 program
+  .command("verify")
+  .description(
+    "Verify the exact staged commit boundary: documentation sync, test impact, and required adversarial-review coverage",
+  )
+  .option("--details", "Show the complete change-control diagnostic report")
+  .option("--json", "Emit the deterministic machine-readable verification result")
+  .option(
+    "--paths <paths...>",
+    "Inspect explicit staged paths; no pass receipt is written until they cover every staged path",
+  )
+  .option(
+    "--prepare-review",
+    "Write or refresh .codument/review-worksheet.json for the current staged boundary",
+  )
+  .option(
+    "--record <file>",
+    "Record a completed generated review worksheet and verify the same staged boundary in this invocation",
+  )
+  .option(
+    "--test-command <argv...>",
+    'How to re-run a finding\'s test; the literal {file} token is replaced with its path. Overrides "testCommand" in .codument-meta.json',
+  )
+  .option(
+    "--test-timeout <seconds>",
+    'How long one finding\'s test may run. Overrides "testTimeoutSeconds" in .codument-meta.json',
+  )
+  .option(
+    "--require-independent-ack",
+    "Only an acknowledgment independent of the change author clears a finding",
+  )
+  .option("--root <dir>", "project root (defaults to current directory)")
+  .option("--dir <dir>", "project root (alias of --root)")
+  .addHelpText(
+    "after",
+    `\nWorkflow:\n  1. codument verify\n  2. Complete .codument/review-worksheet.json when prompted\n  3. codument verify --record .codument/review-worksheet.json\n`,
+  )
+  .action((options) => verify({ ...options, root: options.root ?? options.dir }));
+
+program
   .command("review")
   .description(
     "Review the git diff against the registry: owners, stale docs, risk touches, out-of-plan and unmapped changes, dependents",
@@ -128,10 +168,7 @@ program
     "--base <ref>",
     "Review the branch's drift since it diverged from <ref> (merge-base..working-tree), not just uncommitted changes",
   )
-  .option(
-    "--staged",
-    "Review the exact Git index snapshot instead of the whole dirty working tree",
-  )
+  .option("--staged", "Review the exact Git index snapshot instead of the whole dirty working tree")
   .option(
     "--paths <paths...>",
     "Inspect explicit staged paths; diagnostic until the selection covers every staged path",

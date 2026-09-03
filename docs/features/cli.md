@@ -2,7 +2,7 @@
 title: CLI
 status: current
 type: feature
-last_reviewed: 2026-08-24
+last_reviewed: 2026-09-03
 ---
 
 # CLI
@@ -20,6 +20,11 @@ The surface is intentionally small and stable, because the command names are a p
 Focused review is an explicit extension of the existing command: `review --staged` selects the full
 Git index, while `review --paths` selects staged paths for diagnosis. Bare `review` remains the
 working-tree compatibility surface, so existing scripts do not silently change meaning.
+
+`verify` is the normal local delivery gate. It checks the complete staged boundary in compact form,
+with deterministic JSON and full diagnostics available explicitly. When a non-trivial boundary needs
+review evidence, the command creates the worksheet it accepts back through `--record`; its help names
+that complete workflow, so no hidden artifact schema or shell redirection is part of the contract.
 
 The acknowledgment surface accepts the same `--staged` and `--paths` selectors plus an expected
 `--boundary` fingerprint. These flags are primarily copy-paste context emitted by focused review:
@@ -44,6 +49,9 @@ One command is a signpost, not an action: `run` (aliased `autopilot`) exists onl
 - Every focused acknowledgment command printed by the CLI reproduces its real selector and expected
   boundary fingerprint; the acknowledgment command rejects those flags in management modes and
   refuses a stale copied command. *(test: `review-boundary.test.ts`)*
+- Verification's normal path is one command. Its generated worksheet is directly consumable by the
+  printed record-and-verify command, and explicit path selection cannot issue a commit receipt until
+  it covers the full index. *(test: `verify.test.ts`)*
 
 ## Key files
 

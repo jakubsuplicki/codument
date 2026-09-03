@@ -411,7 +411,7 @@ function registryRot(
     .map(([file, features]) => ({ file, features }));
 }
 
-function registryForBoundary(root: string, boundary: ChangeSet): Registry {
+export function registryForBoundary(root: string, boundary: ChangeSet): Registry {
   const raw = readChangeSetFile(root, boundary, "docs/.registry.json");
   if (raw === null) {
     throw new GateError(
@@ -437,7 +437,7 @@ function planForBoundary(root: string, boundary: ChangeSet): ApprovedPlan | null
   return detectApprovedPlanScopeFromDocuments(documents);
 }
 
-function exclusionForBoundary(root: string, boundary: ChangeSet): ExclusionSpec {
+export function exclusionForBoundary(root: string, boundary: ChangeSet): ExclusionSpec {
   const raw = readChangeSetFile(root, boundary, ".codument-meta.json");
   if (raw === null) return resolveScopeFromConfigured(null).spec;
   let parsed: unknown;
@@ -1665,7 +1665,7 @@ function findUnresolvedPins(
  * one the reviewer saw. Built at full scope with no plan — neither affects the
  * per-feature contract blocks, which the delta deliberately never narrows.
  */
-function currentOracle(
+export function currentOracle(
   root: string,
   base: string,
   state: ChangeState,
@@ -1688,7 +1688,7 @@ function currentOracle(
 // config/data + real deletions, with docs and excluded paths dropped. Shared by the
 // `--require-review` gate and the `--record` writer so both fingerprint — and so
 // reason about proportionality over — the identical set.
-function computeRealChange(
+export function computeRealChange(
   report: ReviewReport,
   deletions: string[],
   exclusion: ExclusionSpec,
@@ -1956,7 +1956,7 @@ function ownershipResolution(
   return `${head}${fixes}${indent}  ${pc.dim(close)}`;
 }
 
-function printHuman(report: ReviewReport): void {
+export function printHuman(report: ReviewReport): void {
   const { state, plan } = report;
   const ackArgs = report.boundary
     ? report.boundary.mode === "staged"

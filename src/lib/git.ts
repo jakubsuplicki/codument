@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, realpathSync } from "node:fs";
+import { type Dirent, existsSync, readdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { DEFAULT_EXCLUSION_SPEC } from "./exclusion-spec.js";
 import { GateError } from "./gate-error.js";
@@ -268,9 +268,7 @@ function sortPaths(paths: Iterable<string>): string[] {
  * ("'the gate could not run' is distinguishable from 'the gate ran and passed'").
  * Callers that legitimately degrade must do so explicitly, at their own seam.
  */
-export type GitPathListing =
-  | { ok: true; paths: string[] }
-  | { ok: false; reason: string };
+export type GitPathListing = { ok: true; paths: string[] } | { ok: false; reason: string };
 
 /**
  * A stable `reason` for a failed git invocation. Node's own error text
@@ -628,7 +626,7 @@ export function resolveWorkspace(
   const rootIdentity = dirIdentity(root);
 
   const walk = (dir: string, prefix: string): void => {
-    let entries;
+    let entries: Dirent[];
     try {
       entries = readdirSync(dir, { withFileTypes: true });
     } catch (err) {
@@ -669,8 +667,7 @@ export function resolveWorkspace(
   // must not run at all.)
   const rootIsRepo = isGitRepo(root);
   const rootTop = rootIsRepo ? getRepoToplevel(root) : null;
-  const rootIsMember =
-    rootIsRepo && (rootTop === null || dirIdentity(rootTop) === rootIdentity);
+  const rootIsMember = rootIsRepo && (rootTop === null || dirIdentity(rootTop) === rootIdentity);
   if (rootIsMember) members.push({ prefix: "", root });
   walk(root, "");
 
@@ -724,8 +721,7 @@ export function repoFor(
     }
   }
   if (!best) return null;
-  const relative =
-    best.prefix === "" ? relPath : relPath.slice(best.prefix.length + 1);
+  const relative = best.prefix === "" ? relPath : relPath.slice(best.prefix.length + 1);
   return { member: best, relPath: relative };
 }
 
@@ -770,10 +766,7 @@ function aggregateListing(
     if (!result.ok) {
       return {
         ok: false,
-        reason:
-          member.prefix === ""
-            ? result.reason
-            : `${member.prefix}: ${result.reason}`,
+        reason: member.prefix === "" ? result.reason : `${member.prefix}: ${result.reason}`,
       };
     }
     for (const path of result.paths) {
@@ -867,6 +860,18 @@ export function getWorkingTreeRenames(
     }
   }
   return sortRenames(pairs);
+}
+
+/** Resolve a path inside Git's own state directory, including linked worktrees. */
+export function getGitPath(root: string, path: string): string | null {
+  if (!isGitRepo(root)) return null;
+  try {
+    const resolvedPath = git(root, ["rev-parse", "--git-path", path]).trim();
+    if (resolvedPath.length === 0) return null;
+    return isAbsolute(resolvedPath) ? resolvedPath : resolve(root, resolvedPath);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -983,9 +988,7 @@ export function isGateableRoot(root: string): boolean {
  * reproducible from the list. A member with no commit yet contributes the empty
  * tree, named.
  */
-export function workspaceBases(
-  workspace: Workspace,
-): Array<{ prefix: string; sha: string }> {
+export function workspaceBases(workspace: Workspace): Array<{ prefix: string; sha: string }> {
   return workspace.members.map((m) => ({
     prefix: m.prefix,
     sha: getHeadSha(m.root) ?? "(no commit)",

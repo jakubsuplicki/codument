@@ -47,8 +47,7 @@ ownership.
   committed bytes and inspected bytes differ. Dirty paths outside the staged set never block.
   Registry, plan, exclusion, and doc reads follow the same snapshot. *(tests: `change-set.test.ts`
   overlap refusal and outside-churn fingerprint; `review-boundary.test.ts` command-level overlap,
-  concurrent dirty work, and staged control-plane fixtures; planned: `verify.test.ts` compact-command
-  parity)*
+  concurrent dirty work, and staged control-plane fixtures; `verify.test.ts` compact-command parity)*
 - Every boundary consumer receives the same base, paths, transitions, and fingerprint. An
   acknowledgment, review artifact, or verification receipt from another boundary never clears this
   one. Printed acknowledgment remedies reproduce that boundary and refuse if it moves before the
@@ -56,7 +55,7 @@ ownership.
   reviewer, and artifacts persist the same binding. Unrelated diagnostic churn is deliberately not
   part of either stamp. *(tests: `review-boundary.test.ts` focused remedy,
   moved-boundary refusal, bundle, and artifact flow; `review-artifact.test.ts` exact-binding
-  round-trip and coverage; planned: `verify.test.ts` receipt parity)*
+  round-trip and coverage; `change-set.test.ts` receipt parity; `verify.test.ts` receipt integration)*
 - Staged tests affect evidence attribution, dependency blast reporting, and review fingerprints
   while remaining excluded from documentation ownership and staleness. Explicit invariant pins win
   over supported direct TypeScript imports. A deleted test can retain its surviving pin; any test
@@ -65,13 +64,15 @@ ownership.
   `review-bundle.test.ts` test-only oracle and delta projection)*
 - The default human output contains only actions that can change the verdict; `--details` preserves
   complete diagnostics and `--json` remains byte-deterministic for the same repository state.
-  *(planned: `verify.test.ts` human/JSON parity)*
-- CI range verification keeps the existing merge-base fail-closed semantics and does not depend on
-  an index. *(planned: `verify.test.ts` local/range parity)*
+  *(test: `verify.test.ts` human/JSON parity)*
+- CI range verification keeps the existing merge-base fail-closed review semantics and does not
+  depend on an index. Local verification does not reinterpret that compatibility route.
+  *(tests: `review.test.ts` range fixtures)*
 - The ordinary green, already-reviewed or trivial step requires one user-invoked verification
   command. A clean non-trivial step with no review requires two: the first writes its worksheet and
-  record-and-verify completes it; no unchanged-boundary third run occurs. *(planned: field-shaped
-  invocation-budget fixture)*
+  record-and-verify completes it; no unchanged-boundary third run occurs. An ordinary rerun preserves
+  a same-boundary worksheet being completed, while explicit preparation deliberately refreshes it.
+  *(test: `verify.test.ts` command-budget and worksheet flow)*
 - Working-tree review, whole-repository doctor, unsupported-file policy, and acknowledgment
   eligibility keep their existing semantics. This feature focuses their boundary; it does not
   re-litigate their judgments.
@@ -82,8 +83,9 @@ ownership.
 - Verification never stages files automatically. The agent stages explicit paths, preserving the
   user's unrelated work and making the commit boundary reviewable before the gate runs.
 - A successful local verification may write an untracked receipt under Git-owned state. The receipt
-  is a cache, never authority beyond its exact fingerprint; the hook recomputes the fingerprint and
-  reruns the gate on any mismatch.
+  names the Codument version and exact boundary identity without a timestamp, so identical state is
+  byte-deterministic. It is a cache, never authority beyond its fingerprint; the hook recomputes the
+  fingerprint and reruns the gate on any mismatch.
 - Review preparation and recording are first-class parts of the verification command. A clean
   uncovered boundary writes its worksheet automatically, an explicit preparation mode can reproduce
   it, and record-and-verify both persists the artifact and returns the resulting verdict.
@@ -96,7 +98,7 @@ ownership.
   consumer.
 - `src/lib/test-impact.ts` — test-evidence attribution and dependency impact without documentation
   ownership.
-- `src/commands/verify.ts` — planned compact verification, worksheet, and receipt surface.
+- `src/commands/verify.ts` — compact verification, worksheet, record-and-verify, and receipt surface.
 - `src/commands/review.ts` — the detailed change-control and adversarial-review engine; it accepts a
   selected boundary and reads its control-plane inputs from the same snapshot.
 - `src/lib/git.ts` — existing Git seam extended with index-scoped facts.
@@ -109,7 +111,7 @@ Status: approved 2026-08-24.
 - [x] **Step 2 — Change-control integration.** Thread the boundary through drift, ownership, deletions, renames, plan-scope reporting, and detailed review output while preserving the existing working-tree and CI range contracts.
 - [x] **Step 3 — Boundary-bound decisions and attestations.** Make acknowledgments, review bundles, review artifacts, printed remedies, and their invalidation rules consume and reproduce the exact boundary context.
 - [x] **Step 4 — Test evidence.** Attribute staged tests through invariant pins and supported direct imports, expose unattributed tests, and include test changes in impact and adversarial-review fingerprints without creating documentation obligations.
-- [ ] **Step 5 — One verification surface.** Add compact staged verification, deterministic detailed and JSON modes, automatic review worksheets for clean uncovered boundaries, record-and-verify, and exact-fingerprint pass receipts for the pre-commit arm.
+- [x] **Step 5 — One verification surface.** Add compact staged verification, deterministic detailed and JSON modes, automatic review worksheets for clean uncovered boundaries, record-and-verify, and exact-fingerprint pass receipts for the pre-commit arm.
 - [ ] **Step 6 — Workflow migration and field proof.** Stage before review in the installed skills, remove redundant per-step review invocations, teach the hook to reuse an exact receipt, update public guidance, and replay concurrent-dirty, test-change, Windows-command, and invocation-budget scenarios end to end.
 
 ### Feature Map

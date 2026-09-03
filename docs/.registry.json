@@ -470,7 +470,8 @@
       "type": "feature",
       "primary_sources": [
         "src/lib/change-set.ts",
-        "src/lib/test-impact.ts"
+        "src/lib/test-impact.ts",
+        "src/commands/verify.ts"
       ],
       "related_sources": [
         "src/cli.ts",
