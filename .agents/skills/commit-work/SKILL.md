@@ -1,6 +1,6 @@
 ---
 name: commit-work
-description: Verify, stage, and commit a reviewed Codument work step with a focused conventional commit.
+description: Commit an already verified Codument work step with a focused conventional commit.
 ---
 
 # Commit Work
@@ -11,20 +11,17 @@ Use this after `review-work` is clean, or after the user has approved/deferred e
 
 1. Check the active plan step is complete. If it was the final step, confirm the `## Delivery Plan` block has been compacted out (plan-with-docs → Compaction on ship) — a shipped feature doc must not commit with a stale delivery checklist still in it.
 2. Check that `review-work` is clean, or that every finding was fixed or explicitly deferred by the user.
-3. Check `git status --short`.
-4. Review the diff and avoid staging unrelated user changes.
-5. Run the relevant verification commands.
-6. Run `codument review --strict` — it must pass. It exits nonzero while the step left a new source unmapped or a mapped doc stale; materialize the file(s) (`codument map materialize <file>`) and update the stale doc(s), then re-run until clean. Do not commit while it is red.
-7. Stage only files belonging to the completed step.
-8. Commit with a conventional commit prefix:
+3. Check `git status --short` and `git diff --cached`.
+4. Confirm the already-staged, verified boundary has not changed since `review-work`; do not stage anything here. If it changed, return to `review-work` and rerun `codument verify`.
+5. Commit that boundary with a conventional commit prefix. The managed pre-commit hook runs `codument verify`; when the staged bytes and Codument version are unchanged, it reuses the exact receipt instead of repeating the review:
    - `feat:`
    - `fix:`
    - `docs:`
    - `test:`
    - `refactor:`
    - `chore:`
-9. **If that was the plan's last step, run `codument doctor --strict` once and report what it says.** It reports; it does not gate — a plan must not be blocked by an adopting repo's pre-existing debt. This is the only moment the loop looks at repo-wide health: `review` answers "is this change in sync", `doctor` answers "is the knowledge base still worth reading", and a field run made 37 review-family calls across five commits without ever learning its own health surface stood at 140 findings, including one on a doc that session had just edited. Once per plan, not once per step.
-10. Continue directly to `work-step` for the next unchecked step, or report completion if none remain. In gated mode, stop after the commit and offer the next-step gate instead:
+6. **If that was the plan's last step, run `codument doctor --strict` once and report what it says.** It reports; it does not gate — a plan must not be blocked by an adopting repo's pre-existing debt. This is the only moment the loop looks at repo-wide health: staged `verify` answers whether this change is ready, `doctor` answers whether the knowledge base is still worth reading. Once per plan, not once per step.
+7. Continue directly to `work-step` for the next unchecked step, or report completion if none remain. In gated mode, stop after the commit and offer the next-step gate instead:
 
    ```text
    Step N is reviewed and committed. Next options:
@@ -33,14 +30,14 @@ Use this after `review-work` is clean, or after the user has approved/deferred e
    3. Compact context before continuing
    4. Pause here
    ```
-11. If the user chooses compact context, use the active agent's native context-compaction command when one is available. If no native command is available, provide a concise restart note grounded in `AGENTS.md`, the active plan doc, `docs/.registry.json`, and `git status`, then pause.
+8. If the user chooses compact context, use the active agent's native context-compaction command when one is available. If no native command is available, provide a concise restart note grounded in `AGENTS.md`, the active plan doc, `docs/.registry.json`, and `git status`, then pause.
 
 ## Rules
 
 - Do not commit unresolved high or critical review findings.
-- Do not commit while `codument review --strict` is red — a new source left unmapped, a mapped doc left stale, or a registry entry still naming a path this change renamed or deleted must be synced first. The last one is a pointer fix, never prose: re-point the entry, or drop it.
+- Do not commit without a passing receipt for the exact staged boundary.
 - Do not decide to defer review findings yourself; only the user can defer findings.
-- Do not commit unrelated dirty files.
+- Do not stage or commit unrelated dirty files.
 - Do not claim verification passed if a command failed or could not run.
 - Commit as the user only. Never add a `Co-Authored-By` trailer for the AI agent (for example Claude or Codex), in any profile.
 - Follow any repository-specific commit timestamp or signing rules from `AGENTS.md`, `CLAUDE.md`, or the active feature plan.

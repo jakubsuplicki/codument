@@ -286,8 +286,8 @@ Alongside the deterministic checks, Codument can run two **adversarial** gates. 
 **Plan adversary — `codument map check --plan <path>`.** Before any code is written, an independent adversary reads *only* the plan plus a deterministic grounding projection over `docs/.registry.json` and the committed feature docs (invariants, test pointers, dependency edges, risk tags, Feature-Map rows — emit it with `map check --plan <path> --json`). It surfaces only **grounded** objections — each must cite a committed constraint the plan contradicts or name a load-bearing assumption the grill left unresolved — one tight line each, most-serious-first, folded into the same open-questions block of the approval summary you already read. It **never blocks**, never rewrites the plan, never reopens the grill; the **human adjudicates** at the existing approve/change gate. "No material objections" is the correct, expected output for a well-grilled plan, not a failure. A plan with no Feature Map runs no adversary (proportionality skip).
 *Honest limit:* its quality is **prompt-enforced, not test-backed**. A plan has no executable oracle, so groundedness — not correctness — is the only honest deterministic analog; no mechanism can prove an objection is grounded or catch a fabricated one, and manufacturing a weak objection is the cardinal failure the mandate guards against but cannot mechanically prevent. On a host without subagents no automatic independent pass runs at all — it degrades to a manual handoff (grounding + a paste-ready prompt + a plain statement that no independent pass ran), so the guarantee is genuinely weaker there. And because it never blocks, a wrong plan a human waves through is not stopped by the tool.
 
-**Review adversary — `codument review --require-review`.** After the work, an independent adversary presumed to be hunting for failure is handed a precise **bundle** to attack (`review --bundle`): the diff, the documented invariants it must not break and the tests that pin them, the relevant plan slice, and ownership/blast facts. The verdict is **verify, don't trust** — a finding hard-**blocks only** when its named test is genuinely red when the gate **re-runs it on the spot** (a nonzero exit counts as red only with TAP evidence the runner actually executed tests); the fix flips it green. The gate re-derives every status and never trusts what an artifact claims. The artifact (`.codument/reviews/<id>.json`) is fingerprint-bound over the full change set *and* the named tests, so editing the diff or tampering a test after review auto-reopens the gate. It is opt-in; proportionality skips trivial edits; non-testable/judgment findings are recorded and routed to the review decision point, never auto-blocked.
-*Honest limit:* an **empty or omitted-findings review still passes** — the gate enforces the review *ritual* (a diff-bound artifact enumerating the invariants checked) and verifies *declared* findings, but it does **not** certify thoroughness. Requiring TAP evidence to call a red test blocking means a runner that does not emit TAP (vitest/jest in default reporters) makes a real red test read as unrunnable → advisory (**fail-open**); a non-`node:test` project must point `--test-command` at a TAP-emitting runner or its findings stay advisory. The default runner resolves **local-only** (`npx --no-install`): the verdict path never downloads code, and a project where nothing resolves gets a named "confirm step could not run" condition in the summary rather than a silent always-green. Default-on is soak-deferred, so it is opt-in today, and only a finding reducible to a runnable failing test can ever block.
+**Review adversary — `codument verify`.** The agent stages the delivery slice, then the verifier generates `.codument/review-worksheet.json` when proportionality requires an adversarial pass. Its immutable context carries the diff, invariants, test evidence, plan slice, ownership, and blast facts; the reviewer fills only the verdict fields and runs the printed record-and-verify command. A named test is re-run before its finding can block, and any staged-byte change invalidates the artifact. The legacy `review --bundle`, `--record`, and `--require-review` route remains available for detailed compatibility use.
+*Honest limit:* an **empty findings review still passes** — the gate binds the review and verifies declared findings, but it cannot certify thoroughness. Requiring TAP evidence to call a red test blocking means a runner that does not emit TAP makes a real red test read as unrunnable and advisory; a non-`node:test` project must declare a TAP-emitting runner. The default runner resolves local-only, and only a finding reducible to a runnable failing test can block mechanically.
 
 </details>
 
@@ -295,7 +295,7 @@ Alongside the deterministic checks, Codument can run two **adversarial** gates. 
 
 ## Commands
 
-The commands below are local, need no network and no AI model, and produce the same output for the same repo state: they read the registry, the filesystem, and `git`. The two **adversarial gates** under [How it works](#how-it-works) are the opt-in exception: they involve an AI reviewer but decide every verdict with a deterministic oracle (a re-run test, a grounding projection), so the default path stays reproducible.
+The commands below are local, need no network and no AI model, and produce the same output for the same repo state: they read the registry, the filesystem, and `git`. The agent workflow supplies the adversarial reading outside the CLI; Codument grounds it and decides every mechanical verdict with a deterministic oracle, so the command path stays reproducible.
 
 <details>
 <summary><code>codument doctor</code> — documentation coverage</summary>
@@ -350,7 +350,24 @@ It reports separate channels, never blended into one number:
 </details>
 
 <details>
-<summary><code>codument review</code> — review an AI change</summary>
+<summary><code>codument verify</code> — verify the staged delivery step</summary>
+
+Stage only the files in the current step, then run one local gate:
+
+```bash
+npx codument verify
+npx codument verify --details     # full diagnostics
+npx codument verify --json        # deterministic machine result
+```
+
+The default output contains only failures you can act on. A clean non-trivial boundary creates `.codument/review-worksheet.json`; review its generated context, fill only `invariantsChecked`, `findings`, and `signer`, then run the exact printed `verify --record` command. That second invocation records the review and returns the final verdict. A passing complete boundary writes an exact receipt for the pre-commit hook; changed staged bytes or a changed Codument version force recomputation.
+
+Unstaged work outside the selected files stays visible but cannot block the staged step. A file changed again after staging is refused because the inspected bytes would differ from the commit. Tests participate as review evidence without becoming documentation owners.
+
+</details>
+
+<details>
+<summary><code>codument review</code> — inspect change-control detail</summary>
 
 Reads the uncommitted git diff against the registry and reports what changed and what is suspicious: changed files grouped by owning feature, **stale docs** (a source moved but its mapped doc did not), high-risk areas touched, out-of-plan changes, and unmapped sources. It reports repo facts and gaps; it does not certify that a change is safe.
 
@@ -378,7 +395,7 @@ npx codument review --require-review --test-command "npx tsx --test {file}"   # 
 npx codument review --require-review --test-timeout 600   # how long ONE test file may run before the gate gives up on it
 ```
 
-- **`--strict`** is the **step-sync gate**: it exits 1 while a step left a new source unmapped or a mapped doc stale. It is what Autopilot runs before checking a step off — materialize the file(s) and update the stale doc(s), then re-run until clean.
+- **`--strict`** remains the detailed compatibility gate for working-tree, staged, and range inspection. The normal local workflow uses `verify`, which combines staged documentation sync and required review coverage.
 - **`--base <ref>`** reviews the whole branch's drift (merge-base..working-tree), not just uncommitted changes — pair it with `codument ack --base <ref>` so a symbol move resolves against the same ref.
 - **`--bundle`** emits the adversarial-review bundle (the documented invariants + their tests + the diff) as JSON — the contract an independent reviewer attacks. The deterministic oracle that *decides* is the re-run of a finding's named test, never the bundle itself. The bundle carries a **`stamp`** of its own content; copy it into the findings JSON as `bundleStamp` so the record says which oracle it answered. A review that records none is still accepted and cleared — it is reported on the verdict line, never refused. **`--record <file>`** records a fingerprint-bound review from a findings JSON (`{invariantsChecked, findings, signer, bundleStamp?}`) that **`--require-review`** then enforces — exiting 1 on a non-trivial diff with no current artifact, or one carrying unresolved confirmed findings. A finding **blocks only** when its named test is red on a live re-run (`--test-command`, `{file}` = the resolved path; default `npx --no-install tsx --test {file}` — resolved locally, **never fetched from the network**); point it at a TAP-emitting runner for non-`node:test` projects. Declare your runner once as `testCommand` in `.codument-meta.json` (see [Declaring your test runner](#declaring-your-test-runner)); the flag overrides it. Whenever a finding's test cannot be adjudicated the summary says how many went unjudged, by name, instead of silently reading advisory — keyed on the outcome, so pointing at a runner that emits no test evidence does not quietly buy you a clean gate. Each cause is routed to its own fix: a test cut off by the budget (`--test-timeout <seconds>`, or `testTimeoutSeconds`) is named as a timeout and sent to the clock, never to your test command, which was never the problem. Availability is asked of the runner actually in play — a declared runner that does not exist is named, resolved against your bin directory and PATH and never executed. Opt-in today; the default-on flip is soak-deferred.
 
@@ -435,13 +452,13 @@ jobs:
 Everything above exits nonzero when a step is out of sync, but an exit code only gates a commit if something runs it at commit time. Two arms close that hole:
 
 ```bash
-codument hooks install          # local: a pre-commit hook that runs `review --strict`
+codument hooks install          # local: a pre-commit hook that runs `verify`
 codument hooks install --ci     # + remote: scaffold .github/workflows/codument.yml (PR gate)
 codument hooks status           # is the gate enforced here, and where
 codument hooks uninstall        # remove the managed block; your own hook lines survive
 ```
 
-The pre-commit hook is a **managed block**: markers delimit the only region codument ever touches, an existing shell hook is appended to (never rewritten), a non-shell hook is refused with the one line to add manually, and `core.hooksPath`/worktree setups are honored by asking git. A red gate blocks the commit and names both escapes — `git commit --no-verify` or `CODUMENT_SKIP_GATE=1 git commit` — so skipping is a stated act, never a slip. If the codument binary is missing (a wiped `node_modules`), the hook warns loudly and lets the commit pass rather than bricking every commit. Honest limit: the gate evaluates the **working tree**, not the staged bytes, so with partial staging it is a speed bump, not a proof of the commit's contents.
+The pre-commit hook is a **managed block**: markers delimit the only region codument ever touches, an existing shell hook is appended to (never rewritten), a non-shell hook is refused with the one line to add manually, and `core.hooksPath`/worktree setups are honored by asking git. A red gate blocks the commit and names both escapes — `git commit --no-verify` or `CODUMENT_SKIP_GATE=1 git commit` — so skipping is a stated act, never a slip. If the codument binary is missing (a wiped `node_modules`), the hook warns loudly and lets the commit pass rather than bricking every commit. The hook verifies the exact staged bytes and reuses a matching receipt from the review step; any boundary or version mismatch reruns the gate.
 
 The local hook can always be skipped; the **CI check is the authority**. The scaffolded workflow runs the same strict gate against the PR's merge base — make it a *required* status check in branch protection and a red gate becomes a merge blocker. The workflow file is yours to evolve: it refreshes on reinstall only while its managed marker is present, and codument refuses to touch it once you delete the marker. `init --hooks` installs the pre-commit arm during project setup. At a workspace root containing member repositories the install is refused: one hook there would block each member's commit on the other members' staleness, so install it inside the member repository you want gated.
 

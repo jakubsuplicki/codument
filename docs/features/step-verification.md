@@ -1,6 +1,6 @@
 ---
 title: Focused step verification
-status: approved
+status: current
 type: feature
 last_reviewed: 2026-09-03
 ---
@@ -70,9 +70,10 @@ ownership.
   *(tests: `review.test.ts` range fixtures)*
 - The ordinary green, already-reviewed or trivial step requires one user-invoked verification
   command. A clean non-trivial step with no review requires two: the first writes its worksheet and
-  record-and-verify completes it; no unchanged-boundary third run occurs. An ordinary rerun preserves
-  a same-boundary worksheet being completed, while explicit preparation deliberately refreshes it.
-  *(test: `verify.test.ts` command-budget and worksheet flow)*
+  record-and-verify completes it; no unchanged-boundary third run occurs. The pre-commit hook reuses
+  that exact receipt, while detailed and machine modes deliberately recompute. An ordinary rerun
+  preserves a same-boundary worksheet being completed, while explicit preparation deliberately
+  refreshes it. *(test: `verify.test.ts` command-budget, receipt-cache, and field replay flow)*
 - Working-tree review, whole-repository doctor, unsupported-file policy, and acknowledgment
   eligibility keep their existing semantics. This feature focuses their boundary; it does not
   re-litigate their judgments.
@@ -102,76 +103,4 @@ ownership.
 - `src/commands/review.ts` — the detailed change-control and adversarial-review engine; it accepts a
   selected boundary and reads its control-plane inputs from the same snapshot.
 - `src/lib/git.ts` — existing Git seam extended with index-scoped facts.
-
-## Delivery Plan — Plan 50: the change is what will be committed
-
-Status: approved 2026-08-24.
-
-- [x] **Step 1 — Change-set substrate.** Add the staged, range, and explicit-staged boundary model, index change enumeration, overlap refusal, deterministic fingerprint, and focused unit/CLI fixtures.
-- [x] **Step 2 — Change-control integration.** Thread the boundary through drift, ownership, deletions, renames, plan-scope reporting, and detailed review output while preserving the existing working-tree and CI range contracts.
-- [x] **Step 3 — Boundary-bound decisions and attestations.** Make acknowledgments, review bundles, review artifacts, printed remedies, and their invalidation rules consume and reproduce the exact boundary context.
-- [x] **Step 4 — Test evidence.** Attribute staged tests through invariant pins and supported direct imports, expose unattributed tests, and include test changes in impact and adversarial-review fingerprints without creating documentation obligations.
-- [x] **Step 5 — One verification surface.** Add compact staged verification, deterministic detailed and JSON modes, automatic review worksheets for clean uncovered boundaries, record-and-verify, and exact-fingerprint pass receipts for the pre-commit arm.
-- [ ] **Step 6 — Workflow migration and field proof.** Stage before review in the installed skills, remove redundant per-step review invocations, teach the hook to reuse an exact receipt, update public guidance, and replay concurrent-dirty, test-change, Windows-command, and invocation-budget scenarios end to end.
-
-### Feature Map
-
-```feature-map
-src/lib/change-set.ts   | step-verification | feature | resolves the exact staged, range, or explicit delivery boundary
-src/lib/test-impact.ts  | step-verification | feature | attributes changed tests as review evidence without doc ownership
-src/commands/verify.ts  | step-verification | feature | compact step gate plus review worksheet and recording workflow
-```
-
-### Outcome
-
-A local step is verified against the bytes queued for its commit, so unrelated unstaged work no
-longer blocks it and partially staged in-scope files cannot produce a false pass. Documentation,
-test impact, acknowledgments, and adversarial-review artifacts agree on that boundary.
-
-The ordinary green path becomes one `codument verify` invocation with actionable output; full detail
-remains available when requested. A clean non-trivial first run writes the review worksheet and one
-record-and-verify call completes it, replacing the inferred JSON workflow without adding a separate
-preparation invocation. CI continues to verify the committed merge-base range.
-
-This does not make test execution hermetic, change unsupported-file policy, replace Git staging,
-remove existing diagnostic commands, or make Codument run the coding agent.
-
-### Acceptance criteria
-
-- A clean staged source/doc/test slice passes even when unrelated unstaged files elsewhere would make
-  today's whole-worktree gate red; those files are counted but never included in its artifacts.
-- A blocking contract event inside the staged slice still fails with a remedy copied from the actual
-  staged invocation context; applying it, restaging, and rerunning clears the finding.
-- A staged file edited again after staging fails before any green verdict, naming the exact mismatch.
-- Explicit staged paths inspect only those paths, but cannot mint a commit receipt while other staged
-  paths remain outside the selection.
-- A staged test is attributed where evidence exists, otherwise named as unattributed; neither case
-  asks for prose or registry ownership, and changing the test invalidates a covering review.
-- A clean uncovered verification writes a valid worksheet shape, and record-and-verify accepts that
-  same file without redirects, undocumented flags, or hand-authored artifact structure on Windows.
-- A successful already-reviewed or trivial step takes one manual verification call; a clean
-  non-trivial first review takes exactly two—worksheet-producing verify, then record-and-verify—with
-  no unchanged-boundary third run. The field fixture asserts this budget rather than reporting it
-  after the fact.
-- `review` working-tree compatibility, `doctor` whole-repo health, SARIF, hooks, and CI range behavior
-  retain regression coverage throughout the migration.
-
-### Verification strategy
-
-- Pure tests pin change-set mode resolution, ordering, transitions, fingerprints, and receipt
-  invalidation.
-- Repository fixtures exercise staged additions, deletions, renames, partial staging, unrelated dirty
-  work, explicit subsets, initial commits, and merge-base CI ranges on Windows-safe argv.
-- Cross-surface tests prove review, acknowledgments, worksheets, artifacts, hooks, JSON, and remedies
-  receive one boundary and cannot print or honor another.
-- Test-impact fixtures cover invariant pins, direct TypeScript imports, unattributed tests, test-only
-  changes, and the no-doc-obligation boundary.
-- The field-shaped replay measures Codument invocations and proves the old whole-worktree failure no
-  longer blocks the staged step.
-- Each implementation step runs typecheck, build, its focused suites, and the strongest practical
-  broader regression pass before review.
-
-### Open questions
-
-None. The staged authoritative boundary, diagnostic explicit subsets, CI range behavior, test-evidence
-role, compatibility posture, and non-hermetic test limit are settled for this plan.
+- `src/lib/git-hooks.ts` — local commit enforcement and exact receipt reuse.

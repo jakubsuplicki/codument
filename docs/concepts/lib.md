@@ -23,6 +23,8 @@ The gate is language-agnostic behind an adapter seam. A fingerprint adapter turn
 
 Each module's behavior, invariants, and decisions live where it is owned. This doc deliberately does not restate them: grep the code for mechanism, and read the owning feature doc for intent.
 
+The scaffold installs one boundary discipline across hosts: stage the current delivery slice before review, verify that staged set once, and commit it unchanged. Generated instructions and shipped skill copies carry the same contract so an update cannot restore the older whole-worktree loop.
+
 ## Invariants & boundaries
 
 - Every scored or gated path is a pure function of repo state with no wall clock — identical inputs yield identical output. *(tests: `analyze.test.ts` determinism; `change-state.test.ts` "is deterministic")*

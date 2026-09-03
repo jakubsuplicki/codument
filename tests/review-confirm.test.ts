@@ -778,7 +778,7 @@ describe("runner availability is asked of the runner in play (plan 49)", () => {
     tmp = await mkdtemp(join(tmpdir(), "codument-runner-"));
   });
   afterEach(async () => {
-    await rm(tmp, { recursive: true, force: true });
+    await rm(tmp, { recursive: true, force: true, maxRetries: 40, retryDelay: 300 });
   });
 
   it("names a declared runner that does not exist", () => {

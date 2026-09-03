@@ -323,4 +323,20 @@ describe("commit-work skill", () => {
     assert.ok(/Never add a `Co-Authored-By` trailer/.test(skill));
     assert.ok(!/Co-Authored-By:\s/.test(skill));
   });
+
+  it("uses one staged verification surface across the three delivery skills", () => {
+    const work = readFileSync("skills/work-step/SKILL.md", "utf-8");
+    const review = readFileSync("skills/review-work/SKILL.md", "utf-8");
+    const commit = readFileSync("skills/commit-work/SKILL.md", "utf-8");
+
+    assert.ok(work.includes("Stage only the files belonging to this step"));
+    assert.ok(work.indexOf("Stage only") < work.indexOf("review-work"));
+    assert.ok(review.includes("codument verify"));
+    assert.ok(review.includes(".codument/review-worksheet.json"));
+    assert.ok(!review.includes("codument review --log"));
+    assert.ok(!review.includes("codument review --bundle"));
+    assert.ok(!review.includes("codument review --require-review"));
+    assert.ok(!commit.includes("codument review --strict"));
+    assert.ok(commit.includes("already-staged, verified boundary"));
+  });
 });

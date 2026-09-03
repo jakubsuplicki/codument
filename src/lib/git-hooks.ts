@@ -5,7 +5,7 @@ import { getHooksDir } from "./git.js";
 import { readTemplate } from "./scaffold.js";
 
 // The git pre-commit hook is the local enforcement arm of the change-control
-// gate: `review --strict` already exits nonzero on an out-of-sync step, but
+// gate: `verify` exits nonzero on an out-of-sync or unreviewed staged step, but
 // nothing invoked it at commit time, and the dogfood run proved instructions
 // alone leak (one red-gate commit slipped through in 44). The managed block
 // between these markers is the ONLY region install/uninstall/update ever
@@ -36,9 +36,8 @@ export class HookError extends Error {
 export function hookBlock(): string {
   return [
     HOOK_BLOCK_START,
-    '# Installed by `codument hooks install`; `codument hooks uninstall` removes it.',
-    "# Runs the strict step-sync gate: static analysis only, no network, no tests.",
-    "# Want the adversarial gate too? Add --require-review to the review line.",
+    "# Installed by `codument hooks install`; `codument hooks uninstall` removes it.",
+    "# Verifies the exact staged boundary; an exact current receipt is reused.",
     'if [ "$CODUMENT_SKIP_GATE" = "1" ]; then',
     '  echo "codument gate: skipped (CODUMENT_SKIP_GATE=1)"',
     "else",
@@ -50,9 +49,9 @@ export function hookBlock(): string {
     "  fi",
     '  if [ -z "$CODUMENT_BIN" ]; then',
     '    echo "codument gate: codument not found (node_modules/.bin or PATH); gate NOT run" >&2',
-    '  elif ! "$CODUMENT_BIN" review --strict; then',
+    '  elif ! "$CODUMENT_BIN" verify; then',
     '    echo "" >&2',
-    '    echo "codument gate: commit blocked by a red strict gate (details above)." >&2',
+    '    echo "codument gate: commit blocked by a red verification gate (details above)." >&2',
     '    echo "  skip once: git commit --no-verify   (or CODUMENT_SKIP_GATE=1 git commit)" >&2',
     "    exit 1",
     "  fi",
@@ -162,7 +161,7 @@ export function installHook(root: string): { action: HookInstallAction; hookPath
       throw new HookError(
         `${hookPath} exists and is not a shell script — refusing to modify it.\n` +
           `Wire the gate into your hook manager yourself; the command to run is:\n` +
-          `  codument review --strict`,
+          `  codument verify`,
       );
     }
     default: {

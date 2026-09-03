@@ -33,8 +33,8 @@ Nothing here is automated. Run it top to bottom.
    from an older package. Historically this was a separate follow-up commit; folding it in is fine,
    forgetting it is not.
 
-4. **Verify everything, and mean it.** `npm test`, `npm run typecheck`, `npm run lint`,
-   `codument review --strict`, `codument doctor --strict`. Green before the release commit exists —
+4. **Verify everything, and mean it.** Stage the release slice, then run `npm test`,
+   `npm run typecheck`, `npm run lint`, `codument verify`, and `codument doctor --strict`. Green before the release commit exists —
    `prepublishOnly` re-runs the build and the suite at publish time, but that is a backstop, not the
    check.
 

@@ -19,10 +19,10 @@ interface HooksOptions {
 }
 
 const STATE_LINES: Record<string, string> = {
-  installed: "installed — the strict gate runs on every commit",
+  installed: "installed — staged verification runs on every commit",
   outdated: "installed but outdated — run `codument hooks install` to refresh the block",
   appendable: "a pre-commit hook exists without the gate — `codument hooks install` appends it",
-  foreign: "a non-shell pre-commit hook exists — wire `codument review --strict` in manually",
+  foreign: "a non-shell pre-commit hook exists — wire `codument verify` in manually",
   absent: "not installed — run `codument hooks install`",
   "no-repo": "not a git repository",
 };
@@ -57,13 +57,11 @@ export function hooksInstall(options: HooksOptions = {}): void {
       unchanged: "already current in",
     }[action];
     console.log(pc.green(`  ✓ pre-commit gate ${verb} ${hookPath}`));
-    console.log(pc.dim("    Runs `review --strict` before every commit; a red gate blocks."));
+    console.log(pc.dim("    Runs `verify` before every commit; a red gate blocks."));
     console.log(
       pc.dim("    Skip once: git commit --no-verify   (or CODUMENT_SKIP_GATE=1 git commit)"),
     );
-    console.log(
-      pc.dim("    Honest limit: the gate checks the working tree, not the staged bytes."),
-    );
+    console.log(pc.dim("    An exact receipt is reused; any staged-byte change recomputes it."));
     if (options.ci) {
       const ci = installCiWorkflow(root);
       const ciVerb = { created: "created", updated: "refreshed", unchanged: "already current" }[

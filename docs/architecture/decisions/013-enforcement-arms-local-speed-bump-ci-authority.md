@@ -5,6 +5,10 @@ date: 2026-07-12
 
 # 013 — Enforcement arms: local hook is a speed bump, CI is the authority, missing runtime degrades loudly open
 
+ADR 022 amends the local arm: it now runs staged `verify`, including required review coverage, and
+reuses only an exact current receipt. The working-tree and static-only details below describe the
+original arm; the CI-authority, explicit-escape, and missing-runtime decisions remain in force.
+
 ## Context
 
 `review --strict` has always exited nonzero on an out-of-sync step, but nothing invoked it at commit time: the AGENTS contract instructs the agent to run it before every commit, and that instruction was the whole enforcement story. Dogfooding the website build measured the leak precisely — a compliant, well-instructed agent landed exactly one commit through a momentarily red gate in 44 (a shell-chained `;` where a `&&` belonged). One-in-44 is not an agent-quality problem; it is what an advisory posture yields at agent speed, and the number will not improve by writing the instruction in bolder text. Meanwhile plan 14 shipped SARIF annotations and named the "CI required-check story" as future work.

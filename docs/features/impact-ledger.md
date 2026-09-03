@@ -2,7 +2,7 @@
 title: Impact Ledger
 status: current
 type: feature
-last_reviewed: 2026-07-07
+last_reviewed: 2026-09-03
 ---
 
 ## Summary
@@ -15,7 +15,7 @@ The headline split is the whole point: **provable** catches that Codument comput
 
 Two flow-event types, two write-seams, one cumulative tally rendered in `watch` and `report`.
 
-**Provable line (deterministic, ungameable).** When `review-work` runs `codument review` for a change — *before the loop clears the findings* — a `review --log` flag records a `caught` event with the *identities* of what the analyzer flagged: which docs went stale, which features carry a risk tag, which files fell off-plan — not bare counts. (The capture point is review-time, **not** commit-time: by commit the loop has usually fixed the stale docs, so a commit-time snapshot would be empty — see [[review-effectiveness-metric]]. Resolved 2026-06-22.) Storing identities (already present in the analyzer output) lets the tally count **distinct things caught** across the project rather than re-counting the same nagging doc every run, and lets a later pass derive *flagged-then-fixed* (a doc flagged stale, then updated afterward) from the same events without re-instrumenting. The numbers are Codument's, computed from the diff; the agent only triggers the snapshot, so the line stays provable.
+**Provable line (deterministic, ungameable).** An explicit diagnostic `codument review --log` records a `caught` event with the identities of what the analyzer flagged: stale docs, risk-tagged features, and off-plan files, not bare counts. The compact staged workflow does not add a second invocation merely to populate this optional historical metric; teams that need the ledger request the detailed logging surface deliberately. Storing identities lets the tally count distinct things rather than the same unresolved finding on every run.
 
 **Reported line (self-reported, labeled).** A `review` event records a review finding the agent resolved before commit, with a coarse tier. Emitted by a new `codument emit review` subcommand (parallel to the existing `emit tokens`) that `review-work` shells once per resolved finding. The `watch` headline counts only `resolution=fixed` at `tier=correctness`; minor and deferred are tallied but kept out of the headline, and the line is always labeled "agent self-reported." Credibility for this number comes from the planted-bug benchmark (#2), not from the per-repo figure itself.
 
@@ -24,8 +24,8 @@ Both lines are cumulative across all sessions, read from `events.jsonl` (consist
 ### Event shapes
 
 ```jsonc
-// Deterministic — emitted by `codument review --log` when review-work runs,
-// before the loop clears the findings. Stores identities, not bare counts, so
+// Deterministic — emitted by an explicit `codument review --log` diagnostic.
+// Stores identities, not bare counts, so
 // distinct-count and flagged-then-fixed are both derivable at tally time.
 { "ts": "…", "type": "caught",
   "data": { "commit": "<sha|null>",

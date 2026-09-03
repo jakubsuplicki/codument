@@ -2,7 +2,7 @@
 title: Interrogating a field run
 status: current
 type: guide
-last_reviewed: 2026-08-08
+last_reviewed: 2026-09-03
 ---
 
 # Interrogating a field run
@@ -30,7 +30,8 @@ else — half the real findings are visible here and the agent will not have not
    any `status` that has been sitting at `needs-review` since scaffolding.
 2. `codument ack --list` in full. The ratio of auto-invalidated to total is the honest cost of the
    ack loop in that repo.
-3. The last three `codument review --strict` outputs in full, including the ones that passed.
+3. The last three `codument verify` outputs in full, including the ones that passed, plus the last
+   generated review worksheet when one was required.
 4. `codument doctor --strict`, whole output.
 5. `git log --oneline` for the session, and `.codument-meta.json`.
 
@@ -72,7 +73,8 @@ each of these deliberately, and to report **expected vs actual** — not whether
 Each probe below has found a real defect at least once.
 
 1. **Rewrite a registered file no adapter can judge.** Take a registered `.json`/`.yaml`/locale
-   file and change what it *means*, not just its formatting. Run `codument review --strict`.
+   file and change what it *means*, not just its formatting. Stage it and run `codument verify
+   --details`.
    *(Found the ADR-017 false green: exit 0 over a rewritten contract.)*
 2. **Delete one.** Same file kind, `git rm` it, leave the registry alone. *(Found the deletion
    blind spot: no line at all.)*
@@ -88,8 +90,8 @@ Each probe below has found a real defect at least once.
 7. **Run every command through the launcher you actually use**, with a multi-word quoted argument:
    `--reason "one two three"`. Compare `npx`, the package's local bin, and whatever the project
    uses. *(Found the bunx argument split.)*
-8. **Pipe a red run**: `codument review --strict | tail -1`, and separately check `$?`. Then do the
-   same on an ungated `codument review`. *(Both halves of the verdict-line contract.)*
+8. **Pipe a red run** using the shell actually used in the field, and separately check its exit
+   status. Compare that with an unpiped `codument verify`. *(Both halves of the verdict-line contract.)*
 
 ## 5 · What not to ask
 
@@ -126,7 +128,8 @@ override your usual instincts:
 A. Paste in full, with no commentary:
    1. docs/.registry.json
    2. codument ack --list
-   3. The last three `codument review --strict` outputs, including any that passed
+   3. The last three `codument verify` outputs, including any that passed, plus the last generated
+      review worksheet when one was required
    4. codument doctor --strict
    5. .codument-meta.json, and git log --oneline for this session
 
@@ -165,7 +168,7 @@ relevant output verbatim), and whether those differ. "It worked" is not a report
 not apply to this project, say so and why rather than skipping it silently.
 
 1. Take a registered file no adapter can judge (.json/.yaml/locale/config) and change what it
-   MEANS, not its formatting. Run `codument review --strict`.
+   MEANS, not its formatting. Stage it and run `codument verify --details`.
 2. Same kind of file: `git rm` it, leave the registry alone, run the gate.
 3. `git mv` a registered source file, register the new path, resolve the doc. Then check whether
    anything anywhere still names the vanished origin.
@@ -177,8 +180,8 @@ not apply to this project, say so and why rather than skipping it silently.
 7. Run a codument command through the launcher this project actually uses, with a multi-word
    quoted argument: `--reason "one two three"`. Compare against `npx codument` and against the
    local bin directly.
-8. Pipe a red run: `codument review --strict | tail -1`, and separately check `$?`. Then the same
-   on an ungated `codument review`.
+8. Pipe a red `codument verify` using the shell this project actually uses, separately inspect the
+   exit status, and compare with an unpiped run.
 ```
 
 ## 7 · Turning answers into plans

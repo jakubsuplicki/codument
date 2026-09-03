@@ -7,34 +7,16 @@ description: Review the current diff against the approved Codument plan, tests, 
 
 Use this after a planned step has been implemented and before committing.
 
-## Adversarial pass (the independent reviewer)
-
-AI must never be trusted to grade its own work. For a **non-trivial** diff, run an INDEPENDENT adversarial review before committing — a reviewer that assumes the change is wrong until a reproduction proves otherwise. `codument review --require-review` is the arbiter of "non-trivial": it requires the pass for more than one real change, any deletion, a config/data change, a risk touch, an ownership ambiguity, a module-level change, or anything beyond a single resolved symbol. A genuinely trivial diff skips this pass (the gate says so) and gets only the deterministic self-review below.
-
-1. **Assemble the oracle.** `codument review --bundle > .codument/review-bundle.json` — the touched features' documented invariants, the tests that pin them, the diff, and the ownership/blast facts. It adds no new source of truth; it hands the adversary a contract to attack instead of an open-ended hunt. When a review of this same base is already recorded, the bundle scopes itself to what has moved since (`scope: "delta"`) and carries the rest as `alreadyReviewed` + `priorFindings`; `--full` forces the whole change set for a deliberate fresh attack. The bundle carries a `stamp` — a digest of exactly what it handed over — and step 3 records it, so the attestation says what it was grounded in rather than only what it concluded.
-2. **Run the adversary against the bundle — independence by context, degraded gracefully.**
-   - **Subagent host (Claude):** spawn a FRESH `adversarial-reviewer` subagent fed ONLY the bundle — never your transcript or your reasoning, so it cannot re-anchor to the author's mental model. It reads `git diff <base>`, attacks the invariants, writes a failing test for each real bug, and emits a findings JSON.
-   - **No-subagent host (Codex):** run the same adversarial pass yourself against the bundle, with deliberately fresh eyes — apply the `adversarial-reviewer` mandate as if you had not written the code. Independence is weaker, but the deterministic confirm and the fingerprint-bound artifact are identical, so it is not theater.
-3. **Record the verdict.** `codument review --record <findings.json>` writes the fingerprint-bound artifact. Copy the bundle's `stamp` into the findings JSON as `bundleStamp`, so the record says which oracle it answered. Any later edit to a reviewed source — or to a finding's named test — auto-invalidates it, so you cannot review once and keep editing. A review that records no stamp is still accepted: it is reported on the verdict line, never refused, because refusing it would dead-end the first review of any diff and would be walked past by anyone willing to omit the field.
-4. **Enforce.** `codument review --require-review`. It RE-RUNS each finding's named test and blocks only on one that is genuinely red — never on a claimed status. Fix every confirmed (red-test) finding before committing; advisory findings are surfaced for your decision, never auto-blocking.
-
-   Fixing a finding reopens the gate — but **re-run the adversary on the delta, not on the whole diff again**. Repeat step 1 (the bundle now scopes to the files your fix touched, carrying the earlier findings so the adversary can check the fix actually fixed them), step 2, step 3. Reach for `--full` only when the fix was broad enough that the earlier round's reading no longer holds. Re-attacking the whole diff after every one-line fix is how a three-finding step costs three whole-diff reviews.
-
-The adversarial pass complements the deterministic review below; it does not replace it.
-
 ## Review Order
 
 1. Read the approved plan step.
-2. Run `codument review --log` (add `--json` to consume it programmatically). `--log` snapshots a `caught` event — the **provable** line of the impact ledger (`codument watch` / `report`) — recording the stale docs, risk touches, and off-plan files this change flagged **while they are still present** (before step 6 clears them). The report gives the deterministic change-state: which feature owners the diff touches, docs that went **stale** (source changed, mapped doc didn't), high-risk areas touched, out-of-plan changes, unmapped new files, and dependent features that may need re-review. Use it as the spine of the review — it tells you where to look; it does not certify the change is safe.
-3. Inspect the current diff.
-4. Check whether the implementation matches the planned behavior.
-5. Check tests or verification output.
-6. Resolve every `codument review` finding inline (autopilot-aligned — no separate human gate). For each **stale doc / symbol-drift** finding, make the two-way call and act in this same step:
-   - **A documented contract or behavior changed** → update the owning doc at **intent altitude** (the contract and why, never a symbol mirror) and its `docs/.registry.json` entry.
-   - **A move that changed no documented contract** → nothing is owed. The gate reports it and never blocks, so there is no signature to write and no prose to invent; leave it alone and move on. An acknowledgment survives only where the gate still blocks and cannot judge for you — an added or removed export, a declared tree's decay, or a change to a file no adapter reads whose owner declared a risk — and in each case `review` prints the exact line to run.
-   - **A shared symbol no feature claims** (the wake names several features at once, and `review` prints the ownership resolution under the stale doc) → this is a **registry** fix, not a docs fix. Claim the symbol under one feature's `owned_symbols`, or keep one primary owner and move the file into the others' `related_sources`. No acknowledgment of any grain reaches it, so `ack` refuses it by design. Writing prose into the non-owning candidates' docs to clear the wake is the mirror edit this whole protocol exists to prevent — and it does not even hold, because the next edit to that file wakes all of them again.
-   Default to updating the doc; run an ack only where `review` offered one, and name in one clause what stayed constant — a bare "refactor" reason is not enough, and writing a mirror sentence just to clear the gate is the rubbish this loop exists to prevent. Also register unmapped source files and flag dependents whose interface changed, then re-run `codument review` to confirm the findings clear. The `Drift resolution` line shows your acked-vs-updated split — an all-ack change should make you re-check that none of those moves actually owed a doc update.
-7. Look for correctness, security, data-loss, performance, type-safety, and maintainability issues beyond what the deterministic pass can see.
+2. Inspect `git diff --cached`; that exact staged boundary, not the whole dirty worktree, is the review subject.
+3. Run `codument verify` once. It reports only actionable failures and writes `.codument/review-worksheet.json` when a non-trivial boundary needs adversarial review.
+4. If verification is blocked on mapping or documentation, fix the cause at intent altitude, restage the affected step files, and rerun `codument verify`. Never add mirror prose merely to make the gate green.
+5. If review is required, inspect the generated `reviewContext` against the plan, staged diff, mapped invariants, and tests. Attack correctness, security, data loss, performance, type safety, and architecture fit; use an independent reviewer when the host provides one, otherwise make the same adversarial pass yourself.
+6. Complete only the worksheet's top-level `invariantsChecked`, `findings`, and `signer` fields. Do not alter generated context. Run the exact printed `codument verify --record .codument/review-worksheet.json` command; it records and verifies the same staged boundary in that invocation.
+7. Fix safe, obvious findings, restage, and return to step 3. Pause for any judgment call or finding involving a public interface, security, data loss, deletion, or dependency change. A changed boundary invalidates its earlier review automatically.
+8. Continue to `commit-work` only when `codument verify` passes. Its exact receipt lets the pre-commit hook confirm unchanged staged bytes without repeating the review.
 
 ## Output
 
@@ -81,6 +63,7 @@ Tier conservatively: `correctness` covers safety, security, data-loss, and logic
 ## Rules
 
 - Log each resolved finding once with `codument emit review` (fixed or deferred); never log one that was neither.
+- Review only the staged boundary and restage every review fix before rerunning the verifier.
 - Treat extra unplanned scope as a finding.
 - Do not focus on formatting that automated tools should handle.
 - Do not manufacture issues.

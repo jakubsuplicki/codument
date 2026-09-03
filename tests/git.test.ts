@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, rm, mkdir, writeFile, chmod } from "node:fs/promises";
 import { readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   assertRootIsRepoToplevel,
@@ -36,6 +36,8 @@ exit 3
 
 let tmp: string;
 let fakeBin: string;
+const fakeGitUnsupported =
+  process.platform === "win32" ? "an extensionless shell shim cannot shadow git.exe" : false;
 
 beforeEach(async () => {
   tmp = await mkdtemp(join(tmpdir(), "codument-git-"));
@@ -52,10 +54,10 @@ afterEach(async () => {
   await rm(fakeBin, { recursive: true, force: true });
 });
 
-describe("git change-listing fails closed", () => {
+describe("git change-listing fails closed", { skip: fakeGitUnsupported }, () => {
   it("getWorkingTreeChanges throws GateError, never [], when git fails", () => {
     const orig = process.env.PATH;
-    process.env.PATH = `${fakeBin}:${orig ?? ""}`;
+    process.env.PATH = `${fakeBin}${delimiter}${orig ?? ""}`;
     try {
       assert.throws(
         () => getWorkingTreeChanges(tmp),
@@ -71,7 +73,7 @@ describe("git change-listing fails closed", () => {
     // Inside a work tree per the fake git, but --show-toplevel fails: the
     // assertion must fail closed, not silently pass an unverifiable root.
     const orig = process.env.PATH;
-    process.env.PATH = `${fakeBin}:${orig ?? ""}`;
+    process.env.PATH = `${fakeBin}${delimiter}${orig ?? ""}`;
     try {
       assert.throws(
         () => assertRootIsRepoToplevel(tmp),
@@ -89,7 +91,7 @@ describe("git change-listing fails closed", () => {
       execFileSync("node", [CLI, "review", "--strict"], {
         cwd: tmp,
         encoding: "utf-8",
-        env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+        env: { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ""}` },
       });
     } catch (err) {
       const e = err as { status?: number; stdout?: string };
@@ -129,11 +131,13 @@ describe("path listings distinguish 'could not determine' from 'determined: none
     assert.deepStrictEqual(listing.ok && listing.paths, []);
   });
 
-  it("both listings report ok:false naming the git failure when git is broken", () => {
+  it("both listings report ok:false naming the git failure when git is broken", {
+    skip: fakeGitUnsupported,
+  }, () => {
     // isGitRepo passes (the fake answers --is-inside-work-tree) but the listing
     // subcommand fails: an unreadable repo must not read as a clean empty scope.
     const orig = process.env.PATH;
-    process.env.PATH = `${fakeBin}:${orig ?? ""}`;
+    process.env.PATH = `${fakeBin}${delimiter}${orig ?? ""}`;
     try {
       for (const listing of [listIgnoredPaths(tmp), listTrackedFiles(tmp)]) {
         assert.equal(listing.ok, false);

@@ -6,10 +6,12 @@ import {
   type ChangeSetBinding,
   changeSetBinding,
   parseChangeSetBinding,
+  parseVerificationReceipt,
   readChangeSetFile,
   resolveChangeSet,
   sameChangeSetBinding,
   type VerificationReceipt,
+  verificationReceiptCovers,
 } from "../lib/change-set.js";
 import { atomicWriteFileSync } from "../lib/events.js";
 import { warmAdaptersForRepo } from "../lib/fingerprint.js";
@@ -307,6 +309,31 @@ function writeReceipt(root: string, boundary: ChangeSetBinding): void {
   atomicWriteFileSync(path, encoded);
 }
 
+function reusableReceiptCovers(root: string, boundary: ChangeSetBinding): boolean {
+  const path = getGitPath(root, RECEIPT_GIT_PATH);
+  if (!path || !existsSync(path)) return false;
+  try {
+    const receipt = parseVerificationReceipt(JSON.parse(readFileSync(path, "utf8")));
+    return receipt ? verificationReceiptCovers(receipt, boundary, version) : false;
+  } catch {
+    return false;
+  }
+}
+
+function canReuseReceipt(options: VerifyOptions, boundary: ChangeSet): boolean {
+  return (
+    boundary.complete &&
+    options.paths === undefined &&
+    options.details !== true &&
+    options.json !== true &&
+    options.prepareReview !== true &&
+    options.record === undefined &&
+    options.testCommand === undefined &&
+    options.testTimeout === undefined &&
+    options.requireIndependentAck !== true
+  );
+}
+
 function invocation(options: VerifyOptions, extra: string): string {
   const selected = options.paths?.length
     ? ` --paths ${options.paths.map((path) => (/\s/.test(path) ? `"${path.replace(/"/g, '""')}"` : path)).join(" ")}`
@@ -382,11 +409,18 @@ export async function verify(options: VerifyOptions = {}): Promise<void> {
 
   try {
     assertRootIsRepoToplevel(root);
-    await warmAdaptersForRepo(root);
     const boundary = resolveChangeSet(
       root,
       options.paths ? { mode: "explicit-staged", paths: options.paths } : { mode: "staged" },
     );
+    const binding = changeSetBinding(boundary);
+    if (canReuseReceipt(options, boundary) && reusableReceiptCovers(root, binding)) {
+      console.log(
+        `codument verify: ${pc.green("PASS")} — staged · ${boundary.fingerprint.slice(0, 12)}`,
+      );
+      return;
+    }
+    await warmAdaptersForRepo(root);
     const exclusion = exclusionForBoundary(root, boundary);
     const report = buildReview(root, undefined, "HEAD", undefined, {
       requireIndependentAck: options.requireIndependentAck === true,
@@ -394,7 +428,6 @@ export async function verify(options: VerifyOptions = {}): Promise<void> {
       boundary,
     });
     const base = getHeadSha(root) ?? EMPTY_TREE_SHA;
-    const binding = changeSetBinding(boundary);
     const failures = strictFailures(report, boundary);
     const { set: realChangeSet, realDeletions } = computeRealChange(
       report,

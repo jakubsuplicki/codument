@@ -38,7 +38,7 @@ describe("codument verify", () => {
   };
 
   beforeEach(async () => {
-    repo = await mkdtemp(join(tmpdir(), "codument-verify-"));
+    repo = await mkdtemp(join(tmpdir(), "codument verify "));
     git(["init", "-q"]);
     git(["config", "user.name", "Test User"]);
     git(["config", "user.email", "test@example.com"]);
@@ -85,7 +85,7 @@ describe("codument verify", () => {
         "",
         "## Invariants & boundaries",
         "",
-        "- Alpha returns a number. *(untested)*",
+        "- Alpha returns a number. *(test: tests/alpha.test.ts)*",
         "",
         "## Decisions",
         "",
@@ -98,6 +98,7 @@ describe("codument verify", () => {
       ].join("\n"),
     );
     await put("src/a.ts", "export function a(): number { return 1; }\n");
+    await put("tests/alpha.test.ts", 'import { a } from "../src/a.js";\nvoid a();\n');
     git(["add", "."]);
     git(["commit", "-qm", "baseline"]);
   });
@@ -179,6 +180,51 @@ describe("codument verify", () => {
     assert.equal(recorded.status, 0, recorded.stderr || recorded.stdout);
     assert.match(recorded.stdout, /^codument verify: PASS — staged · [a-f0-9]{12}\r?\n$/);
     assert.equal(JSON.parse(await readFile(receiptPath(), "utf8")).boundary.fingerprint.length, 64);
+
+    await rm(join(repo, ".codument", "reviews"), { recursive: true, force: true });
+    const cached = verify();
+    assert.equal(cached.status, 0, cached.stderr || cached.stdout);
+    assert.match(cached.stdout, /^codument verify: PASS — staged · [a-f0-9]{12}\r?\n$/);
+    const forced = verify(["--details"]);
+    assert.equal(forced.status, 1, "details deliberately recomputes instead of trusting the cache");
+    assert.match(forced.stdout, /REVIEW REQUIRED/);
+  });
+
+  it("replays a concurrent-dirty staged test step within the two-invocation budget", async () => {
+    await put("src/a.ts", "export function a(): number { return 2; }\n");
+    await put("tests/alpha.test.ts", 'import { a } from "../src/a.js";\nassert(a() === 2);\n');
+    await put("settings.json", '{"enabled":true}\n');
+    git(["add", "src/a.ts", "tests/alpha.test.ts", "settings.json"]);
+    await put("src/unrelated.ts", "export const unfinished = true;\n");
+
+    let invocations = 0;
+    const run = (args: string[] = []) => {
+      invocations += 1;
+      return verify(args);
+    };
+    const first = run();
+    assert.equal(first.status, 1);
+    assert.match(first.stdout, /^codument verify: REVIEW REQUIRED/m);
+
+    const worksheetPath = join(repo, ".codument", "review-worksheet.json");
+    const worksheet = JSON.parse(await readFile(worksheetPath, "utf8"));
+    assert.deepEqual(worksheet.reviewContext.boundary.paths, [
+      "settings.json",
+      "src/a.ts",
+      "tests/alpha.test.ts",
+    ]);
+    assert.deepEqual(worksheet.reviewContext.testImpact.changedTests, ["tests/alpha.test.ts"]);
+    assert.deepEqual(worksheet.reviewContext.testImpact.attributed, [
+      { test: "tests/alpha.test.ts", feature: "alpha", via: "invariant-pin" },
+    ]);
+    assert.ok(!worksheet.reviewContext.boundary.paths.includes("src/unrelated.ts"));
+
+    worksheet.invariantsChecked = ["Alpha's staged implementation and pinned test"];
+    worksheet.signer = "field-proof-reviewer";
+    await writeFile(worksheetPath, `${JSON.stringify(worksheet, null, 2)}\n`, "utf8");
+    const recorded = run(["--record", ".codument/review-worksheet.json"]);
+    assert.equal(recorded.status, 0, recorded.stderr || recorded.stdout);
+    assert.equal(invocations, 2, "worksheet generation and record-and-verify are the whole loop");
   });
 
   it("prints only actionable failures by default and keeps the full report on demand", async () => {

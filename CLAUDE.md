@@ -105,7 +105,7 @@ The user turns it off by saying so — "step by step", "stop at the gates", "one
 
 - Precondition: never start before the plan is approved. Confirm the active plan shows `Status: approved` (not draft or awaiting approval). If you cannot confirm approval, do not start; say so and ask the user to approve the plan.
 - For each remaining delivery-plan step run `work-step` -> `review-work` -> `commit-work` without stopping for routine confirmations. Each gate still runs; you simply do not wait for the user to say continue. Commit per step with a focused conventional commit, attributed to the user only.
-- Step-sync gate: before `commit-work` checks a step off, `codument review --strict` must pass. It exits nonzero while the step left a new source unmapped or a mapped doc stale — materialize the file(s) (`codument map materialize`) and update the stale doc(s), then re-run until clean. A persistently red gate is a hard-pause condition; never check off or commit a step while it is red.
+- Step-sync gate: `work-step` stages only the exact step, then `review-work` runs `codument verify` until that boundary passes documentation sync and required review. A persistently red gate is a hard-pause condition; never commit while it is red.
 - During `review-work`, auto-apply only safe, obvious fixes, then proceed to `commit-work`. Always pause for any finding that needs a judgment call or that touches public interfaces, security, data loss or deletions, or dependency changes.
 - Hard pause conditions (stop the run, report a compact summary, wait for the user): a judgment-call review finding, a verification failure, or any change that falls outside the approved plan.
 - An explicit single-step request is always honored: `/work-step` or "work the next step" runs exactly one step and stops, whatever the mode.
@@ -123,7 +123,7 @@ A task is NOT complete until:
 5. Corresponding feature docs are created or updated at intent altitude (contract/why, never a symbol mirror); a move that changed no contract owes nothing, and is never papered over with mirror prose
 6. Dependent features are flagged if an interface changed
 7. Review findings are resolved or explicitly deferred
-8. `codument review --strict` passes for the step — no new source left unmapped, no mapped doc left stale
+8. `codument verify` passes for the exact staged step — no new source left unmapped, no mapped doc stale, and required review recorded
 
 ### Planning and approval
 Do not move from a rough idea into source edits automatically. First use the docs-backed grilling and planning workflow to resolve scope, non-goals, acceptance criteria, verification strategy, and implementation steps. Begin implementation only after the user approves the plan. Surface the plan's checklist inline in the chat at the approval gate, so the user approves the steps they can see rather than a link they must open.

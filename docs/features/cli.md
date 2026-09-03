@@ -25,6 +25,7 @@ working-tree compatibility surface, so existing scripts do not silently change m
 with deterministic JSON and full diagnostics available explicitly. When a non-trivial boundary needs
 review evidence, the command creates the worksheet it accepts back through `--record`; its help names
 that complete workflow, so no hidden artifact schema or shell redirection is part of the contract.
+An ordinary default invocation may reuse an exact passing receipt; diagnostic modes always recompute.
 
 The acknowledgment surface accepts the same `--staged` and `--paths` selectors plus an expected
 `--boundary` fingerprint. These flags are primarily copy-paste context emitted by focused review:
@@ -51,7 +52,8 @@ One command is a signpost, not an action: `run` (aliased `autopilot`) exists onl
   refuses a stale copied command. *(test: `review-boundary.test.ts`)*
 - Verification's normal path is one command. Its generated worksheet is directly consumable by the
   printed record-and-verify command, and explicit path selection cannot issue a commit receipt until
-  it covers the full index. *(test: `verify.test.ts`)*
+  it covers the full index. The default hook path reuses a receipt only for identical staged bytes and
+  the same Codument version; `--details` and `--json` always recompute. *(test: `verify.test.ts`)*
 
 ## Key files
 

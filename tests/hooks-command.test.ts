@@ -64,7 +64,7 @@ afterEach(async () => {
 });
 
 describe("hooks command: end-to-end enforcement", { skip: process.platform === "win32" }, () => {
-  it("a red strict gate blocks a real git commit; both escapes pass it", () => {
+  it("a red verification gate blocks a real git commit; both escapes pass it", () => {
     seedRepo(tmp);
     // An unmapped new source: exactly the state --strict exists to catch.
     mkdirSync(join(tmp, "src"), { recursive: true });
@@ -73,7 +73,7 @@ describe("hooks command: end-to-end enforcement", { skip: process.platform === "
 
     const blocked = tryCommit(tmp, ["-m", "should be blocked"]);
     assert.equal(blocked.ok, false);
-    assert.ok(blocked.output.includes("commit blocked by a red strict gate"));
+    assert.ok(blocked.output.includes("commit blocked by a red verification gate"));
     assert.ok(blocked.output.includes("--no-verify"));
 
     const skipped = tryCommit(tmp, ["-m", "skip via env"], { CODUMENT_SKIP_GATE: "1" });
@@ -87,7 +87,7 @@ describe("hooks command: end-to-end enforcement", { skip: process.platform === "
 
   it("a green gate lets the commit through with the hook active", () => {
     seedRepo(tmp);
-    writeFileSync(join(tmp, "README.md"), "# fixture\nchanged prose\n");
+    writeFileSync(join(tmp, "docs", "note.md"), "# changed prose\n");
     run(tmp, "git", ["add", "-A"]);
     const committed = tryCommit(tmp, ["-m", "docs-only change"]);
     assert.equal(committed.ok, true);

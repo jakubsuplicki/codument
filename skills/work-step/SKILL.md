@@ -17,9 +17,10 @@ Use this when the user says to continue, work the next step, or implement the ap
 6. Implement only that step.
 7. Use `tdd` or the strongest practical verification loop.
 8. Register each NEW source file by running `codument map materialize <file>` (see Feature Map Materialization), then update the mapped docs + registry as part of the same step.
-9. Mark the step complete — in the plan doc, and in the mirrored native to-do list — only after verification passes. If this was the final step, compact the `## Delivery Plan` block per `plan-with-docs` (Compaction on ship): lift surviving decisions into `## Decisions`/ADRs and any newly-true constraint into `## Invariants & boundaries`, then delete the delivery scaffolding so the durable doc is left in the standard's layers.
-10. Proceed directly to `review-work` for this step without waiting. Never start the next delivery-plan step from here — review and commit come first, in either mode.
-11. In gated mode, stop instead and present the user with end-of-step options:
+9. Mark the step complete — in the plan doc, and in the mirrored native to-do list — only after implementation verification passes. If this was the final step, compact the `## Delivery Plan` block per `plan-with-docs` (Compaction on ship): lift surviving decisions into `## Decisions`/ADRs and any newly-true constraint into `## Invariants & boundaries`, then delete the delivery scaffolding so the durable doc is left in the standard's layers.
+10. Stage only the files belonging to this step. This exact staged boundary is the input to review; leave unrelated dirty files unstaged.
+11. Proceed directly to `review-work` for this step without waiting. Never start the next delivery-plan step from here — review and commit come first, in either mode.
+12. In gated mode, stop instead and present the user with end-of-step options:
     - Run `review-work` now (recommended)
     - Make a specific correction to this step
     - Pause here
@@ -49,7 +50,7 @@ When a step lands a NEW source file, route it via the approved plan's Feature Ma
 
 A completed implementation step is not ready for the next plan step until it has been reviewed and committed.
 
-The registry must be in sync before review: `codument review --strict` must pass at the step boundary. It exits nonzero while the step left a new source unmapped or a mapped doc stale — materialize the file(s) (`codument map materialize <file>`) and update the stale doc(s) until it is clean. Mid-step `unmapped-source` is transient and fine; a red gate at the boundary is not — never hand a half-synced step to `review-work` or `commit-work`.
+Stage the exact step before review. `review-work` runs `codument verify` over those staged bytes, so unrelated dirty work cannot enter the verdict. Mid-step `unmapped-source` is transient and fine; a red verifier at the boundary is not.
 
 By default, skip the options below and continue directly to `review-work` for this step. In gated mode, when the implementation and verification are done, say plainly:
 
