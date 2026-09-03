@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
@@ -316,5 +316,51 @@ describe("review staged boundary", () => {
     git(["add", "notes.txt"]);
     const moved = JSON.parse(review(["--staged", "--bundle"]).stdout);
     assert.notEqual(moved.boundary.fingerprint, artifact.boundary.fingerprint);
+  });
+
+  it("treats staged tests as review evidence without creating doc ownership work", async () => {
+    await put("tests/a.test.ts", 'import { a } from "../src/a.js";\n');
+    await put("tests/mystery.test.ts", 'import external from "external-package";\n');
+    git(["add", "tests/a.test.ts", "tests/mystery.test.ts"]);
+
+    const report = JSON.parse(review(["--staged", "--json"]).stdout);
+    assert.deepEqual(report.state.changedSources, []);
+    assert.deepEqual(report.state.unmapped, []);
+    assert.deepEqual(report.state.staleDocs, []);
+    assert.deepEqual(report.testImpact, {
+      changedTests: ["tests/a.test.ts", "tests/mystery.test.ts"],
+      attributed: [{ test: "tests/a.test.ts", feature: "alpha", via: "direct-import" }],
+      unattributed: ["tests/mystery.test.ts"],
+      dependents: [],
+      dependentsSummary: [],
+    });
+    const strict = review(["--staged", "--strict"]);
+    assert.equal(strict.status, 0, "tests never create doc work");
+    assert.match(strict.stdout, /Test evidence/);
+    assert.match(strict.stdout, /alpha.*tests\/a\.test\.ts.*direct-import/);
+    assert.match(strict.stdout, /unattributed.*tests\/mystery\.test\.ts/);
+
+    const bundle = JSON.parse(review(["--staged", "--bundle"]).stdout);
+    assert.deepEqual(bundle.testImpact, report.testImpact);
+    assert.ok(bundle.features.some((feature: { feature: string }) => feature.feature === "alpha"));
+    await put(
+      "test-review-input.json",
+      JSON.stringify({
+        invariantsChecked: ["the selected tests still enforce the alpha boundary"],
+        findings: [],
+        signer: "test-reviewer",
+        bundleStamp: bundle.stamp,
+      }),
+    );
+    assert.equal(review(["--staged", "--record", "test-review-input.json"]).status, 0);
+
+    const [artifactFile] = await readdir(join(repo, ".codument", "reviews"));
+    const artifact = JSON.parse(
+      await readFile(join(repo, ".codument", "reviews", artifactFile), "utf8"),
+    );
+    assert.deepEqual(
+      artifact.files.map((file: { path: string }) => file.path),
+      ["tests/a.test.ts", "tests/mystery.test.ts"],
+    );
   });
 });

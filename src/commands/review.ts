@@ -16,8 +16,8 @@ import {
   resolveScopeSync,
 } from "../lib/analyze.js";
 import {
-  ChangeSetError,
   type ChangeSet,
+  ChangeSetError,
   changeSetBinding,
   readChangeSetFile,
   resolveChangeSet,
@@ -31,6 +31,7 @@ import {
   type DependentSummary,
   detectApprovedPlanScope,
   detectApprovedPlanScopeFromDocuments,
+  mergeDependentSummaries,
   type OwnershipLint,
   removedInChange,
   resolveDocPointers,
@@ -70,6 +71,17 @@ import {
   sourceMatcher,
 } from "../lib/registry.js";
 import {
+  type ConditionContext,
+  type ConditionId,
+  labelWidth,
+  type Palette,
+  type Route,
+  routeLine as renderLabelledRoute,
+  renderRoute,
+  routesFor,
+  whyNoAck,
+} from "../lib/remedies.js";
+import {
   findCoveringReviews,
   findLatestReviewForBase,
   gatherReviewedFiles,
@@ -79,17 +91,6 @@ import {
   reviewedDelta,
   writeReview,
 } from "../lib/review-artifact.js";
-import {
-  labelWidth,
-  renderRoute,
-  routeLine as renderLabelledRoute,
-  routesFor,
-  whyNoAck,
-  type ConditionContext,
-  type ConditionId,
-  type Palette,
-  type Route,
-} from "../lib/remedies.js";
 import {
   extractDocSection,
   extractPinnedTests,
@@ -101,11 +102,11 @@ import {
   confirmCondition,
   confirmFindings,
   DEFAULT_TEST_SEARCH_DIRS,
-  runnerUnavailable,
   makeTestRunner,
   resolveTestCommand,
   resolveTestPath,
   resolveTestTimeout,
+  runnerUnavailable,
 } from "../lib/review-confirm.js";
 import { emitCaught } from "../lib/review-events.js";
 import {
@@ -114,6 +115,7 @@ import {
   type ReviewGateResult,
 } from "../lib/review-gate.js";
 import { gateUnavailableSarif, reviewReportToSarif } from "../lib/sarif.js";
+import { computeTestImpact, type TestImpact } from "../lib/test-impact.js";
 import { MODULE_ANCHOR_NAME } from "../lib/ts-adapter.js";
 import {
   blobExistsAtRef,
@@ -244,6 +246,9 @@ export interface ReviewReport {
   /** Present only for an explicitly focused invocation. Omitted from legacy
    *  working-tree/range JSON so their established machine shape does not move. */
   boundary?: ChangeSet;
+  /** Changed tests attributed as evidence for this focused boundary. Omitted from
+   * legacy working-tree/range reports so tests keep their established role there. */
+  testImpact?: TestImpact;
   /** Test pins in the touched features' docs that resolve to no file (see
    *  `UnresolvedPin`). Reported, never a gate input. */
   unresolvedPins: UnresolvedPin[];
@@ -423,7 +428,9 @@ function planForBoundary(root: string, boundary: ChangeSet): ApprovedPlan | null
     throw new GateError(`could not enumerate selected plan files: ${tracked.reason}`, "git-failed");
   }
   const documents: Array<{ path: string; content: string }> = [];
-  for (const path of tracked.paths.filter((candidate) => /^docs\/plans\/[^/]+\.md$/.test(candidate))) {
+  for (const path of tracked.paths.filter((candidate) =>
+    /^docs\/plans\/[^/]+\.md$/.test(candidate),
+  )) {
     const content = readChangeSetFile(root, boundary, path);
     if (content !== null) documents.push({ path, content });
   }
@@ -437,14 +444,19 @@ function exclusionForBoundary(root: string, boundary: ChangeSet): ExclusionSpec 
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new GateError(".codument-meta.json is corrupt in the selected Git snapshot", "git-failed");
+    throw new GateError(
+      ".codument-meta.json is corrupt in the selected Git snapshot",
+      "git-failed",
+    );
   }
   const exclude =
     typeof parsed === "object" && parsed !== null
       ? (parsed as { exclude?: unknown }).exclude
       : undefined;
   return resolveScopeFromConfigured(
-    exclude === undefined ? null : validateExclude(exclude, ".codument-meta.json@selected-boundary"),
+    exclude === undefined
+      ? null
+      : validateExclude(exclude, ".codument-meta.json@selected-boundary"),
   ).spec;
 }
 
@@ -508,9 +520,7 @@ export function buildReview(
     opts.boundary?.additions ??
     opts.addedFiles ??
     (tracked.ok ? changes.filter((f) => !new Set(tracked.paths).has(f)) : []);
-  const plan = opts.boundary
-    ? planForBoundary(root, opts.boundary)
-    : detectApprovedPlanScope(root);
+  const plan = opts.boundary ? planForBoundary(root, opts.boundary) : detectApprovedPlanScope(root);
   const readSelected = opts.boundary
     ? (path: string): string | null => readChangeSetFile(root, opts.boundary as ChangeSet, path)
     : undefined;
@@ -524,9 +534,7 @@ export function buildReview(
   const renamedFrom = renamedFromMap(renames, new Set(changes));
   const { anchorChanges, unevaluable } = gatherAnchorChanges(root, baseRef, changes, renamedFrom);
   const boundaryBinding = opts.boundary ? changeSetBinding(opts.boundary) : undefined;
-  const acks = readAcks(root).filter((ack) =>
-    sameChangeSetBinding(ack.boundary, boundaryBinding),
-  );
+  const acks = readAcks(root).filter((ack) => sameChangeSetBinding(ack.boundary, boundaryBinding));
   // Change authorship (pure repo state) — the source of "the change author" for the
   // self-vs-independent split, computed once and shared by the card and the strict
   // independence gate below.
@@ -642,6 +650,13 @@ export function buildReview(
       readSelected,
     ),
   });
+  const testImpact = opts.boundary
+    ? computeTestImpact({
+        changedPaths: opts.boundary.changes.map((change) => change.path),
+        registry,
+        readText: readSelected as (path: string) => string | null,
+      })
+    : undefined;
   const unresolvedPins = findUnresolvedPins(root, registry, state, readSelected);
   // The acks adjudicating this change — the audit card both the human review and the
   // HTML report read. Computed from the FULL ack set (not `honoredAcks`), so under
@@ -740,6 +755,7 @@ export function buildReview(
       ? { members: ws.members.map((m) => m.prefix || "<root>"), bases: workspaceBases(ws) }
       : null,
     ...(opts.boundary ? { boundary: opts.boundary } : {}),
+    ...(testImpact ? { testImpact } : {}),
   };
 }
 
@@ -748,9 +764,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   // The same resolution buildReview performs, for the gate paths that scope a
   // real-change set outside the report itself.
   let { spec: exclusion } =
-    options.staged || options.paths
-      ? resolveScopeFromConfigured(null)
-      : resolveScopeSync(root);
+    options.staged || options.paths ? resolveScopeFromConfigured(null) : resolveScopeSync(root);
 
   // Output-format guard: SARIF is the only non-default format, and it cannot combine
   // with --json (two machine shapes, one stdout). A usage error is human text + exit 1,
@@ -832,9 +846,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     if (options.staged || options.paths) {
       const boundary = resolveChangeSet(
         root,
-        options.paths
-          ? { mode: "explicit-staged", paths: options.paths }
-          : { mode: "staged" },
+        options.paths ? { mode: "explicit-staged", paths: options.paths } : { mode: "staged" },
       );
       exclusion = exclusionForBoundary(root, boundary);
       report = buildReview(root, undefined, "HEAD", undefined, {
@@ -1008,6 +1020,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       delta,
       report.boundary,
       readText,
+      report.testImpact,
     );
     console.log(JSON.stringify(bundle, null, 2));
     return;
@@ -1066,7 +1079,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       realChangeSet,
       provisional.findings,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state, report.boundary),
+      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact),
       focusedBinding?.fingerprint,
     );
     // `files` rides along as scoping information for the NEXT `--bundle` (what moved
@@ -1089,7 +1102,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       effectiveBase,
       realChangeSet,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state, report.boundary),
+      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact),
       focusedBinding,
     ).length;
     if (onRecord > 1) {
@@ -1228,7 +1241,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       effectiveBase,
       realChangeSet,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state, report.boundary),
+      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact),
       focusedBinding,
     );
     // A missing key and an explicit null both mean the same thing to a reader: this
@@ -1657,6 +1670,7 @@ function currentOracle(
   base: string,
   state: ChangeState,
   boundary?: ChangeSet,
+  testImpact?: TestImpact,
 ): string {
   const registry = boundary
     ? registryForBoundary(root, boundary)
@@ -1665,7 +1679,8 @@ function currentOracle(
     ? (path: string): string | null => readChangeSetFile(root, boundary, path)
     : undefined;
   return oracleFingerprint(
-    gatherReviewBundle(root, base, state, registry, null, null, boundary, readText).features,
+    gatherReviewBundle(root, base, state, registry, null, null, boundary, readText, testImpact)
+      .features,
   );
 }
 
@@ -1679,9 +1694,18 @@ function computeRealChange(
   exclusion: ExclusionSpec,
 ): { set: string[]; realDeletions: string[] } {
   const isDocPath = (p: string) => p.startsWith("docs/") && p.endsWith(".md");
-  const realDeletions = deletions.filter((d) => !isDocPath(d) && !isExcluded(d, exclusion));
+  const changedTests = report.testImpact?.changedTests ?? [];
+  const testSet = new Set(changedTests);
+  const realDeletions = deletions.filter(
+    (d) => !isDocPath(d) && (!isExcluded(d, exclusion) || testSet.has(d)),
+  );
   const set = [
-    ...new Set([...report.state.changedSources, ...report.state.otherChanged, ...realDeletions]),
+    ...new Set([
+      ...report.state.changedSources,
+      ...report.state.otherChanged,
+      ...changedTests,
+      ...realDeletions,
+    ]),
   ].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return { set, realDeletions };
 }
@@ -2026,6 +2050,24 @@ function printHuman(report: ReviewReport): void {
     state.byFeature.map((g) => `${pc.cyan(g.feature)} — ${g.files.join(", ")}`),
   );
 
+  if (report.testImpact) {
+    const byFeature = new Map<string, Array<{ test: string; via: string }>>();
+    for (const attribution of report.testImpact.attributed) {
+      const rows = byFeature.get(attribution.feature) ?? [];
+      rows.push({ test: attribution.test, via: attribution.via });
+      byFeature.set(attribution.feature, rows);
+    }
+    section("Test evidence", [
+      ...[...byFeature]
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(
+          ([feature, rows]) =>
+            `${pc.cyan(feature)} — ${rows.map((row) => `${row.test} (${row.via})`).join(", ")}`,
+        ),
+      ...report.testImpact.unattributed.map((test) => `${pc.yellow("unattributed")} — ${test}`),
+    ]);
+  }
+
   // The registry pointing at a file that no longer exists. Printed BEFORE the doc
   // sections because it is a fact about the control plane rather than about prose:
   // leave it and every later ownership answer is derived from a lie. A rename is
@@ -2313,7 +2355,9 @@ function printHuman(report: ReviewReport): void {
   // about the doc, and a repo keeping tests elsewhere would fail on every invariant in
   // every doc it touched.
   section(
-    pc.dim("Test pins that do not resolve (reported, not gated — the doc names a test that is not there)"),
+    pc.dim(
+      "Test pins that do not resolve (reported, not gated — the doc names a test that is not there)",
+    ),
     report.unresolvedPins.map(
       (p) => `${pc.dim("•")} ${p.feature} ${pc.dim(`— ${p.test} → ${p.doc}`)}`,
     ),
@@ -2524,7 +2568,12 @@ function printHuman(report: ReviewReport): void {
     state.highFanout.map((f) => `${pc.yellow("⚠")} ${f.file} → ${f.features.join(", ")}`),
   );
 
-  section("Dependents that may need re-review", dependentLines(state.dependentsSummary));
+  section(
+    "Dependents that may need re-review",
+    dependentLines(
+      mergeDependentSummaries(state.dependentsSummary, report.testImpact?.dependentsSummary ?? []),
+    ),
+  );
 
   console.log(
     pc.dim(

@@ -2,7 +2,7 @@
 title: Core library
 status: current
 type: concept
-last_reviewed: 2026-07-21
+last_reviewed: 2026-09-03
 ---
 
 # Core library
@@ -66,7 +66,8 @@ Feature modules this umbrella co-documents (behavior lives in the linked feature
 - `src/lib/exclusion-spec.ts` — the canonical exclusion spec and its matchers, plus the one definition of "a test file" that the spec itself is composed from. A leaf module so the git seam can prune its member walk on the same directory list the analyzers score by, without importing the analyzer.
 - `src/lib/analyze.ts` — deterministic coverage and lint analyzer over that spec; its symbol heuristics extract names through the gate's own language adapters and treat a cold adapter as a loud wiring error, never a silently blind reading. ([[registry-health]])
 - `src/lib/badge.ts` — no-network static SVG coverage badge renderer. ([[registry-health]])
-- `src/lib/change-state.ts` — shared deterministic diff analyzer behind review and watch. ([[change-control-gate]])
+- `src/lib/change-state.ts` — shared deterministic diff and dependency-impact analyzer behind review,
+  watch, and focused test evidence. ([[change-control-gate]])
 - `src/lib/tree-sitter.ts` — lazy bundled-WASM parsing substrate for languages beyond TypeScript, with the grammar-hash manifest the determinism stamp digests. ([[change-control-gate]])
 - `src/lib/go-adapter.ts` — precise Go adapter: capitalization rule, receiver-method identity, struct-tag contract calibration. ([[change-control-gate]])
 - `src/lib/rust-adapter.ts` — precise Rust adapter: pub-literal rule, trait-qualified impl identities, derive/variant contract calibration. ([[change-control-gate]])

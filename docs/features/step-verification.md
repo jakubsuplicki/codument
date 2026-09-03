@@ -2,7 +2,7 @@
 title: Focused step verification
 status: approved
 type: feature
-last_reviewed: 2026-08-24
+last_reviewed: 2026-09-03
 ---
 
 # Focused step verification
@@ -57,9 +57,12 @@ ownership.
   part of either stamp. *(tests: `review-boundary.test.ts` focused remedy,
   moved-boundary refusal, bundle, and artifact flow; `review-artifact.test.ts` exact-binding
   round-trip and coverage; planned: `verify.test.ts` receipt parity)*
-- Staged tests affect evidence attribution, blast reporting, and review fingerprints while remaining
-  excluded from documentation ownership and staleness. *(planned: `test-impact.test.ts` plus review
-  integration fixtures)*
+- Staged tests affect evidence attribution, dependency blast reporting, and review fingerprints
+  while remaining excluded from documentation ownership and staleness. Explicit invariant pins win
+  over supported direct TypeScript imports. A deleted test can retain its surviving pin; any test
+  those signals cannot attribute stays visible as unattributed rather than being guessed. *(tests: `test-impact.test.ts` attribution and
+  dependency matrix; `review-boundary.test.ts` focused command, bundle, and artifact flow;
+  `review-bundle.test.ts` test-only oracle and delta projection)*
 - The default human output contains only actions that can change the verdict; `--details` preserves
   complete diagnostics and `--json` remains byte-deterministic for the same repository state.
   *(planned: `verify.test.ts` human/JSON parity)*
@@ -91,7 +94,8 @@ ownership.
 
 - `src/lib/change-set.ts` — boundary resolution and fingerprint contract shared by every focused
   consumer.
-- `src/lib/test-impact.ts` — planned test-evidence attribution.
+- `src/lib/test-impact.ts` — test-evidence attribution and dependency impact without documentation
+  ownership.
 - `src/commands/verify.ts` — planned compact verification, worksheet, and receipt surface.
 - `src/commands/review.ts` — the detailed change-control and adversarial-review engine; it accepts a
   selected boundary and reads its control-plane inputs from the same snapshot.
@@ -104,7 +108,7 @@ Status: approved 2026-08-24.
 - [x] **Step 1 — Change-set substrate.** Add the staged, range, and explicit-staged boundary model, index change enumeration, overlap refusal, deterministic fingerprint, and focused unit/CLI fixtures.
 - [x] **Step 2 — Change-control integration.** Thread the boundary through drift, ownership, deletions, renames, plan-scope reporting, and detailed review output while preserving the existing working-tree and CI range contracts.
 - [x] **Step 3 — Boundary-bound decisions and attestations.** Make acknowledgments, review bundles, review artifacts, printed remedies, and their invalidation rules consume and reproduce the exact boundary context.
-- [ ] **Step 4 — Test evidence.** Attribute staged tests through invariant pins and supported direct imports, expose unattributed tests, and include test changes in impact and adversarial-review fingerprints without creating documentation obligations.
+- [x] **Step 4 — Test evidence.** Attribute staged tests through invariant pins and supported direct imports, expose unattributed tests, and include test changes in impact and adversarial-review fingerprints without creating documentation obligations.
 - [ ] **Step 5 — One verification surface.** Add compact staged verification, deterministic detailed and JSON modes, automatic review worksheets for clean uncovered boundaries, record-and-verify, and exact-fingerprint pass receipts for the pre-commit arm.
 - [ ] **Step 6 — Workflow migration and field proof.** Stage before review in the installed skills, remove redundant per-step review invocations, teach the hook to reuse an exact receipt, update public guidance, and replay concurrent-dirty, test-change, Windows-command, and invocation-budget scenarios end to end.
 

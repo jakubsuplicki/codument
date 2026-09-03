@@ -1,20 +1,19 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { type ChangeSet, type ChangeSetBinding, changeSetBinding } from "./change-set.js";
 import {
-  type ChangeSet,
-  type ChangeSetBinding,
-  changeSetBinding,
-} from "./change-set.js";
+  type ApprovedPlan,
+  type ChangeState,
+  computeDependentImpact,
+  type DependentSummary,
+  mergeDependentSummaries,
+  type RiskTouch,
+  type StaleDoc,
+} from "./change-state.js";
 import type { Registry } from "./registry.js";
 import type { ReviewFinding } from "./review-artifact.js";
-import type {
-  ApprovedPlan,
-  ChangeState,
-  DependentSummary,
-  RiskTouch,
-  StaleDoc,
-} from "./change-state.js";
+import type { TestImpact } from "./test-impact.js";
 
 // The contract an adversarial reviewer attacks against. The whole point of the
 // bundle is to give the reviewer an ORACLE instead of an open-ended hunt: for
@@ -92,6 +91,8 @@ export interface ReviewBundle {
   plan: { path: string; scope: string[] } | null;
   /** Exact focused projection handed to the reviewer. Omitted from legacy bundles. */
   boundary?: ChangeSetBinding;
+  /** Changed tests as evidence, including their attribution or explicit lack of one. */
+  testImpact?: TestImpact;
   /** A digest of everything above — what this bundle handed over, as one token a
    *  reviewer copies into its findings so the recorded attestation says what it was
    *  grounded in. Without it an artifact records only a verdict: which invariants
@@ -132,7 +133,11 @@ export function extractDocSection(content: string, heading: string): string {
     const h2 = /^##\s+(.*?)\s*$/.exec(line);
     if (h2) {
       // strip an optional ATX closing run (`## Heading ##`) before comparing
-      inSection = h2[1].replace(/\s+#+\s*$/, "").trim().toLowerCase() === target;
+      inSection =
+        h2[1]
+          .replace(/\s+#+\s*$/, "")
+          .trim()
+          .toLowerCase() === target;
       continue;
     }
     if (/^#\s+/.test(line)) {
@@ -199,6 +204,7 @@ export interface ReviewBundleInput {
    *  means full scope and a byte-identical bundle to the pre-delta behavior. */
   delta?: ReviewBundleDelta | null;
   boundary?: ChangeSetBinding;
+  testImpact?: TestImpact;
 }
 
 export interface ReviewBundleDelta {
@@ -210,26 +216,52 @@ export interface ReviewBundleDelta {
   priorFindings: ReviewFinding[];
 }
 
+function scopeTestImpact(
+  testImpact: TestImpact,
+  registry: Registry,
+  delta?: ReviewBundleDelta | null,
+): TestImpact {
+  if (!delta) return testImpact;
+  const selected = new Set(delta.paths);
+  const attributed = testImpact.attributed.filter((attribution) => selected.has(attribution.test));
+  return {
+    changedTests: testImpact.changedTests.filter((test) => selected.has(test)),
+    attributed,
+    unattributed: testImpact.unattributed.filter((test) => selected.has(test)),
+    ...computeDependentImpact(
+      registry,
+      attributed.map((item) => item.feature),
+    ),
+  };
+}
+
 // Pure, deterministic projection of a change-state into the reviewer's contract
 // bundle. No I/O, no clock — same inputs, same bundle.
 export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
-  const { base, changeState, registry, docContents, plan, delta, boundary } = input;
+  const { base, changeState, registry, docContents, plan, delta, boundary, testImpact } = input;
 
   const features: ReviewBundleFeature[] = [];
-  for (const group of changeState.byFeature) {
-    const entry = registry.features[group.feature];
+  const sourceGroups = new Map(changeState.byFeature.map((group) => [group.feature, group.files]));
+  const featureNames = sortStrings([
+    ...sourceGroups.keys(),
+    ...(testImpact?.attributed.map((attribution) => attribution.feature) ?? []),
+  ]);
+  for (const feature of featureNames) {
+    const entry = registry.features[feature];
     if (!entry) continue; // a group with no registry entry contributes no contract
     const docText = docContents.get(entry.doc) ?? "";
     const invariants = extractDocSection(docText, "Invariants & boundaries").trim();
     features.push({
-      feature: group.feature,
+      feature,
       doc: entry.doc,
       contract: extractDocSection(docText, "In plain terms").trim(),
       invariants,
       testPointers: extractTestPointers(invariants),
-      hasUntestedInvariant: /\((?:untested|planned|honest[ -](?:ceiling|boundary))\b/i.test(invariants),
+      hasUntestedInvariant: /\((?:untested|planned|honest[ -](?:ceiling|boundary))\b/i.test(
+        invariants,
+      ),
       risk: sortStrings(entry.risk),
-      changedSources: sortStrings(group.files),
+      changedSources: sortStrings(sourceGroups.get(feature) ?? []),
     });
   }
 
@@ -249,10 +281,14 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
     features,
     staleDocs: changeState.staleDocs,
     riskTouches: changeState.riskTouches,
-    dependents: changeState.dependentsSummary,
+    dependents: mergeDependentSummaries(
+      changeState.dependentsSummary,
+      testImpact?.dependentsSummary ?? [],
+    ),
     outOfPlan: changeState.outOfPlan,
     plan,
     ...(boundary ? { boundary } : {}),
+    ...(testImpact ? { testImpact: scopeTestImpact(testImpact, registry, delta) } : {}),
   };
   // Over the body, never over itself. JSON.stringify walks the literal above in
   // declaration order, which is fixed here rather than inherited from any caller —
@@ -310,10 +346,15 @@ export function gatherReviewBundle(
   delta?: ReviewBundleDelta | null,
   boundary?: ChangeSet,
   readText?: (path: string) => string | null,
+  testImpact?: TestImpact,
 ): ReviewBundle {
   const docContents = new Map<string, string>();
-  for (const group of changeState.byFeature) {
-    const entry = registry.features[group.feature];
+  const featureNames = sortStrings([
+    ...changeState.byFeature.map((group) => group.feature),
+    ...(testImpact?.attributed.map((attribution) => attribution.feature) ?? []),
+  ]);
+  for (const feature of featureNames) {
+    const entry = registry.features[feature];
     if (!entry) continue;
     if (readText) {
       const content = readText(entry.doc);
@@ -336,5 +377,6 @@ export function gatherReviewBundle(
     plan: plan ? { path: plan.plan, scope: plan.scope } : null,
     delta,
     ...(boundary ? { boundary: changeSetBinding(boundary) } : {}),
+    ...(testImpact ? { testImpact } : {}),
   });
 }

@@ -469,7 +469,8 @@
       "doc": "docs/features/step-verification.md",
       "type": "feature",
       "primary_sources": [
-        "src/lib/change-set.ts"
+        "src/lib/change-set.ts",
+        "src/lib/test-impact.ts"
       ],
       "related_sources": [
         "src/cli.ts",

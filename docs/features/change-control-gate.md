@@ -2,7 +2,7 @@
 title: Change-control gate
 status: current
 type: feature
-last_reviewed: 2026-08-24
+last_reviewed: 2026-09-03
 ---
 
 # Change-control gate
@@ -25,6 +25,12 @@ fingerprint; the command recomputes that projection before recording anything an
 remedy after the index moves. The acknowledgment stores the exact base, head, paths, and fingerprint,
 so only that same staged projection can consume it. Bare working-tree acknowledgments remain isolated
 from focused ones for compatibility.
+
+Focused staged tests stay outside documentation ownership and staleness, but they are no longer
+outside the report. Explicit invariant pins and supported direct TypeScript imports attribute them
+to registry features, and those features enter the same dependency projection as source impact.
+Unattributed tests remain named, so the detailed human and JSON surfaces expose the blind spot
+without manufacturing a prose obligation.
 
 **Symbol-grained ownership is what makes the signal trustworthy at scale.** A file-grain signal cascades: a shared file with many owners flags every owning doc on a one-line edit, and the noise trains people to ignore it. Here, a changed symbol wakes only its owning feature's doc. Ownership is derived from primary ownership with zero authoring for the common single-owner file; only a file genuinely split across several features carries a per-symbol owner map, and the gate fails loud rather than silently waking all co-owners.
 

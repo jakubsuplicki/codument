@@ -1,15 +1,15 @@
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import type { ChangeState } from "../src/lib/change-state.js";
+import type { Registry, RegistryEntry } from "../src/lib/registry.js";
 import {
   buildReviewBundle,
   bundleStamp,
-  oracleFingerprint,
   extractDocSection,
   extractPinnedTests,
   extractTestPointers,
+  oracleFingerprint,
 } from "../src/lib/review-bundle.js";
-import type { ChangeState } from "../src/lib/change-state.js";
-import type { Registry, RegistryEntry } from "../src/lib/registry.js";
 
 const DOC_A = `---
 title: Feature A
@@ -172,7 +172,7 @@ describe("buildReviewBundle", () => {
   const registry: Registry = {
     features: {
       a: entry({ doc: "docs/features/a.md", risk: ["auth"] }),
-      b: entry({ doc: "docs/features/b.md" }),
+      b: entry({ doc: "docs/features/b.md", depends_on: ["a"] }),
     },
   };
   const docContents = new Map<string, string>([
@@ -209,6 +209,65 @@ describe("buildReviewBundle", () => {
     assert.deepEqual(a.risk, ["auth"]);
     assert.deepEqual(a.changedSources, ["src/a.ts"]);
     assert.equal(a.hasUntestedInvariant, false);
+  });
+
+  it("projects a test-only impacted feature without calling the test documentation source", () => {
+    const testImpact = {
+      changedTests: ["tests/a.test.ts", "tests/unknown.test.ts"],
+      attributed: [{ test: "tests/a.test.ts", feature: "a", via: "direct-import" as const }],
+      unattributed: ["tests/unknown.test.ts"],
+      dependents: [{ feature: "b", dependsOn: "a" }],
+      dependentsSummary: [{ feature: "b", dependsOn: ["a"], viaUmbrella: false }],
+    };
+    const bundle = buildReviewBundle({
+      base: "HEAD",
+      changeState: cs({ excludedChanged: testImpact.changedTests }),
+      registry,
+      docContents,
+      plan: null,
+      testImpact,
+    });
+
+    assert.deepEqual(bundle.testImpact, testImpact);
+    assert.deepEqual(bundle.changedSources, []);
+    assert.deepEqual(bundle.dependents, [{ feature: "b", dependsOn: ["a"], viaUmbrella: false }]);
+    assert.equal(bundle.features.length, 1);
+    assert.equal(bundle.features[0].feature, "a");
+    assert.deepEqual(bundle.features[0].changedSources, []);
+    assert.match(bundle.features[0].invariants, /X holds always/);
+  });
+
+  it("keeps unchanged tests in delta context instead of the next attack", () => {
+    const testImpact = {
+      changedTests: ["tests/a.test.ts", "tests/unknown.test.ts"],
+      attributed: [{ test: "tests/a.test.ts", feature: "a", via: "direct-import" as const }],
+      unattributed: ["tests/unknown.test.ts"],
+      dependents: [{ feature: "b", dependsOn: "a" }],
+      dependentsSummary: [{ feature: "b", dependsOn: ["a"], viaUmbrella: false }],
+    };
+    const bundle = buildReviewBundle({
+      base: "HEAD",
+      changeState: cs({ excludedChanged: testImpact.changedTests }),
+      registry,
+      docContents,
+      plan: null,
+      testImpact,
+      delta: {
+        paths: ["tests/a.test.ts"],
+        alreadyReviewed: ["tests/unknown.test.ts"],
+        priorFindings: [],
+      },
+    });
+
+    assert.deepEqual(bundle.testImpact, {
+      changedTests: ["tests/a.test.ts"],
+      attributed: [{ test: "tests/a.test.ts", feature: "a", via: "direct-import" }],
+      unattributed: [],
+      dependents: [{ feature: "b", dependsOn: "a" }],
+      dependentsSummary: [{ feature: "b", dependsOn: ["a"], viaUmbrella: false }],
+    });
+    assert.deepEqual(bundle.alreadyReviewed, ["tests/unknown.test.ts"]);
+    assert.equal(bundle.features[0].feature, "a", "the full feature oracle remains in context");
   });
 
   // ADR 017: a governed registered file can BLOCK a step while carrying no symbol

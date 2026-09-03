@@ -1,33 +1,33 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  type Acknowledgment,
+  ackCovers,
+  ackCoversTree,
+  type CoveredFile,
+  isFileGrainAck,
+  isTreeGrainAck,
+} from "./acknowledgment.js";
+import {
+  DEFAULT_EXCLUSION_SPEC,
+  type ExclusionSpec,
+  isExcluded,
+  isSourceFile,
+  toPosix,
+} from "./analyze.js";
+import { type AnchorChange, fileContentTransition, isPreciseFile } from "./fingerprint.js";
+import { movesOnly, type RenamePair } from "./git.js";
+import { resolveOwner, splitAnchorId } from "./ownership.js";
+import { extractStatus, isApproved } from "./plan-steps.js";
+import {
   allSources,
+  isSourcePattern,
   type Registry,
   type RegistryEntry,
-  isSourcePattern,
   registeredPatterns,
   sourceMatcher,
   sourceNames,
 } from "./registry.js";
-import {
-  DEFAULT_EXCLUSION_SPEC,
-  isExcluded,
-  isSourceFile,
-  toPosix,
-  type ExclusionSpec,
-} from "./analyze.js";
-import { resolveOwner, splitAnchorId } from "./ownership.js";
-import { fileContentTransition, isPreciseFile, type AnchorChange } from "./fingerprint.js";
-import {
-  ackCovers,
-  ackCoversTree,
-  isFileGrainAck,
-  isTreeGrainAck,
-  type Acknowledgment,
-  type CoveredFile,
-} from "./acknowledgment.js";
-import { movesOnly, type RenamePair } from "./git.js";
-import { extractStatus, isApproved } from "./plan-steps.js";
 
 // Deterministic diff snapshot over the v2 registry. Pure function of (registry,
 // changed files, optional plan scope, optional per-file anchor changes): no git,
@@ -183,6 +183,100 @@ export interface DependentSummary {
    *  umbrella wakes on any file in it — so these rank last and are the first thing
    *  collapsed into the trailing count. */
   viaUmbrella: boolean;
+}
+
+export interface DependentImpact {
+  dependents: DependentFeature[];
+  dependentsSummary: DependentSummary[];
+}
+
+/** Derive the dependency blast radius for any set of impacted registry features.
+ * Source changes and test evidence share this projection so they cannot disagree
+ * about which downstream contracts may need re-review. */
+export function computeDependentImpact(
+  registry: Registry,
+  impactedFeatures: Iterable<string>,
+): DependentImpact {
+  const changed = new Set(impactedFeatures);
+  const entries = Object.entries(registry.features).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  const entryByKey = new Map(entries);
+  const dependents: DependentFeature[] = [];
+  for (const [feature, entry] of entries) {
+    for (const dependency of entry.depends_on) {
+      if (changed.has(dependency) && dependency !== feature) {
+        dependents.push({ feature, dependsOn: dependency });
+      }
+    }
+  }
+  dependents.sort((a, b) =>
+    a.feature !== b.feature
+      ? a.feature < b.feature
+        ? -1
+        : 1
+      : a.dependsOn < b.dependsOn
+        ? -1
+        : a.dependsOn > b.dependsOn
+          ? 1
+          : 0,
+  );
+
+  const summaryByFeature = new Map<string, string[]>();
+  for (const dependent of dependents) {
+    const dependencies = summaryByFeature.get(dependent.feature) ?? [];
+    dependencies.push(dependent.dependsOn);
+    summaryByFeature.set(dependent.feature, dependencies);
+  }
+  const dependentsSummary = [...summaryByFeature.entries()]
+    .map(([feature, dependencies]) => ({
+      feature,
+      dependsOn: sortStrings(dependencies),
+      viaUmbrella: dependencies.every(
+        (dependency) => entryByKey.get(dependency)?.type === "concept",
+      ),
+    }))
+    .sort((a, b) =>
+      a.viaUmbrella !== b.viaUmbrella
+        ? a.viaUmbrella
+          ? 1
+          : -1
+        : a.feature < b.feature
+          ? -1
+          : a.feature > b.feature
+            ? 1
+            : 0,
+    );
+
+  return { dependents, dependentsSummary };
+}
+
+export function mergeDependentSummaries(
+  ...groups: readonly (readonly DependentSummary[])[]
+): DependentSummary[] {
+  const merged = new Map<string, { dependsOn: string[]; viaUmbrella: boolean }>();
+  for (const group of groups) {
+    for (const item of group) {
+      const current = merged.get(item.feature);
+      merged.set(item.feature, {
+        dependsOn: sortStrings([...(current?.dependsOn ?? []), ...item.dependsOn]),
+        viaUmbrella: (current?.viaUmbrella ?? true) && item.viaUmbrella,
+      });
+    }
+  }
+  return [...merged.entries()]
+    .map(([feature, value]) => ({ feature, ...value }))
+    .sort((a, b) =>
+      a.viaUmbrella !== b.viaUmbrella
+        ? a.viaUmbrella
+          ? 1
+          : -1
+        : a.feature < b.feature
+          ? -1
+          : a.feature > b.feature
+            ? 1
+            : 0,
+    );
 }
 
 /** A symbol on a file shared across multiple FEATURES that ownership could not
@@ -544,9 +638,7 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
       // ANY risk-declared owner gates the file: risk is a claim about consequence,
       // and one owner saying "this can hurt" is not overruled by another staying
       // quiet. Asked of the PRIMARY owners only, matching who the wake reaches.
-      const risky = primaryOwners.some(
-        (key) => (entryByKey.get(key)?.risk?.length ?? 0) > 0,
-      );
+      const risky = primaryOwners.some((key) => (entryByKey.get(key)?.risk?.length ?? 0) > 0);
       if (risky) {
         governedRegistered.push(file);
         continue;
@@ -810,7 +902,12 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   for (const { from, to } of movesOnly(input.renames ?? [], changed)) {
     const features = namingEntries(from);
     if (features.length > 0) {
-      registryPointers.push({ file: from, features: sortStrings(features), kind: "renamed", renamedTo: to });
+      registryPointers.push({
+        file: from,
+        features: sortStrings(features),
+        kind: "renamed",
+        renamedTo: to,
+      });
     }
   }
   for (const file of removedInChange(input.renames ?? [], input.changedFiles, deleted)) {
@@ -844,54 +941,13 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   // dependents: features that depend on a changed feature (the blast radius);
   // a feature that both changed and depends on another changed feature is still
   // surfaced, since its integration with that dependency may need re-review.
-  const dependents: DependentFeature[] = [];
-  for (const [key, entry] of entries) {
-    for (const dep of entry.depends_on) {
-      if (changedFeatures.has(dep) && dep !== key) {
-        dependents.push({ feature: key, dependsOn: dep });
-      }
-    }
-  }
-  dependents.sort((a, b) =>
-    a.feature !== b.feature
-      ? a.feature < b.feature
-        ? -1
-        : 1
-      : a.dependsOn < b.dependsOn
-        ? -1
-        : a.dependsOn > b.dependsOn
-          ? 1
-          : 0,
-  );
+  const { dependents, dependentsSummary } = computeDependentImpact(registry, changedFeatures);
 
   // The renderable view: one entry per dependent FEATURE, ranked so the weakest
   // signal sorts last. An edge onto a concept umbrella says "this feature declares a
   // dependency on a directory narrative", and that umbrella wakes whenever any file
   // in it moves — which is what turns a one-file edit into a wall of dependents.
-  // `dependents` above stays one entry per edge: it is the machine contract.
-  const summaryByFeature = new Map<string, string[]>();
-  for (const d of dependents) {
-    const list = summaryByFeature.get(d.feature) ?? [];
-    list.push(d.dependsOn);
-    summaryByFeature.set(d.feature, list);
-  }
-  const dependentsSummary: DependentSummary[] = [...summaryByFeature.entries()]
-    .map(([feature, deps]) => ({
-      feature,
-      dependsOn: sortStrings(deps),
-      viaUmbrella: deps.every((dep) => entryByKey.get(dep)?.type === "concept"),
-    }))
-    .sort((a, b) =>
-      a.viaUmbrella !== b.viaUmbrella
-        ? a.viaUmbrella
-          ? 1
-          : -1
-        : a.feature < b.feature
-          ? -1
-          : a.feature > b.feature
-            ? 1
-            : 0,
-    );
+  // `dependents` stays one entry per edge; `dependentsSummary` is the ranked view.
 
   // out-of-plan changed sources
   let outOfPlan: string[] = [];
@@ -973,7 +1029,8 @@ export function findSpecInvisibleAdditions(
         // both — one matcher, so "does this entry name this path" cannot get two
         // answers here and somewhere else.
         .filter((f) => !entry.primary_sources.some((s) => sourceNames(s, f)));
-      if (files.length > 0) out.push({ feature, doc: entry.doc, directory: dir, files: sortStrings(files) });
+      if (files.length > 0)
+        out.push({ feature, doc: entry.doc, directory: dir, files: sortStrings(files) });
     }
   }
   return out.sort((a, b) =>
