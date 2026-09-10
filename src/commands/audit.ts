@@ -1,7 +1,9 @@
 import pc from "picocolors";
 import { warmAllAdapters } from "../lib/fingerprint.js";
 import { auditRange, type AuditEntry, type HistoryAudit } from "../lib/history-audit.js";
-import { assertRootIsRepoToplevel, isGitRepo, resolveWorkspace } from "../lib/git.js";
+import { assertRootIsRepoToplevel, isGitRepo, resolveWorkspace, selectRepository, type Workspace } from "../lib/git.js";
+import { relative, resolve, sep } from "node:path";
+import { realpathSync } from "node:fs";
 import { GateError } from "../lib/two-ref.js";
 
 // `codument audit <base>..<head>` — retroactive drift audit over committed
@@ -12,6 +14,7 @@ import { GateError } from "../lib/two-ref.js";
 // because "could not look" must never read as "no drift".
 
 interface AuditCliOptions {
+  repo?: string;
   json?: boolean;
   root?: string;
   dir?: string;
@@ -25,7 +28,7 @@ interface AuditCliOptions {
 // not look must never be mistaken for zero drift. `driftedCount` is first-class
 // so a consumer can threshold without reimplementing the join.
 type AuditJson =
-  | ({ version: 1; audit: "ok"; driftedCount: number } & HistoryAudit)
+  | ({ version: 1; audit: "ok"; driftedCount: number; repository?: string } & HistoryAudit)
   | { version: 1; audit: "unavailable"; reason: string };
 
 function emitJson(payload: AuditJson): void {
@@ -80,7 +83,6 @@ export async function auditCommand(range: string, options: AuditCliOptions = {})
   const root = options.root ?? options.dir ?? process.cwd();
   // History may contain a language the tree no longer does, so the audit warms
   // EVERY warmable adapter before its synchronous walk.
-  await warmAllAdapters();
 
   const unavailable = (reason: string, humanLine: string): void => {
     if (options.json) emitJson({ version: 1, audit: "unavailable", reason });
@@ -97,37 +99,39 @@ export async function auditCommand(range: string, options: AuditCliOptions = {})
     return;
   }
 
-  if (!isGitRepo(root)) {
-    // No history to audit is a could-not-run, not a zero-drift result.
-    unavailable("not a git repository", "not a git repository — audit reads committed history");
-    return;
-  }
-
   let audit: HistoryAudit;
+  let selected: Workspace | undefined;
+  let repository: string | undefined;
   try {
+    if (options.repo === undefined && !isGitRepo(root) && !resolveWorkspace(root).isWorkspace) {
+      unavailable("not a git repository", "not a git repository — audit reads committed history");
+      return;
+    }
     // A subdirectory root produces WRONG answers (everything unmapped), not
     // absent ones — same loud assertion as the live gate. On the human path a
     // GateError (wrong root, unreachable ref, broken git read) surfaces red at
     // the CLI boundary; under --json it stays machine-readable here.
-    assertRootIsRepoToplevel(root);
+    if (options.repo !== undefined) {
+      selected = selectRepository(root, options.repo);
+      repository = relative(realpathSync(resolve(root)), selected.root).split(sep).join("/") || ".";
+    } else assertRootIsRepoToplevel(root);
     // History is per-repository: a ref range names one repository's commits, and
     // a workspace has several with independent histories. Refuse rather than
     // audit one member's range as if it were the whole (ADR-016) — run audit
     // inside the member whose history you mean.
-    if (resolveWorkspace(root).isWorkspace) {
+    if (!selected && resolveWorkspace(root).isWorkspace) {
       throw new GateError(
-        `audit cannot range over a workspace of member repositories: a ref range names one repository's history. Run it inside the member repository you mean.`,
+        `audit cannot range over a workspace of member repositories: a ref range names one repository's history. Select --repo <member> or --repo . for the root, or run it inside the member repository you mean.`,
         "wrong-topology",
       );
     }
-    audit = auditRange(root, parsed.base, parsed.head);
+    await warmAllAdapters();
+    audit = auditRange(root, parsed.base, parsed.head, selected);
   } catch (err) {
-    if (err instanceof GateError && options.json) {
-      emitJson({ version: 1, audit: "unavailable", reason: err.message });
-      process.exitCode = 1;
-      return;
-    }
-    throw err;
+    if (options.repo === undefined && !options.json) throw err;
+    const reason = err instanceof Error ? err.message : "selected history could not be read";
+    unavailable(reason, reason);
+    return;
   }
 
   if (options.json) {
@@ -137,6 +141,7 @@ export async function auditCommand(range: string, options: AuditCliOptions = {})
       version: 1,
       audit: "ok",
       driftedCount: audit.drifted.length,
+      ...(repository === undefined ? {} : { repository }),
       base: audit.base,
       head: audit.head,
       baseSha: audit.baseSha,
@@ -157,6 +162,7 @@ export async function auditCommand(range: string, options: AuditCliOptions = {})
   }
 
   console.log(pc.bold("codument audit") + pc.dim(`  ${audit.base}..${audit.head}`));
+  if (repository !== undefined) console.log(`  repository: ${repository}`);
   console.log();
 
   if (audit.documented === 0) {

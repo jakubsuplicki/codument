@@ -47,6 +47,8 @@ what that view could not read. [[token-cost-tracking]] owns availability and sum
 
 ## Invariants & boundaries
 
+- Explicit repository views keep history refs, registry and blob reads together, including roots with nested members. The view is isolated across concurrent calls and restored after failure; normal workspace discovery and caches retain their meaning. *(test: `history-audit-selection.test.ts`)*
+
 - Event producers and feed rebuilds share an exclusive local transaction; concurrent capture cannot inflate usage, and rebuilding one host preserves other hosts and manual events. Captured identity anchors replay across cursor loss; writer conflicts and incomplete ledgers remain visible. *(test: `codex-feed.test.ts`)*
 
 - Workflow skill mirrors preserve handoffs, and reports display saved interruptions. Host compliance remains untested. *(tests: `agent-profiles.test.ts`, `work.test.ts`)*

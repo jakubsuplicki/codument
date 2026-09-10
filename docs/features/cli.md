@@ -13,6 +13,10 @@ This is the front door: the `codument` binary a user types into a terminal. It o
 
 ## Design approach
 
+History audit can explicitly select a workspace member or the root repository alone. JSON identifies
+that selection; invalid or unreadable selections remain unavailable. Omission preserves the existing
+single-repository behavior and workspace-range refusal. [[history-audit]] owns this boundary.
+
 Feed and watch capture local Claude and Codex inputs. An explicit JSON file selects one Codex input
 and accepts one-shot machine-readable results; recorded provenance is required.
 

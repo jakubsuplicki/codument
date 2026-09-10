@@ -231,6 +231,7 @@ program
     "<range>",
     "the commit range <baseRef>..<headRef>, e.g. v1.0.0..HEAD (diffed from the merge-base)",
   )
+  .option("--repo <path>", "Select one workspace member, or . for only the root repository's history")
   .option(
     "--json",
     "Emit the machine-readable audit contract (version-tagged; byte-identical for the same repo state)",

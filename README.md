@@ -526,6 +526,8 @@ The live gate pointed backwards: for each documented feature, symbol moves in a 
 ```bash
 npx codument audit v1.0.0..HEAD
 npx codument audit v0.7.0..v0.8.0 --json   # version-tagged; byte-identical for the same repo state
+npx codument audit v1.0.0..HEAD --repo packages/api # only this member's refs, registry and history
+npx codument audit v1.0.0..HEAD --repo .            # only the root repository, excluding nested members
 ```
 
 - Same analyzer, same semantics as `review` — per-symbol staleness, deletions first-class (a rename's old path included), the registry-entry-removal dodge closed, parse-broken files surfaced instead of trusted. The range is diffed from the merge-base, so merged-in commits are not misattributed.

@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { type Dirent, existsSync, readdirSync, realpathSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { type Dirent, existsSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DEFAULT_EXCLUSION_SPEC } from "./exclusion-spec.js";
 import { GateError } from "./gate-error.js";
 
@@ -572,6 +573,39 @@ export interface WorkspaceMember {
 // full tree walk — the discovery has to be cheap enough that no caller is
 // tempted to skip it and fall back to a single-repo view.
 const workspaceCache = new Map<string, Workspace>();
+const repositoryViews = new AsyncLocalStorage<Workspace>();
+
+/** A selected repository is one Git view, including when it contains other worktrees. */
+export function selectRepository(workspaceRoot: string, selector: string): Workspace {
+  if (!selector) throw new GateError("empty repository selector; choose . or a member path", "wrong-root");
+  let origin: string;
+  let target: string;
+  try {
+    origin = realpathSync.native(resolve(workspaceRoot));
+    target = realpathSync.native(resolve(origin, selector));
+    if (!statSync(origin).isDirectory() || !statSync(target).isDirectory()) throw new Error("not a directory");
+  } catch {
+    throw new GateError(`cannot read repository selector ${selector}; choose an existing repository directory inside ${workspaceRoot}`, "wrong-root");
+  }
+  assertRootIsRepoToplevel(origin);
+  const path = relative(origin, target);
+  if (path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path)) {
+    throw new GateError(`repository selector ${selector} is outside the workspace; choose . or a member inside ${workspaceRoot}`, "wrong-root");
+  }
+  const toplevel = getRepoToplevel(target);
+  if (!toplevel || dirIdentity(toplevel) !== dirIdentity(target)) {
+    throw new GateError(`repository selector ${selector} is not a readable repository root; check access and select the member's top-level directory`, "wrong-root");
+  }
+  return { root: target, members: [{ prefix: "", root: target }], uninitialized: [], unreadable: [], isWorkspace: false };
+}
+
+/** Carry the same explicit view through existing nested Git readers without changing cwd or caches. */
+export function withRepositoryView<T>(view: Workspace, read: () => T): T {
+  if (view.isWorkspace || view.members.length !== 1 || view.members[0].prefix !== "" || view.members[0].root !== view.root) {
+    throw new GateError("a selected repository view must contain exactly its root", "wrong-topology");
+  }
+  return repositoryViews.run(view, read);
+}
 
 export interface Workspace {
   /** Absolute path of the workspace root (which may not be a repository). */
@@ -618,6 +652,8 @@ export function resolveWorkspace(
   root: string,
   excludeDirs: string[] = DEFAULT_EXCLUSION_SPEC.dirs,
 ): Workspace {
+  const selected = repositoryViews.getStore();
+  if (selected && dirIdentity(resolve(root)) === dirIdentity(selected.root)) return selected;
   const cached = workspaceCache.get(root);
   if (cached) return cached;
   const skip = new Set(excludeDirs);

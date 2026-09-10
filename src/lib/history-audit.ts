@@ -24,6 +24,7 @@ import {
   type Registry,
 } from "./registry.js";
 import { resolveOwner } from "./ownership.js";
+import { resolveWorkspace, withRepositoryView, type Workspace } from "./git.js";
 
 // Retroactive drift audit over COMMITTED history: the historical analog of the
 // live gate. For each registered entry, did an owned source move between two
@@ -161,7 +162,9 @@ function attributedFeatures(registry: Registry, anchorId: string): string[] {
  * Throws GateError on an unreachable ref or a broken git read — an audit that
  * could not look never reads as "no drift".
  */
-export function auditRange(root: string, base: string, head: string): HistoryAudit {
+export function auditRange(root: string, base: string, head: string, selected?: Workspace): HistoryAudit {
+  if (selected) return withRepositoryView(selected, () => auditRange(selected.root, base, head));
+  if (resolveWorkspace(root).isWorkspace) throw new GateError("audit requires one selected repository; choose --repo <member> or --repo .", "wrong-topology");
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
   const resolved = resolveBase(root, base, head);
   let headSha: string;

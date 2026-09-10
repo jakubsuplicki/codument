@@ -18,6 +18,12 @@ damage report before deciding whether to adopt the workflow.
 
 ## Design approach
 
+Workspace history needs an explicit repository selection. A selected member supplies its own refs,
+working registry, committed blobs and relative paths; selecting the root excludes nested histories.
+The same selection reaches every nested Git read without changing the process directory or the
+cached aggregate workspace. It is restored after the audit, including failure and concurrent calls.
+Selection cannot escape the workspace through an absolute path or a filesystem alias.
+
 The engine deliberately owns no verdict logic. It resolves the range with the same two-ref
 primitives the gate uses (merge-base semantics, so commits merged in from elsewhere are not
 misattributed to the range; no common ancestor degrades honestly to "everything is new"), gathers
@@ -41,7 +47,8 @@ audit that could not run exits non-zero, because "could not look" must never rea
 
 ## Invariants & boundaries
 
-- A history range is per-repository, so `audit` refuses a workspace of member repositories: a ref range names one repository's commits, and a workspace has several with independent histories. It fails closed (`wrong-topology`) naming the member to run inside, rather than auditing one member's range as if it were the whole. *(test: `workspace-refusals.test.ts` "refuses a history audit range")*
+- A history range is per-repository. An unselected workspace remains refused; explicit root/member selection uses only that repository even when nested histories have the same ref names or overlapping paths. *(tests: `workspace-refusals.test.ts` "refuses a history audit range", `history-audit-selection.test.ts`)*
+- Missing, outside, non-repository, inaccessible or broken selectors and unreadable selected history remain unavailable with actionable human/JSON diagnostics, never zero drift. Selection leaves ordinary single-repository results and informational exit behavior unchanged. *(test: `history-audit-selection.test.ts`)*
 - The range is scoped by the same resolution the live gate uses — built-in exclusions widened by
   the project's own declaration — so a historical verdict and a working-tree verdict cannot disagree
   about which files were ever in scope. *(boundary — the resolution's contract lives in
@@ -72,7 +79,7 @@ audit that could not run exits non-zero, because "could not look" must never rea
 
 ## Decisions
 
-- Deferred: choosing the workspace root's own history versus a member's history needs an explicit selector and scope policy. The current refusal remains intentional; silently choosing a repository would change which commits an audit claims to cover.
+- Explicit selection answers one repository's history without inventing a workspace-wide ref map. Refusal remains the default for unselected workspace ranges. See [016-nested-repo-workspace-aggregation](../architecture/decisions/016-nested-repo-workspace-aggregation.md).
 - One analyzer for the gate and the audit, rather than a second historical drift definition — the
   determinism contract and the single-freshness-definition stance this extends are recorded in
   [003-deterministic-reproducible-gate](../architecture/decisions/003-deterministic-reproducible-gate.md)

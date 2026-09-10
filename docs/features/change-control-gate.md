@@ -13,6 +13,11 @@ This is the safety check that catches a doc going stale the moment the code it d
 
 ## Design approach
 
+An explicit history-audit selection supplies one repository view through the shared Git seam.
+That audit cannot borrow nested-member blobs or refs, and its temporary selection cannot change
+later worktree aggregation. Unselected workspace-range refusals remain in place. [[history-audit]]
+owns the selection and informational-result contract.
+
 Event-log availability is independent of deterministic change readiness. Capture-aware readers retain
 valid events and disclose malformed or unreadable input; existing event-only readers keep their
 compatibility behavior. Missing telemetry never becomes evidence that a change passed its gate.
@@ -54,6 +59,8 @@ short verdict and the diagnostic `review` surface cannot silently disagree about
 **Every parser on the verdict path is bundled, never ambient.** The TypeScript engine rides the pinned TS compiler the package itself installs; languages beyond it ride tree-sitter grammars compiled to WASM, shipped inside the package and loaded through a pinned runtime, so the parse is a pure function of content bytes and package version — never of whatever toolchain the machine happens to have. The substrate is lazy (a repo that never needs a grammar never initializes WASM) and fail-loud (a missing or corrupt grammar binary raises, it never silently degrades a precise language to a coarse whole-file verdict); which files are precise, coarse, or unevaluable remains each adapter's decision.
 
 ## Invariants & boundaries
+
+- Explicit history selection is isolated and cannot alter ordinary aggregate workspace reads, including after exceptions or concurrent calls. *(test: `history-audit-selection.test.ts`)*
 
 - Concurrent capture is replay-safe, and a host rebuild preserves unrelated usage and manual events. Capture availability never changes the deterministic verdict. *(tests: `codex-feed.test.ts`, `watch.test.ts`)*
 

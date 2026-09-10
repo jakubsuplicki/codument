@@ -49,11 +49,20 @@ is a valid workspace root — the field layout — where before it was refused a
 repository" despite every member being readable.
 
 **Refuse what a single ref cannot name.** A workspace state is the tuple of its members' heads; a
-single ref names one repository. So ref-ranged review (`--base`; the CI workflow `hooks install --ci` scaffolds runs `review --base` and inherits it), a history `audit` range,
+single ref names one repository. So ref-ranged review (`--base`; the CI workflow `hooks install --ci` scaffolds runs `review --base` and inherits it), an unselected history `audit` range,
 and a pre-commit `hooks install` at a workspace root are refused by name, not answered with a
 guess. Inventing a convention — a per-member ref map, diffing gitlink shas — would put a guess on
 the verdict path, which is exactly what a gate must not do. The refusals carry a machine
 discriminant (`kind: "wrong-topology"`) so CI can tell a refused topology from a passed gate.
+
+**Explicit history selection is one repository, not aggregation.** `audit --repo <member-path>`
+selects that member's history; `--repo .` selects only the root repository. The selected repository
+owns the refs, registry, blobs and path space for the entire audit, even when it contains nested
+members. One scoped Git view carries this choice through existing readers and restores ordinary
+workspace reads afterward. No process-directory mutation or cache replacement stands in for selection.
+Paths escaping the workspace, including aliases, and unreadable or non-repository selections are
+named as unavailable. A missing selector still refuses the workspace range. This exception does not
+change ref-ranged review or hook-install policy. *(test: `history-audit-selection.test.ts`)*
 
 ## Consequences
 
