@@ -15,6 +15,19 @@ The load-bearing design choice: codument never calls an LLM, so it can never met
 
 ## Design approach
 
+Capture availability is separate from the cost of captured counts. Status names each host as
+available, empty, partial, unavailable or unsupported; an empty ledger alone proves no absence of
+agent usage. Readable inputs with no captured token events are empty. Missing directories,
+unreadable inputs, unidentified repositories, malformed records and bounded inspection are named.
+An unavailable source can still have useful captured history. Status and cost inspection are reads;
+they do not ingest sessions or change the ledger.
+
+Usage sharing is explicit. A portable summary contains counts grouped by host, model and opaque run
+identity, plus capture limitations. Missing run identity remains unknown; invalid model identifiers
+and unsafe counts are disclosed rather than copied as plausible data. Summaries contain no transcript,
+source path, feature name, private message or stored price, and have no automatic import path.
+Export creates a new file and refuses the live ledger or an existing output, including aliases.
+
 The pipeline is producers, a pricing layer, a reducer, and two views, all riding the append-only event log.
 
 **Counts in, two producers.** Usage enters as `type: "tokens"` events: either an agent reports them explicitly (the vendor-neutral seam any agent can target), or the feed auto-tails the agent's own session transcript and normalizes its per-turn usage into the same events. The explicit seam is the contract other agents implement; the feed is a Claude-specific convenience built on top of it, not a dependency of it. Producers store counts only, never cost.
@@ -28,6 +41,10 @@ The pipeline is producers, a pricing layer, a reducer, and two views, all riding
 **Two views, same captured log.** `watch` leads with a verdict and a cost headline (the all-sessions total plus a since-this-run delta and a where-it-went breakdown) and is a live consumer that auto-runs the feed. `cost` prints the complete ledger that the watch top-N omits, sorted by spend, as a pure read that never tails or mutates the log. Its share-percent column uses largest-remainder rounding so it sums to exactly 100 rather than drifting, and a real-but-tiny row reads under one percent rather than a misleading zero.
 
 ## Invariants & boundaries
+
+- Capture reports distinguish readable-empty inputs from unavailable or unsupported hosts, and name partial evidence while retaining valid ledger events. Missing usage fields, malformed source records and inspection limits remain visible. *(test: `agent-feed.test.ts`)*
+- Session identity comes from an absolute repository path in a complete top-level record, never a directory slug or nested tool input. Discovery and reset share the same inspected identity, including large opening records, and reset also recognizes identities on rebuilt events. They reject foreign input; prior cursors cannot authorize another repository, and existing captured history survives an unavailable source. *(tests: `agent-feed.test.ts`, `claude-feed.test.ts`)*
+- Status and ordinary cost reads ingest nothing. Explicit exports contain counts, host/model, opaque or unknown run identity and limitations only; they never overwrite files, target the live ledger or import themselves as events. *(test: `agent-feed.test.ts`)*
 
 - Producers store raw counts only; no derived cost, total, or dollar field is ever written to an event. *(test: `emit-producer.test.ts` "stores token counts only — never a derived cost")*
 - All four buckets are written, including zeros, and untrusted counts (NaN, Infinity, negative) are clamped so every emitted event passes the strict guard. *(tests: `emit-producer.test.ts` "preserves zero buckets (no falsy drop)" + "normalizes non-finite or negative usage so the emitted event is always guard-valid")*
@@ -48,11 +65,12 @@ The pipeline is producers, a pricing layer, a reducer, and two views, all riding
 
 ## Decisions
 
-- Deferred: expose capture availability separately from zero usage before adding another automatic host adapter or promising portable session totals. Automatic capture currently reads Claude transcripts; an empty captured ledger does not measure the cost of an unobserved session. Cross-machine summaries need an explicit privacy and transport design; raw transcripts stay local.
+- Availability describes observable local inputs, not complete metering. Manual reports remain vendor-neutral, Claude capture remains best-effort, and unsupported hosts are explicit. Sharing requires an explicit summary export; raw transcripts stay local and imported summaries never become live usage. See [[agent-delivery-workflow]] for the approved cross-host work.
 - Token counts are the source of truth and cost is derived at render time, never persisted (Codument is not a metering tool): [009-token-counts-are-truth-cost-derived-at-render](../architecture/decisions/009-token-counts-are-truth-cost-derived-at-render.md).
 
 ## Key files
 
+- `src/lib/agent-feed.ts` — host capture availability and limitations.
 - `src/lib/token-cost.ts` — the pricing layer: derives an estimated cost from raw counts at render time, and resolves the agent-neutral rate table by merging user overrides over the built-in Claude defaults.
 - `src/lib/token-report.ts` — the reducer: folds an untrusted event stream into attributed totals and rollups, and owns the canonical token-event guard the producers share.
 - `src/lib/emit-producer.ts` — the vendor-neutral producer: appends a counts-only token event any agent can target.

@@ -40,224 +40,144 @@ export function claudeProjectsDir(home = homedir()): string {
   return join(home, ".claude", "projects");
 }
 
-function jsonlFilesIn(dir: string): string[] {
-  let names: string[];
-  try {
-    names = readdirSync(dir);
-  } catch {
-    return [];
-  }
-  return names.filter((n) => n.endsWith(".jsonl")).map((n) => join(dir, n));
-}
-
 /** Bounded head read — enough to find the session's `cwd` without slurping a
  *  multi-megabyte transcript. */
 function readHead(file: string, bytes = 65536): string {
-  let fd: number;
-  try {
-    fd = openSync(file, "r");
-  } catch {
-    return "";
-  }
+  const fd = openSync(file, "r");
   try {
     const size = statSync(file).size;
     const len = Math.min(bytes, size);
     const buf = Buffer.alloc(len);
-    readSync(fd, buf, 0, len, 0);
-    return buf.toString("utf-8");
-  } catch {
-    return "";
+    const read = readSync(fd, buf, 0, len, 0);
+    return buf.subarray(0, read).toString("utf-8");
   } finally {
     closeSync(fd);
   }
 }
 
-/** The `cwd` a transcript belongs to. Regex over a generous head window so a
- *  giant first line (a big paste) or early records that lack `cwd` can't hide
- *  it — matches the raw JSON field without needing a complete parseable line. */
-function sessionCwd(file: string): string | null {
-  const head = readHead(file, 1_000_000);
-  const m = /"cwd"\s*:\s*"((?:\\.|[^"\\])*)"/.exec(head);
-  if (!m) return null;
-  try {
-    return JSON.parse(`"${m[1]}"`);
-  } catch {
-    return m[1];
-  }
+interface SessionInfo {
+  cwd: string | null;
+  sessionId: string | null;
+  malformed: boolean;
+  limited: boolean;
+  incompleteUsage: boolean;
 }
-
-/** A transcript's recorded `cwd` is constant for the life of the file, so cache
- *  it per path: the fallback scan in `resolveSessionLogs` runs every pump and
- *  would otherwise re-read a head window per file per tick. Only positive
- *  results are cached — a just-created transcript may not have written its `cwd`
- *  yet, and must be re-read until it does rather than be excluded forever. */
-const sessionCwdCache = new Map<string, string>();
-function cachedSessionCwd(file: string): string | null {
+/** Cache only the inspected snapshot; growth and rotation reopen its diagnostics. */
+const sessionCwdCache = new Map<string, { size: number; modified: number; info: SessionInfo }>();
+function sessionInfo(file: string): SessionInfo {
+  const stat = statSync(file);
   const key = canonSession(file);
   const cached = sessionCwdCache.get(key);
-  if (cached !== undefined) return cached;
-  const cwd = sessionCwd(file);
-  if (cwd !== null) sessionCwdCache.set(key, cwd);
-  return cwd;
-}
-
-/** The `sessionId` a transcript records (constant within a file). Regex over a
- *  head window, like `sessionCwd`, so it doesn't depend on a fully parseable
- *  first line. Used to match feed events (which carry `data.session`) back to a
- *  transcript file when deciding whether their source still exists. */
-function sessionIdOf(file: string): string | null {
-  const head = readHead(file, 65536);
-  const m = /"sessionId"\s*:\s*"((?:\\.|[^"\\])*)"/.exec(head);
-  if (!m) return null;
-  try {
-    return JSON.parse(`"${m[1]}"`);
-  } catch {
-    return m[1];
-  }
-}
-
-/** Newest .jsonl in a directory by mtime, or null. */
-function newestJsonl(dir: string): string | null {
-  let best: string | null = null;
-  let bestMtime = -1;
-  for (const file of jsonlFilesIn(dir)) {
-    let m: number;
+  if (cached?.size === stat.size && cached.modified === stat.mtimeMs) return cached.info;
+  const head = readHead(file, 1_000_000);
+  const info: SessionInfo = { cwd: null, sessionId: null, malformed: false, limited: stat.size > 1_000_000, incompleteUsage: false };
+  const lines = head.split("\n");
+  if (info.limited) lines.pop();
+  for (const line of lines) {
+    if (!line.trim()) continue;
     try {
-      m = statSync(file).mtimeMs;
-    } catch {
-      continue;
-    }
-    if (m > bestMtime) {
-      bestMtime = m;
-      best = file;
-    }
+      const record = JSON.parse(line);
+      if (!info.cwd && record && typeof record.cwd === "string" && isAbsolute(record.cwd)) info.cwd = record.cwd;
+      if (!info.sessionId && typeof record?.sessionId === "string" && record.sessionId.trim()) info.sessionId = record.sessionId;
+      if (record?.type === "assistant") {
+        const usage = record.message?.usage;
+        const valid = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+        if (!usage || !valid(usage.input_tokens) || !valid(usage.output_tokens) ||
+          typeof record.message?.model !== "string" || !record.message.model.trim() ||
+          typeof record.timestamp !== "string" ||
+          [usage.cache_read_input_tokens, usage.cache_creation_input_tokens].some(value => value !== undefined && !valid(value))) {
+          info.incompleteUsage = true;
+        }
+      }
+    } catch { info.malformed = true; }
   }
-  return best;
+  sessionCwdCache.set(key, { size: stat.size, modified: stat.mtimeMs, info });
+  return info;
 }
 
-/** Newest of an explicit file list by mtime, or null. */
+function sessionIdOf(file: string): string | null {
+  try { return sessionInfo(file).sessionId; }
+  catch { return null; }
+}
+
 function newestOf(files: string[]): string | null {
   let best: string | null = null;
   let bestMtime = -1;
   for (const file of files) {
-    let m: number;
     try {
-      m = statSync(file).mtimeMs;
-    } catch {
-      continue;
-    }
-    if (m > bestMtime) {
-      bestMtime = m;
-      best = file;
-    }
+      const modified = statSync(file).mtimeMs;
+      if (modified > bestMtime) { bestMtime = modified; best = file; }
+    } catch { /* discovery reports unavailable inputs */ }
   }
   return best;
 }
 
-/**
- * The active Claude Code transcript for `root`: the most-recently-modified
- * session whose recorded `cwd` matches the project root. Matching on `cwd`
- * (rather than reverse-engineering the dir-name slug) is robust to how Claude
- * encodes paths. Returns null when no matching session exists.
- */
+export interface SessionDiscovery {
+  sessions: string[];
+  missing: boolean;
+  unreadable: number;
+  unidentified: number;
+  malformed: number;
+  limited: number;
+  incompleteUsage: number;
+}
+
+function repositoryKey(path: string): string {
+  const canonical = canonSession(path);
+  return process.platform === "win32" ? canonical.toLowerCase() : canonical;
+}
+
+/** Bounded discovery keeps omissions visible rather than presenting a complete empty answer. */
+export function discoverSessionLogs(root: string, home = homedir()): SessionDiscovery {
+  const result: SessionDiscovery = { sessions: [], missing: false, unreadable: 0, unidentified: 0, malformed: 0, limited: 0, incompleteUsage: 0 };
+  const projects = claudeProjectsDir(home);
+  let directories: string[];
+  try { directories = readdirSync(projects).sort(); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") result.missing = true;
+    else result.unreadable++;
+    return result;
+  }
+  const wanted = repositoryKey(root);
+  const seen = new Set<string>();
+  let inspected = 0;
+  for (const directory of directories) {
+    const dir = join(projects, directory);
+    let files: string[];
+    try {
+      if (!statSync(dir).isDirectory()) continue;
+      files = readdirSync(dir).filter(name => name.endsWith(".jsonl")).sort();
+    } catch { result.unreadable++; continue; }
+    for (const name of files) {
+      if (++inspected > 10000) { result.limited++; return result; }
+      const file = join(dir, name);
+      const key = canonSession(file);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      try {
+        const info = sessionInfo(file);
+        if (info.cwd === null) { result.unidentified++; continue; }
+        if (repositoryKey(info.cwd) === wanted) {
+          result.sessions.push(file);
+          if (info.malformed) result.malformed++;
+          if (info.limited) result.limited++;
+          if (info.incompleteUsage) result.incompleteUsage++;
+        }
+      } catch { result.unreadable++; }
+    }
+  }
+  return result;
+}
+
+/** Newest matching session, retained for existing callers. */
 export function resolveSessionLog(root: string, home = homedir()): string | null {
-  const projects = claudeProjectsDir(home);
-  if (!existsSync(projects)) return null;
-
-  // Primary: Claude names each project dir by the cwd with separators replaced,
-  // so the dir name *is* the slug. A direct lookup needs no file read and is
-  // immune to giant pastes / early records that lack `cwd`.
-  const slug = root.replace(/[/.]/g, "-");
-  const slugDir = join(projects, slug);
-  if (existsSync(slugDir)) {
-    const newest = newestJsonl(slugDir);
-    if (newest) return newest;
-  }
-
-  // Fallback: scan every project dir and match the recorded cwd — covers any
-  // slug encoding we didn't anticipate.
-  let best: string | null = null;
-  let bestMtime = -1;
-  let projectDirs: string[];
-  try {
-    projectDirs = readdirSync(projects).map((n) => join(projects, n));
-  } catch {
-    return null;
-  }
-  for (const dir of projectDirs) {
-    try {
-      if (!statSync(dir).isDirectory()) continue;
-    } catch {
-      continue;
-    }
-    const newest = newestJsonl(dir); // each project's active session
-    if (!newest) continue;
-    let mtime: number;
-    try {
-      mtime = statSync(newest).mtimeMs;
-    } catch {
-      continue;
-    }
-    if (mtime <= bestMtime) continue;
-    if (sessionCwd(newest) === root) {
-      best = newest;
-      bestMtime = mtime;
-    }
-  }
-  return best;
+  return newestOf(discoverSessionLogs(root, home).sessions);
 }
 
-/**
- * Every Claude Code transcript whose recorded `cwd` matches `root` — the
- * complete set the feed should pump, not just the newest. Concurrent windows
- * each write their own session file, so following only the newest (see
- * `resolveSessionLog`) under-counts spend and makes the live total jump between
- * windows. Returns de-duplicated original paths (canonicalized only for the
- * dedupe key). Cheap on repeat calls: the slug dir needs no per-file read, and
- * the fallback scan caches each file's constant `cwd`.
- */
+/** All matching concurrent sessions, deduplicated across path aliases. */
 export function resolveSessionLogs(root: string, home = homedir()): string[] {
-  const projects = claudeProjectsDir(home);
-  if (!existsSync(projects)) return [];
-
-  const byCanon = new Map<string, string>(); // canonical path -> original path
-  const add = (file: string): void => {
-    const c = canonSession(file);
-    if (!byCanon.has(c)) byCanon.set(c, file);
-  };
-
-  // Primary: Claude names each project dir for the cwd, so every transcript in
-  // the slug dir belongs to root — no per-file `cwd` read needed (the trust
-  // `resolveSessionLog` places in the slug dir, extended to its siblings).
-  const slug = root.replace(/[/.]/g, "-");
-  const slugDir = join(projects, slug);
-  const slugExists = existsSync(slugDir);
-  if (slugExists) for (const file of jsonlFilesIn(slugDir)) add(file);
-
-  // Fallback: scan the other project dirs and match the recorded `cwd`, covering
-  // any slug encoding we didn't anticipate.
-  let projectDirs: string[];
-  try {
-    projectDirs = readdirSync(projects);
-  } catch {
-    return [...byCanon.values()];
-  }
-  for (const name of projectDirs) {
-    const dir = join(projects, name);
-    if (slugExists && dir === slugDir) continue;
-    try {
-      if (!statSync(dir).isDirectory()) continue;
-    } catch {
-      continue;
-    }
-    for (const file of jsonlFilesIn(dir)) {
-      if (cachedSessionCwd(file) === root) add(file);
-    }
-  }
-  return [...byCanon.values()];
+  return discoverSessionLogs(root, home).sessions;
 }
-
-// ── Feature attribution ─────────────────────────────────────────────────
 
 /** The feature that owns `file` (repo-relative path), preferring a primary
  *  owner over a related one, deterministic by feature name. */
@@ -766,8 +686,8 @@ export interface ResetResult {
  * Rebuild every feed-sourced event from the live transcript(s) using the
  * *current* normalization and attribution — the cure for stale events left by an
  * older `normalizeModelId` (e.g. before a new model id or a `[1m]` suffix was
- * handled, which show up `unpriced`). It re-pumps every session the cursor has
- * touched (not just the newest, so multi-session history isn't undercounted),
+ * handled, which show up `unpriced`). It re-pumps matching sessions, including
+ * prior cursor paths only when their recorded repository still matches,
  * preserves manual `emit`s and `review` notes, and — crucially — keeps any feed
  * event whose transcript no longer exists verbatim rather than dropping it, so a
  * rebuild can never silently lose cost data it can't re-derive. The new log is
@@ -781,10 +701,15 @@ export function resetFeed(root: string, home = homedir()): ResetResult {
   const active = newestOf(matching);
 
   // Sessions to rebuild from: every matching transcript (not just the newest, so
-  // a cold-start reset captures concurrent history too) plus any the cursor
-  // touched. Canonicalized so a path alias can't double-pump the same file.
+  // a cold-start reset captures concurrent history too) plus still-matching
+  // cursor paths. Cursor history alone never authorizes another repository.
   const sessions = new Set<string>();
-  for (const s of Object.keys(prior.offsets)) sessions.add(canonSession(s));
+  for (const path of Object.keys(prior.offsets)) {
+    try {
+      const info = sessionInfo(path);
+      if (info.cwd && repositoryKey(info.cwd) === repositoryKey(root)) sessions.add(canonSession(path));
+    } catch { /* preserve old captured events when their source is unavailable */ }
+  }
   for (const m of matching) sessions.add(canonSession(m));
 
   // Nothing to do on a fresh/never-fed project — don't create empty artifacts.
@@ -808,7 +733,11 @@ export function resetFeed(root: string, home = homedir()): ResetResult {
     const sid = sessionIdOf(session);
     if (sid) presentSessionIds.add(sid);
     const parsed = parseSession(root, session, state, registry);
-    for (const ev of parsed.events) rebuilt.push(ev);
+    for (const ev of parsed.events) {
+      rebuilt.push(ev);
+      const sessionId = ev.data?.session;
+      if (typeof sessionId === "string") presentSessionIds.add(sessionId);
+    }
     if (parsed.advanced) {
       state.offsets[session] = parsed.offset;
       if (parsed.feature) state.feature[session] = parsed.feature;

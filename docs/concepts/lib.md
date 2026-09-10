@@ -41,6 +41,10 @@ verify it, then commit those bytes. Permission, interruption, readiness and deli
 separate. Tracked approval survives final compaction; local recovery context supplies no authority.
 Control records have bounded reads, atomic writes and exclusive revision-checked transitions.
 
+Telemetry readers retain valid events alongside explicit empty, partial or unavailable input state.
+Existing event-only consumers keep their compatibility view; capture-aware consumers can disclose
+what that view could not read. [[token-cost-tracking]] owns availability and summary privacy.
+
 ## Invariants & boundaries
 
 - Workflow skill mirrors preserve handoffs, and reports display saved interruptions. Host compliance remains untested. *(tests: `agent-profiles.test.ts`, `work.test.ts`)*

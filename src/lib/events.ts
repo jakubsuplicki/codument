@@ -43,27 +43,43 @@ export function appendEvent(
   appendFileSync(eventsPath(root), JSON.stringify(record) + "\n");
 }
 
-/** Reads every event in the log oldest→newest, skipping malformed lines. */
-export function readAllEvents(root: string): CodumentEvent[] {
+export interface EventLogRead {
+  events: CodumentEvent[];
+  state: "available" | "empty" | "partial" | "unavailable";
+  skipped: number;
+}
+
+/** Preserve valid events while making missing evidence visible to capture consumers. */
+export function readEventLog(root: string): EventLogRead {
   const path = eventsPath(root);
-  if (!existsSync(path)) return [];
   let content: string;
   try {
     content = readFileSync(path, "utf-8");
-  } catch {
-    return [];
+  } catch (error) {
+    return {
+      events: [],
+      state: (error as NodeJS.ErrnoException).code === "ENOENT" ? "empty" : "unavailable",
+      skipped: 0,
+    };
   }
   const events: CodumentEvent[] = [];
+  let skipped = 0;
   for (const line of content.split("\n")) {
     if (!line.trim()) continue;
     try {
       const parsed = JSON.parse(line) as CodumentEvent;
       if (parsed && typeof parsed.type === "string") events.push(parsed);
+      else skipped++;
     } catch {
-      // skip malformed lines
+      skipped++;
     }
   }
-  return events;
+  return { events, state: skipped ? "partial" : events.length ? "available" : "empty", skipped };
+}
+
+/** Compatibility view: readers asking only for events retain their existing behavior. */
+export function readAllEvents(root: string): CodumentEvent[] {
+  return readEventLog(root).events;
 }
 
 /** Reads recent events oldest→newest, capped at `limit` (the most recent). */

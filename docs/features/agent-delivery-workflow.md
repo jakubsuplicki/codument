@@ -119,7 +119,7 @@ that has not been implemented. The user approved this plan and authorized commit
 - [x] Step 6: Require matching review evidence in the CI template and this repository's workflow.
 - [x] Step 7: Expose missing context and compact the command and workflow documentation.
 - [x] Step 8: Compact the shared-library and registry-health documentation without losing contracts.
-- [ ] Step 9: Report capture availability and export only explicit, portable usage summaries.
+- [x] Step 9: Report capture availability and export only explicit, portable usage summaries.
 - [ ] Step 10: Capture Codex usage locally alongside the existing Claude feed without double counting.
 - [ ] Step 11: Add explicit workspace-root and member selection for history audits.
 - [ ] Step 12: Add realistic retrieval, approval-change, and interrupted-work benchmark scenarios.
@@ -353,6 +353,6 @@ including independent plan/step reviewers and isolated evaluation agents, with l
 ### Resume checkpoint
 
 Plan: docs/features/agent-delivery-workflow.md
-Completed implementation: Steps 1–8.
+Completed implementation: Steps 1–9.
 Next gate: independent review, exact staged verification, then commit.
-Resume condition: resolve review findings and obtain a passing receipt before Step 9.
+Resume condition: resolve review findings and obtain a passing receipt before Step 10.

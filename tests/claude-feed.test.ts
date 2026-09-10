@@ -847,7 +847,17 @@ describe("resetFeed (rebuild feed-sourced events at current normalization)", () 
     assert.deepEqual([...new Set(models)], ["opus-4.8"]);
   });
 
-  it("rebuilds from prior offsets when no active session resolves (offsets-only fallback)", async () => {
+  it("reset shares discovery identity when the opening record exceeds 64 KiB", async () => {
+    await writeFile(log, JSON.stringify({ type: "user", cwd: root, sessionId: "s9", text: "x".repeat(70000) }) + "\n" + rec("large-first") + "\n");
+    pumpFeed(root, home);
+    const before = summarizeTokens(readAllEvents(root)).totals;
+    resetFeed(root, home);
+    assert.deepEqual(summarizeTokens(readAllEvents(root)).totals, before);
+    resetFeed(root, home);
+    assert.deepEqual(summarizeTokens(readAllEvents(root)).totals, before);
+  });
+
+  it("never imports a foreign transcript merely because an old cursor names it", async () => {
     // Re-point the transcript's cwd away from root so resolveSessionLog returns null.
     await writeFile(
       log,
@@ -862,8 +872,14 @@ describe("resetFeed (rebuild feed-sourced events at current normalization)", () 
       JSON.stringify({ offsets: { [log]: 0 }, feature: {} }),
     );
 
+    appendEvent(root, { type: "tokens", ts: TRANS_TS, data: {
+      source: "feed", session: "s9", uuid: "already-captured", model: "opus-4.8",
+      input: 17, output: 0, cacheRead: 0, cacheCreate: 0,
+    } });
     const result = resetFeed(root, home);
     assert.equal(result.session, null); // no active session resolved
-    assert.equal(result.emitted, 2); // still rebuilt from the prior-offset transcript
+    assert.equal(result.emitted, 0);
+    assert.equal(result.preserved, 1, "previous captured history is retained when its source no longer matches");
+    assert.equal(summarizeTokens(readAllEvents(root)).totals.usage.input, 17);
   });
 });

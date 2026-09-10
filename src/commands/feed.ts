@@ -1,5 +1,6 @@
 import pc from "picocolors";
 import { backfillFeed, pumpFeed, resetFeed, resolveSessionLogs } from "../lib/claude-feed.js";
+import { inspectAgentCapture, renderCapture } from "../lib/agent-feed.js";
 
 interface FeedOptions {
   root?: string;
@@ -8,6 +9,8 @@ interface FeedOptions {
   interval?: string | number;
   reset?: boolean;
   backfill?: boolean;
+  status?: boolean;
+  json?: boolean;
 }
 
 const NO_SESSION = (root: string): void => {
@@ -29,6 +32,23 @@ const NO_SESSION = (root: string): void => {
  */
 export async function feed(options: FeedOptions = {}): Promise<void> {
   const root = options.root ?? options.dir ?? process.cwd();
+
+  if (options.status) {
+    if (options.once || options.backfill || options.reset) {
+      const error = "feed --status is read-only; choose a capture action separately.";
+      console.log(options.json ? JSON.stringify({ error }) : error);
+      process.exitCode = 1;
+      return;
+    }
+    const capture = inspectAgentCapture(root);
+    console.log(options.json ? JSON.stringify(capture, null, 2) : renderCapture(capture));
+    return;
+  }
+  if (options.json) {
+    console.log(JSON.stringify({ error: "Use feed --status --json to inspect capture availability." }));
+    process.exitCode = 1;
+    return;
+  }
 
   // Maintenance one-shot: rebuild feed-sourced events under the current
   // normalization (re-prices stale/unpriced events). Runs even with no live

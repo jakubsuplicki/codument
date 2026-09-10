@@ -163,7 +163,8 @@
         "src/lib/claude-feed.ts",
         "src/lib/emit-producer.ts",
         "src/lib/token-cost.ts",
-        "src/lib/token-report.ts"
+        "src/lib/token-report.ts",
+        "src/lib/agent-feed.ts"
       ],
       "related_sources": [
         "src/commands/watch.ts"
@@ -206,10 +207,10 @@
         "src/lib/git-hooks.ts"
       ],
       "related_sources": [],
-        "docs": [
-          "docs/architecture/decisions/013-enforcement-arms-local-speed-bump-ci-authority.md",
-          "templates/ci-codument.yml",
-          ".github/workflows/ci.yml"
+      "docs": [
+        ".github/workflows/ci.yml",
+        "docs/architecture/decisions/013-enforcement-arms-local-speed-bump-ci-authority.md",
+        "templates/ci-codument.yml"
       ],
       "depends_on": [
         "lib"

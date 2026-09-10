@@ -13,6 +13,10 @@ This is the safety check that catches a doc going stale the moment the code it d
 
 ## Design approach
 
+Event-log availability is independent of deterministic change readiness. Capture-aware readers retain
+valid events and disclose malformed or unreadable input; existing event-only readers keep their
+compatibility behavior. Missing telemetry never becomes evidence that a change passed its gate.
+
 The monitor and report show current work state and pending gates ahead of historical step events. Final-plan approval can be recovered from tracked delivery evidence in a clean history review; working-tree review keeps its existing semantics.
 
 Projects may require approval bound to the selected plan's recorded contract. The gate reads both approval and scope from its selected snapshot, so a working-tree recording cannot authorize a staged change. A governed change without an eligible bound plan is unavailable under that policy; legacy projects retain an explicit migration path.

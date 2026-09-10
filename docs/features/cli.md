@@ -13,6 +13,10 @@ This is the front door: the `codument` binary a user types into a terminal. It o
 
 ## Design approach
 
+Capture status is an explicit read-only feed mode with JSON output. Cost inspection includes capture
+availability; an explicit export writes a new privacy-limited usage summary. These actions do not
+start capture or import a shared summary. [[token-cost-tracking]] owns their contracts.
+
 Final preparation is an explicit work action performed after compaction and staging, before review. It records durable approval evidence and tells the caller what to stage; it performs no commit.
 
 The work approval command records a plan revision after human approval and tells callers which tracked artifacts must be staged together. Plan-aware commands accept a section identity, so a document containing several plans need not rely on an implicit section guess.
@@ -50,6 +54,9 @@ A retired flag stays registered, and its help text says it is retired. Deleting 
 One command is a signpost, not an action: `run` (aliased `autopilot`) exists only to explain that codument does not run your coding agent. The CLI's whole remit is setup and deterministic checks; the delivery loop lives in the agent's instructions, so the binary's job is to redirect rather than to execute, and that boundary is stated in the command's own output. Since an approved plan runs on its own, the signpost has no trigger left to hand out — what it points at instead is the boundary itself and the way to slow the loop down, which keeps the command honest rather than vestigial.
 
 ## Invariants & boundaries
+
+- Capture status and cost export are explicit flags; status cannot combine with capture mutations,
+  and exporting a summary never overwrites the ledger or another output. *(test: `agent-feed.test.ts`)*
 
 - Portable review flags select a complete repository range and cannot combine with staged subsets;
   export, record, bundle and received evidence are separate actions. *(test: `review-transfer.test.ts`)*

@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import type { CodumentEvent } from "./events.js";
+import type { AgentHost, CaptureReport } from "./agent-feed.js";
 import {
   costOf,
   MODEL_RATES,
@@ -54,7 +56,7 @@ export function isTokenEvent(
   if (!data || typeof data !== "object") return false;
   const d = data as Record<string, unknown>;
   if (typeof d.model !== "string" || d.model.trim() === "") return false;
-  return BUCKETS.every((b) => Number.isFinite(d[b]));
+  return BUCKETS.every((b) => typeof d[b] === "number" && Number.isFinite(d[b]) && d[b] >= 0);
 }
 
 /** Coerce an untrusted count: only a finite positive number survives, else 0. */
@@ -159,5 +161,67 @@ export function summarizeTokens(
     byStep: groupBy(views, (v) => v.step, rates),
     byModel: groupBy(views, (v) => v.model, rates),
     unpriced,
+  };
+}
+
+export interface UsageRun {
+  id: string | null;
+  host: AgentHost;
+  model: string;
+  usage: TokenUsage;
+  eventCount: number;
+}
+
+/** Legacy Claude events predate host attribution; other producers remain manual. */
+export function eventHost(event: CodumentEvent): AgentHost {
+  if (event.data?.host === "codex" || event.data?.source === "codex-feed") return "codex";
+  if (event.data?.host === "claude" || event.data?.source === "feed") return "claude";
+  return "manual";
+}
+
+export interface PortableUsageSummary {
+  version: 1;
+  kind: "codument-usage-summary";
+  runs: UsageRun[];
+  capture: CaptureReport;
+  limitations: string[];
+}
+
+/** Explicit transport projection: no transcript, path, feature, timestamp or stored cost. */
+export function summarizeUsageRuns(events: CodumentEvent[], capture: CaptureReport): PortableUsageSummary {
+  const groups = new Map<string, UsageRun>();
+  const limitations = new Set([
+    "Captured counts only; this summary is never imported into the live ledger.",
+    "Run identifiers are opaque hashes; events without a session have no run identity.",
+    "Models without configured rates remain unpriced when costs are rendered.",
+  ]);
+  for (const event of events) {
+    if (!isTokenEvent(event)) {
+      if (event.type === "tokens") limitations.add("Invalid token records (model or nonnegative finite counts) were omitted.");
+      continue;
+    }
+    const view = tokenView(event)!;
+    const host = eventHost(event);
+    const session = event.data?.session;
+    const id = typeof session === "string" && session.trim()
+      ? createHash("sha256").update(JSON.stringify([host, session])).digest("hex") : null;
+    const model = /^[A-Za-z0-9][A-Za-z0-9._:[\]-]{0,127}$/.test(view.model) ? view.model : "(unknown)";
+    if (model !== view.model) limitations.add("An invalid model identifier was withheld.");
+    const key = JSON.stringify([host, id, model]);
+    const row = groups.get(key) ?? { id, host, model,
+      usage: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 }, eventCount: 0 };
+    if (BUCKETS.some(bucket => !Number.isSafeInteger(view.usage[bucket]) ||
+      !Number.isSafeInteger(row.usage[bucket] + view.usage[bucket]))) {
+      limitations.add("Some counts outside the safe integer range were omitted.");
+      continue;
+    }
+    for (const bucket of BUCKETS) row.usage[bucket] += view.usage[bucket];
+    row.eventCount++;
+    groups.set(key, row);
+  }
+  return {
+    version: 1, kind: "codument-usage-summary",
+    runs: [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, row]) => row),
+    capture, limitations: [...limitations].sort(),
   };
 }

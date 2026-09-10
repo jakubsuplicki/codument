@@ -348,6 +348,8 @@ program
     "Tail the active Claude Code session log and normalize per-turn token usage + tool activity into .codument/events.jsonl (consumed by watch and any reader of the event stream)",
   )
   .option("--once", "Single backfill pass and exit")
+  .option("--status", "Inspect capture availability without ingesting any session")
+  .option("--json", "With --status: emit machine-readable capture availability")
   .option("--interval <ms>", "Poll interval in milliseconds (default 1000)")
   .option("--dir <path>", "Repo to feed (default: current directory)")
   .option(
@@ -368,6 +370,7 @@ program
   .option("--dir <path>", "Project root (default: current directory)")
   .option("--root <dir>", "Project root (default: current directory)")
   .option("--json", "Emit the machine-readable token summary instead of the ledger")
+  .option("--export <file>", "Explicitly write a new portable usage summary without transcripts or stored costs")
   .action(cost);
 
 program

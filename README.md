@@ -564,6 +564,7 @@ npx codument watch --dir ../other  # watch another repo without cd
 npx codument feed              # tail the session log continuously
 npx codument feed --once       # single backfill pass, then exit
 npx codument feed --dir ../other
+npx codument feed --status --json # inspect availability without ingesting
 ```
 
 It reads telemetry that already exists (no extra token cost), is idempotent (a byte-offset cursor means restarts never double-count), and is best-effort against Claude Code's internal transcript format. It's the Claude-specific adapter for the otherwise vendor-neutral `emit` + events-log seam.
@@ -619,7 +620,13 @@ The numbers above are **illustrative** — fill in each provider's current publi
 npx codument cost                 # the full ledger
 npx codument cost --json          # the raw token summary, for scripts
 npx codument cost --dir ../other  # another repo without cd
+npx codument cost --export usage.json # explicitly create a portable counts summary
 ```
+
+Capture availability is reported separately: available, empty, partial, unavailable or unsupported.
+An empty captured ledger does not prove zero agent usage. Exports contain counts, host/model, opaque
+run identities and limitations; they omit transcripts, paths and stored prices, never overwrite an
+existing file, and are never automatically imported into the live ledger.
 
 ```text
 codument cost  ·  my-app

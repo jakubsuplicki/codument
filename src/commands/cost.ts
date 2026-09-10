@@ -1,8 +1,10 @@
-import { basename } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { writeFileSync, realpathSync } from "node:fs";
 import pc from "picocolors";
-import { readAllEvents } from "../lib/events.js";
+import { readEventLog } from "../lib/events.js";
+import { inspectAgentCapture, renderCapture } from "../lib/agent-feed.js";
 import { loadRates } from "../lib/token-cost.js";
-import { summarizeTokens, type TokenRollup, type TokenSummary } from "../lib/token-report.js";
+import { summarizeTokens, summarizeUsageRuns, type TokenRollup, type TokenSummary } from "../lib/token-report.js";
 import { formatCost } from "../lib/verdict.js";
 
 // `codument cost` — the full cost ledger. Where `watch` shows a glanceable
@@ -15,6 +17,7 @@ interface CostOptions {
   root?: string;
   dir?: string;
   json?: boolean;
+  export?: string;
 }
 
 function plural(n: number, one: string, many = one + "s"): string {
@@ -142,11 +145,36 @@ export function renderCost(summary: TokenSummary, label: string): string {
  */
 export function cost(options: CostOptions = {}): void {
   const root = options.root ?? options.dir ?? process.cwd();
-  const events = readAllEvents(root);
+  const ledger = readEventLog(root);
+  const events = ledger.events;
   const summary = summarizeTokens(events, loadRates(root));
+  const capture = inspectAgentCapture(root, undefined, ledger);
+
+  if (options.export) {
+    try {
+      const canonicalTarget = (path: string): string => {
+        let canonical = resolve(path);
+        try { canonical = join(realpathSync(dirname(canonical)), basename(canonical)); } catch { /* writing names the unavailable parent */ }
+        return process.platform === "win32" ? canonical.toLowerCase() : canonical;
+      };
+      if (canonicalTarget(options.export) === canonicalTarget(join(root, ".codument", "events.jsonl"))) {
+        throw Object.assign(new Error("A usage export cannot target the live ledger."), { code: "LIVE_LEDGER_TARGET" });
+      }
+      writeFileSync(resolve(options.export), JSON.stringify(summarizeUsageRuns(events, capture), null, 2) + "\n", {
+        encoding: "utf8", flag: "wx",
+      });
+      if (!options.json) console.log(`Usage summary exported to ${options.export}.`);
+    } catch (error) {
+      const message = `Usage summary export refused: ${(error as NodeJS.ErrnoException).code ?? "write failed"}. Choose a new writable output file.`;
+      if (options.json) console.log(JSON.stringify({ error: message }));
+      else console.error(message);
+      process.exitCode = 1;
+      return;
+    }
+  }
 
   if (options.json) {
-    console.log(JSON.stringify(summary, null, 2));
+    console.log(JSON.stringify({ ...summary, capture }, null, 2));
     return;
   }
 
@@ -157,8 +185,10 @@ export function cost(options: CostOptions = {}): void {
         "  Run `codument feed` (or `codument feed --backfill`) to capture token usage, then try again.",
       ),
     );
+    console.log(renderCapture(capture));
     return;
   }
 
   console.log(renderCost(summary, basename(root)));
+  console.log(renderCapture(capture));
 }
