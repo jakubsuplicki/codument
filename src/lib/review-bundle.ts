@@ -11,7 +11,17 @@ import {
   type RiskTouch,
   type StaleDoc,
 } from "./change-state.js";
-import type { Registry } from "./registry.js";
+import { parseRegistryOrThrow, type Registry } from "./registry.js";
+import { ownersOfFile, selectPlanFeatures } from "./context-pack.js";
+import {
+  getWorkingTreeChanges,
+  getWorkingTreeDeletions,
+  getHeadSha,
+  resolveWorkspace,
+  repoFor,
+} from "./git.js";
+import { readBlobAtRef, EMPTY_TREE_SHA } from "./two-ref.js";
+import { isSourceFile } from "./exclusion-spec.js";
 import type { ReviewFinding } from "./review-artifact.js";
 import type { TestImpact } from "./test-impact.js";
 
@@ -42,6 +52,195 @@ export interface ReviewBundleFeature {
   risk: string[];
   /** The changed source files that put this feature in scope. */
   changedSources: string[];
+  before?: { doc: string; contract: string; invariants: string; testPointers: string[] };
+}
+
+export interface ContractChange {
+  path: string;
+  owners: string[];
+  kind: "documentation" | "instruction";
+  before: string | null;
+  after: string | null;
+  testPointers: string[];
+  requiresReview: boolean;
+}
+
+export interface ReviewGrounding {
+  changes: ContractChange[];
+  selected: string[];
+  unowned: string[];
+  previousRegistry: Registry;
+  previousDocs: Map<string, string>;
+}
+
+const CONTRACT_LAYERS = [
+  "In plain terms",
+  "Design approach",
+  "Invariants & boundaries",
+  "Decisions",
+  "Context",
+  "Decision",
+  "Consequences",
+];
+const normalizedProse = (text: string): string =>
+  text
+    .replace(/^\uFEFF/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** Conservative textual comparison: housekeeping is known, semantic equivalence is not. */
+export function protectedDocContract(text: string): string {
+  const layers = CONTRACT_LAYERS.flatMap((heading) => {
+    const body = extractDocSection(text, heading).trim();
+    return body ? [`${heading}\n${body}`] : [];
+  });
+  const keyFiles = extractDocSection(text, "Key files").replace(
+    /^(\s*[-*]\s+)(?:`[^`]+`|\[[^\]]+\]\([^)]*\)|[\w./-]+\.[a-z0-9]+)(?=\s|$)/gim,
+    "$1<path>",
+  );
+  return [...layers, keyFiles].join("\n");
+}
+
+export function buildContractChanges(input: {
+  paths: string[];
+  registry: Registry;
+  previousRegistry: Registry;
+  before: Map<string, string>;
+  after: Map<string, string>;
+  ignoredPaths?: string[];
+}): ContractChange[] {
+  const docPaths = new Set(
+    [
+      ...Object.values(input.registry.features),
+      ...Object.values(input.previousRegistry.features),
+    ].map((entry) => entry.doc),
+  );
+  const isDoc = (path: string): boolean => docPaths.has(path) || /^docs\/.*\.md$/i.test(path);
+  const isInstruction = (path: string): boolean =>
+    !isDoc(path) &&
+    (ownersOfFile(input.registry, path).length > 0 ||
+      ownersOfFile(input.previousRegistry, path).length > 0) &&
+    /(?:^|\/)(?:AGENTS|CLAUDE|SKILL)\.md$|(?:^|\/)(?:agents|rules|skills)\/.*\.md$/i.test(path);
+  const unchangedInstruction = (path: string): boolean =>
+    isInstruction(path) &&
+    input.before.has(path) &&
+    input.after.has(path) &&
+    normalizedProse(input.before.get(path)!) === normalizedProse(input.after.get(path)!);
+  const ignored = new Set(input.ignoredPaths ?? []);
+  const docsOnly = input.paths.every(
+    (path) => isDoc(path) || unchangedInstruction(path) || ignored.has(path),
+  );
+  const out: ContractChange[] = [];
+  for (const path of sortStrings(input.paths)) {
+    const owners = sortStrings([
+      ...ownersOfFile(input.registry, path),
+      ...ownersOfFile(input.previousRegistry, path),
+    ]);
+    const doc = isDoc(path);
+    const instruction = isInstruction(path);
+    if (!doc && !instruction) continue;
+    const was = input.before.get(path) ?? null;
+    const now = input.after.get(path) ?? null;
+    const before = doc && was !== null ? protectedDocContract(was) : was;
+    const after = doc && now !== null ? protectedDocContract(now) : now;
+    const material = normalizedProse(before ?? "") !== normalizedProse(after ?? "");
+    const invariantChanged =
+      normalizedProse(extractDocSection(was ?? "", "Invariants & boundaries")) !==
+      normalizedProse(extractDocSection(now ?? "", "Invariants & boundaries"));
+    if (!material && !instruction) continue;
+    out.push({
+      path,
+      owners,
+      kind: doc ? "documentation" : "instruction",
+      before,
+      after,
+      testPointers: extractTestPointers(`${before ?? ""}\n${after ?? ""}`),
+      requiresReview: material && (instruction || invariantChanged || docsOnly),
+    });
+  }
+  return out;
+}
+
+export function gatherReviewGrounding(
+  root: string,
+  base: string,
+  registry: Registry,
+  paths: string[],
+  readText?: (path: string) => string | null,
+  scope: string[] = [],
+  ignoredPaths: string[] = [],
+  boundary?: ChangeSet,
+): ReviewGrounding {
+  const workspace = resolveWorkspace(root);
+  const readBefore = (path: string): string | null => {
+    const owner = repoFor(workspace, path);
+    if (!owner) return null;
+    const selectedBase = boundary
+      ? boundary.bases.find((entry) => entry.prefix === owner.member.prefix)?.sha
+      : workspace.isWorkspace ? "HEAD" : base;
+    if (
+      !selectedBase ||
+      selectedBase === EMPTY_TREE_SHA ||
+      (selectedBase === "HEAD" && !getHeadSha(owner.member.root))
+    )
+      return null;
+    return readBlobAtRef(root, selectedBase, path);
+  };
+  const previousRaw = readBefore("docs/.registry.json");
+  const previousRegistry =
+    previousRaw === null
+      ? { features: {} }
+      : parseRegistryOrThrow(previousRaw, `docs/.registry.json@${base}`);
+  const previousDocs = new Map<string, string>();
+  const after = new Map<string, string>();
+  const selected = sortStrings([
+    ...selectPlanFeatures(registry, [], [...paths, ...scope]).selected,
+    ...selectPlanFeatures(previousRegistry, [], [...paths, ...scope]).selected,
+  ]);
+  const candidates = sortStrings([
+    ...paths,
+    ...selected.flatMap((slug) =>
+      [registry.features[slug]?.doc, previousRegistry.features[slug]?.doc].filter(
+        (path): path is string => Boolean(path),
+      ),
+    ),
+  ]);
+  for (const path of candidates) {
+    if (!path.endsWith(".md")) continue;
+    const was = readBefore(path);
+    if (was !== null) previousDocs.set(path, was);
+    let now: string | null;
+    if (readText) now = readText(path);
+    else {
+      try {
+        now = readFileSync(join(root, path), "utf8");
+      } catch {
+        now = null;
+      }
+    }
+    if (now !== null) after.set(path, now);
+  }
+  const unowned = paths.filter(
+    (path) =>
+      !ignoredPaths.includes(path) &&
+      isSourceFile(path) &&
+      !ownersOfFile(registry, path).length &&
+      !ownersOfFile(previousRegistry, path).length,
+  );
+  return {
+    selected,
+    unowned,
+    previousRegistry,
+    previousDocs,
+    changes: buildContractChanges({
+      paths,
+      registry,
+      previousRegistry,
+      before: previousDocs,
+      after,
+      ignoredPaths,
+    }),
+  };
 }
 
 export interface ReviewBundle {
@@ -74,6 +273,8 @@ export interface ReviewBundle {
   governedRegistered: string[];
   /** Per touched feature: its contract, invariants, and test oracle. */
   features: ReviewBundleFeature[];
+  contractChanges?: ContractChange[];
+  omissions?: Array<{ input: string; reason: "unowned" | "unreadable-doc" | "unknown-feature" }>;
   /** Docs whose owned source moved but whose prose did not — must be addressed. */
   staleDocs: StaleDoc[];
   /** Risk-tagged features the diff touched (review these harder). */
@@ -205,6 +406,7 @@ export interface ReviewBundleInput {
   delta?: ReviewBundleDelta | null;
   boundary?: ChangeSetBinding;
   testImpact?: TestImpact;
+  grounding?: ReviewGrounding;
 }
 
 export interface ReviewBundleDelta {
@@ -245,10 +447,25 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
   const featureNames = sortStrings([
     ...sourceGroups.keys(),
     ...(testImpact?.attributed.map((attribution) => attribution.feature) ?? []),
+    ...(input.grounding?.changes.flatMap((change) => change.owners) ?? []),
+    ...(input.grounding?.selected ?? []),
+    ...selectPlanFeatures(registry, [], plan?.scope ?? []).selected,
   ]);
+  const omissions: NonNullable<ReviewBundle["omissions"]> = [];
+  for (const path of input.grounding?.unowned ?? [])
+    omissions.push({ input: path, reason: "unowned" });
+  for (const path of selectPlanFeatures(registry, [], plan?.scope ?? []).unowned)
+    omissions.push({ input: path, reason: "unowned" });
+  for (const change of input.grounding?.changes ?? [])
+    if (!change.owners.length) omissions.push({ input: change.path, reason: "unowned" });
   for (const feature of featureNames) {
-    const entry = registry.features[feature];
+    const entry = registry.features[feature] ?? input.grounding?.previousRegistry.features[feature];
     if (!entry) continue; // a group with no registry entry contributes no contract
+    const previousEntry = input.grounding?.previousRegistry.features[feature];
+    const previousText = previousEntry
+      ? input.grounding?.previousDocs.get(previousEntry.doc)
+      : undefined;
+    if (!docContents.has(entry.doc)) omissions.push({ input: entry.doc, reason: "unreadable-doc" });
     const docText = docContents.get(entry.doc) ?? "";
     const invariants = extractDocSection(docText, "Invariants & boundaries").trim();
     features.push({
@@ -262,6 +479,18 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
       ),
       risk: sortStrings(entry.risk),
       changedSources: sortStrings(sourceGroups.get(feature) ?? []),
+      ...(previousText !== undefined && previousEntry
+        ? {
+            before: {
+              doc: previousEntry.doc,
+              contract: extractDocSection(previousText, "In plain terms").trim(),
+              invariants: extractDocSection(previousText, "Invariants & boundaries").trim(),
+              testPointers: extractTestPointers(
+                extractDocSection(previousText, "Invariants & boundaries"),
+              ),
+            },
+          }
+        : {}),
     });
   }
 
@@ -279,6 +508,8 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
     priorFindings: delta ? delta.priorFindings : [],
     governedRegistered: sortStrings(changeState.governedRegistered),
     features,
+    ...(input.grounding?.changes.length ? { contractChanges: input.grounding.changes } : {}),
+    ...(omissions.length ? { omissions } : {}),
     staleDocs: changeState.staleDocs,
     riskTouches: changeState.riskTouches,
     dependents: mergeDependentSummaries(
@@ -324,14 +555,32 @@ export function bundleStamp(body: Omit<ReviewBundle, "stamp">): string {
  * every compliant edit two real changes and retire the trivial fast-path the
  * proportionality rule exists to keep.
  */
-export function oracleFingerprint(features: readonly ReviewBundleFeature[], plan?: ReviewBundle["plan"]): string {
+export function oracleFingerprint(
+  features: readonly ReviewBundleFeature[],
+  plan?: ReviewBundle["plan"],
+  changes?: ContractChange[],
+  omissions?: ReviewBundle["omissions"],
+): string {
   const parts = [...features]
     .sort((a, b) => (a.feature < b.feature ? -1 : a.feature > b.feature ? 1 : 0))
     // NUL-separated for the same reason the diff fingerprint uses it: doc prose
     // contains every other separator a scheme might pick, and NUL is the one
     // character that cannot appear in the feature name or the path beside it.
-    .map((f) => `${f.feature}\0${f.doc}\0${f.contract}\0${f.invariants}`);
-  if (plan) parts.push(JSON.stringify({ path: plan.path, scope: plan.scope, planId: plan.planId ?? null, approvalDigest: plan.approvalDigest ?? null }));
+    .map(
+      (f) =>
+        `${f.feature}\0${f.doc}\0${f.contract}\0${f.invariants}${f.before ? `\0${JSON.stringify(f.before)}` : ""}`,
+    );
+  if (changes?.length) parts.push(JSON.stringify(changes));
+  if (omissions?.length) parts.push(JSON.stringify(omissions));
+  if (plan)
+    parts.push(
+      JSON.stringify({
+        path: plan.path,
+        scope: plan.scope,
+        planId: plan.planId ?? null,
+        approvalDigest: plan.approvalDigest ?? null,
+      }),
+    );
   return createHash("sha256").update(parts.join("\n"), "utf8").digest("hex").slice(0, 32);
 }
 
@@ -348,14 +597,32 @@ export function gatherReviewBundle(
   boundary?: ChangeSet,
   readText?: (path: string) => string | null,
   testImpact?: TestImpact,
+  paths?: string[],
+  ignoredPaths?: string[],
 ): ReviewBundle {
+  const grounding = gatherReviewGrounding(
+    root,
+    base,
+    registry,
+    paths ??
+      (boundary
+        ? boundary.changes.map((change) => change.path)
+        : [...getWorkingTreeChanges(root), ...getWorkingTreeDeletions(root)]),
+    readText,
+    plan?.scope,
+    ignoredPaths ?? changeState.excludedChanged,
+    boundary,
+  );
   const docContents = new Map<string, string>();
   const featureNames = sortStrings([
     ...changeState.byFeature.map((group) => group.feature),
     ...(testImpact?.attributed.map((attribution) => attribution.feature) ?? []),
+    ...grounding.changes.flatMap((change) => change.owners),
+    ...grounding.selected,
+    ...selectPlanFeatures(registry, [], plan?.scope ?? []).selected,
   ]);
   for (const feature of featureNames) {
-    const entry = registry.features[feature];
+    const entry = registry.features[feature] ?? grounding.previousRegistry.features[feature];
     if (!entry) continue;
     if (readText) {
       const content = readText(entry.doc);
@@ -375,7 +642,14 @@ export function gatherReviewBundle(
     changeState,
     registry,
     docContents,
-    plan: plan ? { path: plan.plan, scope: plan.scope, ...(plan.planId ? { planId: plan.planId, approvalDigest: plan.approvalDigest } : {}) } : null,
+    grounding,
+    plan: plan
+      ? {
+          path: plan.plan,
+          scope: plan.scope,
+          ...(plan.planId ? { planId: plan.planId, approvalDigest: plan.approvalDigest } : {}),
+        }
+      : null,
     delta,
     ...(boundary ? { boundary: changeSetBinding(boundary) } : {}),
     ...(testImpact ? { testImpact } : {}),

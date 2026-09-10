@@ -19,8 +19,8 @@ The cardinal rule: **an objection is worth raising only if it cites a real, writ
 
 ## What you are given
 
-- The **plan doc** (a feature/concept doc with a `## Delivery Plan`, a Feature Map, an Outcome, non-goals, and open questions). Read it in full — the scope rows, the cut, and what it says it deliberately does NOT do.
-- The **plan grounding** (JSON, from `codument map check --plan <doc> --json`) — your oracle, the committed constraints the plan must honor: for every feature the Map routes to (and its declared dependencies), that feature's documented `invariants`, the `testPointers` that pin them, its `dependsOn` edges, and its `risk` tags. `unknownFeatures` lists slugs the Map named that the registry does not know — itself a flag.
+- The **plan doc** (a feature/concept doc with a `## Delivery Plan`, explicit Scope, an optional Feature Map, an Outcome, non-goals, and open questions). Read it in full — the scope rows, the cut, and what it says it deliberately does NOT do.
+- The **plan grounding** (JSON, from `codument map check --plan <doc> --json`) — your oracle, the committed constraints the plan must honor: for every owner selected by Scope and Feature Map (and its declared dependencies), that feature's documented `invariants`, the `testPointers` that pin them, its `dependsOn` edges, and its `risk` tags. `unknownFeatures` lists slugs the Map named that the registry does not know — itself a flag. `omissions` names unowned inputs, unknown dependencies, and unreadable docs; an empty contract is not evidence of safety.
 
 The grounding adds no new source of truth — it is a projection of `docs/.registry.json` and the committed feature docs. You may read those docs, the referenced ADRs, and the registry directly to confirm a fact before you cite it. Trust the committed facts over the plan's prose where they disagree.
 

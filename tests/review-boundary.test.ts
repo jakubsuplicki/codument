@@ -90,6 +90,145 @@ beforeEach(async () => {
   git(["commit", "-qm", "baseline"]);
 });
 
+it("requires doc-only invariant review and preserves the removed contract in its staged bundle", async () => {
+  const path = "docs/features/alpha.md";
+  await put(
+    path,
+    "# Alpha\n\n## In plain terms\nStores records.\n\n## Invariants & boundaries\n- Never discard existing records. *(test: ledger.test.ts)*\n",
+  );
+  git(["add", path]);
+  git(["commit", "-qm", "contract"]);
+  await put(path, "# Alpha\n\n## In plain terms\nStores records.\n");
+  git(["add", path]);
+  const bundle = JSON.parse(review(["--staged", "--bundle"]).stdout);
+  assert.match(bundle.features[0].before.invariants, /Never discard/);
+  assert.deepEqual(bundle.contractChanges[0].testPointers, ["ledger.test.ts"]);
+  assert.equal(review(["--staged", "--require-review"]).status, 1);
+  assert.match(cli(["verify"]).stdout, /REVIEW REQUIRED/);
+  await put(
+    path,
+    "# Alpha\n\n## In plain terms\nStores  records.\n\n## Invariants & boundaries\n- Never discard existing records. *(test: ledger.test.ts)*\n",
+  );
+  git(["add", path]);
+  assert.equal(review(["--staged", "--require-review"]).status, 0);
+});
+
+it("reviews registered workflow policies while ignoring instruction formatting", async () => {
+  const path = "skills/work-step/SKILL.md";
+  const registryPath = join(repo, "docs/.registry.json");
+  const registry = JSON.parse(await readFile(registryPath, "utf8"));
+  registry.features.alpha.docs = [path];
+  await put("docs/.registry.json", JSON.stringify(registry));
+  await put(path, "Wait for human approval.\n");
+  git(["add", "docs/.registry.json", path]);
+  git(["commit", "-qm", "workflow"]);
+  await put(path, "Start without approval.\n");
+  git(["add", path]);
+  const bundle = JSON.parse(review(["--staged", "--bundle"]).stdout);
+  assert.equal(bundle.contractChanges[0].kind, "instruction");
+  assert.equal(review(["--staged", "--require-review"]).status, 1);
+  await put(path, "Wait  for human approval.\r\n");
+  git(["add", path]);
+  assert.equal(review(["--staged", "--require-review"]).status, 0);
+});
+
+it("retains member instruction history in working-tree bundles with or without a Git root", async () => {
+  for (const gitRoot of [false, true]) {
+    const workspace = await mkdtemp(join(tmpdir(), "codument-member-grounding-"));
+    const member = join(workspace, "api");
+    const runGit = (cwd: string, ...args: string[]) =>
+      execFileSync("git", args, { cwd, stdio: "pipe" });
+    try {
+      await mkdir(join(member, "skills"), { recursive: true });
+      await mkdir(join(workspace, "docs/features"), { recursive: true });
+      await writeFile(
+        join(workspace, "docs/.registry.json"),
+        JSON.stringify({
+          features: {
+            alpha: {
+              doc: "docs/features/alpha.md",
+              type: "feature",
+              primary_sources: [],
+              related_sources: [],
+              docs: ["api/skills/work-step/SKILL.md"],
+              depends_on: [],
+              risk: [],
+              status: "current",
+            },
+          },
+        }),
+      );
+      await writeFile(
+        join(workspace, "docs/features/alpha.md"),
+        "## In plain terms\nHuman-approved delivery.\n",
+      );
+      if (gitRoot) {
+        runGit(workspace, "init", "-q");
+        runGit(workspace, "config", "user.name", "Test");
+        runGit(workspace, "config", "user.email", "test@example.com");
+        runGit(workspace, "add", "docs");
+        runGit(workspace, "commit", "-qm", "workspace docs");
+      }
+      runGit(member, "init", "-q");
+      runGit(member, "config", "user.name", "Test");
+      runGit(member, "config", "user.email", "test@example.com");
+      await mkdir(join(member, "skills/work-step"));
+      const instruction = join(member, "skills/work-step/SKILL.md");
+      await writeFile(instruction, "Wait for human approval.\n");
+      runGit(member, "add", ".");
+      runGit(member, "commit", "-qm", "member contract");
+      await writeFile(instruction, "Start without approval.\n");
+      const bundle = JSON.parse(
+        execFileSync(process.execPath, [CLI, "review", "--bundle"], {
+          encoding: "utf8",
+          cwd: workspace,
+        }),
+      );
+      assert.equal(bundle.contractChanges[0].before.trim(), "Wait for human approval.");
+    } finally {
+      forgetWorkspace();
+      await rm(workspace, { recursive: true, force: true });
+    }
+  }
+});
+
+it("grounds a committed documentation-only range and retains removed source owners", async () => {
+  const doc = "docs/features/alpha.md";
+  await put(doc, "## Invariants & boundaries\n- Preserve records. *(test: alpha.test.ts)*\n");
+  git(["add", doc]);
+  git(["commit", "-qm", "contract"]);
+  const base = git(["rev-parse", "HEAD"]);
+  await put(doc, "# Alpha\n");
+  git(["add", doc]);
+  git(["commit", "-qm", "remove contract"]);
+  const historical = JSON.parse(review(["--base", base, "--bundle"]).stdout);
+  assert.match(historical.features[0].before.invariants, /Preserve records/);
+  assert.ok(historical.contractChanges[0].testPointers.includes("alpha.test.ts"));
+  const registry = JSON.parse(await readFile(join(repo, "docs/.registry.json"), "utf8"));
+  delete registry.features.alpha;
+  await put("docs/.registry.json", JSON.stringify(registry));
+  await put("src/a.ts", "export const a = 2;\n");
+  git(["add", "docs/.registry.json", "src/a.ts"]);
+  const removed = JSON.parse(review(["--staged", "--bundle"]).stdout);
+  assert.ok(removed.features.some((feature: { feature: string }) => feature.feature === "alpha"));
+});
+
+it("keeps doc-only review required beside excluded additions and deletions", async () => {
+  await put("docs/features/alpha.md", "## Design approach\nKeep records immutable.\n");
+  await put(".codument-meta.json", JSON.stringify({ exclude: { globs: ["generated/**"] } }));
+  await put("generated/data.txt", "generated\n");
+  git(["add", "docs/features/alpha.md", ".codument-meta.json", "generated/data.txt"]);
+  git(["commit", "-qm", "contract and excluded output"]);
+  await put("docs/features/alpha.md", "## Design approach\nAllow rewriting records.\n");
+  await put("generated/added.txt", "new generated data\n");
+  git(["add", "docs/features/alpha.md", "generated/added.txt"]);
+  assert.equal(review(["--staged", "--require-review"]).status, 1);
+  git(["rm", "generated/data.txt"]);
+  const result = review(["--staged", "--require-review", "--json"]);
+  assert.equal(result.status, 1);
+  assert.equal(JSON.parse(result.stdout).contractChanges[0].requiresReview, true);
+});
+
 afterEach(async () => {
   forgetWorkspace();
   await rm(repo, { recursive: true, force: true });
@@ -168,7 +307,8 @@ describe("review staged boundary", () => {
   for (const directory of ["features", "concepts", "plans"]) {
     it(`reads embedded approval and scope from the index under docs/${directory}`, async () => {
       const path = `docs/${directory}/delivery.md`;
-      const draft = "---\nstatus: current\n---\n## Delivery Plan\nStatus: draft\n- [ ] next\n### Scope\n- `src/b.ts`\n";
+      const draft =
+        "---\nstatus: current\n---\n## Delivery Plan\nStatus: draft\n- [ ] next\n### Scope\n- `src/b.ts`\n";
       await put(path, draft);
       git(["add", path]);
       git(["commit", "-qm", "draft plan"]);
@@ -177,7 +317,11 @@ describe("review staged boundary", () => {
       git(["add", "src/a.ts"]);
       const unapproved = review(["--staged", "--json"]);
       assert.equal(unapproved.status, 0);
-      assert.equal(JSON.parse(unapproved.stdout).plan, null, "unstaged approval cannot authorize a staged change");
+      assert.equal(
+        JSON.parse(unapproved.stdout).plan,
+        null,
+        "unstaged approval cannot authorize a staged change",
+      );
       git(["add", path]);
       const approved = review(["--staged", "--json"]);
       assert.equal(approved.status, 0);
@@ -190,7 +334,10 @@ describe("review staged boundary", () => {
 
   it("refuses ambiguous approved scope in machine and human output", async () => {
     for (const directory of ["features", "plans"]) {
-      await put(`docs/${directory}/delivery.md`, "## Delivery Plan\nStatus: approved\n- [ ] next\n### Scope\n- `src/a.ts`\n");
+      await put(
+        `docs/${directory}/delivery.md`,
+        "## Delivery Plan\nStatus: approved\n- [ ] next\n### Scope\n- `src/a.ts`\n",
+      );
     }
     await put("src/a.ts", "export const a = 2;\n");
     git(["add", "src/a.ts", "docs/features/delivery.md", "docs/plans/delivery.md"]);
@@ -198,7 +345,10 @@ describe("review staged boundary", () => {
     assert.equal(result.status, 1);
     const failure = JSON.parse(result.stdout);
     assert.equal(failure.gate, "unavailable");
-    assert.match(failure.reason, /multiple approved plans.*docs\/features\/delivery\.md.*docs\/plans\/delivery\.md/);
+    assert.match(
+      failure.reason,
+      /multiple approved plans.*docs\/features\/delivery\.md.*docs\/plans\/delivery\.md/,
+    );
     assert.match(failure.reason, /no scope selected/);
     const human = review(["--staged"]);
     assert.equal(human.status, 1);
@@ -207,18 +357,34 @@ describe("review staged boundary", () => {
 
   it("map and context retrieve the selected plan instead of a future draft", async () => {
     const path = "docs/features/delivery.md";
-    await put(path, [
-      "## Delivery Plan — current", "Status: approved", "- [ ] next",
-      "### Feature Map", "```feature-map", "src/a.ts | alpha | feature | current work", "```",
-      "## Delivery Plan — future", "Status: draft", "- [ ] later",
-      "### Feature Map", "```feature-map", "src/a.ts | beta | feature | future work", "```",
-    ].join("\n"));
+    await put(
+      path,
+      [
+        "## Delivery Plan — current",
+        "Status: approved",
+        "- [ ] next",
+        "### Feature Map",
+        "```feature-map",
+        "src/a.ts | alpha | feature | current work",
+        "```",
+        "## Delivery Plan — future",
+        "Status: draft",
+        "- [ ] later",
+        "### Feature Map",
+        "```feature-map",
+        "src/a.ts | beta | feature | future work",
+        "```",
+      ].join("\n"),
+    );
     const route = cli(["map", "route", "src/a.ts", "--plan", path, "--json"]);
     assert.equal(route.status, 0);
     assert.equal(JSON.parse(route.stdout).feature, "alpha");
     const context = cli(["context", "--plan", path, "--json"]);
     assert.equal(context.status, 0);
-    assert.deepEqual(JSON.parse(context.stdout).entries.map((entry: { feature: string }) => entry.feature), ["alpha"]);
+    assert.deepEqual(
+      JSON.parse(context.stdout).entries.map((entry: { feature: string }) => entry.feature),
+      ["alpha"],
+    );
   });
 
   it("does not parse an unrelated invalid worktree config", async () => {

@@ -44,6 +44,8 @@ ownership.
 
 ## Invariants & boundaries
 
+- An invariant removal cannot clear review by removing its own oracle: staged verification requests a worksheet containing both contracts and their test pointers. *(test: `review-boundary.test.ts`)*
+
 - Paused work cannot pass execution verification. Exact final approval remains usable without local recovery data and becomes unavailable when delivery changes. *(test: `work.test.ts`)*
 
 - Receipt reuse requires the same selected approval identity and digest as well as the complete staged boundary and tool version. *(test: `change-set.test.ts`)*

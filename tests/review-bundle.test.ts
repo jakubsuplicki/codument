@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { resolveChangeSet } from "../src/lib/change-set.js";
+import { forgetWorkspace } from "../src/lib/git.js";
 import type { ChangeState } from "../src/lib/change-state.js";
 import type { Registry, RegistryEntry } from "../src/lib/registry.js";
 import {
   buildReviewBundle,
+  buildContractChanges,
+  gatherReviewGrounding,
   bundleStamp,
   extractDocSection,
   extractPinnedTests,
@@ -58,6 +66,111 @@ B coordinates things.
 
 - src/b.ts
 `;
+
+describe("contract-only review grounding", () => {
+  it("reads previous workspace contracts from each member and its selected base", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codument-grounding-workspace-"));
+    const member = join(root, "api");
+    try {
+      await mkdir(join(member, "docs"), { recursive: true });
+      const git = (...args: string[]) => execFileSync("git", args, { cwd: member, stdio: "pipe" });
+      git("init", "-q");
+      git("config", "user.name", "Test");
+      git("config", "user.email", "test@example.com");
+      await writeFile(
+        join(member, "docs/alpha.md"),
+        "## Invariants & boundaries\n- Preserve records. *(test: alpha.test.ts)*\n",
+      );
+      git("add", ".");
+      git("commit", "-qm", "contract");
+      const registry = {
+        features: { alpha: entry({ doc: "api/docs/alpha.md", primary_sources: ["api/src/a.ts"] }) },
+      };
+      await writeFile(join(member, "docs/alpha.md"), "# Alpha\n");
+      git("add", "docs/alpha.md");
+      const paths = ["api/docs/alpha.md"];
+      const local = gatherReviewGrounding(root, "HEAD", registry, paths);
+      assert.match(local.changes[0].before!, /Preserve records/);
+      assert.deepEqual(local.changes[0].testPointers, ["alpha.test.ts"]);
+      const staged = gatherReviewGrounding(
+        root,
+        "not-a-shared-ref",
+        registry,
+        paths,
+        undefined,
+        [],
+        [],
+        resolveChangeSet(root, { mode: "staged" }),
+      );
+      assert.match(staged.changes[0].before!, /Preserve records/);
+    } finally {
+      forgetWorkspace();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  const docs = {
+    features: {
+      alpha: entry({
+        doc: "docs/features/alpha.md",
+        primary_sources: ["src/alpha.ts"],
+        docs: ["skills/work-step/SKILL.md"],
+      }),
+    },
+  };
+  const path = "docs/features/alpha.md";
+  const changes = (before: string, after: string, paths = [path]) =>
+    buildContractChanges({
+      paths,
+      registry: docs,
+      previousRegistry: docs,
+      before: new Map([[path, before]]),
+      after: new Map([[path, after]]),
+    });
+  it("retains removed invariants and their tests even with accompanying source work", () => {
+    const result = changes(
+      DOC_A,
+      DOC_A.replace(/## Invariants & boundaries[\s\S]*?(?=## Decisions)/, ""),
+      [path, "src/alpha.ts"],
+    );
+    assert.equal(result[0].requiresReview, true);
+    assert.match(result[0].before!, /X holds always/);
+    assert.ok(result[0].testPointers.includes("a-core.test.ts"));
+  });
+  it("requires review for doc-only durable changes but preserves ordinary source proportionality", () => {
+    const edited = DOC_A.replace("A does the thing.", "A changes the public behavior.");
+    assert.equal(changes(DOC_A, edited)[0].requiresReview, true);
+    assert.equal(changes(DOC_A, edited, [path, "src/alpha.ts"])[0].requiresReview, false);
+  });
+  it("ignores formatting, metadata, progress and path-only Key files corrections", () => {
+    const before = DOC_A + "\n## Delivery Plan\nStatus: approved\n- [ ] Implement\n";
+    const edited = before
+      .replace("title: Feature A", "title: Renamed")
+      .replace("- [ ]", "- [x]")
+      .replace("- src/a.ts", "- src/b.ts");
+    // Key-files paths are normally code-formatted; use the standard notation.
+    assert.deepEqual(
+      changes(
+        before.replace("- src/a.ts", "- `src/a.ts`"),
+        edited.replace("- src/b.ts", "- `src/b.ts`").replace(/\n/g, "\r\n"),
+      ),
+      [],
+    );
+    assert.deepEqual(changes(DOC_A, DOC_A.replace("A does the thing.", "A   does the thing.")), []);
+  });
+  it("reviews registered instruction changes against both versions and historical ownership", () => {
+    const instruction = "skills/work-step/SKILL.md";
+    const result = buildContractChanges({
+      paths: [instruction],
+      registry: { features: {} },
+      previousRegistry: docs,
+      before: new Map([[instruction, "Wait for human approval."]]),
+      after: new Map([[instruction, "Start immediately."]]),
+    });
+    assert.equal(result[0].kind, "instruction");
+    assert.deepEqual(result[0].owners, ["alpha"]);
+    assert.equal(result[0].requiresReview, true);
+  });
+});
 
 function entry(partial: Partial<RegistryEntry>): RegistryEntry {
   return {

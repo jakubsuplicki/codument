@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -73,6 +73,43 @@ const registry: Registry = {
   },
 };
 
+it("combines existing scoped owners, direct documents, and Map rows with explicit omissions", () => {
+  const scoped: Registry = {
+    features: {
+      ...registry.features,
+      a: entry({
+        ...registry.features.a,
+        primary_sources: ["src/a.ts", "skills/work-step/SKILL.md"],
+        depends_on: ["c", "missing"],
+      }),
+    },
+  };
+  const grounding = buildPlanGrounding({
+    rows: [row({ feature: "b" })],
+    scope: ["src/a.ts", "docs/features/c.md", "skills/work-step/SKILL.md", "src/unowned.ts"],
+    registry: scoped,
+    docContents: new Map([
+      ["docs/features/a.md", DOC_A],
+      ["docs/features/c.md", DOC_C],
+    ]),
+  });
+  assert.deepEqual(
+    grounding.features.map((feature) => feature.feature),
+    ["a", "b", "c"],
+  );
+  assert.deepEqual(grounding.unknownFeatures, ["missing"]);
+  assert.ok(
+    grounding.omissions.some(
+      (item) => item.input === "src/unowned.ts" && item.reason === "unowned",
+    ),
+  );
+  assert.ok(
+    grounding.omissions.some(
+      (item) => item.input === "docs/features/b.md" && item.reason === "unreadable-doc",
+    ),
+  );
+});
+
 const docContents = new Map<string, string>([
   ["docs/features/a.md", DOC_A],
   ["docs/features/c.md", DOC_C],
@@ -129,7 +166,10 @@ describe("buildPlanGrounding", () => {
     });
 
     assert.deepEqual(g.unknownFeatures, ["z"]);
-    assert.equal(g.features.some((f) => f.feature === "z"), false);
+    assert.equal(
+      g.features.some((f) => f.feature === "z"),
+      false,
+    );
   });
 
   it("is order-independent: routed features first (sorted), then dependencies (sorted)", () => {
@@ -221,6 +261,30 @@ describe("gatherPlanGrounding (reads docs off disk)", () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it("routes existing Scope through both plan review and context without a Feature Map", () => {
+    const planPath = join(root, "docs", "features", "existing.md");
+    writeFileSync(
+      planPath,
+      "## Delivery Plan\nStatus: draft\n- [ ] Fix ledger\n### Scope\n- `src/ledger.ts`\n",
+    );
+    const checked = spawnSync(
+      process.execPath,
+      [CLI, "map", "check", "--plan", planPath, "--json", "--root", root],
+      { encoding: "utf8" },
+    );
+    const mapped = JSON.parse(checked.stdout);
+    assert.equal(mapped.hasMap, false);
+    assert.equal(mapped.grounding.features[0].feature, "ledger");
+    const context = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [CLI, "context", "--plan", planPath, "--json", "--root", root],
+        { encoding: "utf8" },
+      ),
+    );
+    assert.equal(context.entries[0].feature, "ledger");
+    assert.match(context.entries[0].invariants, /append-only/);
+  });
   it("projects a routed feature's committed invariants, tests, and risk read from disk", () => {
     const rows = parseFeatureMap(PLAN_MD).rows;
     const registry = readRegistrySync(join(root, "docs", ".registry.json"));
@@ -243,7 +307,9 @@ describe("gatherPlanGrounding (reads docs off disk)", () => {
     const report = JSON.parse(out);
     assert.equal(report.ok, true);
     assert.equal(report.hasMap, true);
-    const ledger = report.grounding.features.find((f: { feature: string }) => f.feature === "ledger");
+    const ledger = report.grounding.features.find(
+      (f: { feature: string }) => f.feature === "ledger",
+    );
     assert.ok(ledger, "grounding names the routed feature");
     assert.match(ledger.invariants, /append-only/);
     assert.deepEqual(ledger.risk, ["data-loss"]);

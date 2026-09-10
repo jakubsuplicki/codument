@@ -8,7 +8,7 @@ import {
   type FeatureMap,
   type FeatureMapRow,
 } from "../lib/feature-map.js";
-import { resolveActivePlan } from "../lib/plan-steps.js";
+import { resolveActivePlan, parsePlanScope } from "../lib/plan-steps.js";
 import { workPlanSelection, workPlanMarkdown } from "../lib/work-state.js";
 import {
   ExcludedSourceError,
@@ -410,14 +410,12 @@ export function mapCheck(options: MapCliOptions = {}): void {
   // Map routes to) so the plan adversary attacks a real contract instead of
   // hallucinating one. The human `check` output below stays lean and unchanged.
   if (options.json) {
-    const grounding =
-      map.rows.length > 0
-        ? gatherPlanGrounding(
+    const grounding = gatherPlanGrounding(
             root,
             map.rows,
             readRegistrySync(join(root, "docs", ".registry.json")),
-          )
-        : { features: [], unknownFeatures: [] };
+            parsePlanScope(resolved.markdown, resolved.planId),
+          );
     console.log(
       JSON.stringify(
         {

@@ -99,6 +99,8 @@ import {
   extractDocSection,
   extractPinnedTests,
   gatherReviewBundle,
+  gatherReviewGrounding,
+  type ContractChange,
   oracleFingerprint,
   type ReviewBundleDelta,
 } from "../lib/review-bundle.js";
@@ -195,6 +197,9 @@ interface ReviewOptions {
 export { normalizeTestCommand } from "../lib/review-confirm.js";
 
 export interface ReviewReport {
+  changedPaths?: string[];
+  ignoredPaths?: string[];
+  contractChanges?: ContractChange[];
   version: 2;
   /** Discriminant: `"ok"` means the gate ran and this report is its verdict.
    *  The non-git `--json` output instead emits `{ gate: "unavailable", reason }`,
@@ -694,7 +699,9 @@ export function buildReview(
   const boundApprovalRequired = opts.boundary
     ? parseApprovalPolicy(readChangeSetFile(root, opts.boundary, ".codument-meta.json"))
     : readApprovalPolicy(root);
-  if (boundApprovalRequired && state.changedSources.length > 0 && !plan?.approvalDigest) {
+  const ignoredPaths = [...state.excludedChanged, ...deletions.filter((path) => isExcluded(path, exclusion))];
+  const contractChanges = gatherReviewGrounding(root, baseRef, registry, [...changes, ...deletions], readSelected, plan?.scope, ignoredPaths, opts.boundary).changes;
+  if (boundApprovalRequired && (state.changedSources.length > 0 || contractChanges.some((change) => change.requiresReview)) && !plan?.approvalDigest) {
     throw new GateError("A governed change requires a revision-bound approved plan; record human approval with codument work approve and stage the plan plus docs/.approvals.json.", "git-failed");
   }
   const testImpact = opts.boundary
@@ -772,6 +779,9 @@ export function buildReview(
   coveringAcks.sort((a, b) => (a.anchorId < b.anchorId ? -1 : a.anchorId > b.anchorId ? 1 : 0));
 
   return {
+    changedPaths: [...new Set([...changes, ...deletions])].sort(),
+    ignoredPaths,
+    ...(contractChanges.length ? { contractChanges } : {}),
     version: 2,
     gate: "ok",
     isGitRepo: isGitRepo(root),
@@ -1074,6 +1084,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       report.boundary,
       readText,
       report.testImpact,
+      report.changedPaths,
+      report.ignoredPaths,
     );
     console.log(JSON.stringify(bundle, null, 2));
     return;
@@ -1132,7 +1144,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       realChangeSet,
       provisional.findings,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan),
+      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths),
       focusedBinding?.fingerprint,
     );
     // `files` rides along as scoping information for the NEXT `--bundle` (what moved
@@ -1155,7 +1167,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       effectiveBase,
       realChangeSet,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan),
+      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths),
       focusedBinding,
     ).length;
     if (onRecord > 1) {
@@ -1294,7 +1306,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       effectiveBase,
       realChangeSet,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan),
+      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths),
       focusedBinding,
     );
     // A missing key and an explicit null both mean the same thing to a reader: this
@@ -1337,6 +1349,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     reviewGate = evaluateReviewGate(
       {
         realChangeCount: realChangeSet.length,
+        contractChangeCount: report.contractChanges?.filter((change) => change.requiresReview).length,
+        housekeepingInstructionCount: report.contractChanges?.filter((change) => change.kind === "instruction" && !change.requiresReview && change.before !== null && change.after !== null && realChangeSet.includes(change.path)).length,
         changedSourceCount: report.state.changedSources.length,
         otherChangedCount: report.state.otherChanged.length,
         deletionCount: realDeletions.length,
@@ -1725,6 +1739,8 @@ export function currentOracle(
   boundary?: ChangeSet,
   testImpact?: TestImpact,
   plan?: ApprovedPlan | null,
+  paths?: string[],
+  ignoredPaths?: string[],
 ): string {
   const registry = boundary
     ? registryForBoundary(root, boundary)
@@ -1732,8 +1748,8 @@ export function currentOracle(
   const readText = boundary
     ? (path: string): string | null => readChangeSetFile(root, boundary, path)
     : undefined;
-  const bundle = gatherReviewBundle(root, base, state, registry, plan ?? null, null, boundary, readText, testImpact);
-  return oracleFingerprint(bundle.features, bundle.plan);
+  const bundle = gatherReviewBundle(root, base, state, registry, plan ?? null, null, boundary, readText, testImpact, paths, ignoredPaths);
+  return oracleFingerprint(bundle.features, bundle.plan, bundle.contractChanges, bundle.omissions);
 }
 
 // The full real-change set the adversarial-review gate scopes to: changed sources +

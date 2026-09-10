@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, isAbsolute } from "node:path";
 import pc from "picocolors";
 import { readRegistrySync } from "../lib/registry.js";
 import { parseFeatureMap } from "../lib/feature-map.js";
+import { parsePlanScope, normalizePlanPath } from "../lib/plan-steps.js";
 import { isSourcePattern } from "../lib/registry.js";
 import {
   inspectWorkState,
@@ -15,7 +16,7 @@ import {
   gatherContextPack,
   ownersOfFile,
   ownershipOfFile,
-  selectedFromPlanRows,
+  selectPlanFeatures,
   type ContextEntry,
   type ContextPack,
   type ContextResolution,
@@ -117,7 +118,7 @@ function resolve(
   }
 
   // --plan
-  const planPath = join(root, options.plan!);
+  const planPath = isAbsolute(options.plan!) ? options.plan! : join(root, options.plan!);
   if (!existsSync(planPath)) {
     fail(`plan not found: ${options.plan}`);
     return null;
@@ -132,13 +133,15 @@ function resolve(
     fail(`could not read plan ${options.plan}: ${(err as Error).message}`);
     return null;
   }
+  options.plan = normalizePlanPath(root, options.plan!);
   raw = workPlanMarkdown(root, options.plan!, raw, options.planId);
   const map = parseFeatureMap(raw, options.planId);
-  if (map.rows.length === 0) {
-    fail(`no Feature Map rows in ${options.plan} — nothing to route`);
+  const scope = parsePlanScope(raw, options.planId);
+  if (map.rows.length === 0 && scope.length === 0) {
+    fail(`no Feature Map rows or explicit Scope in ${options.plan} — nothing to route`);
     return null;
   }
-  const selected = selectedFromPlanRows(map.rows);
+  const { selected, unowned } = selectPlanFeatures(registry, map.rows, scope);
   return {
     kind: "plan",
     input: options.plan!,
@@ -148,7 +151,7 @@ function resolve(
     // Malformed rows the parser rejected: surfaced, never silently dropped — a
     // typo'd row that routes nothing must be a visible flag, exactly like an
     // unknown slug. (A map with SOME valid rows still packs; these warn.)
-    planErrors: map.errors.map((e) => `line ${e.line}: ${e.message}`),
+    planErrors: [...map.errors.map((e) => `line ${e.line}: ${e.message}`), ...unowned.map((file) => `no owner for scoped input ${file}; register its owner or inspect it directly`)],
   };
 }
 

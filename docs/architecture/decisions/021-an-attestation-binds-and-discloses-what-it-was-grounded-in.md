@@ -29,6 +29,10 @@ The three share a shape. The artifact was trusted to describe a change, and trea
 
 4. **The grounding is disclosed, never demanded.** `--bundle` stamps its own content; `--record` records the stamp it answers, or records explicitly that there was none, and a present-but-malformed stamp is refused. An **unstamped review still clears the gate** and says so on the verdict line and above it. Refusing would dead-end the first review of any diff — whose own printed route never mentions `--bundle` — and would be walked past by anyone willing to omit one field. A guard that binds only the honest actor is not a guard.
 
+## Additive contract review eligibility
+
+Review eligibility is separate from real source-change counting. Documentation-only durable layer changes, invariant changes in any boundary, and registered workflow instruction changes beyond formatting require review. Before/after contracts and their tests remain in the oracle even when the current document or ownership declaration removes them. Whitespace, line endings, frontmatter, plan progress and path-only Key files housekeeping do not independently trigger review. Ordinary companion prose preserves the existing trivial-source rule. Text comparison cannot prove semantic equivalence, so uncertain protected-layer changes receive review. This extends the earlier rejection of whole-document fingerprinting without counting every documentation edit as another source change.
+
 ## Consequences
 
 **Good:** an attestation now answers the questions a reader actually has of it. Two independent reviews of one change set both survive and are both enforced. A review whose invariants were rewritten under it stops covering, which is the same auto-invalidation the acknowledgment protocol has always had, applied to the half that was missing it. And the disclosure makes an ungrounded review visible without making it impossible, which keeps the loop workable on the first review of any change.

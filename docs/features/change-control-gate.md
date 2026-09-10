@@ -46,6 +46,8 @@ short verdict and the diagnostic `review` surface cannot silently disagree about
 
 ## Invariants & boundaries
 
+- Documentation-only contract changes retain the prior contract in review and request matching review evidence. Required bound approval applies to these governed contract changes too. *(test: `review-boundary.test.ts`)*
+
 - Paused state is visible in monitor and report output; a clean history review recognizes exact final approval after compaction. *(test: `work.test.ts`)*
 
 - Explicit plan paths use repository-relative native path normalization. An unresolved explicit selection is a refusal, never permission to drop scope diagnostics. *(test: `work.test.ts`)*

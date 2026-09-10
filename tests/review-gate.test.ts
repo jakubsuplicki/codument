@@ -30,27 +30,66 @@ function finding(status: ReviewFindingStatus, failingTest: string | null = null)
 }
 
 describe("requiresAdversarialReview — proportionality (full change set)", () => {
+  it("requires contract review independently and excludes proven instruction housekeeping from size", () => {
+    assert.equal(
+      requiresAdversarialReview(
+        input({ realChangeCount: 0, changedSourceCount: 0, contractChangeCount: 1 }),
+      ),
+      true,
+    );
+    assert.equal(
+      requiresAdversarialReview(
+        input({ realChangeCount: 2, otherChangedCount: 1, housekeepingInstructionCount: 1 }),
+      ),
+      false,
+    );
+    assert.equal(
+      requiresAdversarialReview(
+        input({
+          realChangeCount: 2,
+          otherChangedCount: 1,
+          housekeepingInstructionCount: 1,
+          contractChangeCount: 1,
+        }),
+      ),
+      true,
+    );
+  });
   it("an empty diff never requires a review", () => {
     assert.equal(
-      requiresAdversarialReview(input({ realChangeCount: 0, changedSourceCount: 0, movedSymbolCount: 0 })),
+      requiresAdversarialReview(
+        input({ realChangeCount: 0, changedSourceCount: 0, movedSymbolCount: 0 }),
+      ),
       false,
     );
   });
 
   it("more than one real change requires a review", () => {
-    assert.equal(requiresAdversarialReview(input({ realChangeCount: 2, changedSourceCount: 2 })), true);
+    assert.equal(
+      requiresAdversarialReview(input({ realChangeCount: 2, changedSourceCount: 2 })),
+      true,
+    );
   });
 
   it("a single deletion requires a review", () => {
     assert.equal(
-      requiresAdversarialReview(input({ realChangeCount: 1, changedSourceCount: 0, deletionCount: 1, movedSymbolCount: 0 })),
+      requiresAdversarialReview(
+        input({ realChangeCount: 1, changedSourceCount: 0, deletionCount: 1, movedSymbolCount: 0 }),
+      ),
       true,
     );
   });
 
   it("a single config/data (non-source) change requires a review", () => {
     assert.equal(
-      requiresAdversarialReview(input({ realChangeCount: 1, changedSourceCount: 0, otherChangedCount: 1, movedSymbolCount: 0 })),
+      requiresAdversarialReview(
+        input({
+          realChangeCount: 1,
+          changedSourceCount: 0,
+          otherChangedCount: 1,
+          movedSymbolCount: 0,
+        }),
+      ),
       true,
     );
   });
@@ -105,7 +144,9 @@ describe("countResolvedMovedSymbols — the <module> residual is not a resolved 
 
   it("a <module>-only move resolves to 0 → requires a review (movedSymbolCount !== 1)", () => {
     assert.equal(
-      requiresAdversarialReview(input({ movedSymbolCount: countResolvedMovedSymbols(["<module>"]) })),
+      requiresAdversarialReview(
+        input({ movedSymbolCount: countResolvedMovedSymbols(["<module>"]) }),
+      ),
       true,
     );
   });
@@ -129,14 +170,20 @@ describe("evaluateReviewGate — verdict over re-derived findings", () => {
   });
 
   it("a required diff with a confirmed (test-red) finding is blocked", () => {
-    const res = evaluateReviewGate(required, [finding("confirmed", "bug.test.ts"), finding("advisory")]);
+    const res = evaluateReviewGate(required, [
+      finding("confirmed", "bug.test.ts"),
+      finding("advisory"),
+    ]);
     assert.equal(res.passed, false);
     assert.equal(res.blockingFindings.length, 1);
     assert.match(res.reason ?? "", /1 confirmed finding/);
   });
 
   it("a required diff with only advisory/resolved findings passes, surfacing advisories", () => {
-    const res = evaluateReviewGate(required, [finding("advisory"), finding("resolved", "fixed.test.ts")]);
+    const res = evaluateReviewGate(required, [
+      finding("advisory"),
+      finding("resolved", "fixed.test.ts"),
+    ]);
     assert.equal(res.passed, true);
     assert.equal(res.blockingFindings.length, 0);
     assert.equal(res.advisoryFindings.length, 1);

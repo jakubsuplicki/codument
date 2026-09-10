@@ -25,6 +25,8 @@ The path is forward-only: make new work decompose correctly rather than auto-hea
 
 ## Invariants & boundaries
 
+- Shape-check JSON carries both Scope and Map grounding even when no new-file routing table is needed; absence of a Map still reports its shape status separately. *(test: `plan-grounding.test.ts`)*
+
 - Saved work selection routes the map even when other approved plans exist. *(test: `work.test.ts`)*
 
 - Identified plans cannot borrow another section's Feature Map, and checkpoint examples cannot materialize source ownership. *(test: `plan-approval.test.ts`)*

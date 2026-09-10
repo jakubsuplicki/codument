@@ -11,7 +11,7 @@ last_reviewed: 2026-09-10
 
 Today the review step is the same agent grading its own homework, and the loop only treats it as advisory. This gate makes review an **independent adversary** that is presumed to be hunting for failure, handed a precise contract to attack: the diff, the invariants it must not break and the tests that pin them, the relevant plan slice, and the ownership/blast facts. Its verdict becomes a required, diff-bound artifact at the commit gate, not a vibe.
 
-On a host with subagents (Claude) the adversary is a **fresh subagent** with its own context window, so it never inherits the author's reasoning — independence is a property of the host, not something we engineer. On a host without subagents (Codex) it degrades to a **same-agent adversarial pass** against the identical bundle: weaker independence, but the deterministic confirm and the diff-bound artifact still bite. The enforcement is identical on both; only the spawn differs.
+On a host currently providing independent agents the adversary is a **fresh subagent** with its own context window, so it never inherits the author's reasoning — independence is a property of the host, not something we engineer. On a host currently lacking independent agents it degrades to a **same-agent adversarial pass** against the identical bundle: weaker independence, but the deterministic confirm and the diff-bound artifact still bite. The enforcement is identical on both; only the spawn differs.
 
 A finding only **blocks** when it ships a failing test Codument can run. Findings that cannot be reduced to a test (a design concern, an untestable invariant weakening) are recorded and routed to the existing review decision point, never auto-blocked. The artifact is bound to the diff fingerprint, so editing after review auto-reopens the gate.
 
@@ -29,7 +29,10 @@ Coverage then requires both the re-derived content fingerprint and an exact base
 boundary-fingerprint match. A review from another staged set can help scope a later delta read, but it
 can never clear that later gate.
 
-**The bundle is the oracle, and it is Codument's unfair advantage.** "Assume it is wrong" is a stance, not a method: wrong against what? Generic "review my code" agents flail and nitpick because they have no ground truth. Codument already extracts the documented `## Invariants & boundaries` layer and its test pointers, the plan, and symbol-grained ownership, so it can hand the adversary a contract to check against instead of an open-ended hunt. The bundle introduces no new source of truth; it is derived purely from committed docs and the deterministic change-state.
+**The bundle is the oracle, and it is Codument's unfair advantage.** "Assume it is wrong" is a stance, not a method: wrong against what? Generic "review my code" agents flail and nitpick because they have no ground truth. Codument already extracts the documented `## Invariants & boundaries
+
+- Review includes before/after documented contracts and registered workflow instructions, preserving removed invariants and their test references even when an owner is removed. Missing inputs are named, and this grounding is bound into review evidence. *(tests: `review-bundle.test.ts`, `review-boundary.test.ts`)*
+- Documentation-only durable changes, invariant changes in any boundary, and material registered instruction changes require review independently of source-change counting. Whitespace, metadata, plan progress, and path-only Key files maintenance are housekeeping; ordinary companion prose does not retire the single-source proportionality rule. *(tests: `review-bundle.test.ts`, `review-gate.test.ts`, `review-boundary.test.ts`)*` layer and its test pointers, the plan, and symbol-grained ownership, so it can hand the adversary a contract to check against instead of an open-ended hunt. The bundle introduces no new source of truth; it is derived purely from committed docs and the deterministic change-state.
 
 **Verify, don't trust — this breaks the who-reviews-the-reviewer regress.** The adversary only produces candidate findings. A finding counts as blocking only once a deterministic step confirms it: run the cited failing test, see it red; the fix flips it green. We never trust the adversary's judgment, only the reproduction. This mirrors the change-control gate's rule that it verifies an ack's *form*, never its semantic truth. It also bounds the dominant failure mode — adversary false-positives turning into alarm fatigue — because an unconfirmed finding cannot block.
 
@@ -38,6 +41,10 @@ can never clear that later gate.
 **Proportionality is mandatory, not optional.** Two extra agent passes on every one-line edit is how a good gate gets disabled. Bundle depth is gated on blast radius, which Codument already computes: a trivial single-symbol edit touching no documented invariant skips the heavy pass; a risk-tagged, invariant-touching, or multi-file diff gets the full adversary.
 
 ## Invariants & boundaries
+
+- Committed-range review uses the selected range's paths; historical owners and member-specific
+  base snapshots retain prior contracts. Excluded additions and deletions cannot suppress a
+  documentation-only review requirement. *(tests: `review-boundary.test.ts`, `review-bundle.test.ts`)*
 
 - Review evidence binds the selected plan identity and approved contract alongside the documented feature contracts. Changing selection cannot reuse a covering review through either receipt reuse or ordinary verification. *(test: `work.test.ts`)*
 

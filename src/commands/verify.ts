@@ -124,6 +124,8 @@ function bundleFor(
     boundary,
     (path) => readChangeSetFile(root, boundary, path),
     report.testImpact,
+    report.changedPaths,
+    report.ignoredPaths,
   );
 }
 
@@ -192,7 +194,7 @@ function recordReview(
     realChangeSet,
     provisional.findings,
     resolveTest,
-    currentOracle(root, base, report.state, boundary, report.testImpact, report.plan),
+    currentOracle(root, base, report.state, boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths),
     binding.fingerprint,
   );
   writeReview(root, {
@@ -219,7 +221,7 @@ function assessReview(
     base,
     realChangeSet,
     resolveTest,
-    currentOracle(root, base, report.state, boundary, report.testImpact, report.plan),
+    currentOracle(root, base, report.state, boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths),
     binding,
   );
   const recordedFindings = covering.length > 0 ? mergeCoveringFindings(covering) : null;
@@ -261,6 +263,8 @@ function assessReview(
   const gate = evaluateReviewGate(
     {
       realChangeCount: realChangeSet.length,
+      contractChangeCount: report.contractChanges?.filter((change) => change.requiresReview).length,
+      housekeepingInstructionCount: report.contractChanges?.filter((change) => change.kind === "instruction" && !change.requiresReview && change.before !== null && change.after !== null && realChangeSet.includes(change.path)).length,
       changedSourceCount: report.state.changedSources.length,
       otherChangedCount: report.state.otherChanged.length,
       deletionCount: realDeletions.length,

@@ -70,16 +70,13 @@ Adoption of an existing project is gentle: scan and map what exists, create miss
 - Approval stays exact and belongs to the selected plan, with scope and discovery agreeing on that
   selection; malformed approval is diagnosed without being normalized into authorization. See
   [[plan-step-mirroring]] and [[change-control-gate]].
-- Resume checkpoints preserve approved engineering work across interruptions. Machine-readable
-  active, paused, blocked, and superseded states remain a separate design; this workflow adds no
+- Resume checkpoints preserve approved engineering work across interruptions. Explicit active, paused, blocked, and superseded work states preserve the pending gate; this workflow adds no
   autonomous runner or domain-specific research lifecycle.
 - The feedback's general lessons apply to outcome evidence and proportionate planning. Private
   project reports were not independently verifiable and do not become product facts. Deferred
   transport, ownership-health, capture-availability, and history-selection work is recorded in
   [[adversarial-review-gate]], [[registry-health]], [[token-cost-tracking]], and [[history-audit]].
-- Independent plan review for changes without a Feature Map remains a follow-up: the current
-  planning skill skips that pass even when existing source contracts could ground it. This does
-  not remove the required implementation review.
+- Planning review uses existing Scope as well as new-file routing. Host capabilities determine whether a fresh independent agent is available; missing independence and missing contracts are disclosed.
 - `AGENTS.md` is the canonical cross-agent instruction file when a project supports multiple agents; `CLAUDE.md` remains a compatibility target (the agent-neutral pivot).
 - Claude became the default profile in 0.6.0, replacing the original Codex/generic default; both remain first-class installs.
 - Skills group around the delivery loop — `grill-with-docs`, `plan-with-docs`, `tdd`, `work-step`, `review-work`, `commit-work`, `update-docs` — not around tools or file types.
@@ -106,7 +103,7 @@ that has not been implemented. The user approved this plan and authorized commit
 - [x] Step 1: Bind human-approved plan scope to a recorded revision and diagnose stale or unbound approval.
 - [x] Step 2: Add explicit active, paused, blocked, superseded, ready, and completed work states.
 - [x] Step 3: Connect work state to agent handoffs, steps, context, verification, and the live monitor.
-- [ ] Step 4: Ground planning and review in existing files, changed docs, and instruction contracts.
+- [x] Step 4: Ground planning and review in existing files, changed docs, and instruction contracts.
 - [ ] Step 5: Export and validate portable review evidence for the exact reviewed change.
 - [ ] Step 6: Require matching review evidence in the CI template and this repository's workflow.
 - [ ] Step 7: Expose missing context and compact the command and workflow documentation.
@@ -345,6 +342,6 @@ including independent plan/step reviewers and isolated evaluation agents, with l
 ### Resume checkpoint
 
 Plan: docs/features/agent-delivery-workflow.md
-Completed implementation: Steps 1–3.
+Completed implementation: Steps 1–4.
 Next gate: independent review, exact staged verification, then commit.
-Resume condition: resolve review findings and obtain a passing receipt before Step 4.
+Resume condition: resolve review findings and obtain a passing receipt before Step 5.

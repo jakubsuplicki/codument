@@ -19,6 +19,10 @@ import { MODULE_ANCHOR_NAME } from "./ts-adapter.js";
 // as the change-control gate's inability to verify an ack's semantic truth.
 
 export interface ReviewGateInput {
+  /** Durable documentation/invariant or declared workflow instruction changed. */
+  contractChangeCount?: number;
+  /** Registered non-source instructions proven to differ only in formatting. */
+  housekeepingInstructionCount?: number;
   /** All real changed paths — sources + config/data + deletions, non-doc and
    *  non-excluded. The proportionality denominator. */
   realChangeCount: number;
@@ -70,10 +74,12 @@ export function countResolvedMovedSymbols(movedSymbols: readonly string[]): numb
 // checks above are what keep an unowned or module-level co-moved change from reading
 // trivial.
 export function requiresAdversarialReview(input: ReviewGateInput): boolean {
-  if (input.realChangeCount === 0) return false;
-  if (input.realChangeCount > 1) return true;
+  if ((input.contractChangeCount ?? 0) > 0) return true;
+  const realChangeCount = input.realChangeCount - (input.housekeepingInstructionCount ?? 0);
+  if (realChangeCount === 0) return false;
+  if (realChangeCount > 1) return true;
   if (input.deletionCount > 0) return true;
-  if (input.otherChangedCount > 0) return true;
+  if (input.otherChangedCount > (input.housekeepingInstructionCount ?? 0)) return true;
   if (input.riskTouchCount > 0) return true;
   if (input.ownershipLintCount > 0) return true;
   // A moved <module> residual is unresolved module-level content (a side-effecting

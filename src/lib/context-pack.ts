@@ -279,14 +279,15 @@ export interface FileOwner {
 // Resolve a file path to the features that OWN it: every entry (feature or
 // concept umbrella) whose `primary_sources` NAMES the path — literally, or
 // through a pattern that governs its tree. Related-source membership is impact,
-// not ownership, so it never selects — the same primary-only rule the staleness
-// gate uses. Ownership runs through the one matcher the gate and the health
+// not ownership, so it never selects. Direct docs and registered supporting
+// instructions select their declaring features as well. Source ownership runs
+// through the one matcher the gate and the health
 // surface use, so "who owns this file" cannot get two answers depending on which
 // surface is asked.
 export function ownershipOfFile(registry: Registry, file: string): FileOwner[] {
   const owners: FileOwner[] = [];
   for (const [slug, entry] of Object.entries(registry.features)) {
-    const matched = entry.primary_sources
+    const matched = [...entry.primary_sources, entry.doc, ...entry.docs]
       .filter((src) => sourceNames(src, file))
       .map(normalizeRelPath)
       .sort();
@@ -315,6 +316,18 @@ export function selectedFromPlanRows(rows: FeatureMapRow[]): string[] {
     for (const sec of row.secondary) slugs.add(sec);
   }
   return [...slugs].sort();
+}
+
+/** Scope names existing inputs; Map rows also name owners that do not exist yet. */
+export function selectPlanFeatures(registry: Registry, rows: FeatureMapRow[], scope: string[]): { selected: string[]; unowned: string[] } {
+  const selected = new Set(selectedFromPlanRows(rows));
+  const unowned: string[] = [];
+  for (const file of scope) {
+    const owners = registry.features[file] ? [file] : ownersOfFile(registry, file);
+    if (!owners.length) unowned.push(file);
+    for (const owner of owners) selected.add(owner);
+  }
+  return { selected: sortStrings(selected), unowned: sortStrings(unowned) };
 }
 
 export type ContextResolution =

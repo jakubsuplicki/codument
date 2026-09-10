@@ -32,7 +32,7 @@ read, never a summarized or re-scored payload.
 The three selectors resolve to the same shape by different routes. A feature names itself; a file
 resolves through *primary* ownership only (the same rule the staleness gate uses — related sources
 are impact, never ownership), which naturally includes any concept umbrellas that own it; a plan
-routes through its Feature Map exactly as `map check` does. A file's ownership runs through the one
+combines its explicit Scope and Feature Map exactly as `map check` does. Direct feature docs and registered supporting documents select their declaring owners too. A file's ownership runs through the one
 source matcher the gate and the health surface use, so a file governed by a registered tree pattern
 is owned exactly as a literally-named one is — "who owns this file" cannot come back different
 depending on which surface you ask. From the selected features it walks one
@@ -57,6 +57,8 @@ cost ledger and the benchmark use, and are labelled an estimate everywhere they 
 
 ## Invariants & boundaries
 
+- Plan context retrieves existing scoped owners without a Feature Map; absolute plan paths resolve relative to the requested repository. Registered supporting instructions and direct docs use the same ownership answer. *(test: `plan-grounding.test.ts`)*
+
 - Selected-work context preserves the saved plan identity and reports its paused state without changing it. *(test: `work.test.ts`)*
 - Final context reads the retained contract after selected-section compaction. An explicit sibling
   preview never inherits another section's saved work state. *(test: `work.test.ts`)*
@@ -67,7 +69,7 @@ cost ledger and the benchmark use, and are labelled an estimate everywhere they 
   yield a byte-identical pack and `--json` across runs, with entries, sources, deps, and trim labels
   all sorted. No clock, no git, no model. *(tests: `context-pack.test.ts` "is deterministic —
   byte-identical across runs" / "--json is version-tagged and byte-identical across runs")*
-- A file selector resolves through primary ownership only — every feature and concept umbrella whose
+- A source selector resolves through primary ownership only — every feature and concept umbrella whose
   `primary_sources` names the file, never a related-only toucher — and a file no entry owns is
   surfaced, never guessed at. Naming runs through the shared source matcher, so a registered tree
   pattern owns the files under it exactly as a literal path owns one. *(tests: `context-pack.test.ts`
