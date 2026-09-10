@@ -68,6 +68,7 @@ export function hooksInstall(options: HooksOptions = {}): void {
         ci.action
       ];
       console.log(pc.green(`  ✓ CI gate workflow ${ciVerb}: ${ci.path}`));
+      console.log(pc.dim("    CI requires .codument-review.json exported from a review of the complete branch."));
       console.log(
         pc.dim("    Make it a merge blocker: branch protection → require the gate check."),
       );

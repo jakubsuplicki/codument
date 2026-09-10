@@ -46,6 +46,9 @@ short verdict and the diagnostic `review` surface cannot silently disagree about
 
 ## Invariants & boundaries
 
+- Portable-evidence refusals remain valid SARIF with an unsuccessful invocation, including a
+  missing manifest, so failing CI can publish a diagnostic. *(test: `review-transfer.test.ts`)*
+
 - Portable review explicitly selects a complete branch range through committed content or the index.
   It validates all transferred attestations and reruns their named tests; it never substitutes a
   staged-step receipt for review of earlier branch changes. *(test: `review-transfer.test.ts`)*

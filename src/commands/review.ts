@@ -917,7 +917,10 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     if (portable) {
       const dirty = options.pending ? resolveChangeSet(root, { mode: "staged" }).dirtyOutside : [...getWorkingTreeChanges(root), ...getWorkingTreeDeletions(root)];
       if (dirty.some((path) => path !== REVIEW_MANIFEST_PATH)) throw new GateError("portable review requires working files to match its snapshot; stage, commit or set aside other working changes first", "git-failed");
-      if (dirty.includes(REVIEW_MANIFEST_PATH)) parseReviewTransfer(readFileSync(join(root, REVIEW_MANIFEST_PATH), "utf8"));
+      if (dirty.includes(REVIEW_MANIFEST_PATH)) {
+        try { parseReviewTransfer(readFileSync(join(root, REVIEW_MANIFEST_PATH), "utf8")); }
+        catch (error) { throw new GateError(`reserved review evidence is unavailable: ${error instanceof Error ? error.message : String(error)}`, "git-failed"); }
+      }
       const boundary = resolveChangeSet(root, { mode: "range", base: options.base!, head: options.pending ? "INDEX" : "HEAD" });
       portableReviewBoundary(boundary, readChangeSetFile(root, boundary, REVIEW_MANIFEST_PATH));
       exclusion = exclusionForBoundary(root, boundary);
@@ -1098,7 +1101,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       }
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      if (options.json) console.log(JSON.stringify({ version: 2, gate: "unavailable", reason }));
+      if (sarifMode) console.log(JSON.stringify(gateUnavailableSarif(reason), null, 2));
+      else if (options.json) console.log(JSON.stringify({ version: 2, gate: "unavailable", reason }));
       else console.log(pc.red(`  ✗ ${reason}`));
       process.exitCode = 1;
       return;

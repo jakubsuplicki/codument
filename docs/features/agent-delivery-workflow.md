@@ -15,6 +15,10 @@ The core loop codument installs into a project's agent instructions: grill the i
 
 Work selection and pending gates survive sessions independently of human approval. A final delivery retains its approved contract in tracked data and binds it to exact changes before review, allowing verification after the live checklist is compacted.
 
+Branch delivery to CI adds a complete-range review before the final commit. Its portable manifest
+travels with those changes; it does not replace the local staged gate or authorize a broader range.
+Private findings remain local, while receiving CI validates the manifest and reruns its named tests.
+
 One neutral workflow, many agents. An agent profile maps the same delivery contract onto each agent's native surface — which instruction files, skills directories, and capabilities that agent supports — so the workflow stays neutral in shape while profiles stay honest about capability differences (a host without hooks simply doesn't get hook-backed nudges). `AGENTS.md` is the canonical cross-agent contract; `CLAUDE.md` remains a Claude compatibility target that defers to it. Claude is the default profile when nothing is detected; Codex/generic stays a first-class selectable target writing `AGENTS.md` and `.agents/skills`.
 
 The loop is gated where a decision is owed, and continuous everywhere else. Source edits never start before a human approves the plan, and every step still passes `work-step` → `review-work` → `commit-work` in order. Work-step stages the exact slice before review; review-work runs one compact verifier over those bytes, completing its generated worksheet only when adversarial evidence is required; commit-work commits the unchanged verified boundary. The pre-commit hook reuses that exact receipt instead of repeating the review. What stops a run is a decision the agent should not make alone — a judgment-call finding, anything touching public interfaces, security, data loss or dependencies, a failed verification, or work outside the approved plan.
@@ -105,7 +109,7 @@ that has not been implemented. The user approved this plan and authorized commit
 - [x] Step 3: Connect work state to agent handoffs, steps, context, verification, and the live monitor.
 - [x] Step 4: Ground planning and review in existing files, changed docs, and instruction contracts.
 - [x] Step 5: Export and validate portable review evidence for the exact reviewed change.
-- [ ] Step 6: Require matching review evidence in the CI template and this repository's workflow.
+- [x] Step 6: Require matching review evidence in the CI template and this repository's workflow.
 - [ ] Step 7: Expose missing context and compact the command and workflow documentation.
 - [ ] Step 8: Compact the shared-library and registry-health documentation without losing contracts.
 - [ ] Step 9: Report capture availability and export only explicit, portable usage summaries.
@@ -342,6 +346,6 @@ including independent plan/step reviewers and isolated evaluation agents, with l
 ### Resume checkpoint
 
 Plan: docs/features/agent-delivery-workflow.md
-Completed implementation: Steps 1–5.
+Completed implementation: Steps 1–6.
 Next gate: independent review, exact staged verification, then commit.
-Resume condition: resolve review findings and obtain a passing receipt before Step 6.
+Resume condition: resolve review findings and obtain a passing receipt before Step 7.

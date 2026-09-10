@@ -229,7 +229,7 @@ export function installCiWorkflow(root: string): { action: CiInstallAction; path
       throw new HookError(
         `${dest} exists without the codument managed marker — refusing to overwrite your workflow.\n` +
           `The gate step to add yourself is:\n` +
-          `  npx --no-install codument review --strict --base "origin/\${{ github.base_ref }}"`,
+          `  npx --no-install codument review --strict --base "<target-branch-ref>" --committed --require-review --review-file .codument-review.json`,
       );
     }
     atomicWriteFileSync(dest, desired);

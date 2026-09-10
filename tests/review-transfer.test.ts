@@ -45,11 +45,60 @@ function fixture() {
     put(".codument/findings.json", JSON.stringify({ invariantsChecked: ["PRIVATE fixture review contract"], findings, signer, bundleStamp: bundle.stamp }));
     ok("review", ...flags, "--record", ".codument/findings.json");
   };
-  const clone = () => { const destination = join(directory, "receiver"); git("clone", "-q", root, destination); return destination; };
+  const clone = (name = "receiver") => { const destination = join(directory, name); git("clone", "-q", root, destination); return destination; };
   return { root, put, git, runAt, run, ok, doc, base, record, clone, dispose: () => rmSync(directory, { recursive: true, force: true }) };
 }
 
 describe("portable review CLI", () => {
+  it("runs both shipped CI recipes in fresh checkouts and refuses missing or stale evidence", () => {
+    const f = fixture();
+    try {
+      const recipes = ["../templates/ci-codument.yml", "../.github/workflows/ci.yml"].map((path) => {
+        const yaml = readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
+        assert.match(yaml, /fetch-depth: 0/);
+        const line = yaml.split(/\r?\n/).find((line) => /^\s*run:.*(?:codument|dist\/cli\.js) review /.test(line));
+        assert.ok(line, path);
+        const args = line.slice(line.indexOf(" review ") + 1).replace('"$CODUMENT_BASE"', f.base).trim().split(/\s+/);
+        for (const flag of ["--strict", "--committed", "--require-review", "--review-file"]) assert.ok(args.includes(flag), `${path}: ${flag}`);
+        return args;
+      });
+      f.put("src/alpha.ts", "export const alpha = 2;\n");
+      f.put(f.doc, "# Alpha\n\n## Invariants & boundaries\n- The value is two. See `tests/alpha.test.cjs`.\n");
+      f.git("add", ".");
+      f.record(["--base", f.base, "--pending"]);
+      f.ok("review", "--base", f.base, "--pending", "--export", ".codument-review.json");
+      f.git("add", ".codument-review.json"); f.git("commit", "-qm", "reviewed delivery");
+      const clean = f.clone();
+      for (const args of recipes) {
+        const checked = f.runAt(clean, ...args);
+        assert.equal(checked.status, 0, checked.stdout + checked.stderr);
+      }
+      const changes = [
+        ["src/alpha.ts", "export const alpha = 9;\n"],
+        [f.doc, "# Changed contract\n"],
+        ["tests/alpha.test.cjs", "// a different test snapshot\n"],
+        [".codument-meta.json", JSON.stringify({ testCommand: "node {file}" })],
+        [".codument-review.json", "{}"],
+      ];
+      for (const [index, [path, content]] of changes.entries()) {
+        const root = f.clone(`changed-${index}`);
+        writeFileSync(join(root, path), content);
+        const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", ...args], { cwd: root, stdio: "ignore" });
+        git("add", path); git("commit", "-qm", "changed after review");
+        for (const args of recipes) assert.equal(f.runAt(root, ...args).status, 1, `${path} must invalidate CI evidence`);
+      }
+      rmSync(join(clean, ".codument-review.json"));
+      // A missing tracked manifest is already a dirty-boundary refusal; the output must
+      // remain valid SARIF so a failing CI run can still upload its diagnostic.
+      const missing = f.runAt(clean, ...recipes[0], "--format", "sarif");
+      assert.equal(missing.status, 1);
+      assert.equal(JSON.parse(missing.stdout).runs[0].invocations[0].executionSuccessful, false);
+      const absent = f.runAt(f.root, ...recipes[0].map((arg) => arg === ".codument-review.json" ? "absent.json" : arg), "--format", "sarif");
+      assert.equal(absent.status, 1);
+      assert.equal(JSON.parse(absent.stdout).runs[0].invocations[0].executionSuccessful, false);
+    } finally { f.dispose(); }
+  });
+
   it("reviews the full pending branch and validates identical committed bytes in a fresh clone", () => {
     const f = fixture();
     try {

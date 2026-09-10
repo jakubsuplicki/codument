@@ -13,6 +13,12 @@ Hooks are where codument meets the moments a change actually happens, and the fe
 
 ## Design approach
 
+The CI arm requires both documentation synchronization and portable review evidence for the full
+checked-out branch range. Missing or stale evidence fails in a fresh checkout. Its manifest is
+prepared from a complete branch review and committed with the delivery; local step receipts cannot
+authorize a different range. Installation explains this prerequisite and manual recovery preserves
+the same gate. [Preparing delivery evidence](../../README.md#codument-hooks--make-the-gate-enforced-not-advisory).
+
 The editor hook is the editor-local arm of the documentation workflow, deliberately the weakest one. The durable, cross-agent enforcement lives in the registry, the AGENTS contract, and the review gate; this hook is just an immediate prompt at the moment of the edit, where it is cheapest to act. That framing drives the design choices: it stays advisory and silent-on-doubt rather than authoritative.
 
 The pre-commit arm is written as a managed block, not an owned file: everything it will ever touch sits between two marker comments, so a user's own pre-commit logic survives every install, refresh, and uninstall byte-for-byte. A hook file codument did not write is appended to only when a shell will run it; anything else is refused with the manual `codument verify` wiring rather than corrupted. The hooks directory is asked of git itself, so `core.hooksPath` setups and linked worktrees resolve correctly instead of assuming `.git/hooks`. Inside the block, the project-local binary decides the verdict. It fingerprints the staged boundary before expensive analysis and reuses a receipt only when the boundary and Codument version match exactly; a mismatch recomputes the full gate. A gate that runs red blocks with both escapes named, while a missing binary warns and lets the commit pass.
@@ -22,6 +28,12 @@ It runs as a standalone script the editor invokes, not as an imported module, so
 The reminder is failure-shy by construction. Every uncertain condition (no payload, an unparseable payload, a non-source file, an absent registry) ends in a clean no-op, because a false silence is a far cheaper failure than a crash or a spurious warning that trains the agent to ignore the channel. The registry is read as the single source of which docs own a file, and a file can legitimately belong to several features, so the reminder lists all of them rather than hiding multi-feature files behind the first match.
 
 ## Invariants & boundaries
+
+- The shipped CI template and this repository's workflow require matching full-range evidence;
+  changed source, contracts, tests or policy and malformed evidence fail in fresh checkouts.
+  *(test: `review-transfer.test.ts`)*
+- CI installation preserves user-owned workflows and supplies a recovery command enforcing both
+  gates. Installation and refresh remain idempotent. *(test: `hooks-command.test.ts`)*
 
 - Native path conversion preserves real filename characters, including leading whitespace and
   literal POSIX backslashes, so a different file cannot borrow a registered file's owner. *(test:

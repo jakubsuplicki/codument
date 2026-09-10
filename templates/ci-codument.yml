@@ -5,6 +5,9 @@ name: codument
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   gate:
     name: strict step-sync gate
@@ -20,8 +23,14 @@ jobs:
 
       - run: npm ci
 
-      - name: codument review --strict
-        run: npx --no-install codument review --strict --base "origin/${{ github.base_ref }}"
+      - name: Verify documentation and portable review evidence
+        env:
+          CODUMENT_BASE: origin/${{ github.base_ref }}
+        run: npx --no-install codument review --strict --base "$CODUMENT_BASE" --committed --require-review --review-file .codument-review.json
+
+      # Before delivery, review the complete branch with --base <ref> --pending,
+      # then export and stage .codument-review.json with the final changes.
+      # Missing or stale evidence fails; a local step receipt cannot cover a PR.
 
       # Want inline PR annotations? Swap the step above for the SARIF recipe in
       # the codument README ("CI" section) — same verdict, rendered on the diff.

@@ -63,6 +63,21 @@ afterEach(async () => {
   await rm(tmp, { recursive: true, force: true });
 });
 
+it("installs review-enforcing CI and preserves a user-owned workflow with a matching recovery command", () => {
+  seedRepo(tmp);
+  const output = run(tmp, "node", [CLI, "hooks", "install", "--ci"]);
+  assert.match(output, /complete branch/);
+  const path = join(tmp, ".github/workflows/codument.yml");
+  const content = readFileSync(path, "utf8");
+  assert.match(content, /--committed --require-review --review-file \.codument-review\.json/);
+  assert.match(run(tmp, "node", [CLI, "hooks", "install", "--ci"]), /already current/);
+  writeFileSync(path, "# user owned\nname: custom\n");
+  const refused = spawnSync(process.execPath, [CLI, "hooks", "install", "--ci"], { cwd: tmp, encoding: "utf8" });
+  assert.equal(refused.status, 1);
+  assert.match(refused.stdout, /--committed --require-review --review-file \.codument-review\.json/);
+  assert.equal(readFileSync(path, "utf8"), "# user owned\nname: custom\n");
+});
+
 describe("hooks command: end-to-end enforcement", { skip: process.platform === "win32" }, () => {
   it("a red verification gate blocks a real git commit; both escapes pass it", () => {
     seedRepo(tmp);
@@ -129,6 +144,7 @@ describe("hooks command: end-to-end enforcement", { skip: process.platform === "
     const content = readFileSync(wf, "utf-8");
     assert.ok(content.startsWith("# managed-by: codument"));
     assert.ok(content.includes("review --strict --base"));
+    assert.ok(content.includes("--committed --require-review --review-file .codument-review.json"));
 
     // Managed marker intact: refreshed in place on reinstall.
     writeFileSync(wf, "# managed-by: codument\nname: stale-old-version\n");

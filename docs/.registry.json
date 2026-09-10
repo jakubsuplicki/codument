@@ -206,8 +206,10 @@
         "src/lib/git-hooks.ts"
       ],
       "related_sources": [],
-      "docs": [
-        "docs/architecture/decisions/013-enforcement-arms-local-speed-bump-ci-authority.md"
+        "docs": [
+          "docs/architecture/decisions/013-enforcement-arms-local-speed-bump-ci-authority.md",
+          "templates/ci-codument.yml",
+          ".github/workflows/ci.yml"
       ],
       "depends_on": [
         "lib"

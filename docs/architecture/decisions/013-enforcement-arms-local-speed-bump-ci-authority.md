@@ -15,6 +15,12 @@ original arm; the CI-authority, explicit-escape, and missing-runtime decisions r
 
 ## Decision
 
+The CI arm now also requires portable review evidence bound to the exact complete branch range.
+Missing or stale evidence fails closed; local staged receipts cannot certify that range. The manifest
+travels with the final delivery, carrying all covering attestations with private prose removed.
+Receiving CI reruns named tests under the existing finding policy. This establishes review coverage
+and disclosed attribution, not authenticated identity or guaranteed review thoroughness.
+
 Enforcement becomes three arms with deliberately different temperaments, and the split is the decision:
 
 1. **The local pre-commit hook is a speed bump, never a wall.** `codument hooks install` writes a managed block (marker-delimited, the only region codument ever touches; foreign shell hooks are appended to, non-shell hooks refused with manual wiring instructions; the hooks directory is asked of git so `core.hooksPath` and worktrees resolve). A red gate blocks the commit and names both escapes — `git commit --no-verify` and `CODUMENT_SKIP_GATE=1` — because a local hook can always be evaded, so the design goal is that skipping is a **stated act, never a slip**. The block runs `--strict` only: static, no network, no test spawning. `--require-review` at commit time is how a hook earns deletion; users who want it edit the block, and the block says so.

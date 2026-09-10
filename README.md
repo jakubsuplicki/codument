@@ -431,11 +431,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0            # full history so --base can find the merge-base
-      - run: npx codument review --strict --base "origin/${{ github.base_ref }}" --format sarif > codument.sarif
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - env:
+          CODUMENT_BASE: origin/${{ github.base_ref }}
+        run: npx --no-install codument review --strict --base "$CODUMENT_BASE" --committed --require-review --review-file .codument-review.json --format sarif > "$RUNNER_TEMP/codument.sarif"
       - if: always()                # upload even on the run that fails the check, so annotations still appear
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: codument.sarif
+          sarif_file: ${{ runner.temp }}/codument.sarif
 ```
 
 `reviewdog` consumes the same file if you prefer it to code-scanning. When the gate cannot run (not a git repository, a wrong root, a git failure) the SARIF marks the invocation unsuccessful rather than reporting a false "clean."
@@ -461,6 +467,25 @@ codument hooks uninstall        # remove the managed block; your own hook lines 
 The pre-commit hook is a **managed block**: markers delimit the only region codument ever touches, an existing shell hook is appended to (never rewritten), a non-shell hook is refused with the one line to add manually, and `core.hooksPath`/worktree setups are honored by asking git. A red gate blocks the commit and names both escapes — `git commit --no-verify` or `CODUMENT_SKIP_GATE=1 git commit` — so skipping is a stated act, never a slip. If the codument binary is missing (a wiped `node_modules`), the hook warns loudly and lets the commit pass rather than bricking every commit. The hook verifies the exact staged bytes and reuses a matching receipt from the review step; any boundary or version mismatch reruns the gate.
 
 The local hook can always be skipped; the **CI check is the authority**. The scaffolded workflow runs the same strict gate against the PR's merge base — make it a *required* status check in branch protection and a red gate becomes a merge blocker. The workflow file is yours to evolve: it refreshes on reinstall only while its managed marker is present, and codument refuses to touch it once you delete the marker. `init --hooks` installs the pre-commit arm during project setup. At a workspace root containing member repositories the install is refused: one hook there would block each member's commit on the other members' staleness, so install it inside the member repository you want gated.
+
+CI also requires `.codument-review.json` covering the complete branch. Before the final commit,
+stage the intended delivery and review `--base <target-branch-ref> --pending --bundle`. Give that
+bundle and the complete branch diff to the independent reviewer, then record their findings:
+
+```bash
+codument review --base <target-branch-ref> --pending --record .codument/branch-findings.json
+codument review --base <target-branch-ref> --pending --export .codument-review.json
+git add .codument-review.json
+codument verify
+```
+
+The local staged gate still needs its own matching review. For a final compacted plan, prepare its
+final approval before the branch review. Commit the manifest with the reviewed changes; CI validates
+the committed snapshot with `--committed --require-review --review-file .codument-review.json`.
+Missing, malformed or stale evidence fails, including after the target base or reviewed inputs change.
+Every covering review travels together with opaque references and declared attribution; private
+findings stay local, and CI reruns named tests. Attribution is self-reported. Write SARIF output outside
+the checkout so generating the report does not make the inspected snapshot dirty.
 
 ### `codument ack` — clear a change that owes no doc change
 

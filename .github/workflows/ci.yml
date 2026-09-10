@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -65,5 +68,7 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Dogfood the step-sync gate against the merge base
-        run: node dist/cli.js review --strict --base "origin/${{ github.base_ref }}"
+      - name: Verify documentation and portable review evidence against the merge base
+        env:
+          CODUMENT_BASE: origin/${{ github.base_ref }}
+        run: node dist/cli.js review --strict --base "$CODUMENT_BASE" --committed --require-review --review-file .codument-review.json

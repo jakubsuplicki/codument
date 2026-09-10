@@ -19,6 +19,19 @@ Use this after a planned step has been implemented and before committing.
 8. When `codument verify` passes, run `codument work finish` to preserve verified readiness, then continue to `commit-work` without a routine prompt. If the user prohibited commits, stop with ready work and the pending commit visible. The exact receipt lets the hook confirm unchanged staged bytes. Gated and single-step requests retain their limits.
 9. If review pauses or the user redirects work, preserve the plan path, step, next gate, unresolved finding or failure, and resume condition in the plan's Resume checkpoint (in its recovery copy after final-step compaction). Recheck the staged boundary on return; a changed boundary invalidates earlier review. If fixes restore delivery scaffolding, recompact and restage it before recording the final review.
 
+## Preparing a branch for CI
+
+When delivering a branch to CI, the staged-step gate and full branch review are separate boundaries.
+After staging the intended final changes (and preparing final approval if the plan was compacted),
+resolve the intended target branch and run `codument review --base <ref> --pending --bundle --full`.
+Give a fresh independent reviewer that bundle and the full branch diff. Record its findings with the
+same `--base <ref> --pending` selection, then export `.codument-review.json` with `--export` and stage
+it. Never promote local step receipts into branch coverage. Re-run the normal staged review and
+verification before committing; changed bytes reopen whichever boundary they affect. Keep private
+findings under `.codument/`. CI uses `--committed --require-review --review-file .codument-review.json`
+against the same resolved base and rejects missing or stale evidence. A moved target base may require
+a new review. Run no remote action unless separately authorized.
+
 ## Output
 
 Lead with findings ordered by severity:
