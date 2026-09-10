@@ -173,6 +173,7 @@ export async function init(options: InitOptions): Promise<void> {
     JSON.stringify(
       {
         ...existingMeta,
+        ...(!existingMeta ? { requireBoundApproval: true } : {}),
         version: pkgVersion,
         initialized:
           existingMeta?.initialized ?? new Date().toISOString().split("T")[0],

@@ -2,7 +2,7 @@
 title: Commands
 status: current
 type: feature
-last_reviewed: 2026-07-21
+last_reviewed: 2026-09-10
 ---
 
 # Commands
@@ -12,6 +12,8 @@ last_reviewed: 2026-07-21
 These are the lifecycle commands that stand a project up on codument and keep it there. `init` bootstraps a fresh repo (docs tree, registry, agent profile assets, instruction files), `scan` discovers existing source and writes doc scaffolds so an agent can fill them in, `update` re-syncs the managed files after a package upgrade, `adopt` brings an already-onboarded project forward without re-bootstrapping it, and `benchmark` hosts the package-native proof commands. Reach for this feature when you want to understand how a project gets onboarded, re-synced, or proven, as opposed to the steady-state delivery loop that runs once it is set up.
 
 ## Design approach
+
+Fresh initialization requires revision-bound approval for governed changes. Reinitialization preserves an existing project's adoption choice; existing projects opt in after reviewing their workflow. Use `codument work approve --plan <path>` after human approval, then stage the plan and its tracked approval record together.
 
 Each command owns a phase of the project lifecycle, and the shape of every command follows from one stance: the user's repo is the source of truth, never the stored metadata. `init` and `scan` are the only commands that create from nothing; everything else reconciles an existing tree against the current package, and reconciliation always re-detects the live project rather than trusting a stale `.codument-meta.json` snapshot, because source globs and frameworks drift between runs.
 
@@ -24,6 +26,8 @@ The riskiest operation is overwriting a file a user has edited, so `update` is b
 `benchmark` is fenced off from the onboarding and delivery commands on purpose: measurement must never tangle with normal work, and it proves only what can be scored deterministically (context routing and final repository state), never an agent's path or a quality judgment. The detail lives in [[proof-benchmarks]].
 
 ## Invariants & boundaries
+
+- New installs require bound approval while reinitialization preserves existing policy and does not silently migrate a legacy project. *(test: `init.test.ts`)*
 
 - `adopt` and `update` preserve every metadata key they do not own, including ones that did not exist when they were written, so a project-declared setting survives onboarding and upgrade alike. *(tests: `adopt.test.ts` "adopt carries the project's own metadata forward" — a declared exclusion block, a key the command has never heard of, the owned keys still overwritten, and the same round-trip through `update`)*
 - `init` is non-destructive, and `--force` is scoped to codument-managed files only: it overwrites the managed scaffolds, but never the human-authored `docs/.registry.json`, nor the non-codument keys (permissions, env, other hooks) in a shared `.claude/settings.json` — those are always read-merged, upserting only codument's own hook. *(tests: `init.test.ts` "does not overwrite existing registry without --force", "does not reset a populated registry under --force", "preserves non-codument settings keys under --force")*

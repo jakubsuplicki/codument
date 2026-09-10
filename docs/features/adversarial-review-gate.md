@@ -39,6 +39,8 @@ can never clear that later gate.
 
 ## Invariants & boundaries
 
+- Review evidence binds the selected plan identity and approved contract alongside the documented feature contracts. Changing selection cannot reuse a covering review through either receipt reuse or ordinary verification. *(test: `work.test.ts`)*
+
 - Default runner availability checks and test execution both prohibit package network access; a locally unavailable runner stays unavailable rather than initiating a metadata lookup. Project-declared commands keep their own network policy. *(test: `review-confirm.test.ts` "defaultCommandAvailable: no local tsx falls back to asking npx itself (hoisted/global counts)")*
 
 These are the contracts the build commits to. Tests land with the step that builds each; until then they are marked planned. The step-4 set was hardened after a second adversarial re-verification (7 confirmed holes, all closed) — each invariant below names the test that now pins it.

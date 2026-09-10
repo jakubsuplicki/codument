@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import pc from "picocolors";
-import { isPlanPath } from "../lib/plan-steps.js";
+import { isPlanPath, normalizePlanPath } from "../lib/plan-steps.js";
+import { APPROVALS_PATH, parseApprovalStore, parseApprovalPolicy, readApprovalPolicy } from "../lib/plan-approval.js";
 import { ConfigValueError } from "../lib/state-io.js";
 import {
   type Acknowledgment,
@@ -134,6 +135,8 @@ import {
 import { versionSkewNotice } from "../lib/version.js";
 
 interface ReviewOptions {
+  plan?: string;
+  planId?: string;
   root?: string;
   json?: boolean;
   log?: boolean;
@@ -424,7 +427,7 @@ export function registryForBoundary(root: string, boundary: ChangeSet): Registry
   return parseRegistryOrThrow(raw, "docs/.registry.json@selected-boundary");
 }
 
-function planForBoundary(root: string, boundary: ChangeSet): ApprovedPlan | null {
+export function planForBoundary(root: string, boundary: ChangeSet, selection?: { plan?: string; planId?: string }): ApprovedPlan | null {
   const tracked = listTrackedFiles(root);
   if (!tracked.ok) {
     throw new GateError(`could not enumerate selected plan files: ${tracked.reason}`, "git-failed");
@@ -434,7 +437,12 @@ function planForBoundary(root: string, boundary: ChangeSet): ApprovedPlan | null
     const content = readChangeSetFile(root, boundary, path);
     if (content !== null) documents.push({ path, content });
   }
-  return detectApprovedPlanScopeFromDocuments(documents);
+  return detectApprovedPlanScopeFromDocuments(documents, {
+    approvals: parseApprovalStore(readChangeSetFile(root, boundary, APPROVALS_PATH)),
+    requireBoundApproval: parseApprovalPolicy(readChangeSetFile(root, boundary, ".codument-meta.json")),
+    planPath: selection?.plan ? normalizePlanPath(root, selection.plan) : undefined,
+    planId: selection?.planId,
+  });
 }
 
 export function exclusionForBoundary(root: string, boundary: ChangeSet): ExclusionSpec {
@@ -466,6 +474,8 @@ export function buildReview(
   baseRef = "HEAD",
   deletedFiles?: string[],
   opts: {
+    plan?: string;
+    planId?: string;
     requireIndependentAck?: boolean;
     exclusion?: ExclusionSpec;
     /** Renames in this change. Defaults to the working-tree view; the `--base`
@@ -520,7 +530,7 @@ export function buildReview(
     opts.boundary?.additions ??
     opts.addedFiles ??
     (tracked.ok ? changes.filter((f) => !new Set(tracked.paths).has(f)) : []);
-  const plan = opts.boundary ? planForBoundary(root, opts.boundary) : detectApprovedPlanScope(root);
+  const plan = opts.boundary ? planForBoundary(root, opts.boundary, opts) : detectApprovedPlanScope(root, opts);
   const readSelected = opts.boundary
     ? (path: string): string | null => readChangeSetFile(root, opts.boundary as ChangeSet, path)
     : undefined;
@@ -650,6 +660,12 @@ export function buildReview(
       readSelected,
     ),
   });
+  const boundApprovalRequired = opts.boundary
+    ? parseApprovalPolicy(readChangeSetFile(root, opts.boundary, ".codument-meta.json"))
+    : readApprovalPolicy(root);
+  if (boundApprovalRequired && state.changedSources.length > 0 && !plan?.approvalDigest) {
+    throw new GateError("A governed change requires a revision-bound approved plan; record human approval with codument work approve and stage the plan plus docs/.approvals.json.", "git-failed");
+  }
   const testImpact = opts.boundary
     ? computeTestImpact({
         changedPaths: opts.boundary.changes.map((change) => change.path),
@@ -850,6 +866,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       );
       exclusion = exclusionForBoundary(root, boundary);
       report = buildReview(root, undefined, "HEAD", undefined, {
+        plan: options.plan,
+        planId: options.planId,
         requireIndependentAck: options.requireIndependentAck === true,
         exclusion,
         boundary,
@@ -877,6 +895,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       const baseRef = resolveBase(root, options.base, "HEAD").sha;
       const changes = worktreeChangesSince(root, options.base);
       report = buildReview(root, changes, baseRef, worktreeDeletionsSince(root, options.base), {
+        plan: options.plan,
+        planId: options.planId,
         requireIndependentAck: options.requireIndependentAck === true,
         exclusion,
         renames: worktreeRenamesSince(root, options.base),
@@ -892,6 +912,8 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       // base is a stable sha, never the literal "HEAD" — the step-5 writer records
       // exactly this value, and a fresh-repo/first-commit boundary cannot flip it.
       report = buildReview(root, undefined, "HEAD", undefined, {
+        plan: options.plan,
+        planId: options.planId,
         requireIndependentAck: options.requireIndependentAck === true,
         exclusion,
       });
@@ -1079,7 +1101,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       realChangeSet,
       provisional.findings,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact),
+      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan),
       focusedBinding?.fingerprint,
     );
     // `files` rides along as scoping information for the NEXT `--bundle` (what moved
@@ -1102,7 +1124,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       effectiveBase,
       realChangeSet,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact),
+      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan),
       focusedBinding,
     ).length;
     if (onRecord > 1) {
@@ -1241,7 +1263,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       effectiveBase,
       realChangeSet,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact),
+      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan),
       focusedBinding,
     );
     // A missing key and an explicit null both mean the same thing to a reader: this
@@ -1671,6 +1693,7 @@ export function currentOracle(
   state: ChangeState,
   boundary?: ChangeSet,
   testImpact?: TestImpact,
+  plan?: ApprovedPlan | null,
 ): string {
   const registry = boundary
     ? registryForBoundary(root, boundary)
@@ -1678,10 +1701,8 @@ export function currentOracle(
   const readText = boundary
     ? (path: string): string | null => readChangeSetFile(root, boundary, path)
     : undefined;
-  return oracleFingerprint(
-    gatherReviewBundle(root, base, state, registry, null, null, boundary, readText, testImpact)
-      .features,
-  );
+  const bundle = gatherReviewBundle(root, base, state, registry, plan ?? null, null, boundary, readText, testImpact);
+  return oracleFingerprint(bundle.features, bundle.plan);
 }
 
 // The full real-change set the adversarial-review gate scopes to: changed sources +

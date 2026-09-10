@@ -13,6 +13,8 @@ A delivery-plan checklist normally lives only in a markdown file you have to ope
 
 ## Design approach
 
+Approval is also checked against its recorded contract when present or required by project policy. Legacy status-only approval is identified explicitly. An identified section can be selected consistently across checklist, scope and ownership projections; progress notes never become executable work.
+
 The plan doc is authoritative and the projections are strictly one-way. Completion lives in the checkbox; the panel and the tape are read-only mirrors re-derived at each step start, never a place where progress is recorded. This is the whole point: a checklist that can be edited from two places becomes two sources of truth that drift, the exact failure the change-control discipline exists to prevent. So no path writes step completion back from a panel.
 
 The work splits into a pure core and thin side-effecting seams, because the checkbox-and-status logic is the part worth testing exhaustively on plain strings. Pure parsing turns plan markdown into an ordered step list with a status and an active (first-unchecked) step; small filesystem discovery finds plans on disk; a single emit seam logs to the event tape. The step ordinal is positional, assigned by checklist order, not lifted from any "Step N" label in the text, so human-authored labels can be anything without throwing off the mirror.
@@ -30,6 +32,8 @@ plans must declare approval within the selected one. Examples and quoted materia
 authorization nor work to perform.
 
 ## Invariants & boundaries
+
+- Recorded approval must match the selected plan revision before execution is emitted. Progress and checkpoints preserve approval while contract changes stale it. *(tests: `plan-approval.test.ts`, `work.test.ts`)*
 
 - Discovery and scope verification share supported plan locations and section selection. Unsupported
   or conflicting approval is named with its document and the canonical declaration, which may be

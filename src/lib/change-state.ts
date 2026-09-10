@@ -19,6 +19,8 @@ import { type AnchorChange, fileContentTransition, isPreciseFile } from "./finge
 import { movesOnly, type RenamePair } from "./git.js";
 import { resolveOwner, splitAnchorId } from "./ownership.js";
 import { activeStep, extractStatus, isApproved, isPlanPath, parseDeliveryPlan, parsePlanScope, readPlanDocuments } from "./plan-steps.js";
+import { assessPlanApproval, readApprovalStore, readApprovalPolicy, type ApprovalStore } from "./plan-approval.js";
+import { selectedPlanId, normalizePlanPath } from "./plan-steps.js";
 import { ConfigValueError } from "./state-io.js";
 import {
   allSources,
@@ -1261,32 +1263,42 @@ export interface ApprovedPlan {
   scope: string[];
   /** The uniquely selected plan. Multiple candidates are refused before analysis. */
   contenders: string[];
+  planId?: string;
+  approvalDigest?: string;
 }
 
 /** Pure approved-plan projection over an explicit document snapshot. */
 export function detectApprovedPlanScopeFromDocuments(
   documents: readonly { path: string; content: string }[],
+  options?: { approvals: ApprovalStore; requireBoundApproval: boolean; planId?: string; planPath?: string },
 ): ApprovedPlan | null {
-  const candidates: Array<{ plan: string; scope: string[] }> = [];
+  const candidates: Array<{ plan: string; scope: string[]; planId?: string; approvalDigest?: string }> = [];
   for (const { path, content } of [...documents].sort((a, b) =>
     a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
   )) {
-    if (!isPlanPath(path) || !isApproved(extractStatus(content))) continue;
-    const steps = parseDeliveryPlan(content);
+    if (options?.planPath && options.planPath !== path) continue;
+    const id = options?.planId;
+    if (!isPlanPath(path) || !isApproved(extractStatus(content, id))) continue;
+    const steps = parseDeliveryPlan(content, id);
     if (steps.length > 0 && !activeStep(steps)) continue;
-    const scope = parsePlanScope(content);
-    if (steps.length || scope.length) candidates.push({ plan: path, scope });
+    const scope = parsePlanScope(content, id);
+    if (steps.length || scope.length) {
+      const approval = options ? assessPlanApproval(path, content, options.approvals, options.requireBoundApproval, id) : null;
+      if (approval && !approval.allowed) throw new ConfigValueError(path, "approval", approval.reason);
+      candidates.push({ plan: path, scope, ...(approval?.state === "bound" ? { planId: selectedPlanId(content, id)!, approvalDigest: approval.digest! } : {}) });
+    }
   }
   if (candidates.length > 1) {
     throw new ConfigValueError("docs/features, docs/concepts, docs/plans", "approved plan",
       `multiple approved plans (${candidates.map((candidate) => candidate.plan).join(", ")}) — no scope selected; keep exactly one eligible plan for scope verification`);
   }
   const selected = candidates[0];
+  if (options?.planPath && !selected) throw new ConfigValueError(options.planPath, "plan selection", "selected plan was not found or is not approved with unfinished work");
   return selected?.scope.length ? { ...selected, contenders: [selected.plan] } : null;
 }
 
-export function detectApprovedPlanScope(root: string): ApprovedPlan | null {
-  return detectApprovedPlanScopeFromDocuments(readPlanDocuments(root));
+export function detectApprovedPlanScope(root: string, selection?: { plan?: string; planId?: string }): ApprovedPlan | null {
+  return detectApprovedPlanScopeFromDocuments(readPlanDocuments(root), { approvals: readApprovalStore(root), requireBoundApproval: readApprovalPolicy(root), planPath: selection?.plan ? normalizePlanPath(root, selection.plan) : undefined, planId: selection?.planId });
 }
 
 // Re-export so callers can pass a typed entry list if needed.

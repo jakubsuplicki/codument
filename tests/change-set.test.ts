@@ -67,6 +67,14 @@ describe("resolveChangeSet", () => {
     );
     assert.equal(verificationReceiptCovers(receipt, boundary, "1.2.4"), false);
     assert.equal(parseVerificationReceipt({ version: 1, codumentVersion: "1.2.3" }), null);
+    const planApproval = { path: "docs/features/alpha.md", planId: "alpha", digest: "a".repeat(64) };
+    const boundReceipt = parseVerificationReceipt({ ...receipt, planApproval });
+    assert.ok(boundReceipt);
+    assert.equal(verificationReceiptCovers(boundReceipt, boundary, "1.2.3", planApproval), true);
+    assert.equal(verificationReceiptCovers(boundReceipt, boundary, "1.2.3", { ...planApproval, planId: "beta" }), false);
+    assert.equal(verificationReceiptCovers(boundReceipt, boundary, "1.2.3", { ...planApproval, digest: "b".repeat(64) }), false);
+    assert.equal(verificationReceiptCovers(boundReceipt, boundary, "1.2.3"), false);
+    assert.equal(parseVerificationReceipt({ ...receipt, planApproval: { ...planApproval, digest: "invalid" } }), null);
 
     await put("src/a.ts", "export const a = 3;\n");
     git(["add", "src/a.ts"]);

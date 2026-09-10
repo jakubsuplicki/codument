@@ -1,5 +1,5 @@
 import { globToRegExp } from "./analyze.js";
-import { selectedPlanMarkdown } from "./plan-steps.js";
+import { selectedPlanMarkdown, selectedFeatureMapLines } from "./plan-steps.js";
 
 // The Feature Map is the plan-doc artifact that decides decomposition: a fenced
 // ```feature-map``` block whose rows route source paths to the feature that owns
@@ -54,14 +54,6 @@ export interface RouteResult {
 const FENCE_OPEN = /^\s*```feature-map\s*$/;
 const FENCE_CLOSE = /^\s*```\s*$/;
 
-/** Index of the last ```feature-map``` fence, or 0 when there is none (so the
- *  caller's scan starts at the top and finds nothing, same as before). */
-function lastFeatureMapFenceIndex(lines: string[]): number {
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (FENCE_OPEN.test(lines[i])) return i;
-  }
-  return 0;
-}
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SECONDARY = /\[secondary:\s*([^\]]*)\]\s*$/i;
 const FEATURE_MAP_HEADING = /^#{1,6}\s+.*feature\s+map\b/i;
@@ -71,8 +63,8 @@ const FEATURE_MAP_HEADING = /^#{1,6}\s+.*feature\s+map\b/i;
  *  "the author wrote a Feature Map section but not a parseable `feature-map`
  *  fenced block" (a table or prose) — the latter silently routes nothing and
  *  must be flagged, not treated as absent. */
-export function hasFeatureMapHeading(markdown: string): boolean {
-  return selectedPlanMarkdown(markdown).split(/\r?\n/).some((line) => FEATURE_MAP_HEADING.test(line));
+export function hasFeatureMapHeading(markdown: string, planId?: string): boolean {
+  return selectedPlanMarkdown(markdown, planId).split(/\r?\n/).some((line) => FEATURE_MAP_HEADING.test(line));
 }
 
 function toPosix(path: string): string {
@@ -93,18 +85,17 @@ function literalPrefixLength(glob: string): number {
 /** Parse the first ```feature-map``` block in `markdown`. No block → no rows and
  *  no errors (a missing map is not an error; the routing rule's no-map branch
  *  handles it). Malformed rows are collected, not thrown. */
-export function parseFeatureMap(markdown: string): FeatureMap {
-  const lines = selectedPlanMarkdown(markdown).split(/\r?\n/);
+export function parseFeatureMap(markdown: string, planId?: string): FeatureMap {
+  const lines = selectedFeatureMapLines(markdown, planId);
   const rows: FeatureMapRow[] = [];
   const errors: FeatureMapError[] = [];
   const seenExact = new Set<string>();
 
   // Use the selected plan's region. Within map-only / standalone documents,
   // preserve the last-block convention without borrowing a later plan's map.
-  const start = lastFeatureMapFenceIndex(lines);
 
   let inBlock = false;
-  for (let i = start; i < lines.length; i++) {
+  for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (!inBlock) {
       if (FENCE_OPEN.test(line)) inBlock = true;

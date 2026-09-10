@@ -2,7 +2,7 @@
 title: Core library
 status: current
 type: concept
-last_reviewed: 2026-09-03
+last_reviewed: 2026-09-10
 ---
 
 # Core library
@@ -12,6 +12,8 @@ last_reviewed: 2026-09-03
 The shared foundation layer every command and hook is built on. Nothing here orchestrates a workflow; it provides the deterministic primitives the workflow is made of: registry I/O, the coverage and lint analyzer, the change-control gate engine, project detection, file scaffolding, the install and merge machinery, token accounting, and the watch verdict. The commands stay thin because the reusable logic lives here. This umbrella covers what makes the layer coherent and what each file is for. The behavior of a file that belongs to a feature is documented in that feature's doc, not restated here.
 
 ## Design approach
+
+Tracked approval and runtime control records refuse oversized or unreadable state. Mutating control records use an exclusive writer lock with an explicit revision check, so conflicting writers receive a recovery action instead of overwriting each other.
 
 A few principles hold across every module, and they are what make this a layer rather than a folder of helpers.
 
@@ -26,6 +28,8 @@ Each module's behavior, invariants, and decisions live where it is owned. This d
 The scaffold installs one boundary discipline across hosts: stage the current delivery slice before review, verify that staged set once, and commit it unchanged. Generated instructions and shipped skill copies carry the same contract so an update cannot restore the older whole-worktree loop.
 
 ## Invariants & boundaries
+
+- Approval writers refuse an existing lock or stale revision and preserve the last valid record. *(test: `plan-approval.test.ts`)*
 
 - Every scored or gated path is a pure function of repo state with no wall clock — identical inputs yield identical output. *(tests: `analyze.test.ts` determinism; `change-state.test.ts` "is deterministic")*
 - One analyzer feeds several presentations, and each presentation is a place a finding can quietly go missing. The gate verdict, the live monitor's frame, the shareable report, and the machine projections all read the same computed change state, so they cannot disagree about the FACTS — but a projection that never learned about a field disagrees about the CONCLUSION, and it does so silently, because dropping something is what a summary does. Adding a blocking finding to the analyzer is therefore not the whole change: it is only done when every presentation carries it. *(boundary — enforced per surface in the owning feature docs, most sharply in [[change-control-gate]])*

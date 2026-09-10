@@ -33,6 +33,7 @@ import { ensureDir } from "../lib/scaffold.js";
 interface MapCliOptions {
   file?: string;
   plan?: string;
+  planId?: string;
   json?: boolean;
   root?: string;
   dir?: string;
@@ -48,7 +49,7 @@ interface ResolvedMap {
   map: FeatureMap;
 }
 
-function resolveMap(root: string, planOpt?: string): ResolvedMap | { error: string } {
+function resolveMap(root: string, planOpt?: string, planId?: string): ResolvedMap | { error: string } {
   let planPath: string;
   if (planOpt) {
     planPath = isAbsolute(planOpt) ? planOpt : join(root, planOpt);
@@ -63,7 +64,7 @@ function resolveMap(root: string, planOpt?: string): ResolvedMap | { error: stri
   } catch {
     return { error: `could not read plan doc: ${planOpt ?? planPath}` };
   }
-  return { planPath, markdown, map: parseFeatureMap(markdown) };
+  return { planPath, markdown, map: parseFeatureMap(markdown, planId) };
 }
 
 // ── Materialization (the testable writer core) ──────────────────────────────
@@ -358,7 +359,7 @@ export function mapRoute(options: MapCliOptions = {}): void {
     process.exitCode = 1;
     return;
   }
-  const resolved = resolveMap(root, options.plan);
+  const resolved = resolveMap(root, options.plan, options.planId);
   if ("error" in resolved) {
     console.log(pc.yellow("codument map route: " + resolved.error));
     process.exitCode = 1;
@@ -377,7 +378,7 @@ export function mapRoute(options: MapCliOptions = {}): void {
 
 export function mapCheck(options: MapCliOptions = {}): void {
   const root = options.root ?? options.dir ?? process.cwd();
-  const resolved = resolveMap(root, options.plan);
+  const resolved = resolveMap(root, options.plan, options.planId);
   if ("error" in resolved) {
     console.log(pc.yellow("codument map check: " + resolved.error));
     process.exitCode = 1;
@@ -393,7 +394,7 @@ export function mapCheck(options: MapCliOptions = {}): void {
   // with no Feature Map at all: the former silently routes nothing, so the plan
   // adversary's proportionality skip would wrongly bypass it. Flag it loudly.
   const malformedMap =
-    map.rows.length === 0 && errors.length === 0 && hasFeatureMapHeading(resolved.markdown);
+    map.rows.length === 0 && errors.length === 0 && hasFeatureMapHeading(resolved.markdown, options.planId);
   const noBlockMessage = malformedMap
     ? "a `Feature Map` heading is present but no parseable ```feature-map``` block was found — write the routing table as a fenced ```feature-map``` block (`path | feature | type | responsibility`), not a table or prose"
     : "no `feature-map` block in the plan";
@@ -493,7 +494,7 @@ export function mapMaterialize(options: MapCliOptions = {}): void {
     return;
   }
 
-  const resolved = resolveMap(root, options.plan);
+  const resolved = resolveMap(root, options.plan, options.planId);
   if ("error" in resolved) {
     console.log(pc.yellow("codument map materialize: " + resolved.error));
     // The refusal is a signpost, not a dead end: a shipped plan has had its Map

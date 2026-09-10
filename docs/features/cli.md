@@ -2,7 +2,7 @@
 title: CLI
 status: current
 type: feature
-last_reviewed: 2026-09-03
+last_reviewed: 2026-09-10
 ---
 
 # CLI
@@ -12,6 +12,8 @@ last_reviewed: 2026-09-03
 This is the front door: the `codument` binary a user types into a terminal. It owns no logic of its own. It declares the command surface, parses argv, and hands each invocation straight to the handler that does the work. Open it when you want the authoritative list of what the tool exposes and which flags each command takes, or when you are adding or renaming a command.
 
 ## Design approach
+
+The work approval command records a plan revision after human approval and tells callers which tracked artifacts must be staged together. Plan-aware commands accept a section identity, so a document containing several plans need not rely on an implicit section guess.
 
 The entry point is deliberately thin: a declarative table of commands mapped to handlers, with parsing delegated to a standard argument parser. Every command's behaviour lives in its own handler under [[commands]], not here, so this file stays a wiring manifest rather than a place logic accretes. That keeps each command independently testable through its own handler and keeps the surface readable as a single glance at "what can this tool do."
 
@@ -37,6 +39,8 @@ A retired flag stays registered, and its help text says it is retired. Deleting 
 One command is a signpost, not an action: `run` (aliased `autopilot`) exists only to explain that codument does not run your coding agent. The CLI's whole remit is setup and deterministic checks; the delivery loop lives in the agent's instructions, so the binary's job is to redirect rather than to execute, and that boundary is stated in the command's own output. Since an approved plan runs on its own, the signpost has no trigger left to hand out — what it points at instead is the boundary itself and the way to slow the loop down, which keeps the command honest rather than vestigial.
 
 ## Invariants & boundaries
+
+- Approval recording is explicit, stale plans cannot emit execution, and unstaged rerecording cannot clear stale staged approval. *(test: `work.test.ts`)*
 
 - The version the binary reports is read from the package manifest at runtime, so it cannot diverge from the published package version. *(untested)*
 - **A command's help text is a routing surface, and answers to the same rule as the report.** Help is where a reader who is already stuck looks first, so an option described in terms the tool no longer honours costs more than silence: they compose the command it taught them and are refused. `ack`'s help therefore leads with the fact that most changes never need it — a move the parser proves left the contract alone is reported and never blocks — and names the file grain as the ordinary route, with the per-symbol form reserved for a move on an adapter that reports no signature to compare. This was found by auditing the release rather than by a test: prose in a `.description()` string is invisible to the gate that keeps every other route honest. *(untested at this boundary — the grains themselves are pinned by `remedies.test.ts` and the refusals by `ack.test.ts`)*

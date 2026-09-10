@@ -13,6 +13,8 @@ This is the safety check that catches a doc going stale the moment the code it d
 
 ## Design approach
 
+Projects may require approval bound to the selected plan's recorded contract. The gate reads both approval and scope from its selected snapshot, so a working-tree recording cannot authorize a staged change. A governed change without an eligible bound plan is unavailable under that policy; legacy projects retain an explicit migration path.
+
 The gate is split into two parts that must not be confused: a **deterministic enforcer** and an **optional LLM/agent assist** layered on top.
 
 **The enforcer is deterministic, LLM-free forever, and CI-reproducible.** It proves one thing structurally: a documented symbol *moved* and its owning doc did *not*. It never asks whether prose is true. We detect movement by **structural symbol comparison** across two git refs, fingerprinting each exported declaration's token stream. Two alternatives were rejected. **Name-matching** (does the doc mention the symbol's name?) over-fires on renames, default exports whose name never appears in prose, and symbols named like common words, so it can never be the verdict. **Review-by-date** (a freshness timer or a `last_updated` field) is gamed by bumping a date or touching a blank line and is blind to a same-day rewrite, so the clock is excluded from the verdict entirely.
@@ -41,6 +43,10 @@ short verdict and the diagnostic `review` surface cannot silently disagree about
 **Every parser on the verdict path is bundled, never ambient.** The TypeScript engine rides the pinned TS compiler the package itself installs; languages beyond it ride tree-sitter grammars compiled to WASM, shipped inside the package and loaded through a pinned runtime, so the parse is a pure function of content bytes and package version — never of whatever toolchain the machine happens to have. The substrate is lazy (a repo that never needs a grammar never initializes WASM) and fail-loud (a missing or corrupt grammar binary raises, it never silently degrades a precise language to a coarse whole-file verdict); which files are precise, coarse, or unevaluable remains each adapter's decision.
 
 ## Invariants & boundaries
+
+- Explicit plan paths use repository-relative native path normalization. An unresolved explicit selection is a refusal, never permission to drop scope diagnostics. *(test: `work.test.ts`)*
+
+- Material scope changes stale recorded approval, and missing or unstaged approval cannot authorize a governed staged change when bound approval is required. *(test: `work.test.ts`)*
 
 - **The verdict is a pure function of `(base, head, codument version, algoStamp)`** and reproducible byte-for-byte across runs, machines, line-ending and BOM differences, and Node versions. No `now()`/clock value enters it. The stamp embeds the exact TS version, the algo version, and — once any adapter bundles a grammar — a sorted digest of the bundled grammar set, so a grammar upgrade is an algo-visible event exactly like a TS bump (and TS-only installs cross no stamp shift before the first adapter ships). *(test: two-ref.test.ts — algoStamp determinism, no grammar segment while none is bundled, a simulated grammar bump moves the stamp order-independently; byteNormalize folds CRLF/BOM; fingerprint.test.ts asserts cosmetic-only churn is `unchanged`)*
 - **The fingerprint is invariant to mechanism-only churn but catches real change.** Reformatting, comments, declaration reordering, CRLF/LF, and a leading BOM do not move an anchor; a body edit, an intra-string-literal change, or `0x10` vs `16` does. *(test: ts-adapter.test.ts — token-stream invariance, order-independent identity, the `0x10`/`16` and string-literal cases)*

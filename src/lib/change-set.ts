@@ -75,6 +75,7 @@ export interface VerificationReceipt {
   version: 1;
   codumentVersion: string;
   boundary: ChangeSetBinding;
+  planApproval?: { path: string; planId: string | null; digest: string | null } | null;
 }
 
 export function changeSetBinding(set: ChangeSet): ChangeSetBinding {
@@ -135,13 +136,20 @@ export function parseVerificationReceipt(value: unknown): VerificationReceipt | 
   ) {
     return null;
   }
-  return { version: 1, codumentVersion: candidate.codumentVersion, boundary };
+  let planApproval: VerificationReceipt["planApproval"];
+  if (candidate.planApproval !== undefined && candidate.planApproval !== null) {
+    const plan = candidate.planApproval as Record<string, unknown>;
+    if (typeof plan !== "object" || typeof plan.path !== "string" || !(plan.planId === null || typeof plan.planId === "string") || !(plan.digest === null || (typeof plan.digest === "string" && /^[a-f0-9]{64}$/.test(plan.digest)))) return null;
+    planApproval = { path: plan.path, planId: plan.planId, digest: plan.digest };
+  } else if (candidate.planApproval === null) planApproval = null;
+  return { version: 1, codumentVersion: candidate.codumentVersion, boundary, ...(planApproval !== undefined ? { planApproval } : {}) };
 }
 
 export function verificationReceiptCovers(
   receipt: VerificationReceipt,
   boundary: ChangeSetBinding,
   codumentVersion: string,
+  planApproval?: VerificationReceipt["planApproval"],
 ): boolean {
   const normalizeStagedMode = (binding: ChangeSetBinding): ChangeSetBinding => ({
     ...binding,
@@ -149,6 +157,7 @@ export function verificationReceiptCovers(
   });
   return (
     receipt.codumentVersion === codumentVersion &&
+    JSON.stringify(receipt.planApproval ?? null) === JSON.stringify(planApproval ?? null) &&
     sameChangeSetBinding(normalizeStagedMode(receipt.boundary), normalizeStagedMode(boundary))
   );
 }

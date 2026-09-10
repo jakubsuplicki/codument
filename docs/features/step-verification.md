@@ -2,7 +2,7 @@
 title: Focused step verification
 status: current
 type: feature
-last_reviewed: 2026-09-03
+last_reviewed: 2026-09-10
 ---
 
 # Focused step verification
@@ -14,6 +14,8 @@ developer or agent stages one delivery slice and runs one command; unrelated uns
 visible without blocking that slice.
 
 ## Design approach
+
+A reusable verification receipt also binds the selected plan identity and validated approval revision. Switching the selected plan cannot reuse a pass for other work; selection is resolved before receipt reuse.
 
 One change-set projection defines the boundary for every consumer. Locally it resolves from the Git
 index, in CI from the merge-base range, and for focused inspection from an explicit subset of staged
@@ -39,6 +41,8 @@ Test changes participate in impact and review invalidation but never wake a doc 
 ownership.
 
 ## Invariants & boundaries
+
+- Receipt reuse requires the same selected approval identity and digest as well as the complete staged boundary and tool version. *(test: `change-set.test.ts`)*
 
 - The local authoritative verdict covers exactly the complete staged set; an explicit subset is
   diagnostic until it equals that set and cannot satisfy a strict gate. *(tests:

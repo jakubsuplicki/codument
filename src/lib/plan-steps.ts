@@ -1,6 +1,8 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { join, relative, isAbsolute } from "node:path";
+import { join, relative, isAbsolute, resolve, sep } from "node:path";
 import { appendEvent, readRecentEvents } from "./events.js";
+import { assessPlanApproval, readApprovalPolicy, readApprovalStore, type ApprovalAssessment } from "./plan-approval.js";
+import { ConfigValueError } from "./state-io.js";
 
 // Bridge between a Codument plan's durable checklist and the agent's live view.
 // A plan doc owns the truth: the `## Delivery Plan` (or `Definition of Done`)
@@ -38,6 +40,8 @@ export interface ActivePlan {
   steps: PlanStep[];
   /** First unchecked step — the one a `work-step` run is implementing. */
   active: PlanStep | null;
+  planId?: string | null;
+  approval?: ApprovalAssessment;
 }
 
 // ── Pure parsing ─────────────────────────────────────────────────────────
@@ -121,9 +125,19 @@ function sectionSteps(lines: string[], match: RegExp): PlanSection[] {
   return sections;
 }
 
+function checkpointMask(lines: string[]): boolean[] {
+  let depth: number | null = null;
+  return lines.map((line) => {
+    const heading = HEADING.exec(line);
+    if (heading && depth !== null && heading[1].length <= depth) depth = null;
+    if (heading && /^resume checkpoint\s*$/i.test(heading[2])) depth = heading[1].length;
+    return depth !== null;
+  });
+}
+
 /** One selection for approval and work. A standalone plan may use document
  *  metadata; an embedded plan's own declaration takes precedence. */
-function planParts(markdown: string) {
+function planParts(markdown: string, planId?: string) {
   const raw = markdown.replace(/^\uFEFF/, "");
   const frontmatter = /^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(raw);
   const body = frontmatter
@@ -131,7 +145,9 @@ function planParts(markdown: string) {
     : /^---[ \t]*\r?\n/.test(raw)
       ? ""
       : raw;
-  const lines = instructionLines(body);
+  const parsedLines = instructionLines(body);
+  const checkpoints = checkpointMask(parsedLines);
+  const lines = parsedLines.map((line, index) => checkpoints[index] ? "" : line);
   const delivery = sectionSteps(lines, /\bdelivery plan\b/i);
   const done = sectionSteps(lines, /\bdefinition of done\b/i);
   const candidates = delivery.some((section) => section.steps.length)
@@ -139,10 +155,17 @@ function planParts(markdown: string) {
     : done.length
       ? done
       : delivery;
-  const selected =
+  let selected =
     candidates.find((section) => section.steps.some((step) => !step.done)) ??
     [...candidates].reverse().find((section) => section.steps.length) ??
     candidates[candidates.length - 1];
+  if (planId !== undefined) {
+    const matches = candidates.filter((section) => sectionId(lines, section) === planId);
+    if (matches.length !== 1) throw new ConfigValueError("plan", "plan-id", `expected one section named ${planId}, found ${matches.length}`);
+    selected = matches[0];
+  } else if (candidates.filter((section) => section.steps.some((step) => !step.done) && sectionId(lines, section)).length > 1) {
+    throw new ConfigValueError("plan", "selection", "multiple identified plans have unfinished work; pass --plan-id <id>");
+  }
   // Either supported heading kind can introduce separate work. Nested headings
   // stay inside their containing plan, while empty sibling plans still count.
   const sections = sectionSteps(lines, /\b(?:delivery plan|definition of done)\b/i);
@@ -164,6 +187,77 @@ function planParts(markdown: string) {
   return { lines, sections, selected, documentLines, bodyOffset };
 }
 
+function sectionId(lines: string[], section: PlanSection): string | null {
+  const declarations = lines.slice(section.start + 1, section.end).flatMap((line) => {
+    const match = /^ {0,3}Plan-ID:[ \t]*(.*?)[ \t]*$/i.exec(line);
+    return match ? [match[1]] : [];
+  });
+  if (declarations.length > 1 || declarations.some((id) => !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(id))) {
+    throw new ConfigValueError("plan", "Plan-ID", "use one identifier of letters, digits, underscores or hyphens");
+  }
+  return declarations[0] ?? null;
+}
+
+export function selectedPlanId(markdown: string, planId?: string): string | null {
+  const { lines, selected } = planParts(markdown, planId);
+  return selected ? sectionId(lines, selected) : null;
+}
+
+/** Record identity only inside one unambiguous selected section. */
+export function identifyPlan(markdown: string, id: string, planId?: string): string {
+  const { lines, selected, sections, bodyOffset } = planParts(markdown, planId);
+  if (!selected || (!planId && sections.filter((section) => section.steps.some((step) => !step.done)).length > 1)) {
+    throw new ConfigValueError("plan", "selection", "name one section with Plan-ID and --plan-id before recording approval");
+  }
+  const existing = sectionId(lines, selected);
+  if (existing) return markdown;
+  const raw = markdown.replace(/\r\n/g, "\n").split("\n");
+  raw.splice(selected.start + bodyOffset + 1, 0, `Plan-ID: ${id}`);
+  return raw.join("\n");
+}
+
+/** Retain all selected intent, including examples, except explicit progress fields. */
+export function planContractMarkdown(markdown: string, planId?: string): string {
+  const { lines, selected, bodyOffset, sections } = planParts(markdown, planId);
+  if (!selected) throw new ConfigValueError("plan", "contract", "no delivery plan section found");
+  const localStatus = statusDeclarations(lines.slice(selected.start + 1, selected.end)).length > 0;
+  const raw = markdown.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").split("\n");
+  const start = localStatus || sections.length > 1 ? selected.start + bodyOffset : 0;
+  const end = localStatus || sections.length > 1 ? selected.end + bodyOffset : raw.length;
+  const instructions = instructionLines(raw.join("\n"));
+  const result: string[] = [];
+  let checkpointDepth: number | null = null;
+  for (let i = start; i < end; i++) {
+    const line = instructions[i];
+    const heading = HEADING.exec(line);
+    if (heading && checkpointDepth !== null && heading[1].length <= checkpointDepth) checkpointDepth = null;
+    if (heading && /^resume checkpoint\s*$/i.test(heading[2])) checkpointDepth = heading[1].length;
+    if (checkpointDepth !== null) continue;
+    if (/^ {0,3}(?:[*_]*status|Plan-ID):/i.test(line)) continue;
+    result.push(CHECKBOX.test(line) ? raw[i].replace(/\[[ xX]\]/, "[ ]") : raw[i]);
+  }
+  const map = selectedFeatureMapLines(markdown, planId);
+  if (map.some((line, index) => line.length > 0 && (index < start || index >= end))) {
+    result.push("", map.join("\n").replace(/^\n+|\n+$/g, ""));
+  }
+  return result.join("\n").replace(/^\n+|\n+$/g, "");
+}
+
+/** The exact consumed Map, keeping source positions for diagnostics and approval. */
+export function selectedFeatureMapLines(markdown: string, planId?: string): string[] {
+  const lines = selectedPlanMarkdown(markdown, planId).split(/\r?\n/);
+  let start = -1;
+  for (let index = lines.length - 1; index >= 0; index--) {
+    if (/^\s*```feature-map\s*$/.test(lines[index])) { start = index; break; }
+  }
+  if (start < 0) return lines.map(() => "");
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index++) {
+    if (/^\s*```\s*$/.test(lines[index])) { end = index + 1; break; }
+  }
+  return lines.map((line, index) => index >= start && index < end ? line : "");
+}
+
 function statusDeclarations(lines: string[]): string[] {
   return lines.flatMap((line) => {
     const match = /^[ \t]{0,3}[*_]*status:\s*(.*?)\s*$/i.exec(line);
@@ -173,17 +267,17 @@ function statusDeclarations(lines: string[]): string[] {
 
 /** The plan's checklist: the active `Delivery Plan` section if present, else
  *  `Definition of Done`. Checkboxes outside the chosen section are ignored. */
-export function parseDeliveryPlan(markdown: string): PlanStep[] {
-  return planParts(markdown).selected?.steps ?? [];
+export function parseDeliveryPlan(markdown: string, planId?: string): PlanStep[] {
+  return planParts(markdown, planId).selected?.steps ?? [];
 }
 
 /** Bound plan-owned payloads to the selected section without changing source
  *  line numbers. A standalone document retains its sibling-section convention. */
-export function selectedPlanMarkdown(markdown: string): string {
-  const { selected, sections, bodyOffset } = planParts(markdown);
-  if (!selected || sections.length <= 1) return markdown;
+export function selectedPlanMarkdown(markdown: string, planId?: string): string {
+  const { selected, sections, bodyOffset } = planParts(markdown, planId);
+  const checkpoints = checkpointMask(instructionLines(markdown));
   return markdown.split(/\r?\n/).map((line, index) =>
-    index >= selected.start + bodyOffset && index < selected.end + bodyOffset ? line : "",
+    !checkpoints[index] && (!selected || sections.length <= 1 || (index >= selected.start + bodyOffset && index < selected.end + bodyOffset)) ? line : "",
   ).join("\n");
 }
 
@@ -195,8 +289,8 @@ export function activeStep(steps: PlanStep[]): PlanStep | null {
 /** Status belonging to the selected plan, never another section. A lone plan
  *  without local status retains the legacy document metadata convention.
  *  Repeated declarations are ambiguous even when their text agrees. */
-export function extractStatus(markdown: string): string | null {
-  const { lines, sections, selected, documentLines } = planParts(markdown);
+export function extractStatus(markdown: string, planId?: string): string | null {
+  const { lines, sections, selected, documentLines } = planParts(markdown, planId);
   let declarations: string[] = [];
   if (selected) {
     const local = lines.slice(selected.start + 1, selected.end);
@@ -212,8 +306,8 @@ export function extractStatus(markdown: string): string | null {
 
 /** Scope follows the selected checklist. Only an unambiguous standalone plan
  *  may fall back to a sibling document-level Scope section. */
-export function parsePlanScope(markdown: string): string[] {
-  const { lines, sections, selected } = planParts(markdown);
+export function parsePlanScope(markdown: string, planId?: string): string[] {
+  const { lines, sections, selected } = planParts(markdown, planId);
   const readScope = (source: string[], siblingOnly = false): string[] | null => {
     const paths = new Set<string>();
     let scopeDepth: number | null = null;
@@ -251,8 +345,8 @@ export function parsePlanScope(markdown: string): string[] {
  *  — the precise signal the workflow's approval gate and the autopilot
  *  precondition key off — so nothing looser than equality qualifies:
  *  "awaiting approval", "not approved", "never approved" are all not approved.
- *  This is THE approval predicate; the scope gate shares it (change-state.ts),
- *  so `steps` and `review` can never disagree about the same plan. */
+ *  This is the shared status predicate; recorded approvals additionally require
+ *  a matching contract revision on every execution and scope surface. */
 export function isApproved(status: string | null): boolean {
   return status === "approved";
 }
@@ -280,6 +374,12 @@ export function isPlanPath(path: string): boolean {
   return PLAN_DIRS.some((dir) => path.startsWith(`${dir}/`) && /^[^/]+\.md$/.test(path.slice(dir.length + 1)));
 }
 
+export function normalizePlanPath(root: string, path: string): string {
+  const rel = relative(resolve(root), resolve(root, path)).split(sep).join("/");
+  if (!isPlanPath(rel)) throw new ConfigValueError(path, "plan path", "choose a supported plan inside this repository");
+  return rel;
+}
+
 export function readPlanDocuments(root: string): Array<{ path: string; content: string }> {
   const documents: Array<{ path: string; content: string }> = [];
   for (const dir of PLAN_DIRS) {
@@ -294,30 +394,33 @@ export function readPlanDocuments(root: string): Array<{ path: string; content: 
   return documents.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 }
 
-function toActivePlan(root: string, abs: string, markdown?: string): ActivePlan | null {
+function toActivePlan(root: string, abs: string, markdown?: string, planId?: string): ActivePlan | null {
   let md: string;
   try {
     md = markdown ?? readFileSync(abs, "utf-8");
   } catch {
     return null;
   }
-  const steps = parseDeliveryPlan(md);
-  const status = extractStatus(md);
-  const rel = relative(root, abs).split("\\").join("/");
+  const steps = parseDeliveryPlan(md, planId);
+  const status = extractStatus(md, planId);
+  const rel = relative(root, abs).split(sep).join("/");
   const base = rel.split("/").pop() ?? rel;
+  const approval = assessPlanApproval(rel, md, readApprovalStore(root), readApprovalPolicy(root), planId);
   return {
     path: rel,
     planName: base.replace(/\.md$/i, ""),
     status,
-    approved: isApproved(status),
+    approved: isApproved(status) && approval.allowed,
+    approval,
+    planId: selectedPlanId(md, planId),
     steps,
     active: activeStep(steps),
   };
 }
 
 /** Read a specific plan doc (repo-relative or absolute). Null when unreadable. */
-export function loadPlan(root: string, planPath: string): ActivePlan | null {
-  return toActivePlan(root, isAbsolute(planPath) ? planPath : join(root, planPath));
+export function loadPlan(root: string, planPath: string, planId?: string): ActivePlan | null {
+  return toActivePlan(root, isAbsolute(planPath) ? planPath : join(root, planPath), undefined, planId);
 }
 
 /** Approved plans under docs/features|concepts that still have an unchecked
@@ -343,7 +446,7 @@ export function resolveActivePlan(root: string): { plan: ActivePlan } | { error:
     return { error: `multiple approved plans with unchecked steps (${approved.map((plan) => plan.path).join(", ")}) — pass --plan <path>` };
   }
   const diagnostics = candidates.map((plan) =>
-    `${plan.path}: ${plan.status === null ? "missing or conflicting approval" : `status is ${JSON.stringify(plan.status)}`}; only after human approval, use Status: approved in the selected Delivery Plan`,
+    `${plan.path}: ${plan.approval && !plan.approval.allowed ? plan.approval.reason : `${plan.status === null ? "missing or conflicting approval" : `status is ${JSON.stringify(plan.status)}`}; only after human approval, use Status: approved in the selected Delivery Plan`}`,
   );
   return { error: "no approved plan with an unchecked step under docs/features, docs/concepts or docs/plans — pass --plan <path>" + (diagnostics.length ? `\n${diagnostics.join("\n")}` : "") };
 }

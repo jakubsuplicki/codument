@@ -90,6 +90,7 @@ Adoption of an existing project is gentle: scan and map what exists, create miss
 - `skills/` — the delivery-loop skill sources `init` installs into a project.
 
 ## Delivery Plan — reliable approvals, context, and session control
+Plan-ID: a08f294d-ca64-49d8-bc21-df4408c2d660
 
 Status: approved
 
@@ -98,7 +99,7 @@ coverage and CI, knowledge quality, realistic agent evaluation, cross-agent tele
 history selection. The durable layers above describe current behavior; this block describes work
 that has not been implemented. The user approved this plan and authorized committing the earlier repair tranche and each verified implementation step.
 
-- [ ] Step 1: Bind human-approved plan scope to a recorded revision and diagnose stale or unbound approval.
+- [x] Step 1: Bind human-approved plan scope to a recorded revision and diagnose stale or unbound approval.
 - [ ] Step 2: Add explicit active, paused, blocked, superseded, ready, and completed work states.
 - [ ] Step 3: Connect work state to agent handoffs, steps, context, verification, and the live monitor.
 - [ ] Step 4: Ground planning and review in existing files, changed docs, and instruction contracts.
@@ -336,3 +337,10 @@ service; per-worktree local execution state; a privacy-limited tracked CI manife
 budget contracts; local best-effort Codex capture; explicit history selection; and twelve bounded
 fixture-agent attempts. Approval authorizes these implementation choices and local validation,
 including independent plan/step reviewers and isolated evaluation agents, with local commits now authorized. Implementation is approved; publishing remains outside scope.
+
+### Resume checkpoint
+
+Plan: docs/features/agent-delivery-workflow.md
+Completed implementation: Step 1.
+Next gate: independent review, exact staged verification, then commit.
+Resume condition: resolve review findings and obtain a passing receipt before Step 2.

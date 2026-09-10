@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, openSync, closeSync, unlinkSync, mkdirSync, statSync } from "node:fs";
+import { dirname } from "node:path";
 
 // A present-but-unparseable state or config file is a loud error, never a silent
 // default. Writers that read-modify-write a shared file (`.claude/settings.json`,
@@ -46,4 +47,28 @@ export function readJsonFileOrThrow<T>(path: string, kind: string): T | undefine
   } catch (err) {
     throw new StateFileError(path, kind, err);
   }
+}
+
+/** Do not repair an unreadable or oversized control file by replacing it. */
+export function readBoundedState(path: string, maxBytes = 2 * 1024 * 1024): string | null {
+  try {
+    if (statSync(path).size > maxBytes) throw new Error(`exceeds ${maxBytes} bytes`);
+    const raw = readFileSync(path, "utf8");
+    if (Buffer.byteLength(raw) > maxBytes) throw new Error(`exceeds ${maxBytes} bytes`);
+    return raw;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw new StateFileError(path, "control state", error);
+  }
+}
+
+/** An interrupted writer leaves a visible lock; never guess that it is safe to steal. */
+export function withStateLock<T>(path: string, operation: () => T): T {
+  mkdirSync(dirname(path), { recursive: true });
+  const lock = `${path}.lock`;
+  let fd: number;
+  try { fd = openSync(lock, "wx"); }
+  catch (error) { throw new StateFileError(lock, "exclusive writer lock; check the other writer before retrying", error); }
+  try { return operation(); }
+  finally { closeSync(fd); unlinkSync(lock); }
 }

@@ -469,9 +469,9 @@
       "doc": "docs/features/step-verification.md",
       "type": "feature",
       "primary_sources": [
+        "src/commands/verify.ts",
         "src/lib/change-set.ts",
-        "src/lib/test-impact.ts",
-        "src/commands/verify.ts"
+        "src/lib/test-impact.ts"
       ],
       "related_sources": [
         "src/cli.ts",
@@ -530,6 +530,36 @@
       "docs": [],
       "depends_on": [
         "lib"
+      ],
+      "risk": [],
+      "status": "current"
+    },
+    "plan-approval": {
+      "doc": "docs/features/plan-approval.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/lib/plan-approval.ts"
+      ],
+      "related_sources": [
+        "src/commands/work.ts"
+      ],
+      "docs": [],
+      "depends_on": [
+        "plan-step-mirroring"
+      ],
+      "risk": [],
+      "status": "current"
+    },
+    "agent-work-state": {
+      "doc": "docs/features/agent-work-state.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/commands/work.ts"
+      ],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [
+        "plan-approval"
       ],
       "risk": [],
       "status": "current"

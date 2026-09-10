@@ -2,7 +2,7 @@
 title: Context pack
 status: current
 type: feature
-last_reviewed: 2026-07-07
+last_reviewed: 2026-09-10
 ---
 
 # Context pack
@@ -17,6 +17,8 @@ gate: the gate is a cost the registry imposes when a change lands, and this is t
 registry pays back on every turn, so the agent *wants* to pull it before it starts.
 
 ## Design approach
+
+When a page contains identified plans, an explicit identity selects the same ownership map used by the approval and checklist surfaces.
 
 This is the third projection over the registry, and it deliberately looks like the other two
 (`plan-grounding` for the plan adversary, `review-bundle` for the review adversary): a pure core
@@ -52,6 +54,8 @@ never a silent truncation. Token counts are the same dependency-free `ceil(chars
 cost ledger and the benchmark use, and are labelled an estimate everywhere they surface.
 
 ## Invariants & boundaries
+
+- Explicit plan identity preserves selected-section ownership when multiple plans share a page. *(test: `plan-approval.test.ts`)*
 
 - The pack is a pure, deterministic function of the registry and the committed docs: same inputs
   yield a byte-identical pack and `--json` across runs, with entries, sources, deps, and trim labels

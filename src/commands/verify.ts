@@ -51,9 +51,12 @@ import {
   printHuman,
   type ReviewReport,
   registryForBoundary,
+  planForBoundary,
 } from "./review.js";
 
 export interface VerifyOptions {
+  plan?: string;
+  planId?: string;
   root?: string;
   details?: boolean;
   json?: boolean;
@@ -189,7 +192,7 @@ function recordReview(
     realChangeSet,
     provisional.findings,
     resolveTest,
-    currentOracle(root, base, report.state, boundary, report.testImpact),
+    currentOracle(root, base, report.state, boundary, report.testImpact, report.plan),
     binding.fingerprint,
   );
   writeReview(root, {
@@ -216,7 +219,7 @@ function assessReview(
     base,
     realChangeSet,
     resolveTest,
-    currentOracle(root, base, report.state, boundary, report.testImpact),
+    currentOracle(root, base, report.state, boundary, report.testImpact, report.plan),
     binding,
   );
   const recordedFindings = covering.length > 0 ? mergeCoveringFindings(covering) : null;
@@ -299,22 +302,22 @@ function writeWorksheet(root: string, bundle: ReviewBundle, force = false): void
   atomicWriteFileSync(path, `${JSON.stringify(worksheet, null, 2)}\n`);
 }
 
-function writeReceipt(root: string, boundary: ChangeSetBinding): void {
+function writeReceipt(root: string, boundary: ChangeSetBinding, planApproval: VerificationReceipt["planApproval"]): void {
   const path = getGitPath(root, RECEIPT_GIT_PATH);
   if (!path) throw new Error("could not resolve Git-owned verification receipt path");
   mkdirSync(dirname(path), { recursive: true });
-  const receipt: VerificationReceipt = { version: 1, codumentVersion: version, boundary };
+  const receipt: VerificationReceipt = { version: 1, codumentVersion: version, boundary, planApproval };
   const encoded = `${JSON.stringify(receipt, null, 2)}\n`;
   if (existsSync(path) && readFileSync(path, "utf8") === encoded) return;
   atomicWriteFileSync(path, encoded);
 }
 
-function reusableReceiptCovers(root: string, boundary: ChangeSetBinding): boolean {
+function reusableReceiptCovers(root: string, boundary: ChangeSetBinding, planApproval: VerificationReceipt["planApproval"]): boolean {
   const path = getGitPath(root, RECEIPT_GIT_PATH);
   if (!path || !existsSync(path)) return false;
   try {
     const receipt = parseVerificationReceipt(JSON.parse(readFileSync(path, "utf8")));
-    return receipt ? verificationReceiptCovers(receipt, boundary, version) : false;
+    return receipt ? verificationReceiptCovers(receipt, boundary, version, planApproval) : false;
   } catch {
     return false;
   }
@@ -338,7 +341,9 @@ function invocation(options: VerifyOptions, extra: string): string {
   const selected = options.paths?.length
     ? ` --paths ${options.paths.map((path) => (/\s/.test(path) ? `"${path.replace(/"/g, '""')}"` : path)).join(" ")}`
     : "";
-  return `codument verify${selected} ${extra}`;
+  const plan = options.plan ? ` --plan ${JSON.stringify(options.plan)}` : "";
+  const id = options.planId ? ` --plan-id ${JSON.stringify(options.planId)}` : "";
+  return `codument verify${selected}${plan}${id} ${extra}`;
 }
 
 function printCompact(
@@ -414,7 +419,9 @@ export async function verify(options: VerifyOptions = {}): Promise<void> {
       options.paths ? { mode: "explicit-staged", paths: options.paths } : { mode: "staged" },
     );
     const binding = changeSetBinding(boundary);
-    if (canReuseReceipt(options, boundary) && reusableReceiptCovers(root, binding)) {
+    const selectedPlan = planForBoundary(root, boundary, options);
+    const planApproval = selectedPlan ? { path: selectedPlan.plan, planId: selectedPlan.planId ?? null, digest: selectedPlan.approvalDigest ?? null } : null;
+    if (canReuseReceipt(options, boundary) && reusableReceiptCovers(root, binding, planApproval)) {
       console.log(
         `codument verify: ${pc.green("PASS")} — staged · ${boundary.fingerprint.slice(0, 12)}`,
       );
@@ -423,6 +430,8 @@ export async function verify(options: VerifyOptions = {}): Promise<void> {
     await warmAdaptersForRepo(root);
     const exclusion = exclusionForBoundary(root, boundary);
     const report = buildReview(root, undefined, "HEAD", undefined, {
+      plan: options.plan,
+      planId: options.planId,
       requireIndependentAck: options.requireIndependentAck === true,
       exclusion,
       boundary,
@@ -465,7 +474,7 @@ export async function verify(options: VerifyOptions = {}): Promise<void> {
       bundle ??= bundleFor(root, base, boundary, report);
       writeWorksheet(root, bundle, options.prepareReview === true);
     }
-    if (passed && boundary.complete) writeReceipt(root, binding);
+    if (passed && boundary.complete) writeReceipt(root, binding, planApproval);
 
     if (options.json) {
       console.log(

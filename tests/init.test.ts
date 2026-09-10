@@ -204,6 +204,7 @@ describe("init command", () => {
     const metaPath = join(tmp, ".codument-meta.json");
     assert.ok(existsSync(metaPath));
     const meta = JSON.parse(await readFile(metaPath, "utf-8"));
+    assert.equal(meta.requireBoundApproval, true, "new projects require bound approval");
     assert.equal(meta.version, PKG_VERSION);
     assert.ok(meta.initialized);
     assert.deepStrictEqual(meta.agents, ["claude"]);
@@ -352,6 +353,7 @@ describe("init command", () => {
     const metaPath = join(tmp, ".codument-meta.json");
     const meta = JSON.parse(await readFile(metaPath, "utf-8"));
     meta.fileHashes = { "src/x.ts": "deadbeef" };
+    meta.requireBoundApproval = false;
     meta.lastScan = { at: "2026-01-01" };
     await writeFile(metaPath, JSON.stringify(meta, null, 2));
 
@@ -360,6 +362,11 @@ describe("init command", () => {
     const after = JSON.parse(await readFile(metaPath, "utf-8"));
     assert.deepEqual(after.fileHashes, { "src/x.ts": "deadbeef" });
     assert.deepEqual(after.lastScan, { at: "2026-01-01" });
+    assert.equal(after.requireBoundApproval, false, "re-init preserves an explicit adoption choice");
+    delete after.requireBoundApproval;
+    await writeFile(metaPath, JSON.stringify(after));
+    runInit("--agents", "claude");
+    assert.equal(JSON.parse(await readFile(metaPath, "utf8")).requireBoundApproval, undefined, "legacy projects are not silently opted in");
   });
 
   it("refuses a corrupt settings.json rather than overwriting it", async () => {

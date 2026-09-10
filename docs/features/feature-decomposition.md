@@ -13,6 +13,8 @@ A greenfield project built through the loop tends to collapse into one umbrella 
 
 ## Design approach
 
+An explicit plan identity selects the same section for ownership routing as for approval and execution. Resume checkpoints do not contribute ownership declarations.
+
 The decomposition the plan already articulates in prose becomes a first-class, approvable, machine-readable artifact — and, crucially, gets a deterministic consumer the loop is **required** to run. This mirrors why step-mirroring works: a deterministic hook the skill must call, not a prose request the agent can skip. The earlier failure was exactly the prose-only path — a rule asking the agent to name a feature from a file's purpose lumped everything into the umbrella already present.
 
 The hard line is the determinism boundary: the **agent proposes** the semantic cut (human-gated at plan approval), and the **CLI only routes** the approved Map and **flags suspicious shape**, never asserting or performing a cut. Shape signals are advisory (info), never blocking; the one blocking backstop is the existing unmapped-file finding, which catches a landed file that matches no Map row — the deterministic guard against silent lumping.
@@ -20,6 +22,8 @@ The hard line is the determinism boundary: the **agent proposes** the semantic c
 The path is forward-only: make new work decompose correctly rather than auto-healing already-lumped registries (backward-compat is not a constraint). And because every project sits at a low feature count early, a file-grain blast carrier (files touched of the in-scope total) gives real resolution before any re-mapping, so the signal is useful from the first commit. Rejected: a per-subdirectory scan as the only mechanism (it produces zero features on the flat-source shape the loop emits) and auto-heal of existing lumped registries.
 
 ## Invariants & boundaries
+
+- Identified plans cannot borrow another section's Feature Map, and checkpoint examples cannot materialize source ownership. *(test: `plan-approval.test.ts`)*
 
 - Automatic map discovery uses the checklist's plan selection and approval diagnostics. Missing,
   qualified, or ambiguous approval cannot silently choose a map; an explicit plan remains readable

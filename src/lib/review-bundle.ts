@@ -88,7 +88,7 @@ export interface ReviewBundle {
   /** Changed sources outside the approved plan scope (scope creep is a finding). */
   outOfPlan: string[];
   /** The approved plan in force, when detectable. */
-  plan: { path: string; scope: string[] } | null;
+  plan: { path: string; scope: string[]; planId?: string; approvalDigest?: string } | null;
   /** Exact focused projection handed to the reviewer. Omitted from legacy bundles. */
   boundary?: ChangeSetBinding;
   /** Changed tests as evidence, including their attribution or explicit lack of one. */
@@ -198,7 +198,7 @@ export interface ReviewBundleInput {
    *  reads happen in the caller (`gatherReviewBundle`), keeping this pure. A doc
    *  absent from the map yields an empty contract/invariants for that feature. */
   docContents: Map<string, string>;
-  plan: { path: string; scope: string[] } | null;
+  plan: ReviewBundle["plan"];
   /** When present the bundle is delta-scoped (see `ReviewBundle.scope`). The caller
    *  computes it from the last recorded review's per-file hashes; absent or null
    *  means full scope and a byte-identical bundle to the pre-delta behavior. */
@@ -324,13 +324,14 @@ export function bundleStamp(body: Omit<ReviewBundle, "stamp">): string {
  * every compliant edit two real changes and retire the trivial fast-path the
  * proportionality rule exists to keep.
  */
-export function oracleFingerprint(features: readonly ReviewBundleFeature[]): string {
+export function oracleFingerprint(features: readonly ReviewBundleFeature[], plan?: ReviewBundle["plan"]): string {
   const parts = [...features]
     .sort((a, b) => (a.feature < b.feature ? -1 : a.feature > b.feature ? 1 : 0))
     // NUL-separated for the same reason the diff fingerprint uses it: doc prose
     // contains every other separator a scheme might pick, and NUL is the one
     // character that cannot appear in the feature name or the path beside it.
     .map((f) => `${f.feature}\0${f.doc}\0${f.contract}\0${f.invariants}`);
+  if (plan) parts.push(JSON.stringify({ path: plan.path, scope: plan.scope, planId: plan.planId ?? null, approvalDigest: plan.approvalDigest ?? null }));
   return createHash("sha256").update(parts.join("\n"), "utf8").digest("hex").slice(0, 32);
 }
 
@@ -374,7 +375,7 @@ export function gatherReviewBundle(
     changeState,
     registry,
     docContents,
-    plan: plan ? { path: plan.plan, scope: plan.scope } : null,
+    plan: plan ? { path: plan.plan, scope: plan.scope, ...(plan.planId ? { planId: plan.planId, approvalDigest: plan.approvalDigest } : {}) } : null,
     delta,
     ...(boundary ? { boundary: changeSetBinding(boundary) } : {}),
     ...(testImpact ? { testImpact } : {}),

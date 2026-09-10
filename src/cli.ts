@@ -20,12 +20,23 @@ import { stepsCommand } from "./commands/steps.js";
 import { update } from "./commands/update.js";
 import { verify } from "./commands/verify.js";
 import { watch } from "./commands/watch.js";
+import { workApprove } from "./commands/work.js";
 import { ExcludedSourceError, RegistryError } from "./lib/registry.js";
 import { ConfigValueError, StateFileError } from "./lib/state-io.js";
 import { GateError } from "./lib/two-ref.js";
 import { version } from "./lib/version.js";
 
 const program = new Command();
+
+const work = program.command("work").description("Record approved work and manage its delivery state");
+work.command("approve")
+  .description("Bind the displayed plan to its approved revision after explicit human approval")
+  .requiredOption("--plan <path>", "Repository plan document")
+  .option("--plan-id <id>", "Select an identified section when a document contains several plans")
+  .option("--signer <name>", "Self-reported approval recorder")
+  .option("--root <dir>", "Project root (default: current directory)")
+  .option("--json", "Machine-readable approval record")
+  .action(workApprove);
 
 program
   .name("codument")
@@ -89,6 +100,8 @@ program
 
 program
   .command("verify")
+  .option("--plan <path>", "Explicit approved plan document")
+  .option("--plan-id <id>", "Select an identified plan section")
   .description(
     "Verify the exact staged commit boundary: documentation sync, test impact, and required adversarial-review coverage",
   )
@@ -128,6 +141,8 @@ program
 
 program
   .command("review")
+  .option("--plan <path>", "Explicit approved plan document")
+  .option("--plan-id <id>", "Select an identified plan section")
   .description(
     "Review the git diff against the registry: owners, stale docs, risk touches, out-of-plan and unmapped changes, dependents",
   )
@@ -208,6 +223,7 @@ program
   .option("--feature <slug>", "pack the named feature")
   .option("--file <path>", "pack the feature(s) that own a source file")
   .option("--plan <path>", "pack every feature a plan's Feature Map routes to")
+  .option("--plan-id <id>", "Select an identified plan section")
   .option(
     "--owner",
     "with --file: answer ownership in one line (which doc owns this file) instead of packing it",
@@ -340,6 +356,7 @@ program
     "Plan doc to read (default: the single approved plan with an unchecked step)",
   )
   .option("--json", "Machine-readable checklist with per-step to-do status (for mirroring)")
+  .option("--plan-id <id>", "Select an identified plan section")
   .option(
     "--emit",
     "Append a `step` event for the active step into .codument/events.jsonl (for watch)",
@@ -379,6 +396,7 @@ map
   .command("route <file>")
   .description("Print which feature owns <file> per the plan's Feature Map")
   .option("--plan <path>", "Plan doc to read (default: the single approved plan)")
+  .option("--plan-id <id>", "Select an identified plan section")
   .option("--json", "Machine-readable owner lookup")
   .option("--root <dir>", "Project root (default: current directory)")
   .action((file, options) => mapRoute({ file, ...options }));
@@ -387,6 +405,7 @@ map
   .command("check")
   .description("Validate the plan's Feature Map and flag a too-coarse shape")
   .option("--plan <path>", "Plan doc to read (default: the single approved plan)")
+  .option("--plan-id <id>", "Select an identified plan section")
   .option("--json", "Machine-readable check report + plan grounding (the plan adversary's oracle)")
   .option("--root <dir>", "Project root (default: current directory)")
   .action((options) => mapCheck(options));
@@ -395,6 +414,7 @@ map
   .command("materialize <file>")
   .description("Create/extend the owning feature's registry entry + doc for <file>")
   .option("--plan <path>", "Plan doc to read (default: the single approved plan)")
+  .option("--plan-id <id>", "Select an identified plan section")
   .option(
     "--feature <slug>",
     "Name the owning feature directly (must already exist) — the route once a plan has shipped and its Feature Map is compacted away",

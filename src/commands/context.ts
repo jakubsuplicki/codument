@@ -29,6 +29,7 @@ interface ContextCliOptions {
   feature?: string;
   file?: string;
   plan?: string;
+  planId?: string;
   budget?: string;
   owner?: boolean;
   json?: boolean;
@@ -119,7 +120,7 @@ function resolve(
     fail(`could not read plan ${options.plan}: ${(err as Error).message}`);
     return null;
   }
-  const map = parseFeatureMap(raw);
+  const map = parseFeatureMap(raw, options.planId);
   if (map.rows.length === 0) {
     fail(`no Feature Map rows in ${options.plan} — nothing to route`);
     return null;
