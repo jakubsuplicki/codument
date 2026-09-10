@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,11 @@ import type { Registry } from "../src/lib/registry.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HOOK = join(__dirname, "..", "dist", "hooks", "check-docs.js");
+// The shipped editor command is a POSIX shell command. Git for Windows ships
+// that shell without necessarily putting it on the Windows process PATH.
+const SHELL = process.platform === "win32"
+  ? resolve(execFileSync("git", ["--exec-path"], { encoding: "utf8" }).trim(), "../../..", "bin/sh.exe")
+  : "sh";
 
 async function createProject(): Promise<string> {
   const tmp = await mkdtemp(join(tmpdir(), "codument-test-"));
@@ -59,6 +64,22 @@ function runHookFromCwd(cwd: string, filePath: string): string {
 }
 
 describe("check-docs hook", () => {
+  it("preserves real filename characters instead of borrowing another file's owner", async () => {
+    const tmp = await createProject();
+    try {
+      await writeFile(join(tmp, "docs/.registry.json"), JSON.stringify({ features: {
+        feature: { doc: "docs/features/feature.md", type: "feature", primary_sources: ["feature.ts", "src/feature.ts"], status: "current" },
+      } }));
+      const names = [" feature.ts", ...(process.platform === "win32" ? [] : ["src\\feature.ts"])];
+      for (const name of names) {
+        await writeFile(join(tmp, name), "export const value = 1;\n");
+        assert.equal(runHook(tmp, join(tmp, name)), "", `${name} is not the registered file`);
+      }
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("prints all docs mapped to a changed source file", async () => {
     const tmp = await createProject();
     try {
@@ -274,7 +295,7 @@ describe("the installed hook COMMAND is guarded (a nudge must never break the ed
       // Run exactly what Claude Code would run: the command through a shell,
       // from a project with no node_modules — the npx-cache-only/global case
       // that used to stack MODULE_NOT_FOUND + exit 1 on every Write/Edit.
-      const out = execFileSync("sh", ["-c", CLAUDE_DOCS_HOOK_COMMAND], {
+      const out = execFileSync(SHELL, ["-c", CLAUDE_DOCS_HOOK_COMMAND], {
         cwd: tmp,
         encoding: "utf-8",
         input: JSON.stringify({ tool_input: { file_path: join(tmp, "src", "x.ts") } }),
@@ -300,7 +321,7 @@ describe("the installed hook COMMAND is guarded (a nudge must never break the ed
         target,
         'process.stdout.write("HOOK-RAN:" + require("fs").readFileSync(0, "utf-8"));\n',
       );
-      const out = execFileSync("sh", ["-c", CLAUDE_DOCS_HOOK_COMMAND], {
+      const out = execFileSync(SHELL, ["-c", CLAUDE_DOCS_HOOK_COMMAND], {
         cwd: tmp,
         encoding: "utf-8",
         input: '{"tool_input":{"file_path":"src/x.ts"}}',

@@ -18,7 +18,7 @@ import {
   estimateTokens,
   runContextBenchmark,
 } from "../src/lib/benchmark-context.js";
-import { cleanNodeTestEnv } from "../src/lib/review-confirm.js";
+import { cleanNodeTestEnv, spawnArgvSync } from "../src/lib/review-confirm.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -272,9 +272,9 @@ describe("benchmark command", () => {
   it("runs the context benchmark from a packed package", async () => {
     const tmp = await mkdtemp(join(tmpdir(), "codument-packed-"));
     try {
-      const packOutput = execFileSync(
-        "npm",
+      const pack = spawnArgvSync(
         [
+          "npm",
           "--cache",
           join(tmpdir(), "codument-npm-cache"),
           "pack",
@@ -293,14 +293,15 @@ describe("benchmark command", () => {
           env: { ...process.env, npm_config_dry_run: "false" },
         },
       );
-      const packInfo = JSON.parse(packOutput)[0] as { filename: string };
+      assert.equal(pack.status, 0, pack.error?.message ?? pack.stderr);
+      const packInfo = JSON.parse(pack.stdout)[0] as { filename: string };
       const tarballPath = join(tmp, packInfo.filename);
       execFileSync("tar", ["-xzf", tarballPath, "-C", tmp], {
         encoding: "utf-8",
         timeout: 20000,
       });
 
-      await symlink(join(ROOT, "node_modules"), join(tmp, "package", "node_modules"));
+      await symlink(join(ROOT, "node_modules"), join(tmp, "package", "node_modules"), "junction");
       const packedCli = join(tmp, "package", "dist", "cli.js");
       const output = execFileSync("node", [packedCli, "benchmark", "context"], {
         encoding: "utf-8",
@@ -329,6 +330,7 @@ describe("benchmark command", () => {
 
     assert.equal(report.fixture, "context-routing");
     assert.equal(report.schemaVersion, 1);
+    assert.ok(report.naive.files.every((file) => !file.includes("\\")));
     assert.equal(report.task.id, "meal-plan-skip-day");
     assert.equal(report.requiredDocsFound, 3);
     assert.equal(report.requiredDocsTotal, 3);
@@ -348,6 +350,19 @@ describe("benchmark command", () => {
       "src/lib/date-utils.ts",
       "src/lib/timezone-utils.ts",
     ]);
+  });
+
+  it("preserves real filename characters while collecting context", async () => {
+    const fixture = await mkdtemp(join(tmpdir(), "codument-context-filenames-"));
+    try {
+      await cp(CONTEXT_FIXTURE, fixture, { recursive: true });
+      const names = [" extra.ts", ...(process.platform === "win32" ? [] : ["literal\\name.ts"])];
+      for (const name of names) await writeFile(join(fixture, "project", name), "export const extra = 1;\n");
+      const report = await runContextBenchmark(fixture);
+      for (const name of names) assert.ok(report.naive.files.includes(name), `${name} keeps its identity`);
+    } finally {
+      await rm(fixture, { recursive: true, force: true });
+    }
   });
 
   it("fails when the context fixture task references missing files", async () => {

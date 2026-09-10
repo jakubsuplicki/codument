@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
@@ -210,7 +210,7 @@ describe("buildReview (temp git repo)", () => {
     assert.ok(!report.state.outOfPlan.includes("src/lib/db.ts"));
   });
 
-  it("warns, naming every approved plan and the winner, when more than one is approved", async () => {
+  it("refuses to choose scope when more than one plan is approved", async () => {
     await scaffold({
       "docs/plans/add-thing.md": "---\nstatus: approved\n---\n\n## Scope\n\n- `src/lib/db.ts`\n",
       "docs/plans/other-thing.md":
@@ -218,12 +218,15 @@ describe("buildReview (temp git repo)", () => {
       "src/lib/db.ts": "export const db = { ok: true };\n",
     });
 
-    const out = execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" });
-    assert.match(out, /2 approved plans/);
-    assert.match(out, /add-thing\.md/);
-    assert.match(out, /other-thing\.md/);
-    assert.match(out, /scope taken from docs\/plans\/add-thing\.md/);
-    assert.match(out, /keep exactly one approved/);
+    assert.throws(() => execFileSync("node", [CLI, "review"], { cwd: tmp, encoding: "utf-8" }), (error: unknown) => {
+      const failure = error as { status: number; stdout: string };
+      assert.equal(failure.status, 1);
+      assert.match(failure.stdout, /multiple approved plans/);
+      assert.match(failure.stdout, /add-thing\.md/);
+      assert.match(failure.stdout, /other-thing\.md/);
+      assert.match(failure.stdout, /no scope selected/);
+      return true;
+    });
   });
 
   it("a changed non-ASCII / CJK registered source is owned and flags its doc stale, never unmapped (-z path decoding)", async () => {
@@ -976,9 +979,11 @@ describe("--require-review names the could-not-run condition (no resolvable tsx)
   let fakeBin: string;
   beforeEach(async () => {
     fakeBin = await mkdtemp(join(tmpdir(), "codument-fake-npx-"));
-    await writeFile(join(fakeBin, "npx"), "#!/bin/sh\nexit 1\n");
+    const windows = process.platform === "win32";
+    const shim = join(fakeBin, windows ? "npx.cmd" : "npx");
+    await writeFile(shim, windows ? "@echo off\r\nexit /b 1\r\n" : "#!/bin/sh\nexit 1\n");
     const { chmod } = await import("node:fs/promises");
-    await chmod(join(fakeBin, "npx"), 0o755);
+    if (!windows) await chmod(shim, 0o755);
   });
   afterEach(async () => {
     await rm(fakeBin, { recursive: true, force: true });
@@ -989,7 +994,7 @@ describe("--require-review names the could-not-run condition (no resolvable tsx)
       const stdout = execFileSync("node", [CLI, ...args], {
         cwd,
         encoding: "utf-8",
-        env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+        env: { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ""}` },
       });
       return { status: 0, stdout };
     } catch (err) {

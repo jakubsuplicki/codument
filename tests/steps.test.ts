@@ -68,6 +68,7 @@ Status: draft, awaiting approval before source edits.
     assert.equal(code, 0); // explicit --plan does not require approval
     const parsed = JSON.parse(out);
     assert.equal(parsed.active.n, 1);
+    assert.equal(parsed.approved, false);
     assert.deepEqual(
       parsed.steps.map((s: { status: string }) => s.status),
       ["in_progress", "pending"],
@@ -76,6 +77,12 @@ Status: draft, awaiting approval before source edits.
     const auto = runCli(["steps", "--dir", tmp], tmp);
     assert.equal(auto.code, 1);
     assert.match(auto.out, /no approved plan/i);
+    const preview = runCli(["steps", "--plan", "docs/features/recipe.md", "--dir", tmp], tmp);
+    assert.match(preview.out, /preview only.*not approved/i);
+    const emitted = runCli(["steps", "--json", "--emit", "--plan", "docs/features/recipe.md", "--dir", tmp], tmp);
+    assert.equal(emitted.code, 0);
+    assert.equal(JSON.parse(emitted.out).emitted, false);
+    await assert.rejects(readFile(join(tmp, ".codument/events.jsonl")), { code: "ENOENT" });
   });
 
   it("prints a human checklist marking the active step", async () => {
@@ -85,6 +92,21 @@ Status: draft, awaiting approval before source edits.
     assert.match(out, /Plan: feed/);
     assert.match(out, /Step 2: tail with byte offset/);
     assert.match(out, /Mirror these into your native to-do list/);
+  });
+
+  it("diagnoses qualified approval without granting it or changing the plan", async () => {
+    const file = join(tmp, "docs/features/dated.md");
+    const content = PLAN.replace("Status: approved", "Status: approved 2026-09-10");
+    await writeFile(file, content);
+    const result = runCli(["steps", "--dir", tmp], tmp);
+    assert.equal(result.code, 1);
+    assert.match(result.out, /docs\/features\/dated\.md/);
+    assert.match(result.out, /Status: approved/);
+    const map = runCli(["map", "route", "src/a.ts"], tmp);
+    assert.equal(map.code, 1);
+    assert.match(map.out, /docs\/features\/dated\.md/);
+    assert.match(map.out, /Status: approved/);
+    assert.equal(await readFile(file, "utf8"), content);
   });
 
   it("--emit writes a step event into .codument/events.jsonl", async () => {

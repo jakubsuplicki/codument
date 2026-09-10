@@ -2,7 +2,7 @@
 title: Registry health
 status: current
 type: feature
-last_reviewed: 2026-07-21
+last_reviewed: 2026-09-10
 ---
 
 # Registry health
@@ -74,6 +74,7 @@ The badge is a coverage figure, not a quality or correctness score, and absolute
 
 ## Decisions
 
+- Deferred: make ownership debt clear alongside aggregate health and compact overloaded knowledge pages at their owners. A clean diff gate does not certify repository-wide ownership. Context budgets retain selected contracts deliberately; changing that policy needs a separate decision, not silent invariant truncation. Private source retention and exclusions remain explicit choices in each adopting project.
 - The registry v2 model that coverage and lint read directly, with no migration path: [001-registry-v2-model-no-migration](../architecture/decisions/001-registry-v2-model-no-migration.md).
 - `doctor` is documentation coverage — the two-axis split and the opt-in `--strict` gate: [002-doctor-is-documentation-coverage](../architecture/decisions/002-doctor-is-documentation-coverage.md).
 - A registry entry can govern a tree, so a source is a path or a pattern: [018-a-registry-entry-can-govern-a-tree](../architecture/decisions/018-a-registry-entry-can-govern-a-tree.md).

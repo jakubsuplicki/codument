@@ -346,6 +346,7 @@ describe("default command is local-only (no network on the verdict path)", () =>
     const tmp = await mkdtemp(join(tmpdir(), "codument-cmd-avail-"));
     const fakeBin = await mkdtemp(join(tmpdir(), "codument-fake-npx-"));
     const origPath = process.env.PATH;
+    const offlineVars = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toLowerCase() === "npm_config_offline"));
     const win = process.platform === "win32";
     const shim = join(fakeBin, win ? "npx.cmd" : "npx");
     const exiting = (code: number) => (win ? `@echo off\r\nexit /b ${code}\r\n` : `#!/bin/sh\nexit ${code}\n`);
@@ -358,8 +359,22 @@ describe("default command is local-only (no network on the verdict path)", () =>
 
       writeFileSync(shim, exiting(0));
       assert.equal(defaultCommandAvailable(tmp), true, "npx resolves it (global/hoisted): available");
+
+      for (const key of Object.keys(offlineVars)) delete process.env[key];
+      process.env.NPM_CONFIG_OFFLINE = "false";
+      const tap = ["TAP version 13", "1..1", "ok 1 - offline fixture", "# tests 1", "# fail 0"];
+      writeFileSync(shim, win
+        ? '@echo off\r\nif not "%npm_config_offline%"=="true" exit /b 1\r\n' + tap.map(line => `echo ${line}`).join("\r\n") + "\r\nexit /b 0\r\n"
+        : '#!/bin/sh\n[ "$npm_config_offline" = "true" ] || exit 1\n' + `printf '%s\\n' '${tap.join("' '")}'\n`);
+      assert.equal(defaultCommandAvailable(tmp), true, "the default availability probe must prohibit network access");
+      writeFileSync(join(tmp, "offline.test.ts"), "// a real reference for the default runner\n");
+      assert.equal(makeTestRunner({ root: tmp })("offline.test.ts").outcome, "passed", "the default test invocation must prohibit network access too");
     } finally {
       process.env.PATH = origPath;
+      for (const key of Object.keys(process.env)) {
+        if (key.toLowerCase() === "npm_config_offline") delete process.env[key];
+      }
+      Object.assign(process.env, offlineVars);
       await rm(tmp, { recursive: true, force: true });
       await rm(fakeBin, { recursive: true, force: true });
     }

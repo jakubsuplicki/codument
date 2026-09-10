@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import pc from "picocolors";
+import { isPlanPath } from "../lib/plan-steps.js";
+import { ConfigValueError } from "../lib/state-io.js";
 import {
   type Acknowledgment,
   ackCovers,
@@ -428,9 +430,7 @@ function planForBoundary(root: string, boundary: ChangeSet): ApprovedPlan | null
     throw new GateError(`could not enumerate selected plan files: ${tracked.reason}`, "git-failed");
   }
   const documents: Array<{ path: string; content: string }> = [];
-  for (const path of tracked.paths.filter((candidate) =>
-    /^docs\/plans\/[^/]+\.md$/.test(candidate),
-  )) {
+  for (const path of tracked.paths.filter(isPlanPath)) {
     const content = readChangeSetFile(root, boundary, path);
     if (content !== null) documents.push({ path, content });
   }
@@ -931,7 +931,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       process.exitCode = 1;
       return;
     }
-    if (err instanceof GateError) {
+    if (err instanceof GateError || err instanceof ConfigValueError) {
       if (sarifMode) {
         console.log(JSON.stringify(gateUnavailableSarif(err.message), null, 2));
         process.exitCode = 1;
@@ -944,7 +944,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
               version: 2,
               gate: "unavailable",
               reason: err.message,
-              kind: err.kind,
+              kind: err instanceof GateError ? err.kind : "invalid-config",
               isGitRepo: true,
             },
             null,
@@ -2034,15 +2034,6 @@ export function printHuman(report: ReviewReport): void {
       (report.deletions.length > 0 ? `, ${report.deletions.length} deleted` : "") +
       (plan ? pc.dim(`  (plan: ${plan.plan})`) : ""),
   );
-  if (plan && plan.contenders.length > 1) {
-    // Multiple approved plans is a workflow smell (flip exactly one at a time);
-    // never let first-by-filename win silently.
-    console.log(
-      pc.yellow(
-        `  ⚠ ${plan.contenders.length} approved plans (${plan.contenders.join(", ")}) — scope taken from ${plan.plan}; keep exactly one approved`,
-      ),
-    );
-  }
   console.log();
 
   section(

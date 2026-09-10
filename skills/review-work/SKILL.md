@@ -9,14 +9,15 @@ Use this after a planned step has been implemented and before committing.
 
 ## Review Order
 
-1. Read the approved plan step.
+1. Read the approved plan step. After final-step compaction, read its saved approval and pending-gate checkpoint from `.codument/pending-plans/<repo-relative-plan-path>`; inspect the compacted doc in the staged boundary as usual.
 2. Inspect `git diff --cached`; that exact staged boundary, not the whole dirty worktree, is the review subject.
 3. Run `codument verify` once. It reports only actionable failures and writes `.codument/review-worksheet.json` when a non-trivial boundary needs adversarial review.
 4. If verification is blocked on mapping or documentation, fix the cause at intent altitude, restage the affected step files, and rerun `codument verify`. Never add mirror prose merely to make the gate green.
-5. If review is required, inspect the generated `reviewContext` against the plan, staged diff, mapped invariants, and tests. Attack correctness, security, data loss, performance, type safety, and architecture fit; use an independent reviewer when the host provides one, otherwise make the same adversarial pass yourself.
+5. Compare the promised outcome and acceptance criteria with the evidence actually obtained at the relevant user or integration boundary. Name untested assumptions and any substitutes used; passing checks establish only the boundary they exercised. Missing required evidence remains a blocker unless the user explicitly changes acceptance. If adversarial review is required, inspect the generated `reviewContext` against the plan, staged diff, mapped invariants, and tests. Attack correctness, security, data loss, performance, type safety, and architecture fit; use an independent reviewer when the host provides one, otherwise make the same adversarial pass yourself.
 6. Complete only the worksheet's top-level `invariantsChecked`, `findings`, and `signer` fields. Do not alter generated context. Run the exact printed `codument verify --record .codument/review-worksheet.json` command; it records and verifies the same staged boundary in that invocation.
 7. Fix safe, obvious findings, restage, and return to step 3. Pause for any judgment call or finding involving a public interface, security, data loss, deletion, or dependency change. A changed boundary invalidates its earlier review automatically.
-8. Continue to `commit-work` only when `codument verify` passes. Its exact receipt lets the pre-commit hook confirm unchanged staged bytes without repeating the review.
+8. Continue to `commit-work` when `codument verify` passes, without a routine permission prompt. Its exact receipt lets the pre-commit hook confirm unchanged staged bytes without repeating the review. In gated mode, stop at the options below. Single-step requests limit the run to one reviewed and committed step; they do not override gated mode or bypass a gate.
+9. If review pauses or the user redirects work, preserve the plan path, step, next gate, unresolved finding or failure, and resume condition in the plan's Resume checkpoint (in its recovery copy after final-step compaction). Recheck the staged boundary on return; a changed boundary invalidates earlier review. If fixes restore delivery scaffolding, recompact and restage it before recording the final review.
 
 ## Output
 

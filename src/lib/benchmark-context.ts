@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { extname, join, relative } from "node:path";
 import { allSources, readRegistry, type Registry } from "./registry.js";
+import { toPosix } from "./exclusion-spec.js";
 
 export interface ContextBenchmarkTask {
   id: string;
@@ -164,7 +165,7 @@ async function collectContextFilesInto(
     }
 
     if (entry.isFile() && CONTEXT_EXTENSIONS.has(extname(entry.name))) {
-      files.push(relative(root, fullPath));
+      files.push(toPosix(relative(root, fullPath)));
     }
   }
 }

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
 import { allSources, readRegistrySync, RegistryError } from "../lib/registry.js";
-import { isSourceFile, resolveScopeSync, DEFAULT_EXCLUSION_SPEC } from "../lib/analyze.js";
+import { isSourceFile, resolveScopeSync, DEFAULT_EXCLUSION_SPEC, toPosix } from "../lib/analyze.js";
 
 // This hook runs after Write/Edit tool use.
 // It checks if a source file was modified and reminds the developer that
@@ -56,7 +56,7 @@ function findRoot(fromFile: string): string {
 const root = findRoot(filePath);
 const registryPath = join(root, "docs", ".registry.json");
 
-const relPath = relative(root, filePath);
+const relPath = toPosix(relative(root, filePath));
 
 // Only care about files the gate itself governs — the ONE shared spec from the
 // analyzer, project-declared exclusions included, so the live nudge and the

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   parseDeliveryPlan,
+  parsePlanScope,
   activeStep,
   extractStatus,
   isApproved,
@@ -16,6 +17,39 @@ import {
 } from "../src/lib/plan-steps.js";
 import { readRecentEvents } from "../src/lib/events.js";
 import { renderFrame } from "../src/commands/watch.js";
+
+describe("scope belongs to the selected plan", () => {
+  const old = "## Delivery Plan — old\nStatus: approved\n- [x] shipped\n### Scope\n- `src/old.ts`\n";
+  const current = "## Delivery Plan — next\nStatus: approved\n- [ ] next\n";
+  for (const newline of ["\n", "\r\n"]) {
+    it(`never inherits historical scope, including empty local scope (${JSON.stringify(newline)})`, () => {
+      for (const tail of ["", "### Scope\n", "### Scope\n```markdown\n- `src/example.ts`\n```\n"]) {
+        assert.deepEqual(parsePlanScope((old + current + tail).replaceAll("\n", newline)), []);
+      }
+    });
+    it(`keeps standalone scope and rejects example paths (${JSON.stringify(newline)})`, () => {
+      const md = "# Plan\nStatus: approved\n## Scope\n- `cli.ts`\n- `src/a.ts`\n> - `src/quote.ts`\n\n```markdown\n- `src/example.ts`\n```\n\n## Delivery Plan\n- [ ] work\n";
+      assert.deepEqual(parsePlanScope(md.replaceAll("\n", newline)), ["cli.ts", "src/a.ts"]);
+    });
+  }
+  it("a local empty scope does not fall back to a standalone sibling scope", () => {
+    assert.deepEqual(parsePlanScope("# Plan\nStatus: approved\n## Scope\n- `src/old.ts`\n" + current + "### Scope\n"), []);
+  });
+  it("local approval never inherits a sibling scope, and standalone fallback ignores nested scope", () => {
+    const unrelated = "## Previous rollout\n### Scope\n- `src/old.ts`\n";
+    assert.deepEqual(parsePlanScope(unrelated + current), []);
+    assert.deepEqual(parsePlanScope("## Scope\n- `src/old.ts`\n" + current), []);
+    assert.deepEqual(parsePlanScope("# Plan\nStatus: approved\n" + unrelated + "## Delivery Plan\n- [ ] next\n"), []);
+  });
+  it("nested scope headings keep the enclosing scope alive", () => {
+    assert.deepEqual(parsePlanScope(current + "### Scope\n#### Scope overview\n- `src/a.ts`\n#### Other files\n- `src/b.ts`\n"), ["src/a.ts", "src/b.ts"]);
+  });
+  it("mixed plan heading kinds cannot make standalone approval or scope unambiguous", () => {
+    const md = "# Plan\nStatus: approved\n## Scope\n- `src/old.ts`\n## Definition of Done\n- [ ] current\n## Delivery Plan — future\nStatus: draft\n";
+    assert.equal(extractStatus(md), null);
+    assert.deepEqual(parsePlanScope(md), []);
+  });
+});
 
 const PLAN = `---
 status: approved
@@ -111,6 +145,134 @@ describe("activeStep / todoStatus", () => {
 });
 
 describe("extractStatus / isApproved", () => {
+  it("binds approval to the selected checklist instead of feature frontmatter", () => {
+    const markdown =
+      "---\nstatus: current\n---\n## Delivery Plan\nStatus: approved\n- [ ] current work\n";
+    assert.equal(extractStatus(markdown), "approved");
+    assert.equal(activeStep(parseDeliveryPlan(markdown))?.text, "current work");
+  });
+  it("never borrows approval from completed work for a later draft or missing status", () => {
+    for (const status of ["Status: draft\n", ""]) {
+      const markdown =
+        "---\nstatus: approved\n---\n## Delivery Plan — shipped\nStatus: approved\n- [x] old work\n" +
+        `## Delivery Plan — proposed\n${status}- [ ] new work\n`;
+      assert.equal(isApproved(extractStatus(markdown)), false);
+      assert.equal(activeStep(parseDeliveryPlan(markdown))?.text, "new work");
+    }
+  });
+  it("retains document approval for an unambiguous standalone plan", () => {
+    assert.equal(
+      extractStatus("---\nstatus: approved\n---\n# Plan\n## Delivery Plan\n- [ ] work\n"),
+      "approved",
+    );
+    assert.equal(extractStatus("# Plan\nStatus: approved\n## Scope\n- `src/a.ts`\n"), "approved");
+  });
+  it("rejects repeated approval declarations even when they agree", () => {
+    for (const status of ["approved", "draft", ""]) {
+      assert.equal(
+        isApproved(
+          extractStatus(`## Delivery Plan\nStatus: approved\nStatus: ${status}\n- [ ] work\n`),
+        ),
+        false,
+      );
+    }
+  });
+  it("rejects a second status in a subsection without letting a subsection grant approval", () => {
+    for (const status of ["approved", "draft", ""]) {
+      assert.equal(
+        isApproved(
+          extractStatus(
+            `## Delivery Plan\nStatus: approved\n- [ ] work\n### Current approval\nStatus: ${status}\n`,
+          ),
+        ),
+        false,
+      );
+    }
+  });
+  it("recognizes indented Markdown plan headings as separate approval boundaries", () => {
+    for (const indent of [" ", "  ", "   "]) {
+      const markdown = `## Delivery Plan — shipped\nStatus: approved\n- [x] old\n${indent}## Delivery Plan — proposed\n- [ ] new\n`;
+      assert.equal(isApproved(extractStatus(markdown)), false);
+      assert.deepEqual(
+        parseDeliveryPlan(markdown).map((step) => step.text),
+        ["new"],
+      );
+    }
+  });
+  it("ignores lazy quote continuations while allowing approval after the quote ends", () => {
+    const quote = "## Delivery Plan\n> Approval example:\nStatus: approved\n\n";
+    assert.equal(isApproved(extractStatus(quote + "- [ ] work\n")), false);
+    assert.equal(extractStatus(quote + "Status: approved\n- [ ] work\n"), "approved");
+  });
+  it("reads only top-level frontmatter status", () => {
+    const nested = "---\nexample:\n  status: approved\n---\n## Delivery Plan\n- [ ] work\n";
+    assert.equal(isApproved(extractStatus(nested)), false);
+    assert.equal(
+      extractStatus(nested.replace("example:", "status: approved\nexample:")),
+      "approved",
+    );
+  });
+  it("ends document metadata at an unrelated heading even at title depth", () => {
+    assert.equal(
+      isApproved(
+        extractStatus("# Feature\n# Example\nStatus: approved\n## Delivery Plan\n- [ ] new\n"),
+      ),
+      false,
+    );
+  });
+  it("does not let non-interrupting list text end a quoted approval example", () => {
+    for (const text of ["2. Approval record:", "1. ", "- "]) {
+      assert.equal(
+        isApproved(
+          extractStatus(
+            `## Delivery Plan\n> Example approval workflow:\n${text}\nStatus: approved\n\n- [ ] real work\n`,
+          ),
+        ),
+        false,
+      );
+    }
+  });
+  it("keeps real checklists after quoted examples and fenced quote text", () => {
+    for (const example of ["> example quote\n", "```markdown\n> example quote\n```\n"]) {
+      const markdown = "## Delivery Plan\nStatus: approved\n" + example + "- [ ] real work\n";
+      assert.deepEqual(
+        parseDeliveryPlan(markdown).map((step) => step.text),
+        ["real work"],
+      );
+      assert.equal(extractStatus(markdown), "approved");
+    }
+  });
+  it("ignores examples and unrelated sections when resolving approval and steps", () => {
+    for (const newline of ["\n", "\r\n"]) {
+      const markdown = [
+        "# Feature",
+        "```markdown",
+        "## Delivery Plan",
+        "Status: approved",
+        "- [ ] fenced work",
+        "```",
+        "~~~markdown",
+        "Status: approved",
+        "~~~",
+        "> Status: approved",
+        "    Status: approved",
+        "<!--",
+        "Status: approved",
+        "-->",
+        "## Delivery Plan",
+        "- [ ] real work",
+        "### Example",
+        "Status: approved",
+        "## Other",
+        "Status: approved",
+      ].join(newline);
+      assert.equal(isApproved(extractStatus(markdown)), false);
+      assert.deepEqual(
+        parseDeliveryPlan(markdown).map((step) => step.text),
+        ["real work"],
+      );
+    }
+  });
   it("reads a bold body Status line", () => {
     assert.equal(extractStatus("Status: **approved**\n"), "approved");
   });

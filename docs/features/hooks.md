@@ -2,7 +2,7 @@
 title: Hooks
 status: current
 type: feature
-last_reviewed: 2026-09-03
+last_reviewed: 2026-09-10
 ---
 
 # Hooks
@@ -23,9 +23,13 @@ The reminder is failure-shy by construction. Every uncertain condition (no paylo
 
 ## Invariants & boundaries
 
+- Native path conversion preserves real filename characters, including leading whitespace and
+  literal POSIX backslashes, so a different file cannot borrow a registered file's owner. *(test:
+  `hooks.test.ts` "preserves real filename characters instead of borrowing another file's owner")*
+
 - `hooks install` refuses a workspace root: a pre-commit hook there would run the aggregate gate on every member's commit, blocking member A's commit on member B's unrelated staleness. It fails closed naming the member repository to install into instead. Member-scoped review is its own design (ADR-016). *(test: `workspace-refusals.test.ts` "refuses a pre-commit hook install at the workspace root")*
 - The nudge governs exactly what the gate governs, project declaration included: a file inside a build tree the project declared is silent even when the registry maps it, so the live reminder and the verdict cannot disagree about what a source is. Because the nudge fires on every edit it degrades rather than errors when the declaration cannot be read or is invalid, falling back to the built-in spec — the same fail-safe stance it takes on an unreadable registry, and the reason the loud version of that complaint belongs to the commands a user runs deliberately. *(test: `hooks.test.ts` "the editor nudge honors the project's declared exclusions")*
-- A changed source file that the registry maps to one or more docs produces a reminder naming each mapped doc; a file mapped to several features lists them all. *(test: `hooks.test.ts` "prints all docs mapped to a changed source file")*
+- A changed source file that the registry maps to one or more docs produces a reminder naming each mapped doc on Windows and POSIX alike; native filesystem separators do not change registry identity. A file mapped to several features lists them all. *(test: `hooks.test.ts` "prints all docs mapped to a changed source file")*
 - The registry is read as v2 only: a legacy, un-migrated registry yields no match rather than a guess, so it must be migrated before the hook can see its mappings. *(test: `hooks.test.ts` "does not match an un-migrated legacy registry (v2-only read)")*
 - The edited path is accepted over the current editor transport, with the legacy environment-variable form tolerated as a fallback, so the reminder survives a payload-contract change. *(test: `hooks.test.ts` "reads the payload from stdin when no CLAUDE_TOOL_INPUT env is set")*
 - The project root is resolved by walking up from the edited file to the registry, never assumed from the working directory, so the hook works regardless of where the editor invokes it. *(test: `hooks.test.ts` "resolves the registry from the edited file's path regardless of cwd")*

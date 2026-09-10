@@ -115,7 +115,7 @@ describe("buildManagedSection", () => {
     assert.ok(section.includes("use `work-step`"));
     assert.ok(section.includes("gets reviewed before commit"));
     assert.ok(section.includes("offer `commit-work`"));
-    assert.ok(section.includes("wait for the user to ask for it"));
+    assert.match(section, /continue to `commit-work`\. In gated mode, offer `commit-work`[^\n]+wait for the user to ask for it/);
     assert.ok(section.includes("Assumption gate (before any source edit)"));
     assert.ok(section.includes("never on ambiguity alone"));
     assert.ok(section.includes("Step gates"));

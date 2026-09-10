@@ -2,7 +2,7 @@
 title: Token cost tracking
 status: current
 type: feature
-last_reviewed: 2026-07-28
+last_reviewed: 2026-09-10
 ---
 
 # Token cost tracking
@@ -23,7 +23,7 @@ The pipeline is producers, a pricing layer, a reducer, and two views, all riding
 
 **Pricing is a pure lookup, agent-neutral.** Cost is derived per bucket from a rate table of USD-per-million-token rates. Anthropic usage splits into four buckets (fresh input, output, cache read, cache create) with very different prices, and the trap the design exists to avoid is summing them at one rate: cache reads are roughly ten times cheaper than fresh input yet dominate the token count in agentic coding, so a single-rate sum massively over-bills. Built-in rates cover Claude and stay accurate; any other model is priced from a user-supplied rate file merged over the defaults, so a new vendor or fine-tune is priced without a codument release. Model lookup is exact-match only: a typo or an unknown id surfaces visibly as "unpriced" rather than as a plausible-but-wrong bill.
 
-**The reducer is defensive and the log is untrusted.** It folds the event stream into totals plus per-feature, per-step, and per-model rollups, coercing every field (a numeric string is not a number) and never throwing. Token counts include every attributable event; cost prices only the known-model portion. Two cost signals are kept deliberately distinct: an all-zero priced breakdown means "$0, nothing happened," while a null cost means "events exist but none could be priced." Counts stay exact integers; only the derived cost carries floating-point slack.
+**The reducer is defensive and the log is untrusted.** It folds the event stream into totals plus per-feature, per-step, and per-model rollups, coercing every field (a numeric string is not a number) and never throwing. Token counts include every attributable event; cost prices only the known-model portion. Two cost signals are kept deliberately distinct: an all-zero priced breakdown reports zero estimated cost for the captured ledger without establishing capture availability, while a null cost means "events exist but none could be priced." Counts stay exact integers; only the derived cost carries floating-point slack.
 
 **Two views, same captured log.** `watch` leads with a verdict and a cost headline (the all-sessions total plus a since-this-run delta and a where-it-went breakdown) and is a live consumer that auto-runs the feed. `cost` prints the complete ledger that the watch top-N omits, sorted by spend, as a pure read that never tails or mutates the log. Its share-percent column uses largest-remainder rounding so it sums to exactly 100 rather than drifting, and a real-but-tiny row reads under one percent rather than a misleading zero.
 
@@ -48,6 +48,7 @@ The pipeline is producers, a pricing layer, a reducer, and two views, all riding
 
 ## Decisions
 
+- Deferred: expose capture availability separately from zero usage before adding another automatic host adapter or promising portable session totals. Automatic capture currently reads Claude transcripts; an empty captured ledger does not measure the cost of an unobserved session. Cross-machine summaries need an explicit privacy and transport design; raw transcripts stay local.
 - Token counts are the source of truth and cost is derived at render time, never persisted (Codument is not a metering tool): [009-token-counts-are-truth-cost-derived-at-render](../architecture/decisions/009-token-counts-are-truth-cost-derived-at-render.md).
 
 ## Key files

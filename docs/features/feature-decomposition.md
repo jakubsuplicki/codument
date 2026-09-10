@@ -2,7 +2,7 @@
 title: Feature decomposition in the loop
 status: current
 type: feature
-last_reviewed: 2026-06-28
+last_reviewed: 2026-09-10
 ---
 
 # Feature decomposition in the loop
@@ -20,6 +20,15 @@ The hard line is the determinism boundary: the **agent proposes** the semantic c
 The path is forward-only: make new work decompose correctly rather than auto-healing already-lumped registries (backward-compat is not a constraint). And because every project sits at a low feature count early, a file-grain blast carrier (files touched of the in-scope total) gives real resolution before any re-mapping, so the signal is useful from the first commit. Rejected: a per-subdirectory scan as the only mechanism (it produces zero features on the flat-source shape the loop emits) and auto-heal of existing lumped registries.
 
 ## Invariants & boundaries
+
+- Automatic map discovery uses the checklist's plan selection and approval diagnostics. Missing,
+  qualified, or ambiguous approval cannot silently choose a map; an explicit plan remains readable
+  while awaiting approval. *(test: `steps.test.ts` qualified approval and map discovery)*
+- Map commands and context retrieval consume the selected delivery section's map and heading.
+  A future draft cannot provide its owner or hide a missing map in the current plan. Map-only
+  documents and standalone sibling maps retain their existing convention, and diagnostics keep
+  their original document line numbers. *(tests: `feature-map.test.ts` selected checklist map,
+  future-map isolation, standalone compatibility, and error line preservation)*
 
 - The CLI never decides or performs a split; it routes a human-approved Map and flags shape only. *(test: `map.test.ts` routing; `feature-map.test.ts` parse + precedence)*
 - Every decomposition shape signal is info-severity, never warn — it never blocks a clean gate, because the cut is the agent's judgment. *(test: `analyze.test.ts` shape-finding severity + the codument-registry negative fixture that proves no false-fire)*

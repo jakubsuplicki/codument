@@ -97,7 +97,7 @@ describe("readAcks / writeAck (temp dir)", () => {
 
   it("round-trips an ack and reads it back", () => {
     const path = writeAck(tmp, ACK);
-    assert.match(path, /\.codument\/acks\/[0-9a-f]{16}\.json$/);
+    assert.match(path.replace(/\\/g, "/"), /\.codument\/acks\/[0-9a-f]{16}\.json$/);
     assert.deepStrictEqual(readAcks(tmp), [ACK]);
   });
 

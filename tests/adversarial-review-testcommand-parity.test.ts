@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { doctor } from "../src/commands/doctor.js";
@@ -33,8 +33,10 @@ const CLI = join(here, "..", "dist", "cli.js");
 // "--require-review names the could-not-run condition" suite already uses.
 async function makeFakeNpxDir(): Promise<string> {
   const fakeBin = await mkdtemp(join(tmpdir(), "codument-fake-npx-"));
-  await writeFile(join(fakeBin, "npx"), "#!/bin/sh\nexit 1\n");
-  await chmod(join(fakeBin, "npx"), 0o755);
+  const windows = process.platform === "win32";
+  const shim = join(fakeBin, windows ? "npx.cmd" : "npx");
+  await writeFile(shim, windows ? "@echo off\r\nexit /b 1\r\n" : "#!/bin/sh\nexit 1\n");
+  if (!windows) await chmod(shim, 0o755);
   return fakeBin;
 }
 
@@ -88,7 +90,7 @@ describe("doctor --verify-invariants silently drops the testCommand refusal reas
     console.log = (...a: unknown[]) => {
       lines.push(a.map(String).join(" "));
     };
-    process.env.PATH = `${fakeBin}:${origPath ?? ""}`;
+    process.env.PATH = `${fakeBin}${delimiter}${origPath ?? ""}`;
     try {
       await doctor({ root: tmp, verifyInvariants: true });
     } finally {
@@ -258,7 +260,7 @@ describe("review --require-review: a covering review masks the {file}-token refu
     execFileSync("node", [CLI, "review", "--record", "findings.json"], {
       cwd: tmp,
       encoding: "utf-8",
-      env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+      env: { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ""}` },
     });
   });
   afterEach(async () => {
@@ -272,7 +274,7 @@ describe("review --require-review: a covering review masks the {file}-token refu
       stdout = execFileSync("node", [CLI, "review", "--require-review"], {
         cwd: tmp,
         encoding: "utf-8",
-        env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+        env: { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ""}` },
       });
     } catch (err) {
       const e = err as { stdout?: string };
@@ -338,7 +340,7 @@ describe("tautology check: makeTestRunner config pickup, demonstrated for real",
     // Shadow npx so the BUILT-IN default cannot possibly resolve: if makeTestRunner
     // silently ignored the declared testCommand, this run would come back
     // unrunnable instead of passed.
-    process.env.PATH = `${fakeBin}:${origPath ?? ""}`;
+    process.env.PATH = `${fakeBin}${delimiter}${origPath ?? ""}`;
     try {
       const run = makeTestRunner({ root: tmp });
       assert.equal(run("real.test.ts").outcome, "passed");

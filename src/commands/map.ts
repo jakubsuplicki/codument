@@ -8,7 +8,7 @@ import {
   type FeatureMap,
   type FeatureMapRow,
 } from "../lib/feature-map.js";
-import { findActivePlans } from "../lib/plan-steps.js";
+import { resolveActivePlan } from "../lib/plan-steps.js";
 import {
   ExcludedSourceError,
   isSourcePattern,
@@ -53,14 +53,9 @@ function resolveMap(root: string, planOpt?: string): ResolvedMap | { error: stri
   if (planOpt) {
     planPath = isAbsolute(planOpt) ? planOpt : join(root, planOpt);
   } else {
-    const found = findActivePlans(root);
-    if (found.length === 0)
-      return { error: "no approved plan with an unchecked step — pass --plan <path>" };
-    if (found.length > 1)
-      return {
-        error: `multiple approved plans (${found.map((p) => p.path).join(", ")}) — pass --plan <path>`,
-      };
-    planPath = join(root, found[0].path);
+    const resolved = resolveActivePlan(root);
+    if ("error" in resolved) return resolved;
+    planPath = join(root, resolved.plan.path);
   }
   let markdown: string;
   try {

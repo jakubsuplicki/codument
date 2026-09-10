@@ -1,4 +1,5 @@
 import { globToRegExp } from "./analyze.js";
+import { selectedPlanMarkdown } from "./plan-steps.js";
 
 // The Feature Map is the plan-doc artifact that decides decomposition: a fenced
 // ```feature-map``` block whose rows route source paths to the feature that owns
@@ -71,7 +72,7 @@ const FEATURE_MAP_HEADING = /^#{1,6}\s+.*feature\s+map\b/i;
  *  fenced block" (a table or prose) — the latter silently routes nothing and
  *  must be flagged, not treated as absent. */
 export function hasFeatureMapHeading(markdown: string): boolean {
-  return markdown.split(/\r?\n/).some((line) => FEATURE_MAP_HEADING.test(line));
+  return selectedPlanMarkdown(markdown).split(/\r?\n/).some((line) => FEATURE_MAP_HEADING.test(line));
 }
 
 function toPosix(path: string): string {
@@ -93,15 +94,13 @@ function literalPrefixLength(glob: string): number {
  *  no errors (a missing map is not an error; the routing rule's no-map branch
  *  handles it). Malformed rows are collected, not thrown. */
 export function parseFeatureMap(markdown: string): FeatureMap {
-  const lines = markdown.split(/\r?\n/);
+  const lines = selectedPlanMarkdown(markdown).split(/\r?\n/);
   const rows: FeatureMapRow[] = [];
   const errors: FeatureMapError[] = [];
   const seenExact = new Set<string>();
 
-  // Read the LAST block, not the first. A long-lived doc accumulates a Feature
-  // Map per dated delivery plan, and the current step's map is the newest one;
-  // taking the first made `map materialize` route against a shipped plan and
-  // report a genuinely-declared new file as unmapped.
+  // Use the selected plan's region. Within map-only / standalone documents,
+  // preserve the last-block convention without borrowing a later plan's map.
   const start = lastFeatureMapFenceIndex(lines);
 
   let inBlock = false;

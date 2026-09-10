@@ -2,7 +2,7 @@
 title: Plan step mirroring
 status: current
 type: feature
-last_reviewed: 2026-06-29
+last_reviewed: 2026-09-10
 ---
 
 # Plan step mirroring
@@ -23,7 +23,19 @@ Plan discovery is deliberately conservative about what counts as "the plan you a
 
 The tape projection is idempotent. Logging the same active step repeatedly must not spam the tape, so an append happens only when the latest step event for that plan names a different step. This makes re-running the step command, or a watch loop, safe to call as often as the loop wants.
 
+Approval belongs to the selected work, not to the surrounding knowledge page or a historical effort.
+The selected delivery section's own status takes precedence over document metadata. A standalone
+plan can retain document-level approval when there is no ambiguity; a document carrying several
+plans must declare approval within the selected one. Examples and quoted material supply neither
+authorization nor work to perform.
+
 ## Invariants & boundaries
+
+- Discovery and scope verification share supported plan locations and section selection. Unsupported
+  or conflicting approval is named with its document and the canonical declaration, which may be
+  written only after human approval. An explicit preview reports its approval state and cannot emit
+  a start event while unapproved. *(tests: `steps.test.ts` qualified approval, preview, and map
+  discovery; `review-boundary.test.ts` embedded approval across supported directories)*
 
 - The checklist comes from the Delivery Plan section if present, else Definition of Done, and checkboxes outside the chosen section are ignored. *(test: `plan-steps.test.ts` `parseDeliveryPlan` "ignores checkboxes outside the chosen section" + "prefers Delivery Plan over Definition of Done when both exist")*
 - A section is scoped by heading depth: it runs to the next heading at the same or a shallower level, so a checklist filed under a subheading still belongs to the plan while a sibling section's checkboxes never do. Depth is what makes "outside the section" mean something — ending a section at any heading at all made every plan that files its steps under `### As-built`-style subheadings report no checklist, which silently hid unfinished work from plan discovery. *(test: `plan-steps.test.ts` "reads a checklist filed under a subheading that does not itself match" + "still ends a section at a sibling heading, not just a shallower one")*
@@ -31,8 +43,14 @@ The tape projection is idempotent. Logging the same active step repeatedly must 
 - The step ordinal is positional within the checklist, not parsed from any "Step N" label in the step text. *(test: `plan-steps.test.ts` `parseDeliveryPlan` "extracts ordered steps with done flags from the Delivery Plan section")*
 - The active step is the first unchecked one, and a fully-checked plan has no active step. *(test: `plan-steps.test.ts` `activeStep / todoStatus` "returns the first unchecked step" + "returns null when every step is done")*
 - Approval means EXACTLY the status "approved" (markdown-stripped): "awaiting approval", "not approved", and "never approved" are all not approved — an explicitly rejected plan can never drive the workflow. The predicate is the single shared one the scope gate also uses. *(tests: `plan-steps.test.ts` `extractStatus / isApproved` including "an explicitly REJECTED plan is never approved"; `change-state.test.ts` "detectApprovedPlanScope — one approval predicate with steps")*
+- Approval is bound to the selected checklist. Feature metadata cannot hide its explicit approval,
+  and completed work cannot authorize a later draft or a plan missing its own declaration. Repeated
+  declarations fail closed; code examples, comments, quotes, and unrelated sections cannot grant
+  approval. An unambiguous standalone plan retains its document-level convention. *(tests:
+  `plan-steps.test.ts` approval binding, standalone compatibility, repeated declarations, and
+  excluded examples; `change-state.test.ts` selected-plan approval parity)*
 - Auto-discovery surfaces only approved plans that still have an unchecked step; a draft or fully-complete plan is excluded. *(test: `plan-steps.test.ts` `findActivePlans / loadPlan (fs discovery)` "finds the single approved plan that still has an unchecked step")*
-- **Discovery reads every directory a plan may live in — including the one the gate already reads.** The gate's approved-plan scope detection resolves over `docs/plans`, while discovery looked only under `docs/features` and `docs/concepts`, so a repository that keeps its plans in `docs/plans` had `review` reporting the plan's scope in its headline while `steps` and `map materialize` refused with "no approved plan" on the line before — two halves of one loop disagreeing about where plans live, with both refusals reachable straight from the documented workflow. No directory is blessed and none takes precedence: an approved plan in any of them is the same plan, and an overlap surfaces as the ambiguity below rather than being resolved by directory order. *(test: `plan-steps.test.ts` "plan discovery reads every directory a plan may live in" — a plan under `docs/plans` found with no `--plan`, all three directories contending together, and a repository without the directory unaffected)*
+- Discovery and scope verification read feature, concept, and standalone plan documents without directory precedence; overlapping eligible approvals are refused rather than resolved by filename. *(tests: `plan-steps.test.ts` plan discovery locations; `review-boundary.test.ts` embedded approval and ambiguity)*
 - Ambiguity is surfaced, not guessed: with more than one approved-with-active plan the command exits non-zero and asks for an explicit plan; an explicit plan resolves it. *(test: `steps.test.ts` `codument steps (CLI, temp repo)` "reads a specific doc with --plan even when discovery would be ambiguous")*
 - An explicit plan via `--plan` does not require approval, so the approval gate never blocks reading a named plan (e.g. the plan-approval summary path). *(test: `steps.test.ts` `codument steps (CLI, temp repo)` "renders an awaiting-approval plan via --plan (the plan-approval summary path)")*
 - The tape projection is idempotent: it appends a step event only when the active step changed, and emits the next step once the plan advances. *(test: `plan-steps.test.ts` `emitActiveStep (idempotent step events)` "appends a step event for the active step, then is a no-op on repeat" + "emits the next step once the plan advances")*

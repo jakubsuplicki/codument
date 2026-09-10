@@ -153,6 +153,32 @@ src/budget.ts | timing | feature | timeout chain + wall-clock budget
 `;
 
 describe("parseFeatureMap across multiple map blocks", () => {
+  const current = "## Delivery Plan — current\nStatus: approved\n- [ ] next\n### Feature Map\n```feature-map\nsrc/a.ts | current | feature | current work\n```\n";
+  const future = "## Delivery Plan — future\nStatus: draft\n- [ ] later\n### Feature Map\n```feature-map\nsrc/a.ts | future | feature | future work\n```\n";
+  it("uses the selected checklist's map rather than a later draft's map", () => {
+    assert.equal(routeFile(parseFeatureMap(current + future).rows, "src/a.ts").feature, "current");
+  });
+  it("cannot borrow a future map or heading when the selected plan has neither", () => {
+    const md = "## Delivery Plan — current\nStatus: approved\n- [ ] next\n" + future;
+    assert.deepEqual(parseFeatureMap(md).rows, []);
+    assert.equal(hasFeatureMapHeading(md), false);
+  });
+  it("preserves map error line numbers after selecting an embedded plan", () => {
+    const md = "---\r\nstatus: current\r\n---\r\n" + current.replace("src/a.ts | current | feature | current work", "bad row").replaceAll("\n", "\r\n") + future;
+    const map = parseFeatureMap(md);
+    assert.equal(map.errors[0]?.line, md.split(/\r?\n/).indexOf("bad row") + 1);
+  });
+  it("retains a standalone sibling map", () => {
+    assert.equal(parseFeatureMap(current.replace("### Feature Map", "## Feature Map")).rows[0]?.feature, "current");
+  });
+  it("keeps fallback checklists isolated from an empty future delivery plan", () => {
+    const md = current.replace("Delivery Plan", "Definition of Done") + future.replace("- [ ] later\n", "");
+    assert.equal(routeFile(parseFeatureMap(md).rows, "src/a.ts").feature, "current");
+  });
+  it("treats a nested Definition of Done as part of its containing plan", () => {
+    const md = current.replace("- [ ] next", "### Definition of Done\n- [ ] next").replace("### Feature Map", "## Feature Map");
+    assert.equal(routeFile(parseFeatureMap(md).rows, "src/a.ts").feature, "current");
+  });
   it("routes against the newest block, not the first", () => {
     const map = parseFeatureMap(MULTI_MAP);
     assert.deepEqual(

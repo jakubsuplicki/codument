@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type Acknowledgment,
@@ -18,7 +18,8 @@ import {
 import { type AnchorChange, fileContentTransition, isPreciseFile } from "./fingerprint.js";
 import { movesOnly, type RenamePair } from "./git.js";
 import { resolveOwner, splitAnchorId } from "./ownership.js";
-import { extractStatus, isApproved } from "./plan-steps.js";
+import { activeStep, extractStatus, isApproved, isPlanPath, parseDeliveryPlan, parsePlanScope, readPlanDocuments } from "./plan-steps.js";
+import { ConfigValueError } from "./state-io.js";
 import {
   allSources,
   isSourcePattern,
@@ -1250,7 +1251,7 @@ export function standingTreeAcks(
 
 // ── Approved-plan detection ─────────────────────────────────────────────
 //
-// Reads docs/plans/*.md for an approved plan and parses its `## Scope` section
+// Reads the same plan locations and selected section as checklist discovery.
 // (backtick-quoted source paths). Used by `review`/`watch` to flag out-of-plan
 // changes. Kept here, beside computeChangeState, so both commands share it; the
 // pure analyzer above never touches the filesystem.
@@ -1258,9 +1259,7 @@ export function standingTreeAcks(
 export interface ApprovedPlan {
   plan: string;
   scope: string[];
-  /** Every approved-with-scope plan found, winner first (sorted by filename).
-   *  More than one element = ambiguity the surfaces must SAY (one line naming
-   *  all and which won) rather than let the first-by-filename win silently. */
+  /** The uniquely selected plan. Multiple candidates are refused before analysis. */
   contenders: string[];
 }
 
@@ -1268,80 +1267,26 @@ export interface ApprovedPlan {
 export function detectApprovedPlanScopeFromDocuments(
   documents: readonly { path: string; content: string }[],
 ): ApprovedPlan | null {
-  let winner: ApprovedPlan | null = null;
-  const contenders: string[] = [];
+  const candidates: Array<{ plan: string; scope: string[] }> = [];
   for (const { path, content } of [...documents].sort((a, b) =>
     a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
   )) {
-    if (!isApprovedPlan(content)) continue;
-    const scope = parseScopeSection(content);
-    if (scope.length === 0) continue;
-    contenders.push(path);
-    if (!winner) winner = { plan: path, scope, contenders };
+    if (!isPlanPath(path) || !isApproved(extractStatus(content))) continue;
+    const steps = parseDeliveryPlan(content);
+    if (steps.length > 0 && !activeStep(steps)) continue;
+    const scope = parsePlanScope(content);
+    if (steps.length || scope.length) candidates.push({ plan: path, scope });
   }
-  return winner;
+  if (candidates.length > 1) {
+    throw new ConfigValueError("docs/features, docs/concepts, docs/plans", "approved plan",
+      `multiple approved plans (${candidates.map((candidate) => candidate.plan).join(", ")}) — no scope selected; keep exactly one eligible plan for scope verification`);
+  }
+  const selected = candidates[0];
+  return selected?.scope.length ? { ...selected, contenders: [selected.plan] } : null;
 }
 
 export function detectApprovedPlanScope(root: string): ApprovedPlan | null {
-  const plansDir = join(root, "docs", "plans");
-  if (!existsSync(plansDir)) return null;
-
-  let files: string[];
-  try {
-    files = readdirSync(plansDir)
-      .filter((f) => f.endsWith(".md"))
-      .sort();
-  } catch {
-    return null;
-  }
-
-  const documents: Array<{ path: string; content: string }> = [];
-  for (const file of files) {
-    let content: string;
-    try {
-      content = readFileSync(join(plansDir, file), "utf-8");
-    } catch {
-      continue;
-    }
-    documents.push({ path: `docs/plans/${file}`, content });
-  }
-  return detectApprovedPlanScopeFromDocuments(documents);
-}
-
-// One shared approval predicate with `codument steps` (plan-steps.ts): the
-// markdown-stripped status must equal "approved" exactly. A local literal
-// regex here once diverged from steps' word-boundary match, so the two
-// surfaces could disagree about the same plan (`Status: **approved**` drove
-// steps but never enabled out-of-plan detection) — sharing the predicate makes
-// that disagreement impossible.
-function isApprovedPlan(content: string): boolean {
-  return isApproved(extractStatus(content));
-}
-
-function parseScopeSection(content: string): string[] {
-  const lines = content.split(/\r?\n/);
-  const scope: string[] = [];
-  let inScope = false;
-  for (const line of lines) {
-    if (/^##\s+/.test(line)) {
-      inScope = /^##\s+scope\b/i.test(line);
-      continue;
-    }
-    if (!inScope) continue;
-    // Only list items declare scope. Explanatory prose in the Scope section
-    // (e.g. "anything outside this — `db.ts`, `cache.ts` — is out of plan") must
-    // NOT leak its example paths into the scope, or those changes look in-plan.
-    if (!/^\s*[-*]\s/.test(line)) continue;
-    for (const m of line.matchAll(/`([^`]+\.[a-z0-9]+)`/gi)) {
-      // A path (has a slash), or a root-level FILENAME: a plan may legitimately
-      // scope `cli.ts` or `package.json`. Root-level demands a real extension
-      // (alphabetic-first), so a backticked version like `v0.7.0` stays prose.
-      if (m[1].includes("/") || /^[\w.-]+\.[a-z][a-z0-9]*$/i.test(m[1])) {
-        scope.push(m[1]);
-      }
-    }
-  }
-  return [...new Set(scope)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return detectApprovedPlanScopeFromDocuments(readPlanDocuments(root));
 }
 
 // Re-export so callers can pass a typed entry list if needed.

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
@@ -583,25 +583,29 @@ describe("report command (temp git repo)", () => {
       // and report's separate inner try must reproduce.
       const fakeBin = await mkdtemp(join(tmpdir(), "codument-report-fakegit-"));
       const top = realpathSync(tmp);
-      const FAKE = `#!/bin/sh
-for a in "$@"; do
-  [ "$a" = "--is-inside-work-tree" ] && { echo true; exit 0; }
-  [ "$a" = "--show-toplevel" ] && { echo "${top}"; exit 0; }
-done
-exit 3
-`;
-      await writeFile(join(fakeBin, "git"), FAKE);
-      await chmod(join(fakeBin, "git"), 0o755);
+      // Inject the same subprocess fault on every host: an extensionless shell
+      // script on PATH cannot shadow git.exe on Windows.
+      const preload = join(fakeBin, "fail-git.cjs");
+      await writeFile(preload, `
+const childProcess = require("node:child_process");
+const original = childProcess.execFileSync;
+childProcess.execFileSync = function(command, args, options) {
+  if (command !== "git") return original(command, args, options);
+  if (args.includes("--is-inside-work-tree")) return "true\\n";
+  if (args.includes("--show-toplevel")) return ${JSON.stringify(top + "\n")};
+  throw Object.assign(new Error("simulated Git failure"), { status: 3 });
+};
+require("node:module").syncBuiltinESMExports();
+`);
       const here = dirname(fileURLToPath(import.meta.url));
       const CLI = join(here, "..", "dist", "cli.js");
       try {
         let status = 0;
         let stdout = "";
         try {
-          execFileSync("node", [CLI, "report", "--json"], {
+          execFileSync("node", ["--require", preload, CLI, "report", "--json"], {
             cwd: tmp,
             encoding: "utf-8",
-            env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
           });
         } catch (err) {
           const e = err as { status?: number; stdout?: string };

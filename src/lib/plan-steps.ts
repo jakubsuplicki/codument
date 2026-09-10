@@ -42,75 +42,149 @@ export interface ActivePlan {
 
 // ── Pure parsing ─────────────────────────────────────────────────────────
 
-const HEADING = /^(#{1,6})\s+(.*\S)\s*$/;
+const HEADING = /^ {0,3}(#{1,6})[ \t]+(.*\S)[ \t]*$/;
 const CHECKBOX = /^\s*[-*]\s+\[([ xX])\]\s+(.*\S)\s*$/;
 
-/** Collect checkbox items for EVERY heading whose text matches `match`. A
- *  section runs to the next heading at the SAME OR SHALLOWER level, so deeper
- *  subheadings belong to it — a plan routinely files its checklist under one
- *  (`## Delivery plan — …` → `### Plan delivery steps`), and ending the section
- *  at any heading at all made those plans read as having no checklist. One
- *  entry per matching section, in document order; sections with no checkboxes
- *  are dropped. Step ordinals restart per section, since each section is its
- *  own checklist, and run continuously across its subheadings. */
-function sectionSteps(lines: string[], match: RegExp): PlanStep[][] {
-  const sections: PlanStep[][] = [];
-  let current: PlanStep[] | null = null;
-  let level = 0;
-  let n = 0;
+interface PlanSection {
+  start: number;
+  end: number;
+  level: number;
+  steps: PlanStep[];
+}
 
-  for (const line of lines) {
+/** Examples are not instructions. Keep line positions while excluding fenced
+ *  and indented code, quotes, and comments from both status and checklist reads. */
+function instructionLines(markdown: string): string[] {
+  let fence: string | null = null;
+  let quotedParagraph = false;
+  return markdown
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, (comment) => comment.replace(/[^\r\n]/g, " "))
+    .split(/\r?\n/)
+    .map((line) => {
+      const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+      if (fence !== null) {
+        if (
+          marker &&
+          marker[1][0] === fence[0] &&
+          marker[1].length >= fence.length &&
+          !marker[2].trim()
+        ) {
+          fence = null;
+        }
+        return "";
+      }
+      if (marker && (marker[1][0] !== "`" || !marker[2].includes("`"))) {
+        quotedParagraph = false;
+        fence = marker[1];
+        return "";
+      }
+      if (!line.trim() || HEADING.test(line) || /^ {0,3}(?:[-+*]|1[.)])[ \t]+\S/.test(line)) {
+        quotedParagraph = false;
+      }
+      if (/^ {0,3}>/.test(line)) {
+        quotedParagraph = true;
+        return "";
+      }
+      return quotedParagraph || /^(?: {4}|\t)/.test(line) ? "" : line;
+    });
+}
+
+/** Preserve section boundaries even for an empty plan: its status must never
+ *  become another plan's fallback approval. Nested headings retain the checklist. */
+function sectionSteps(lines: string[], match: RegExp): PlanSection[] {
+  const sections: PlanSection[] = [];
+  let current: PlanSection | null = null;
+  for (const [index, line] of lines.entries()) {
     const h = HEADING.exec(line);
     if (h) {
       const depth = h[1].length;
-      if (current && depth <= level) {
-        if (current.length) sections.push(current);
+      if (current && depth <= current.level) {
+        current.end = index;
         current = null;
       }
       if (!current && match.test(h[2])) {
-        current = [];
-        level = depth;
-        n = 0;
+        current = { start: index, end: lines.length, level: depth, steps: [] };
+        sections.push(current);
       }
       continue;
     }
     if (!current) continue;
     const c = CHECKBOX.exec(line);
     if (c) {
-      n += 1;
-      current.push({ n, text: c[2], done: c[1].toLowerCase() === "x" });
+      current.steps.push({
+        n: current.steps.length + 1,
+        text: c[2],
+        done: c[1].toLowerCase() === "x",
+      });
     }
   }
-  if (current?.length) sections.push(current);
-
   return sections;
 }
 
-/** The section a `work-step` run should act on: the first with unfinished work,
- *  else the last one.
- *
- *  A long-lived doc accumulates dated `## Delivery plan — … (YYYY-MM-DD)`
- *  sections, and the shipped ones are all `- [x]`. Taking the first match made
- *  every command read a plan that shipped weeks ago, and — since `findActivePlans`
- *  selects docs on this same parse having an unchecked step — made a doc whose
- *  current effort is genuinely unfinished vanish from plan discovery entirely.
- *  Choosing on "has unfinished work" is what keeps one doc and a directory of
- *  docs from ever disagreeing about which plan is active. */
-function activeSection(sections: PlanStep[][]): PlanStep[] {
-  return (
-    sections.find((steps) => steps.some((step) => !step.done)) ??
-    sections[sections.length - 1] ??
-    []
-  );
+/** One selection for approval and work. A standalone plan may use document
+ *  metadata; an embedded plan's own declaration takes precedence. */
+function planParts(markdown: string) {
+  const raw = markdown.replace(/^\uFEFF/, "");
+  const frontmatter = /^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(raw);
+  const body = frontmatter
+    ? raw.slice(frontmatter[0].length)
+    : /^---[ \t]*\r?\n/.test(raw)
+      ? ""
+      : raw;
+  const lines = instructionLines(body);
+  const delivery = sectionSteps(lines, /\bdelivery plan\b/i);
+  const done = sectionSteps(lines, /\bdefinition of done\b/i);
+  const candidates = delivery.some((section) => section.steps.length)
+    ? delivery
+    : done.length
+      ? done
+      : delivery;
+  const selected =
+    candidates.find((section) => section.steps.some((step) => !step.done)) ??
+    [...candidates].reverse().find((section) => section.steps.length) ??
+    candidates[candidates.length - 1];
+  // Either supported heading kind can introduce separate work. Nested headings
+  // stay inside their containing plan, while empty sibling plans still count.
+  const sections = sectionSteps(lines, /\b(?:delivery plan|definition of done)\b/i);
+  let titleSeen = false;
+  const firstSection = lines.findIndex((line) => {
+    const heading = HEADING.exec(line);
+    if (!heading) return false;
+    if (heading[1].length === 1 && !titleSeen) {
+      titleSeen = true;
+      return false;
+    }
+    return true;
+  });
+  const documentLines = [
+    ...instructionLines(frontmatter?.[1] ?? "").filter((line) => !/^[ \t]/.test(line)),
+    ...lines.slice(0, firstSection < 0 ? lines.length : firstSection),
+  ];
+  const bodyOffset = raw.slice(0, raw.length - body.length).split(/\r?\n/).length - 1;
+  return { lines, sections, selected, documentLines, bodyOffset };
+}
+
+function statusDeclarations(lines: string[]): string[] {
+  return lines.flatMap((line) => {
+    const match = /^[ \t]{0,3}[*_]*status:\s*(.*?)\s*$/i.exec(line);
+    return match ? [match[1].replace(/[*_`]/g, "").trim().toLowerCase()] : [];
+  });
 }
 
 /** The plan's checklist: the active `Delivery Plan` section if present, else
  *  `Definition of Done`. Checkboxes outside the chosen section are ignored. */
 export function parseDeliveryPlan(markdown: string): PlanStep[] {
-  const lines = markdown.split(/\r?\n/);
-  const delivery = activeSection(sectionSteps(lines, /\bdelivery plan\b/i));
-  if (delivery.length) return delivery;
-  return activeSection(sectionSteps(lines, /\bdefinition of done\b/i));
+  return planParts(markdown).selected?.steps ?? [];
+}
+
+/** Bound plan-owned payloads to the selected section without changing source
+ *  line numbers. A standalone document retains its sibling-section convention. */
+export function selectedPlanMarkdown(markdown: string): string {
+  const { selected, sections, bodyOffset } = planParts(markdown);
+  if (!selected || sections.length <= 1) return markdown;
+  return markdown.split(/\r?\n/).map((line, index) =>
+    index >= selected.start + bodyOffset && index < selected.end + bodyOffset ? line : "",
+  ).join("\n");
 }
 
 /** First unchecked step, or null when the plan is complete/empty. */
@@ -118,13 +192,58 @@ export function activeStep(steps: PlanStep[]): PlanStep | null {
   return steps.find((s) => !s.done) ?? null;
 }
 
-/** First `status:`/`Status:` value (frontmatter or body), markdown stripped and
- *  lowercased — e.g. `Status: **approved**` → "approved". */
+/** Status belonging to the selected plan, never another section. A lone plan
+ *  without local status retains the legacy document metadata convention.
+ *  Repeated declarations are ambiguous even when their text agrees. */
 export function extractStatus(markdown: string): string | null {
-  const m = /^[\s>*_-]*status:\s*(.+?)\s*$/im.exec(markdown);
-  if (!m) return null;
-  const cleaned = m[1].replace(/[*_`]/g, "").trim().toLowerCase();
-  return cleaned || null;
+  const { lines, sections, selected, documentLines } = planParts(markdown);
+  let declarations: string[] = [];
+  if (selected) {
+    const local = lines.slice(selected.start + 1, selected.end);
+    const subheading = local.findIndex((line) => HEADING.test(line));
+    declarations = statusDeclarations(local.slice(0, subheading < 0 ? local.length : subheading));
+    if (subheading >= 0 && statusDeclarations(local.slice(subheading)).length > 0) return null;
+  }
+  if (declarations.length === 0 && sections.length <= 1) {
+    declarations = statusDeclarations(documentLines);
+  }
+  return declarations.length === 1 ? declarations[0] || null : null;
+}
+
+/** Scope follows the selected checklist. Only an unambiguous standalone plan
+ *  may fall back to a sibling document-level Scope section. */
+export function parsePlanScope(markdown: string): string[] {
+  const { lines, sections, selected } = planParts(markdown);
+  const readScope = (source: string[], siblingOnly = false): string[] | null => {
+    const paths = new Set<string>();
+    let scopeDepth: number | null = null;
+    let found = false;
+    for (const line of source) {
+      const heading = HEADING.exec(line);
+      if (heading) {
+        if (scopeDepth !== null && heading[1].length <= scopeDepth) scopeDepth = null;
+        if (scopeDepth === null && (!siblingOnly || heading[1].length === 2) && /^scope\b/i.test(heading[2])) {
+          scopeDepth = heading[1].length;
+          found = true;
+        }
+        continue;
+      }
+      if (scopeDepth === null || !/^\s*[-*]\s/.test(line)) continue;
+      for (const match of line.matchAll(/`([^`]+\.[a-z0-9]+)`/gi)) {
+        if (match[1].includes("/") || /^[\w.-]+\.[a-z][a-z0-9]*$/i.test(match[1])) {
+          paths.add(match[1]);
+        }
+      }
+    }
+    return found ? [...paths].sort() : null;
+  };
+  if (selected) {
+    const selectedLines = lines.slice(selected.start + 1, selected.end);
+    const local = readScope(selectedLines);
+    if (local !== null) return local;
+    if (statusDeclarations(selectedLines).length > 0) return [];
+  }
+  return sections.length <= 1 ? readScope(lines, true) ?? [] : [];
 }
 
 /** Approved means EXACTLY "approved" (after extractStatus's strip+lowercase).
@@ -156,10 +275,29 @@ export function todoStatus(plan: ActivePlan, step: PlanStep): TodoStatus {
 // are read, and an approved plan in any of them is the same plan.
 const PLAN_DIRS = ["docs/features", "docs/concepts", "docs/plans"];
 
-function toActivePlan(root: string, abs: string): ActivePlan | null {
+/** Same supported locations for live discovery and Git snapshot readers. */
+export function isPlanPath(path: string): boolean {
+  return PLAN_DIRS.some((dir) => path.startsWith(`${dir}/`) && /^[^/]+\.md$/.test(path.slice(dir.length + 1)));
+}
+
+export function readPlanDocuments(root: string): Array<{ path: string; content: string }> {
+  const documents: Array<{ path: string; content: string }> = [];
+  for (const dir of PLAN_DIRS) {
+    let names: string[];
+    try { names = readdirSync(join(root, dir)); } catch { continue; }
+    for (const name of names.sort()) {
+      const path = `${dir}/${name}`;
+      if (!isPlanPath(path)) continue;
+      try { documents.push({ path, content: readFileSync(join(root, path), "utf8") }); } catch { /* unreadable */ }
+    }
+  }
+  return documents.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+}
+
+function toActivePlan(root: string, abs: string, markdown?: string): ActivePlan | null {
   let md: string;
   try {
-    md = readFileSync(abs, "utf-8");
+    md = markdown ?? readFileSync(abs, "utf-8");
   } catch {
     return null;
   }
@@ -186,21 +324,28 @@ export function loadPlan(root: string, planPath: string): ActivePlan | null {
  *  step, sorted by path. The single-element common case is the active plan; an
  *  empty or multi-element result tells the caller to ask for an explicit plan. */
 export function findActivePlans(root: string): ActivePlan[] {
-  const out: ActivePlan[] = [];
-  for (const d of PLAN_DIRS) {
-    let names: string[];
-    try {
-      names = readdirSync(join(root, d));
-    } catch {
-      continue;
-    }
-    for (const name of names.sort()) {
-      if (!name.endsWith(".md")) continue;
-      const plan = toActivePlan(root, join(root, d, name));
-      if (plan && plan.approved && plan.active) out.push(plan);
-    }
+  return planCandidates(root).filter((plan) => plan.approved);
+}
+
+function planCandidates(root: string): ActivePlan[] {
+  return readPlanDocuments(root).flatMap(({ path, content }) => {
+    const plan = toActivePlan(root, join(root, path), content);
+    return plan?.active ? [plan] : [];
+  });
+}
+
+/** Discovery never grants approval or rewrites a declaration to make it fit. */
+export function resolveActivePlan(root: string): { plan: ActivePlan } | { error: string } {
+  const candidates = planCandidates(root);
+  const approved = candidates.filter((plan) => plan.approved);
+  if (approved.length === 1) return { plan: approved[0] };
+  if (approved.length > 1) {
+    return { error: `multiple approved plans with unchecked steps (${approved.map((plan) => plan.path).join(", ")}) — pass --plan <path>` };
   }
-  return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const diagnostics = candidates.map((plan) =>
+    `${plan.path}: ${plan.status === null ? "missing or conflicting approval" : `status is ${JSON.stringify(plan.status)}`}; only after human approval, use Status: approved in the selected Delivery Plan`,
+  );
+  return { error: "no approved plan with an unchecked step under docs/features, docs/concepts or docs/plans — pass --plan <path>" + (diagnostics.length ? `\n${diagnostics.join("\n")}` : "") };
 }
 
 // ── Emit (events) ────────────────────────────────────────────────────────

@@ -165,6 +165,62 @@ describe("review staged boundary", () => {
     assert.deepEqual(report.state.outOfPlan, ["src/a.ts"]);
   });
 
+  for (const directory of ["features", "concepts", "plans"]) {
+    it(`reads embedded approval and scope from the index under docs/${directory}`, async () => {
+      const path = `docs/${directory}/delivery.md`;
+      const draft = "---\nstatus: current\n---\n## Delivery Plan\nStatus: draft\n- [ ] next\n### Scope\n- `src/b.ts`\n";
+      await put(path, draft);
+      git(["add", path]);
+      git(["commit", "-qm", "draft plan"]);
+      await put(path, draft.replace("Status: draft", "Status: approved"));
+      await put("src/a.ts", "export const a = 2;\n");
+      git(["add", "src/a.ts"]);
+      const unapproved = review(["--staged", "--json"]);
+      assert.equal(unapproved.status, 0);
+      assert.equal(JSON.parse(unapproved.stdout).plan, null, "unstaged approval cannot authorize a staged change");
+      git(["add", path]);
+      const approved = review(["--staged", "--json"]);
+      assert.equal(approved.status, 0);
+      const report = JSON.parse(approved.stdout);
+      assert.equal(report.plan.plan, path);
+      assert.deepEqual(report.plan.scope, ["src/b.ts"]);
+      assert.deepEqual(report.state.outOfPlan, ["src/a.ts"]);
+    });
+  }
+
+  it("refuses ambiguous approved scope in machine and human output", async () => {
+    for (const directory of ["features", "plans"]) {
+      await put(`docs/${directory}/delivery.md`, "## Delivery Plan\nStatus: approved\n- [ ] next\n### Scope\n- `src/a.ts`\n");
+    }
+    await put("src/a.ts", "export const a = 2;\n");
+    git(["add", "src/a.ts", "docs/features/delivery.md", "docs/plans/delivery.md"]);
+    const result = review(["--staged", "--json"]);
+    assert.equal(result.status, 1);
+    const failure = JSON.parse(result.stdout);
+    assert.equal(failure.gate, "unavailable");
+    assert.match(failure.reason, /multiple approved plans.*docs\/features\/delivery\.md.*docs\/plans\/delivery\.md/);
+    assert.match(failure.reason, /no scope selected/);
+    const human = review(["--staged"]);
+    assert.equal(human.status, 1);
+    assert.match(human.stdout, /no scope selected/);
+  });
+
+  it("map and context retrieve the selected plan instead of a future draft", async () => {
+    const path = "docs/features/delivery.md";
+    await put(path, [
+      "## Delivery Plan — current", "Status: approved", "- [ ] next",
+      "### Feature Map", "```feature-map", "src/a.ts | alpha | feature | current work", "```",
+      "## Delivery Plan — future", "Status: draft", "- [ ] later",
+      "### Feature Map", "```feature-map", "src/a.ts | beta | feature | future work", "```",
+    ].join("\n"));
+    const route = cli(["map", "route", "src/a.ts", "--plan", path, "--json"]);
+    assert.equal(route.status, 0);
+    assert.equal(JSON.parse(route.stdout).feature, "alpha");
+    const context = cli(["context", "--plan", path, "--json"]);
+    assert.equal(context.status, 0);
+    assert.deepEqual(JSON.parse(context.stdout).entries.map((entry: { feature: string }) => entry.feature), ["alpha"]);
+  });
+
   it("does not parse an unrelated invalid worktree config", async () => {
     await put("src/a.ts", "export const a = 2;\n");
     git(["add", "src/a.ts"]);

@@ -2,7 +2,7 @@
 title: Adversarial review gate
 status: in-progress
 type: feature
-last_reviewed: 2026-09-03
+last_reviewed: 2026-09-10
 ---
 
 # Adversarial review gate
@@ -38,6 +38,8 @@ can never clear that later gate.
 **Proportionality is mandatory, not optional.** Two extra agent passes on every one-line edit is how a good gate gets disabled. Bundle depth is gated on blast radius, which Codument already computes: a trivial single-symbol edit touching no documented invariant skips the heavy pass; a risk-tagged, invariant-touching, or multi-file diff gets the full adversary.
 
 ## Invariants & boundaries
+
+- Default runner availability checks and test execution both prohibit package network access; a locally unavailable runner stays unavailable rather than initiating a metadata lookup. Project-declared commands keep their own network policy. *(test: `review-confirm.test.ts` "defaultCommandAvailable: no local tsx falls back to asking npx itself (hoisted/global counts)")*
 
 These are the contracts the build commits to. Tests land with the step that builds each; until then they are marked planned. The step-4 set was hardened after a second adversarial re-verification (7 confirmed holes, all closed) — each invariant below names the test that now pins it.
 
@@ -77,6 +79,7 @@ These are the contracts the build commits to. Tests land with the step that buil
 
 ## Decisions
 
+- Deferred: remote review enforcement needs private artifact transport and a review identity matching the exact CI change range before enabling a required-review gate. Local ignored receipts do not travel with a checkout or establish review of an aggregate pull request. A zero-finding record alone does not demonstrate reviewer independence.
 - Adversarial review is independent by context and degrades without subagents (option A: same-agent pass on Codex) — honors the [agent-delivery-workflow.md](agent-delivery-workflow.md) non-goal that no profile may *require* subagents. To be recorded in a future ADR when step 6 lands (011 and 012 were since taken by the plan adversary and file-grain acks).
 - A finding blocks only when confirmed by a runnable failing test; judgment findings stay advisory — the deterministic-not-judge line of [008](../architecture/decisions/008-benchmark-proof-deterministic-not-judge.md) and the detect-test-verify line of [010](../architecture/decisions/010-freshness-resolution-detect-test-verify-agent-driven.md), applied to implementation review. To be recorded in the same future ADR.
 

@@ -250,7 +250,7 @@ describe("seeded-bugs benchmark", () => {
       assert.equal(score.status, 1);
       assert.ok(score.stdout.includes("Result: FAIL"));
       assert.ok(score.stdout.includes("FAIL locked-files"));
-      assert.ok(score.stdout.includes(".codument/benchmark.json"));
+      assert.ok(score.stdout.replace(/\\/g, "/").includes(".codument/benchmark.json"));
       // A tampered run must not record a result others could compare against.
       assert.ok(!existsSync(join(target, ".codument", "seeded-result.json")));
     } finally {

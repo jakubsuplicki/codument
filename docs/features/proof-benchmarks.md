@@ -2,7 +2,7 @@
 title: Proof benchmarks
 status: current
 type: feature
-last_reviewed: 2026-06-29
+last_reviewed: 2026-09-10
 ---
 
 # Proof benchmarks
@@ -25,7 +25,11 @@ The **catch-rate benchmark** is the ground-truth proof behind the review gate (s
 
 ## Invariants & boundaries
 
-- `benchmark context` is deterministic and runs with no network and no model: the same package version and fixture always yield the same token and relevance numbers. *(tests: `benchmark.test.ts` "runs the deterministic context benchmark", "scores the context fixture deterministically", "estimates tokens with a stable local heuristic")*
+- Context collection preserves real filename characters when converting native separators; it
+  never trims a filename or rewrites a literal POSIX backslash before reading or scoring it. *(test:
+  `benchmark.test.ts` "preserves real filename characters while collecting context")*
+
+- `benchmark context` is deterministic and runs with no network and no model: the same package version and fixture always yield the same token and relevance numbers. File identities use registry-relative paths on every platform, so Windows separators cannot turn relevant files into misses. *(tests: `benchmark.test.ts` "runs the deterministic context benchmark", "scores the context fixture deterministically", "estimates tokens with a stable local heuristic")*
 - The context benchmark works from packed package contents, not only the source repo, and emits stable schema-versioned JSON. *(tests: `benchmark.test.ts` "runs the context benchmark from a packed package", "declares benchmark fixtures as packaged files", "prints the context benchmark as stable JSON")*
 - `benchmark score` exits success only when every required check passes, and tampering with locked benchmark metadata fails the score. *(tests: `benchmark.test.ts` "scores a completed quality benchmark as passing", "scores an incomplete initialized quality benchmark as failed", "fails quality scoring when locked benchmark metadata changes")*
 - The quality score is an evidence bundle, not a single opaque number; the benchmark never calls a model or uses a judge. *(boundary — see ADR 008; enforced by the deterministic-scoring tests above)*

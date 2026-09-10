@@ -203,6 +203,7 @@ export function defaultCommandAvailable(root: string): boolean {
     cwd: root,
     timeout: 15_000,
     encoding: "utf8",
+    env: defaultTestEnv(),
     stdio: ["ignore", "ignore", "ignore"],
   });
   return !probe.error && probe.status === 0;
@@ -582,6 +583,17 @@ export function cleanNodeTestEnv(source: NodeJS.ProcessEnv = process.env): NodeJ
   return env;
 }
 
+function defaultTestEnv(): NodeJS.ProcessEnv {
+  const env = cleanNodeTestEnv();
+  // Windows deduplicates environment names case-insensitively. Remove aliases
+  // before setting the default's policy, including inherited uppercase values.
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === "npm_config_offline") delete env[key];
+  }
+  env.npm_config_offline = "true";
+  return env;
+}
+
 // Evidence the runner actually EXECUTED tests — not that they passed. node:test,
 // tsx, vitest and jest all emit this; a toolchain error emits none of it.
 const RAN_TESTS = /^(?:TAP version|ok\b|not ok\b|# tests\b|# pass\b|# fail\b|# Subtest)/m;
@@ -606,7 +618,9 @@ export function makeTestRunner(opts: TestRunnerOptions): TestRunner {
   // function of the project, never the ambient shell: strips the parent test-runner
   // context AND ambient NODE_OPTIONS, incl. an IDE debugger's auto-attach injection
   // that would otherwise make a genuinely red test read as unrunnable.
-  const env = cleanNodeTestEnv();
+  // --no-install alone can still look up package metadata. Both default paths
+  // must stay offline; a project-owned command keeps its own network policy.
+  const env = command === DEFAULT_TEST_COMMAND ? defaultTestEnv() : cleanNodeTestEnv();
   return (testRef: string): TestRunResult => {
     const resolved = resolveTestPath(opts.root, testRef, searchDirs);
     if (!resolved) return { outcome: "unrunnable", detail: `test not found: ${testRef}` };

@@ -2,7 +2,7 @@
 title: History audit
 status: current
 type: feature
-last_reviewed: 2026-07-07
+last_reviewed: 2026-09-10
 ---
 
 # History audit
@@ -72,6 +72,7 @@ audit that could not run exits non-zero, because "could not look" must never rea
 
 ## Decisions
 
+- Deferred: choosing the workspace root's own history versus a member's history needs an explicit selector and scope policy. The current refusal remains intentional; silently choosing a repository would change which commits an audit claims to cover.
 - One analyzer for the gate and the audit, rather than a second historical drift definition — the
   determinism contract and the single-freshness-definition stance this extends are recorded in
   [003-deterministic-reproducible-gate](../architecture/decisions/003-deterministic-reproducible-gate.md)

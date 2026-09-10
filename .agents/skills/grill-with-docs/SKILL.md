@@ -27,9 +27,8 @@ If the user asks to "plan" but these decisions are still open, say so in a line.
 1. Load the smallest relevant context:
    - `AGENTS.md` or the active agent instruction file
    - `docs/overview.md`
-   - `docs/.registry.json`
-   - relevant `docs/features/*.md`
-   - relevant `docs/concepts/*.md`
+   - `codument context --file <path> --owner` for one file's ownership; `context --file <path>` or `--feature <slug>` for known scoped work and its relevant feature/concept docs
+   - `docs/.registry.json` when editing or assessing the whole map, or when the CLI is unavailable
    - relevant ADRs under `docs/architecture/decisions/`
 2. Inspect code when docs can answer only part of the question.
 3. Ask one sharp question at a time when a real product or architecture decision remains.
@@ -44,6 +43,8 @@ If the user asks to "plan" but these decisions are still open, say so in a line.
 - Hidden interface changes: ask what callers, docs, tests, and dependents will be affected.
 - Reversibility: identify choices that would be expensive to change later.
 - Verification: ask what feedback loop will prove the change works.
+- Costly infrastructure or a broad build: name the concrete user outcome it unblocks, the effort it commits, and the cheapest useful experiment that could invalidate the approach. Prefer an existing seam or a small representative case before committing to the larger build. Use available evidence to settle this; ask only for an unresolved, load-bearing choice.
+- Evidence: identify the observable user or integration boundary the outcome depends on. A local stand-in can test a contract, but it cannot establish an external effect or checks beyond that stand-in.
 - Documentation fit: decide whether the decision belongs in a feature doc, concept doc, overview, ADR, or nowhere durable.
 
 ## Rules
@@ -55,3 +56,4 @@ If the user asks to "plan" but these decisions are still open, say so in a line.
 - Do not create generic `CONTEXT.md` files when Codument docs already provide the project memory.
 - Prefer updating existing docs over creating new ones.
 - Keep docs compact: capture settled decisions, not the whole conversation.
+- Scale the challenge to the uncertainty and cost. A small reversible fix or an already-settled choice needs no extra questionnaire or experiment gate; retain the existing approval workflow.

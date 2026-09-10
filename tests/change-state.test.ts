@@ -445,6 +445,20 @@ describe("detectApprovedPlanScope — one approval predicate with steps", () => 
     await plan("approved", true);
     assert.ok(detectApprovedPlanScope(tmp));
   });
+
+  it("uses the selected plan's approval rather than feature metadata or a shipped plan", async () => {
+    const file = join(tmp, "docs", "plans", "p.md");
+    await writeFile(
+      file,
+      `---\nstatus: current\n---\n## Delivery Plan\nStatus: approved\n- [ ] work\n${SCOPE.replace("## Scope", "### Scope")}`,
+    );
+    assert.ok(detectApprovedPlanScope(tmp));
+    await writeFile(
+      file,
+      `## Delivery Plan — shipped\nStatus: approved\n- [x] old\n## Delivery Plan — proposed\nStatus: draft\n- [ ] new\n${SCOPE}`,
+    );
+    assert.equal(detectApprovedPlanScope(tmp), null);
+  });
 });
 
 describe("detectApprovedPlanScope — root-level scope + multiple approved plans", () => {
@@ -486,21 +500,41 @@ describe("detectApprovedPlanScope — root-level scope + multiple approved plans
     assert.deepStrictEqual(s.outOfPlan, [], "a legitimately scoped root file is never out-of-plan");
   });
 
-  it("multiple approved plans: first by filename wins, ALL are named as contenders", async () => {
+  it("multiple approved plans refuse a guessed scope and name every candidate", async () => {
     await writePlan("b-second.md", ["- `src/lib/b.ts`"]);
     await writePlan("a-first.md", ["- `src/lib/a.ts`"]);
-    const p = detectApprovedPlanScope(tmp);
-    assert.equal(p?.plan, "docs/plans/a-first.md");
-    assert.deepStrictEqual(p?.scope, ["src/lib/a.ts"]);
-    assert.deepStrictEqual(p?.contenders, [
-      "docs/plans/a-first.md",
-      "docs/plans/b-second.md",
-    ]);
+    assert.throws(() => detectApprovedPlanScope(tmp), /multiple approved plans.*a-first\.md.*b-second\.md/);
   });
 
   it("a single approved plan has itself as the only contender (no warning owed)", async () => {
     await writePlan("a.md", ["- `src/lib/a.ts`"]);
     assert.deepStrictEqual(detectApprovedPlanScope(tmp)?.contenders, ["docs/plans/a.md"]);
+  });
+
+  it("uses local scope from the selected section in every supported directory", async () => {
+    for (const directory of ["features", "concepts", "plans"]) {
+      const folder = join(tmp, "docs", directory);
+      await mkdir(folder, { recursive: true });
+      const file = join(folder, "p.md");
+      await writeFile(file, [
+        "---", "status: current", "---",
+        "## Delivery Plan — shipped", "Status: approved", "- [x] old",
+        "### Scope", "- `src/old.ts`",
+        "## Delivery Plan — current", "Status: approved", "- [ ] next",
+        "### Scope", "- `src/new.ts`",
+        "```markdown", "- `src/example.ts`", "```",
+        "> - `src/quoted.ts`",
+      ].join("\n"));
+      const found = detectApprovedPlanScope(tmp);
+      assert.equal(found?.plan, `docs/${directory}/p.md`);
+      assert.deepEqual(found?.scope, ["src/new.ts"]);
+      await rm(file);
+    }
+  });
+
+  it("a completed checklist cannot keep scoping new work", async () => {
+    await writeFile(join(tmp, "docs/plans/p.md"), "## Delivery Plan\nStatus: approved\n- [x] shipped\n## Scope\n- `src/old.ts`\n");
+    assert.equal(detectApprovedPlanScope(tmp), null);
   });
 });
 

@@ -1,7 +1,7 @@
 import pc from "picocolors";
 import {
   loadPlan,
-  findActivePlans,
+  resolveActivePlan,
   emitActiveStep,
   todoStatus,
   type ActivePlan,
@@ -32,19 +32,7 @@ function resolvePlan(
       return { error: `no delivery-plan checklist found in ${planOpt}` };
     return { plan: p };
   }
-  const found = findActivePlans(root);
-  if (found.length === 0)
-    return {
-      error:
-        "no approved plan with an unchecked step under docs/features, docs/concepts or docs/plans — pass --plan <path>",
-    };
-  if (found.length > 1)
-    return {
-      error: `multiple approved plans with unchecked steps (${found
-        .map((p) => p.path)
-        .join(", ")}) — pass --plan <path>`,
-    };
-  return { plan: found[0] };
+  return resolveActivePlan(root);
 }
 
 export function stepsCommand(options: StepsCliOptions = {}): void {
@@ -57,7 +45,7 @@ export function stepsCommand(options: StepsCliOptions = {}): void {
   }
   const plan = resolved.plan;
 
-  const emitted = options.emit ? emitActiveStep(root, plan).emitted : false;
+  const emitted = options.emit && plan.approved ? emitActiveStep(root, plan).emitted : false;
 
   if (options.json) {
     console.log(
@@ -66,6 +54,7 @@ export function stepsCommand(options: StepsCliOptions = {}): void {
           plan: plan.path,
           planName: plan.planName,
           status: plan.status,
+          approved: plan.approved,
           active: plan.active ? { n: plan.active.n, text: plan.active.text } : null,
           steps: plan.steps.map((s) => ({
             n: s.n,
@@ -82,6 +71,7 @@ export function stepsCommand(options: StepsCliOptions = {}): void {
   }
 
   console.log(pc.bold(`Plan: ${plan.planName}`) + pc.dim(`  ·  ${plan.path}`));
+  if (!plan.approved) console.log(pc.yellow("  Preview only — not approved for implementation; no step event is emitted."));
   for (const s of plan.steps) {
     const isActive = !!plan.active && s.n === plan.active.n;
     const box = s.done ? pc.green("☑") : isActive ? pc.cyan("◐") : "☐";

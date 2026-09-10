@@ -106,7 +106,7 @@ Use Codument as the durable control plane for agent-led engineering work:
 8. Commit focused work with a conventional commit, authored as the user with no AI \`Co-Authored-By\` trailer.
 9. Move to the next unchecked step.
 
-If a codument command's quoted argument comes back refused as several arguments — \`--reason "one two three"\` rejected as three — the launcher split it before codument saw argv, so no quoting fixes it. Run the CLI a different way for the rest of the session: \`npx codument …\`, or \`node node_modules/codument/dist/cli.js …\`. Seen with \`bunx\` on Windows.
+If a codument command's quoted argument comes back refused as several arguments — \`--reason "one two three"\` rejected as three — the launcher split it before codument saw argv, so no quoting fixes it. Run the CLI a different way for the rest of the session: \`npx codument …\`, or \`node node_modules/codument/dist/cli.js …\`. Seen with \`bunx\` on Windows. If PowerShell blocks \`npx.ps1\`, use \`npx.cmd codument …\` or the direct Node invocation; no execution-policy change is needed.
 
 ### Quality bar
 Aim for the best-effort, durable solution, not the first plausible one. Before calling a plan or a step done, zoom out and check it adversarially — where is this half-baked, what did I assume, what would break it. Resolve issues yourself; pull the user in only for a genuinely load-bearing, unconfirmed call (the assumption gate below), not for work that should just happen.
@@ -149,7 +149,7 @@ Use these routing rules at the start of each user request. Do not wait for the u
 - Settled scope with enough answers for implementation design: use \`plan-with-docs\`. Write or update the durable feature/concept plan, mark it awaiting approval, show its delivery-plan checklist inline in the chat (the steps themselves, never just a doc link), and stop for explicit user approval.
 - Approved plan or user says to continue an approved plan: use \`work-step\`. Implement only the first unchecked step.
 - Any source edit, in or out of the delivery-plan loop, gets reviewed before commit — review is owed to the edit, not to a plan step. Scale it: a trivial edit (rename, comment, typo, pure-config) gets a one-pass self-review of the diff; a behavior change — public interface, data shape, deletion, or anything that tripped the assumption gate — gets the full \`review-work\` / \`code-reviewer\` pass. An ad-hoc bug fix is a behavior change: review it even though no plan step produced it.
-- Clean review, or review findings explicitly fixed/deferred by the user: offer \`commit-work\` as the next gated action and wait for the user to ask for it.
+- Clean review, or review findings explicitly fixed/deferred by the user: continue to \`commit-work\`. In gated mode, offer \`commit-work\` as the next action and wait for the user to ask for it.
 - Domain skills are advisory, not loop gates: when a step's work clearly fits a domain, consult the matching skill for craft depth. Backend/API/DB/auth -> \`senior-backend\`; system or architecture decisions -> \`senior-architect\`; UI components, state, or performance -> \`senior-frontend\`; visual or aesthetic polish -> \`frontend-design\`; animation, gesture, or motion -> \`motion-craft\`; reviewing a diff -> \`code-reviewer\`. They inform the implementation and review; they never replace \`work-step\` or \`review-work\`.
 
 ### Assumption gate (before any source edit)
@@ -197,6 +197,13 @@ The user turns it off by saying so — "step by step", "stop at the gates", "one
 - On any pause or on plan completion, report a compact summary of steps done, commits made, and why it stopped.
 
 The Codument CLI does not run your coding agent. \`codument run\` is only a signpost that says so; autopilot lives entirely in these instructions, which your agent follows.
+
+### Pausing and resuming
+When work pauses or the user redirects it, keep a compact Resume checkpoint inside the active plan's Delivery Plan: plan path, unfinished step, next required gate, reason, and resume condition. Preserve its approval and unchecked work; switching tasks never completes or silently supersedes it. Approval records permission, not whether execution is currently running.
+
+On resume, reconcile the checkpoint with the selected plan, \`git status\`, and current verification/review state. Finish a pending review or commit before starting another unchecked step. Carry the selected plan path into step and context commands so a new request cannot silently change which work they refer to.
+
+Before final-step compaction, keep the approved plan and pending gate at \`.codument/pending-plans/<repo-relative-plan-path>\`, outside the staged step. If interrupted after compaction, use that copy for approval and checkpoints while reviewing the compacted boundary; remove only that copy after the final commit succeeds. Reconcile a leftover copy with Git before resuming. Restored delivery scaffolding must be compacted and verified again before commit.
 
 ### Definition of Done
 A task is NOT complete until:

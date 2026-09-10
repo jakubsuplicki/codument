@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, mkdir, writeFile, appendFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
   recordToEvents,
   featureForFile,
@@ -309,7 +309,7 @@ describe("resolveSessionLogs (all matching transcripts)", () => {
     await writeFile(join(other, "d.jsonl"), JSON.stringify({ type: "assistant", cwd: "/repo/other" }) + "\n");
 
     const found = resolveSessionLogs("/repo/x", home)
-      .map((p) => p.split("/").pop())
+      .map((p) => basename(p))
       .sort();
     assert.deepEqual(found, ["a.jsonl", "b.jsonl", "c.jsonl"]);
   });
@@ -851,9 +851,9 @@ describe("resetFeed (rebuild feed-sourced events at current normalization)", () 
     // Re-point the transcript's cwd away from root so resolveSessionLog returns null.
     await writeFile(
       log,
-      rec("t1").replace(`"cwd":"${root}"`, '"cwd":"/elsewhere"') +
+      rec("t1").replace(`"cwd":${JSON.stringify(root)}`, '"cwd":"/elsewhere"') +
         "\n" +
-        rec("t2").replace(`"cwd":"${root}"`, '"cwd":"/elsewhere"') +
+        rec("t2").replace(`"cwd":${JSON.stringify(root)}`, '"cwd":"/elsewhere"') +
         "\n",
     );
     await mkdir(join(root, ".codument"), { recursive: true });
