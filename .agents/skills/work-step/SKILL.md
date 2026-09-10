@@ -9,16 +9,16 @@ Use this when the user says to continue, work the next step, or implement the ap
 
 ## Workflow
 
-1. Find the explicitly selected plan under `docs/features`, `docs/concepts`, or `docs/plans`. On resume, reconcile its Resume checkpoint with the plan and `git status`; hand a pending review or commit to its skill before starting another step.
-2. Confirm the selected plan's status is exactly approved. Approval is permission, not a claim that paused work is running; a draft preview cannot authorize implementation.
-3. Pick the first unchecked delivery-plan step.
+1. Read `codument work status --json` and the selected plan under `docs/features`, `docs/concepts`, or `docs/plans`. Reconcile saved work with Git; hand its pending review or commit to the owning skill before starting another step. Explicitly resume interrupted work only when its resume condition is satisfied and the user has authorized continuation.
+2. Confirm current bound approval with `codument steps --plan <path> --json`. Record approval with `work approve` only after actual human approval; stale scope returns to the approval gate. Approval does not mean paused work is running.
+3. Start new selected work with `codument work start --plan <path>`. Switching plans requires `--reason` and preserves the old plan; use `work supersede` only for an explicit replacement decision. Pick the first unchecked step only after any saved delivery has passed its pending gate.
 4. Surface the checklist in the live view (see Plan Checklist Mirror below): mirror the plan's steps into your host's native to-do panel with the step you are about to implement marked in progress, and run `codument steps --plan <active-plan> --emit` so `codument watch` shows the active step. Post that checklist inline in the chat as well — the step just completed, the step now starting, and what remains — because the native to-do panel and the watch tape are not the chat transcript, and a run that does not wait between steps otherwise advances with no in-chat marker.
 5. Ask `codument context --file <path> --owner` before and after each affected source file. For a plan with a Feature Map, use `codument context --plan <active-plan>` for its grounded working set. Without a Map, route the plan's explicit scoped files or features through `context --file <path>` / `--feature <slug>` and read their owning docs, invariants, and tests. Read the whole registry when editing the map or when the CLI is unavailable. A context budget is soft: selected contracts may exceed it and must not be silently discarded.
 6. Implement only that step.
 7. Use `tdd` or the strongest practical verification loop.
 8. Register each NEW source file by running `codument map materialize <file>` (see Feature Map Materialization), then update the mapped docs + registry as part of the same step.
 9. Mark the step complete — in the plan doc, and in the mirrored native to-do list — only after implementation verification passes. Before final-step compaction, save the approved plan with a pending-review checkpoint at `.codument/pending-plans/<repo-relative-plan-path>`; keep this recovery copy outside the staged step. Then compact the `## Delivery Plan` block per `plan-with-docs` (Compaction on ship): lift surviving decisions into `## Decisions`/ADRs and any newly-true constraint into `## Invariants & boundaries`, then delete the delivery scaffolding so the durable doc is left in the standard's layers.
-10. Stage only the files belonging to this step. This exact staged boundary is the input to review; leave unrelated dirty files unstaged.
+10. Stage only the files belonging to this step. For the compacted final step, run `codument work finish --prepare-final`, then stage `docs/.approvals.json`; this binds the retained approved contract to the final staged delivery. Repeat preparation after any boundary correction. The ignored recovery copy is context, never the only approval evidence. Record the pending gate with `codument work resume --gate review` before handing off.
 11. Proceed directly to `review-work` for this step without waiting. Never start the next delivery-plan step from here — review and commit come first, in either mode.
 12. In gated mode, stop instead and present the user with end-of-step options:
     - Run `review-work` now (recommended)
@@ -64,6 +64,8 @@ Step N is implemented and verified. Next options:
 Only after `review-work` is clean and `commit-work` has committed the slice may the next unchecked plan step start; offer it only in gated mode.
 
 ## Resume checkpoint
+
+Use `codument work pause --reason <text> --gate <gate>` for a pause, or `work block --reason <text> --resume-when <condition> --gate <gate>` for a blocker. Keep local state out of Git. It preserves selection and pending gates independently of approval. A no-commit request leaves verified work ready and the commit gate pending; it never marks delivery completed.
 
 On pause or redirection, preserve a short checkpoint inside this plan's transient Delivery Plan: plan path, unfinished step, next gate, reason, and resume condition. Keep unfinished work unchecked and approval intact. On resume, use current docs and Git state to correct the checkpoint; a completed implementation still owes review and commit. Refresh the checkpoint when the next gate changes, and remove it after the recorded gate passes or the plan ships. This is a handoff, not a new lifecycle database.
 

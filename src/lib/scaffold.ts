@@ -199,11 +199,11 @@ The user turns it off by saying so — "step by step", "stop at the gates", "one
 The Codument CLI does not run your coding agent. \`codument run\` is only a signpost that says so; autopilot lives entirely in these instructions, which your agent follows.
 
 ### Pausing and resuming
-When work pauses or the user redirects it, keep a compact Resume checkpoint inside the active plan's Delivery Plan: plan path, unfinished step, next required gate, reason, and resume condition. Preserve its approval and unchecked work; switching tasks never completes or silently supersedes it. Approval records permission, not whether execution is currently running.
+Use \`codument work status --json\` as the session handoff. Start a human-approved plan with \`work start --plan <path>\`; switching requires a reason and preserves prior work. Pause with \`work pause --reason <text> --gate <gate>\`, or block with \`work block --reason <text> --resume-when <condition> --gate <gate>\`. Approval is independent of execution state.
 
-On resume, reconcile the checkpoint with the selected plan, \`git status\`, and current verification/review state. Finish a pending review or commit before starting another unchecked step. Carry the selected plan path into step and context commands so a new request cannot silently change which work they refer to.
+Resume explicitly when authorized and the resume condition is satisfied. Finish the saved review or commit gate before implementing another step. Status, steps and context are read-only projections; they cannot restart paused work or grant approval. Use a short Resume checkpoint only for context the state does not carry.
 
-Before final-step compaction, keep the approved plan and pending gate at \`.codument/pending-plans/<repo-relative-plan-path>\`, outside the staged step. If interrupted after compaction, use that copy for approval and checkpoints while reviewing the compacted boundary; remove only that copy after the final commit succeeds. Reconcile a leftover copy with Git before resuming. Restored delivery scaffolding must be compacted and verified again before commit.
+Before final compaction, save the completed approved plan at \`.codument/pending-plans/<repo-relative-plan-path>\`. Compact and stage the durable document, run \`codument work finish --prepare-final\`, and stage \`docs/.approvals.json\`. The tracked contract and exact final-delivery binding preserve approval in a fresh checkout; the ignored copy supplies recovery context only. Reprepare after correcting the staged boundary. After verification, \`work finish\` records readiness; after the successful commit, it reconciles actual completion. A no-commit request leaves work ready with its commit pending. Remove only that recovery copy after final delivery succeeds.
 
 ### Definition of Done
 A task is NOT complete until:

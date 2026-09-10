@@ -5,6 +5,12 @@ import { readRegistrySync } from "../lib/registry.js";
 import { parseFeatureMap } from "../lib/feature-map.js";
 import { isSourcePattern } from "../lib/registry.js";
 import {
+  inspectWorkState,
+  workPlanSelection,
+  workPlanMarkdown,
+  type WorkRecord,
+} from "../lib/work-state.js";
+import {
   applyBudget,
   gatherContextPack,
   ownersOfFile,
@@ -38,6 +44,7 @@ interface ContextCliOptions {
 }
 
 interface ContextJson {
+  work?: WorkRecord & { issues: string[] };
   version: 1;
   selector: ContextPack["selector"];
   entries: ContextEntry[];
@@ -71,6 +78,11 @@ function resolve(
   options: ContextCliOptions,
 ): ContextResolution | null {
   const chosen = [options.feature, options.file, options.plan].filter((v) => v !== undefined);
+  if (options.plan) Object.assign(options, workPlanSelection(root, options));
+  if (chosen.length === 0) {
+    Object.assign(options, workPlanSelection(root, options));
+    if (options.plan) chosen.push(options.plan);
+  }
   if (chosen.length === 0) {
     fail("choose one selector: --feature <slug> | --file <path> | --plan <path>");
     return null;
@@ -120,6 +132,7 @@ function resolve(
     fail(`could not read plan ${options.plan}: ${(err as Error).message}`);
     return null;
   }
+  raw = workPlanMarkdown(root, options.plan!, raw, options.planId);
   const map = parseFeatureMap(raw, options.planId);
   if (map.rows.length === 0) {
     fail(`no Feature Map rows in ${options.plan} — nothing to route`);
@@ -167,7 +180,9 @@ function renderEntry(entry: ContextEntry): string[] {
     if (entry.summary) out.push(`      ${pc.dim(entry.summary)}`);
     return out;
   }
-  out.push(`  ${pc.bold(entry.feature)} — ${entry.doc}  ${pc.dim(`~${entry.estimatedTokens} tok`)}`);
+  out.push(
+    `  ${pc.bold(entry.feature)} — ${entry.doc}  ${pc.dim(`~${entry.estimatedTokens} tok`)}`,
+  );
   if (entry.summary) {
     out.push(`    ${pc.dim("In plain terms")}`);
     for (const line of entry.summary.split("\n")) out.push(`      ${line}`);
@@ -260,11 +275,18 @@ export function contextCommand(options: ContextCliOptions = {}): void {
       trimmed,
       overBudget,
     };
+    if (options.plan) {
+      const work = inspectWorkState(root);
+      if (work.selected?.path === options.plan && work.selected?.planId === options.planId)
+        payload.work = { ...work.selected, issues: work.issues };
+    }
     console.log(JSON.stringify(payload, null, 2));
     return;
   }
 
-  console.log(pc.bold("codument context") + pc.dim(`  ${pack.selector.kind}: ${pack.selector.value || "—"}`));
+  console.log(
+    pc.bold("codument context") + pc.dim(`  ${pack.selector.kind}: ${pack.selector.value || "—"}`),
+  );
   console.log();
 
   if (pack.unmappedFile) {
@@ -296,14 +318,24 @@ export function contextCommand(options: ContextCliOptions = {}): void {
   }
   if (overBudget) {
     console.log(
-      pc.yellow("  still over budget: the selected orientation + invariants alone exceed it (never trimmed — it is what you asked for)."),
+      pc.yellow(
+        "  still over budget: the selected orientation + invariants alone exceed it (never trimmed — it is what you asked for).",
+      ),
     );
   }
   if (pack.unknownFeatures.length > 0) {
-    console.log(pc.yellow(`  ⚠ unknown feature(s) named but not in the registry: ${pack.unknownFeatures.join(", ")}`));
+    console.log(
+      pc.yellow(
+        `  ⚠ unknown feature(s) named but not in the registry: ${pack.unknownFeatures.join(", ")}`,
+      ),
+    );
   }
   if (pack.planErrors.length > 0) {
-    console.log(pc.yellow(`  ⚠ ${pack.planErrors.length} malformed Feature-Map row(s) skipped — this pack may be incomplete:`));
+    console.log(
+      pc.yellow(
+        `  ⚠ ${pack.planErrors.length} malformed Feature-Map row(s) skipped — this pack may be incomplete:`,
+      ),
+    );
     for (const e of pack.planErrors) console.log(`      ${e}`);
   }
 }

@@ -25,6 +25,11 @@ their workflow. A recorded plan cannot silently fall back to legacy approval whe
 binding disappears. Conflicting writers and invalid state require recovery rather than replacement
 with defaults. Durable knowledge outside an embedded plan remains independently maintainable.
 
+Final preparation binds the compacted document and delivery changes to a Git base while retaining
+the approved contract. Only that binding's own payload is canonicalized out of its digest; approval
+contracts and all other changes remain covered. A later change cannot inherit archived permission.
+Preparation precedes final review, and corrections require preparing and verifying the boundary again.
+
 ## Invariants & boundaries
 
 - Approval includes the source map actually consumed by routing, including a supported sibling map outside a standalone delivery section. Scope verification and checklist discovery share the same ambiguity refusal. *(test: `plan-approval.test.ts`)*
@@ -42,6 +47,12 @@ with defaults. Durable knowledge outside an embedded plan remains independently 
   requiring bound approval refuses governed changes without an eligible plan. *(test: `work.test.ts`)*
 - Attribution is self-reported. The local filesystem permissions remain the trust boundary; a
   digest is a change detector, not proof that a human approved. *(architectural boundary)*
+- Final approval remains verifiable from tracked data after compaction, including a fresh clone and
+  a broader review range. Changed delivery content invalidates it; an archived identity cannot
+  authorize new work. *(test: `work.test.ts`)*
+- Compaction removes only the selected section and preserves sibling plans. Restoring an archived
+  unchecked checklist grants no execution, while saved pending delivery can resume for corrections.
+  *(test: `work.test.ts`)*
 
 ## Decisions
 

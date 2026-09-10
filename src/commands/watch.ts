@@ -60,6 +60,7 @@ export interface ActivityItem {
 }
 
 interface RenderOpts {
+  work?: Pick<WorkInspection, "selected" | "issues">;
   /** Animation frame counter; advanced by the fast render tick. */
   tick?: number;
   /** Touched-file activity derived from mtimes (events are merged in here). */
@@ -348,7 +349,13 @@ export function renderFrame(
   const lastStep = scoped
     .filter((e) => e.type === "step")
     .sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0))[0];
-  if (lastStep?.message) lines.push(`  ${pc.dim("now")}      ${lastStep.message}`);
+  if (opts.work?.selected) {
+    const work = opts.work.selected;
+    lines.push(`  ${pc.dim("work")}     ${work.status} · ${work.path}${work.step === null ? "" : ` · step ${work.step}`} · ${work.nextGate}`);
+    if (work.reason) lines.push(`           ${work.reason}`);
+    if (work.resumeCondition) lines.push(`           Resume when: ${work.resumeCondition}`);
+    for (const issue of opts.work.issues) lines.push(pc.yellow(`           ${issue}`));
+  } else if (lastStep?.message) lines.push(`  ${pc.dim("now")}      ${lastStep.message}`);
   const touched = [plural(verdict.blast.touched, "feature"), plural(review.changedFileCount, "file")];
   if (verdict.unmapped > 0) touched.push(`${verdict.unmapped} unmapped`);
   // At ≤1 feature the feature ratio is a single bit ("1 of 1"); fall back to the
@@ -509,6 +516,7 @@ function gatherActivity(
 }
 
 interface FrameData {
+  work: Pick<WorkInspection, "selected" | "issues">;
   review: ReviewReport;
   coverage: DoctorReport;
   events: CodumentEvent[];
@@ -546,7 +554,8 @@ function gatherFrameData(root: string): FrameData {
   const rates = loadRates(root);
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
   const totalFeatures = Object.keys(registry.features).length;
-  return { review, coverage, events, activity, mood, rates, totalFeatures };
+  const { selected, issues } = inspectWorkState(root);
+  return { review, coverage, events, activity, mood: selected?.status === "blocked" || issues.length ? "alert" : selected && selected.status !== "active" ? "idle" : mood, rates, totalFeatures, work: { selected, issues } };
 }
 
 /** Builds one frame's data from the repo and renders it. Exported for the live demo. */
@@ -558,6 +567,7 @@ export function buildFrame(root: string, now: string, tick = 0): string {
     mood: d.mood,
     rates: d.rates,
     totalFeatures: d.totalFeatures,
+    work: d.work,
   });
 }
 
@@ -620,6 +630,7 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
         mood: cache.mood,
         rates: cache.rates,
         totalFeatures: cache.totalFeatures,
+        work: cache.work,
         sinceTs: startedAt,
       },
     );
@@ -682,3 +693,4 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 }
+import { inspectWorkState, type WorkInspection } from "../lib/work-state.js";

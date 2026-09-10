@@ -22,5 +22,8 @@ Recording is explicit, conflict-detecting and idempotent. Invalid records requir
 
 This remains a local change-control tool. Attribution is self-reported and no identity service,
 signature authority or stronger filesystem boundary is introduced. Retaining the approved contract
-also supports final delivery after plan compaction; the final-delivery binding is implemented with
-the delivery-state integration, rather than treating an archived approval as permission for new work.
+also supports final delivery after plan compaction. Explicit final preparation binds the staged
+changes and retained approval store to their Git base; canonicalization excludes only that binding's
+own payload to avoid self-reference. Verification checks the exact final slice even when a broader
+range is reviewed. The archived record supplies no permission to later unrelated work. Local recovery
+copies preserve working context but are not required in a fresh checkout.

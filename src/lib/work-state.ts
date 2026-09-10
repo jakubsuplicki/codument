@@ -8,6 +8,9 @@ import {
   isPlanPath,
   activeStep,
   parseDeliveryPlan,
+  hasPlanSection,
+  planContractMarkdown,
+  extractStatus,
   type ActivePlan,
 } from "./plan-steps.js";
 import { ConfigValueError, readBoundedState, withStateLock } from "./state-io.js";
@@ -21,8 +24,15 @@ import {
   type ChangeSetBinding,
 } from "./change-set.js";
 import { getGitPath, getHeadSha } from "./git.js";
-import { readBlobAtRef } from "./two-ref.js";
+import { readBlobAtRef, EMPTY_TREE_SHA } from "./two-ref.js";
 import { version } from "./version.js";
+import {
+  readApprovalStore,
+  finalApprovalForBoundary,
+  prepareFinalDelivery,
+  approvalDigest,
+  retainedPlanMarkdown,
+} from "./plan-approval.js";
 
 export const WORK_STATE_PATH = ".codument/work-state.json";
 const STATUSES = ["active", "paused", "blocked", "superseded", "ready", "completed"] as const;
@@ -180,7 +190,11 @@ function delivered(root: string, proof: ChangeSetBinding): string | null {
   if (!head || head === proof.bases[0].sha) return null;
   const commits = execFileSync(
     "git",
-    ["rev-list", "--max-count=257", `${proof.bases[0].sha}..${head}`],
+    [
+      "rev-list",
+      "--max-count=257",
+      proof.bases[0].sha === EMPTY_TREE_SHA ? head : `${proof.bases[0].sha}..${head}`,
+    ],
     {
       cwd: root,
       encoding: "utf8",
@@ -208,6 +222,18 @@ function delivered(root: string, proof: ChangeSetBinding): string | null {
 
 function committedStep(root: string, record: WorkRecord, commit: string): number | null {
   const content = readBlobAtRef(root, commit, record.path);
+  if (content !== null && !hasPlanSection(content, record.planId)) {
+    const boundary = resolveChangeSet(root, {
+      mode: "range",
+      base: record.delivery!.bases[0].sha,
+      head: commit,
+    });
+    const final = finalApprovalForBoundary(root, boundary, {
+      plan: record.path,
+      planId: record.planId,
+    });
+    if (final?.digest === record.approvalDigest) return null;
+  }
   if (content === null)
     throw invalid(
       "committed plan is unavailable; restore its approval and final delivery evidence before finishing",
@@ -229,7 +255,7 @@ export function inspectWorkState(root: string): WorkInspection {
   const issues: string[] = [];
   if (current.status !== "superseded" && current.status !== "completed") {
     try {
-      const plan = loadPlan(root, current.path, current.planId);
+      const plan = loadWorkPlan(root, current.path, current.planId);
       if (!plan?.approved || plan.approval?.digest !== current.approvalDigest)
         issues.push(
           "Selected approval is missing or stale; inspect the plan and record any required human approval before resuming.",
@@ -259,9 +285,10 @@ export function inspectWorkState(root: string): WorkInspection {
 }
 
 function approvedSelection(root: string, options: WorkOptions, fallback?: WorkRecord): ActivePlan {
+  options = { ...options, ...workPlanSelection(root, options) };
   let plan: ActivePlan | null;
   if (options.plan || fallback)
-    plan = loadPlan(
+    plan = loadWorkPlan(
       root,
       options.plan ? normalizePlanPath(root, options.plan) : fallback!.path,
       options.planId ?? (options.plan ? undefined : fallback!.planId),
@@ -317,9 +344,14 @@ function verifiedDelivery(root: string, plan: ActivePlan, step: number): ChangeS
   }
   const boundary = resolveChangeSet(root, { mode: "staged" });
   const stagedPlan = readChangeSetFile(root, boundary, plan.path);
+  const final = finalApprovalForBoundary(root, boundary, {
+    plan: plan.path,
+    planId: plan.planId ?? undefined,
+  });
   if (
-    !stagedPlan ||
-    !parseDeliveryPlan(stagedPlan, plan.planId ?? undefined).find((row) => row.n === step)?.done
+    !final &&
+    (!stagedPlan ||
+      !parseDeliveryPlan(stagedPlan, plan.planId ?? undefined).find((row) => row.n === step)?.done)
   )
     throw invalid("stage the completed step with its delivery before marking it ready");
   const binding = changeSetBinding(boundary);
@@ -338,6 +370,115 @@ function verifiedDelivery(root: string, plan: ActivePlan, step: number): ChangeS
       "verification does not cover this staged step and approval; run codument verify again",
     );
   return binding;
+}
+
+/** Local selection is a routing hint. Permission is always read from tracked approval. */
+export function workPlanSelection(
+  root: string,
+  selection: { plan?: string; planId?: string } = {},
+  execute = false,
+): { plan?: string; planId?: string } {
+  const state = readWorkState(root);
+  const current = state.records.find((record) => record.planId === state.selected);
+  if (!current) return selection;
+  const same =
+    (!selection.plan || normalizePlanPath(root, selection.plan) === current.path) &&
+    (!selection.planId || selection.planId === current.planId);
+  if (execute && (!same || !["active", "ready"].includes(current.status)))
+    throw invalid(
+      "selected work is interrupted, ended or different; explicitly start or resume the intended plan before execution",
+    );
+  if (!same) return selection;
+  return { plan: current.path, planId: current.planId };
+}
+
+export function loadWorkPlan(root: string, path: string, planId?: string): ActivePlan | null {
+  const record = readApprovalStore(root).records.find(
+    (row) => row.path === path && row.planId === planId,
+  );
+  const pending =
+    record &&
+    readWorkState(root).records.some(
+      (row) =>
+        row.planId === record.planId &&
+        row.approvalDigest === record.digest &&
+        !["completed", "superseded"].includes(row.status),
+    );
+  let plan: ActivePlan | null = null;
+  try {
+    plan = loadPlan(root, path, planId);
+  } catch (error) {
+    if (!record || (!record.finalDelivery && !pending)) throw error;
+  }
+  if (plan?.steps.length && (!record?.finalDelivery || plan.approval?.digest !== record.digest))
+    return plan;
+  if (!record) return plan;
+  if (!record.finalDelivery) {
+    const recovery = pending ? readBoundedState(join(root, ".codument/pending-plans", path)) : null;
+    if (
+      !recovery ||
+      approvalDigest(path, record.planId, planContractMarkdown(recovery, record.planId)) !==
+        record.digest ||
+      extractStatus(recovery, record.planId) !== "approved" ||
+      !parseDeliveryPlan(recovery, record.planId).length ||
+      parseDeliveryPlan(recovery, record.planId).some((step) => !step.done)
+    )
+      throw invalid(
+        "selected plan is compacted without valid approved recovery context; restore that plan's pending-plans copy before resuming",
+      );
+  }
+  return {
+    path,
+    planId: record.planId,
+    planName: path.split("/").pop()!.replace(/\.md$/, ""),
+    status: "approved",
+    approved: !!pending,
+    approval: {
+      state: "bound",
+      allowed: !!pending,
+      digest: record.digest,
+      reason: pending
+        ? "Recorded final delivery; exact change still requires verification."
+        : "Archived approval is context only; create a new plan identity for new work.",
+    },
+    steps: parseDeliveryPlan(record.contract).map((step) => ({ ...step, done: true })),
+    active: null,
+  };
+}
+
+/** Retained contract context cannot create selection or grant new execution. */
+export function workPlanMarkdown(
+  root: string,
+  path: string,
+  markdown: string,
+  planId?: string,
+): string {
+  if (!planId || hasPlanSection(markdown, planId)) return markdown;
+  const record = readApprovalStore(root).records.find(
+    (row) => row.path === path && row.planId === planId,
+  );
+  if (record && (record.finalDelivery || loadWorkPlan(root, path, planId)?.approved))
+    return retainedPlanMarkdown(record);
+  return markdown;
+}
+
+export function prepareWorkFinalDelivery(root: string, options: WorkOptions = {}): void {
+  const before = readWorkState(root);
+  const expected = options.expectedRevision ?? before.revision;
+  withStateLock(join(root, WORK_STATE_PATH), () => {
+    const state = readWorkState(root);
+    if (!Number.isSafeInteger(expected) || expected !== state.revision)
+      throw invalid("another writer changed work state; reread before final preparation");
+    const current = state.records.find((record) => record.planId === state.selected);
+    if (current?.status !== "active")
+      throw invalid("start or resume the selected work before preparing final delivery");
+    if (
+      (options.plan && normalizePlanPath(root, options.plan) !== current.path) ||
+      (options.planId && options.planId !== current.planId)
+    )
+      throw invalid("the selected plan changed; inspect work status before retrying");
+    prepareFinalDelivery(root, current.path, current.planId, current.approvalDigest);
+  });
 }
 
 export function transitionWork(root: string, action: WorkAction, options: WorkOptions): WorkState {

@@ -1,6 +1,6 @@
 import pc from "picocolors";
+import { inspectWorkState, loadWorkPlan, workPlanSelection } from "../lib/work-state.js";
 import {
-  loadPlan,
   resolveActivePlan,
   emitActiveStep,
   todoStatus,
@@ -28,10 +28,9 @@ function resolvePlan(
   planId?: string,
 ): { plan: ActivePlan } | { error: string } {
   if (planOpt) {
-    const p = loadPlan(root, planOpt, planId);
+    const p = loadWorkPlan(root, planOpt, planId);
     if (!p) return { error: `could not read plan doc: ${planOpt}` };
-    if (p.steps.length === 0)
-      return { error: `no delivery-plan checklist found in ${planOpt}` };
+    if (p.steps.length === 0) return { error: `no delivery-plan checklist found in ${planOpt}` };
     return { plan: p };
   }
   return resolveActivePlan(root);
@@ -39,6 +38,7 @@ function resolvePlan(
 
 export function stepsCommand(options: StepsCliOptions = {}): void {
   const root = options.root ?? options.dir ?? process.cwd();
+  options = { ...options, ...workPlanSelection(root, options) };
   const resolved = resolvePlan(root, options.plan, options.planId);
   if ("error" in resolved) {
     console.log(pc.yellow("codument steps: " + resolved.error));
@@ -46,8 +46,19 @@ export function stepsCommand(options: StepsCliOptions = {}): void {
     return;
   }
   const plan = resolved.plan;
-
-  const emitted = options.emit && plan.approved ? emitActiveStep(root, plan).emitted : false;
+  const work = inspectWorkState(root);
+  const selected =
+    work.selected?.path === plan.path && work.selected?.planId === plan.planId
+      ? work.selected
+      : null;
+  const canEmit =
+    !work.selected ||
+    (selected?.status === "active" &&
+      selected.nextGate === "implement" &&
+      selected.step === plan.active?.n &&
+      work.issues.length === 0);
+  const emitted =
+    options.emit && plan.approved && canEmit ? emitActiveStep(root, plan).emitted : false;
 
   if (options.json) {
     console.log(
@@ -59,11 +70,13 @@ export function stepsCommand(options: StepsCliOptions = {}): void {
           approved: plan.approved,
           planId: plan.planId ?? null,
           approval: plan.approval,
-          active: plan.active ? { n: plan.active.n, text: plan.active.text } : null,
+          ...(selected ? { work: { ...selected, issues: work.issues } } : {}),
+          active: plan.active && canEmit ? { n: plan.active.n, text: plan.active.text } : null,
           steps: plan.steps.map((s) => ({
             n: s.n,
             text: s.text,
-            status: todoStatus(plan, s),
+            status:
+              !canEmit && todoStatus(plan, s) === "in_progress" ? "pending" : todoStatus(plan, s),
           })),
           ...(options.emit ? { emitted } : {}),
         },
@@ -76,17 +89,22 @@ export function stepsCommand(options: StepsCliOptions = {}): void {
 
   console.log(pc.bold(`Plan: ${plan.planName}`) + pc.dim(`  ·  ${plan.path}`));
   if (plan.approval) console.log(pc.dim(`  ${plan.approval.reason}`));
-  if (!plan.approved) console.log(pc.yellow("  Preview only — not approved for implementation; no step event is emitted."));
+  if (selected)
+    console.log(
+      `  Work: ${selected.status}; next gate: ${selected.nextGate}${selected.reason ? ` — ${selected.reason}` : ""}`,
+    );
+  if (!plan.approved)
+    console.log(
+      pc.yellow("  Preview only — not approved for implementation; no step event is emitted."),
+    );
   for (const s of plan.steps) {
-    const isActive = !!plan.active && s.n === plan.active.n;
+    const isActive = canEmit && !!plan.active && s.n === plan.active.n;
     const box = s.done ? pc.green("☑") : isActive ? pc.cyan("◐") : "☐";
     const label = isActive ? pc.bold(s.text) : s.done ? pc.dim(s.text) : s.text;
     console.log(`  ${box} ${label}`);
   }
   console.log("");
-  console.log(
-    pc.dim("  Mirror these into your native to-do list (mark the ◐ step in_progress)."),
-  );
+  console.log(pc.dim("  Mirror these into your native to-do list (mark the ◐ step in_progress)."));
   if (options.emit && emitted)
     console.log(
       pc.dim("  Logged the active step to .codument/events.jsonl (shows in `codument watch`)."),

@@ -15,6 +15,8 @@ visible without blocking that slice.
 
 ## Design approach
 
+Local verification follows explicit work selection and refuses interrupted or ended work until it is deliberately resumed or replaced. Compacted final plans use tracked approval bound to the exact final delivery; later changes require their own approval.
+
 A reusable verification receipt also binds the selected plan identity and validated approval revision. Switching the selected plan cannot reuse a pass for other work; selection is resolved before receipt reuse.
 
 One change-set projection defines the boundary for every consumer. Locally it resolves from the Git
@@ -41,6 +43,8 @@ Test changes participate in impact and review invalidation but never wake a doc 
 ownership.
 
 ## Invariants & boundaries
+
+- Paused work cannot pass execution verification. Exact final approval remains usable without local recovery data and becomes unavailable when delivery changes. *(test: `work.test.ts`)*
 
 - Receipt reuse requires the same selected approval identity and digest as well as the complete staged boundary and tool version. *(test: `change-set.test.ts`)*
 

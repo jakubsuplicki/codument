@@ -9,6 +9,7 @@ import {
   type FeatureMapRow,
 } from "../lib/feature-map.js";
 import { resolveActivePlan } from "../lib/plan-steps.js";
+import { workPlanSelection, workPlanMarkdown } from "../lib/work-state.js";
 import {
   ExcludedSourceError,
   isSourcePattern,
@@ -44,12 +45,16 @@ interface MapCliOptions {
 }
 
 interface ResolvedMap {
+  planId?: string;
   planPath: string;
   markdown: string;
   map: FeatureMap;
 }
 
 function resolveMap(root: string, planOpt?: string, planId?: string): ResolvedMap | { error: string } {
+  const selection = workPlanSelection(root, { plan: planOpt, planId });
+  planOpt = selection.plan;
+  planId = selection.planId;
   let planPath: string;
   if (planOpt) {
     planPath = isAbsolute(planOpt) ? planOpt : join(root, planOpt);
@@ -64,7 +69,8 @@ function resolveMap(root: string, planOpt?: string, planId?: string): ResolvedMa
   } catch {
     return { error: `could not read plan doc: ${planOpt ?? planPath}` };
   }
-  return { planPath, markdown, map: parseFeatureMap(markdown, planId) };
+  markdown = workPlanMarkdown(root, toRepoRel(root, planPath), markdown, planId);
+  return { planPath, planId, markdown, map: parseFeatureMap(markdown, planId) };
 }
 
 // ── Materialization (the testable writer core) ──────────────────────────────
@@ -394,7 +400,7 @@ export function mapCheck(options: MapCliOptions = {}): void {
   // with no Feature Map at all: the former silently routes nothing, so the plan
   // adversary's proportionality skip would wrongly bypass it. Flag it loudly.
   const malformedMap =
-    map.rows.length === 0 && errors.length === 0 && hasFeatureMapHeading(resolved.markdown, options.planId);
+    map.rows.length === 0 && errors.length === 0 && hasFeatureMapHeading(resolved.markdown, resolved.planId);
   const noBlockMessage = malformedMap
     ? "a `Feature Map` heading is present but no parseable ```feature-map``` block was found — write the routing table as a fenced ```feature-map``` block (`path | feature | type | responsibility`), not a table or prose"
     : "no `feature-map` block in the plan";

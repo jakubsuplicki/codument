@@ -137,7 +137,7 @@ function checkpointMask(lines: string[]): boolean[] {
 
 /** One selection for approval and work. A standalone plan may use document
  *  metadata; an embedded plan's own declaration takes precedence. */
-function planParts(markdown: string, planId?: string) {
+function planParts(markdown: string, planId?: string, allowMissing = false) {
   const raw = markdown.replace(/^\uFEFF/, "");
   const frontmatter = /^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(raw);
   const body = frontmatter
@@ -161,7 +161,7 @@ function planParts(markdown: string, planId?: string) {
     candidates[candidates.length - 1];
   if (planId !== undefined) {
     const matches = candidates.filter((section) => sectionId(lines, section) === planId);
-    if (matches.length !== 1) throw new ConfigValueError("plan", "plan-id", `expected one section named ${planId}, found ${matches.length}`);
+    if (matches.length !== 1 && !(allowMissing && matches.length === 0)) throw new ConfigValueError("plan", "plan-id", `expected one section named ${planId}, found ${matches.length}`);
     selected = matches[0];
   } else if (candidates.filter((section) => section.steps.some((step) => !step.done) && sectionId(lines, section)).length > 1) {
     throw new ConfigValueError("plan", "selection", "multiple identified plans have unfinished work; pass --plan-id <id>");
@@ -201,6 +201,11 @@ function sectionId(lines: string[], section: PlanSection): string | null {
 export function selectedPlanId(markdown: string, planId?: string): string | null {
   const { lines, selected } = planParts(markdown, planId);
   return selected ? sectionId(lines, selected) : null;
+}
+
+/** Detect removal of one identified plan while preserving sibling sections. */
+export function hasPlanSection(markdown: string, planId: string): boolean {
+  return planParts(markdown, planId, true).selected !== undefined;
 }
 
 /** Record identity only inside one unambiguous selected section. */

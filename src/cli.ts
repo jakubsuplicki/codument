@@ -52,6 +52,7 @@ for (const action of ["start", "pause", "block", "resume", "supersede", "finish"
     .option("--resume-when <text>", "Condition required to resume blocked work")
     .option("--gate <gate>", "Pending gate: implement, verify, document, review, commit")
     .option("--expect-revision <n>", "Refuse if local state changed since this revision")
+    .option("--prepare-final", "With finish: bind the staged compacted final plan before review")
     .option("--json", "Machine-readable work state")
     .option("--root <dir>", "Project root (default: current directory)")
     .action((options) => workCommand(action, options));

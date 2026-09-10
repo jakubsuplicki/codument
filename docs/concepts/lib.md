@@ -13,6 +13,8 @@ The shared foundation layer every command and hook is built on. Nothing here orc
 
 ## Design approach
 
+Shared workflow instructions and report projections preserve the difference between permission, interruption, readiness and delivered work. Tracked final approval survives compaction; local recovery context is not its authority.
+
 Tracked approval and runtime control records refuse oversized or unreadable state. Mutating control records use an exclusive writer lock with an explicit revision check, so conflicting writers receive a recovery action instead of overwriting each other.
 
 A few principles hold across every module, and they are what make this a layer rather than a folder of helpers.
@@ -28,6 +30,8 @@ Each module's behavior, invariants, and decisions live where it is owned. This d
 The scaffold installs one boundary discipline across hosts: stage the current delivery slice before review, verify that staged set once, and commit it unchanged. Generated instructions and shipped skill copies carry the same contract so an update cannot restore the older whole-worktree loop.
 
 ## Invariants & boundaries
+
+- Workflow skill mirrors retain the same handoff contract, and report projections display saved interruption state. *(tests: `agent-profiles.test.ts`, `work.test.ts`; host compliance remains untested)*
 
 - Approval writers refuse an existing lock or stale revision and preserve the last valid record. *(test: `plan-approval.test.ts`)*
 

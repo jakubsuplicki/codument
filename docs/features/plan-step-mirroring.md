@@ -13,6 +13,8 @@ A delivery-plan checklist normally lives only in a markdown file you have to ope
 
 ## Design approach
 
+Saved work selects the plan and section across sessions. Paused or pending-review work is displayed without an in-progress claim or start event.
+
 Approval is also checked against its recorded contract when present or required by project policy. Legacy status-only approval is identified explicitly. An identified section can be selected consistently across checklist, scope and ownership projections; progress notes never become executable work.
 
 The plan doc is authoritative and the projections are strictly one-way. Completion lives in the checkbox; the panel and the tape are read-only mirrors re-derived at each step start, never a place where progress is recorded. This is the whole point: a checklist that can be edited from two places becomes two sources of truth that drift, the exact failure the change-control discipline exists to prevent. So no path writes step completion back from a panel.
@@ -32,6 +34,10 @@ plans must declare approval within the selected one. Examples and quoted materia
 authorization nor work to perform.
 
 ## Invariants & boundaries
+
+- Paused work and explicit previews of other plans cannot emit execution; saved selection resolves otherwise ambiguous plans. *(test: `work.test.ts`)*
+- Removing one identified plan leaves sibling selection intact; restored archived checklists cannot
+  emit a new start event. *(test: `work.test.ts`)*
 
 - Recorded approval must match the selected plan revision before execution is emitted. Progress and checkpoints preserve approval while contract changes stale it. *(tests: `plan-approval.test.ts`, `work.test.ts`)*
 

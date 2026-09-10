@@ -414,6 +414,7 @@ export async function verify(options: VerifyOptions = {}): Promise<void> {
 
   try {
     assertRootIsRepoToplevel(root);
+    options = { ...options, ...workPlanSelection(root, options, true) };
     const boundary = resolveChangeSet(
       root,
       options.paths ? { mode: "explicit-staged", paths: options.paths } : { mode: "staged" },
@@ -526,3 +527,4 @@ export async function verify(options: VerifyOptions = {}): Promise<void> {
     machineFailure(error instanceof Error ? error.message : String(error));
   }
 }
+import { workPlanSelection } from "../lib/work-state.js";

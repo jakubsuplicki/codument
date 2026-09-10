@@ -10,8 +10,12 @@ import {
   planContractMarkdown,
   selectedPlanId,
   normalizePlanPath,
+  hasPlanSection,
 } from "./plan-steps.js";
 import { ConfigValueError, readBoundedState, withStateLock } from "./state-io.js";
+import { resolveChangeSet, readChangeSetFile, type ChangeSet } from "./change-set.js";
+import { parsePlanScope } from "./plan-steps.js";
+import { readBlobAtRef } from "./two-ref.js";
 
 export const APPROVALS_PATH = "docs/.approvals.json";
 export interface PlanApprovalRecord {
@@ -22,6 +26,7 @@ export interface PlanApprovalRecord {
   contract: string;
   approvedAt: string;
   signer: string;
+  finalDelivery?: { base: string; fingerprint: string };
 }
 export interface ApprovalStore {
   version: 1;
@@ -74,9 +79,16 @@ export function parseApprovalStore(raw: string | null): ApprovalStore {
       row &&
       Object.keys(row).some(
         (key) =>
-          !["planId", "path", "revision", "digest", "contract", "approvedAt", "signer"].includes(
-            key,
-          ),
+          ![
+            "planId",
+            "path",
+            "revision",
+            "digest",
+            "contract",
+            "approvedAt",
+            "signer",
+            "finalDelivery",
+          ].includes(key),
       )
     )
       throw invalid();
@@ -99,6 +111,15 @@ export function parseApprovalStore(raw: string | null): ApprovalStore {
     )
       throw invalid();
     ids.add(row.planId);
+    if (
+      row.finalDelivery !== undefined &&
+      (!row.finalDelivery ||
+        typeof row.finalDelivery !== "object" ||
+        Object.keys(row.finalDelivery).sort().join(",") !== "base,fingerprint" ||
+        !/^[a-f0-9]{40,64}$/.test(row.finalDelivery.base) ||
+        !/^[a-f0-9]{64}$/.test(row.finalDelivery.fingerprint))
+    )
+      throw invalid();
   }
   return value;
 }
@@ -148,6 +169,14 @@ export function assessPlanApproval(
           : "Legacy unbound approval: only Markdown status is recorded; migrate with codument work approve after human approval.",
     };
   const digest = approvalDigest(path, id!, planContractMarkdown(markdown, planId));
+  if (record.finalDelivery)
+    return {
+      state: "stale",
+      allowed: false,
+      digest,
+      reason:
+        "This approval is retained for final delivery; create a new plan identity for new work. Existing pending work may resume its saved gate.",
+    };
   if (record.path !== path || record.digest !== digest)
     return {
       state: "stale",
@@ -206,6 +235,12 @@ export function approvePlan(
     const existing = store.records.find((row) => row.planId === id);
     if (existing && existing.path !== rel)
       throw new ConfigValueError(path, "Plan-ID", "identifier already belongs to another document");
+    if (existing?.finalDelivery)
+      throw new ConfigValueError(
+        path,
+        "Plan-ID",
+        "final delivery is already bound; create a new plan identity for new work",
+      );
     if (existing?.digest === digest) return existing;
     const revision = store.revision + 1;
     const record: PlanApprovalRecord = {
@@ -228,6 +263,158 @@ export function approvePlan(
     parseApprovalStore(encoded);
     // If interrupted between these writes, the new ID is visibly unbound and cannot grant approval.
     if (identified !== original) atomicWriteFileSync(absolute, identified);
+    atomicWriteFileSync(join(root, APPROVALS_PATH), encoded);
+    return record;
+  });
+}
+
+/** Canonicalize only this binding's own payload; all approval contracts and other changes remain covered. */
+export function finalDeliveryFingerprint(
+  boundary: ChangeSet,
+  store: ApprovalStore,
+  planId: string,
+): string {
+  const canonical = structuredClone(store);
+  const selected = canonical.records.find((record) => record.planId === planId);
+  if (selected) delete selected.finalDelivery;
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        boundary.bases,
+        boundary.changes.filter((change) => change.path !== APPROVALS_PATH),
+        canonical,
+      ]),
+    )
+    .digest("hex");
+}
+
+/** Select only an explicit, exact final delivery; archived records grant no permission to later changes. */
+export function finalApprovalForBoundary(
+  root: string,
+  boundary: ChangeSet,
+  selection?: { plan?: string; planId?: string },
+): PlanApprovalRecord | null {
+  if (boundary.bases.length !== 1 || boundary.bases[0].prefix !== "") return null;
+  const store = parseApprovalStore(readChangeSetFile(root, boundary, APPROVALS_PATH));
+  const candidates = store.records.filter(
+    (record) =>
+      record.finalDelivery &&
+      (!selection?.plan || record.path === normalizePlanPath(root, selection.plan)) &&
+      (!selection?.planId || record.planId === selection.planId),
+  );
+  if (!candidates.length) return null;
+  const previous = parseApprovalStore(readBlobAtRef(root, boundary.bases[0].sha, APPROVALS_PATH));
+  const matches = candidates.filter((record) => {
+    const final = record.finalDelivery!;
+    if (previous.records.find((row) => row.planId === record.planId)?.finalDelivery?.fingerprint === final.fingerprint) return false;
+    if (
+      boundary.mode === "range" &&
+      !boundary.changes.some((change) => change.path === APPROVALS_PATH)
+    )
+      return false;
+    const selected =
+      boundary.mode === "range"
+        ? resolveChangeSet(root, { mode: "range", base: final.base, head: boundary.head })
+        : boundary;
+    if (
+      selected.bases.length !== 1 ||
+      selected.bases[0].sha !== final.base ||
+      selected.bases[0].prefix !== ""
+    )
+      return false;
+    // A narrower range after final delivery must not inherit an archived approval.
+    return finalDeliveryFingerprint(selected, store, record.planId) === final.fingerprint;
+  });
+  if (matches.length > 1)
+    throw new ConfigValueError(
+      APPROVALS_PATH,
+      "final delivery",
+      "multiple final deliveries match; select one plan explicitly",
+    );
+  return matches[0] ?? null;
+}
+
+export function finalApprovalScope(record: PlanApprovalRecord): {
+  plan: string;
+  scope: string[];
+  contenders: string[];
+  planId: string;
+  approvalDigest: string;
+} {
+  return {
+    plan: record.path,
+    scope: parsePlanScope(record.contract),
+    contenders: [record.path],
+    planId: record.planId,
+    approvalDigest: record.digest,
+  };
+}
+
+export function retainedPlanMarkdown(record: PlanApprovalRecord): string {
+  return identifyPlan(record.contract, record.planId);
+}
+
+/** Called after saving approved recovery context, compacting the plan, and staging the final slice. */
+export function prepareFinalDelivery(
+  root: string,
+  path: string,
+  planId: string,
+  approval: string,
+): PlanApprovalRecord {
+  const before = readApprovalStore(root);
+  return withStateLock(join(root, APPROVALS_PATH), () => {
+    const store = readApprovalStore(root);
+    if (store.revision !== before.revision)
+      throw new ConfigValueError(
+        APPROVALS_PATH,
+        "revision",
+        "another writer changed approval; reread before retrying",
+      );
+    const record = store.records.find(
+      (row) => row.path === path && row.planId === planId && row.digest === approval,
+    );
+    if (!record)
+      throw new ConfigValueError(
+        path,
+        "approval",
+        "selected approval changed; record the required human approval before final delivery",
+      );
+    const recovery = readBoundedState(join(root, ".codument/pending-plans", path));
+    if (
+      !recovery ||
+      approvalDigest(path, planId, planContractMarkdown(recovery, planId)) !== record.digest ||
+      extractStatus(recovery, planId) !== "approved" ||
+      !parseDeliveryPlan(recovery, planId).length ||
+      parseDeliveryPlan(recovery, planId).some((step) => !step.done)
+    )
+      throw new ConfigValueError(
+        path,
+        "final delivery",
+        "save the completed approved plan in its pending-plans recovery copy first",
+      );
+    const boundary = resolveChangeSet(root, { mode: "staged" });
+    if (boundary.bases.length !== 1 || boundary.bases[0].prefix !== "" || !boundary.complete)
+      throw new ConfigValueError(
+        path,
+        "final delivery",
+        "select one complete member repository boundary",
+      );
+    const compacted = readChangeSetFile(root, boundary, path);
+    if (compacted === null || hasPlanSection(compacted, planId))
+      throw new ConfigValueError(
+        path,
+        "final delivery",
+        "compact and stage the durable plan document before preparing final delivery",
+      );
+    if (record.finalDelivery?.fingerprint === finalDeliveryFingerprint(boundary, store, planId))
+      return record;
+    store.revision++;
+    record.finalDelivery = {
+      base: boundary.bases[0].sha,
+      fingerprint: finalDeliveryFingerprint(boundary, store, planId),
+    };
+    const encoded = JSON.stringify(store, null, 2) + "\n";
+    parseApprovalStore(encoded);
     atomicWriteFileSync(join(root, APPROVALS_PATH), encoded);
     return record;
   });

@@ -13,6 +13,8 @@ This is the front door: the `codument` binary a user types into a terminal. It o
 
 ## Design approach
 
+Final preparation is an explicit work action performed after compaction and staging, before review. It records durable approval evidence and tells the caller what to stage; it performs no commit.
+
 The work approval command records a plan revision after human approval and tells callers which tracked artifacts must be staged together. Plan-aware commands accept a section identity, so a document containing several plans need not rely on an implicit section guess.
 
 Work commands also expose explicit selection, pause, block, resume, supersession and readiness.
@@ -43,6 +45,8 @@ A retired flag stays registered, and its help text says it is retired. Deleting 
 One command is a signpost, not an action: `run` (aliased `autopilot`) exists only to explain that codument does not run your coding agent. The CLI's whole remit is setup and deterministic checks; the delivery loop lives in the agent's instructions, so the binary's job is to redirect rather than to execute, and that boundary is stated in the command's own output. Since an approved plan runs on its own, the signpost has no trigger left to hand out — what it points at instead is the boundary itself and the way to slow the loop down, which keeps the command honest rather than vestigial.
 
 ## Invariants & boundaries
+
+- Final preparation, verification, readiness and observed completion remain distinct CLI actions. *(test: `work.test.ts`)*
 
 - Approval recording is explicit, stale plans cannot emit execution, and unstaged rerecording cannot clear stale staged approval. *(test: `work.test.ts`)*
 - Work status distinguishes saved state from reconciled progress, and a verified step remains ready

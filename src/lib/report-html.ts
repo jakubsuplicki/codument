@@ -1,6 +1,7 @@
 import type { CoveringAck, ReviewReport } from "../commands/review.js";
 import { DEPENDENT_CAP } from "./change-state.js";
 import type { ImpactLedger } from "./impact-ledger.js";
+import type { WorkInspection } from "./work-state.js";
 import { renderRoute, routesFor } from "./remedies.js";
 
 // Self-contained HTML review report: inline CSS, no network, no JS (uses native
@@ -10,6 +11,7 @@ import { renderRoute, routesFor } from "./remedies.js";
 // secondary gauge, findings triage by severity, detail is tucked behind toggles.
 
 export interface ReportData {
+  work?: Pick<WorkInspection, "selected" | "issues">;
   review: ReviewReport;
   coveragePercent: number | null;
   previousPercent?: number | null;
@@ -476,6 +478,7 @@ export function renderReviewReportHtml(data: ReportData): string {
   ${findingsBody}
 
   ${impactHtml}
+  ${data.work?.selected ? `<section><h2>Work: ${esc(data.work.selected.status)}</h2><p>${esc(data.work.selected.path)} · Next gate: ${esc(data.work.selected.nextGate)}</p>${[data.work.selected.reason, data.work.selected.resumeCondition, ...data.work.issues].filter(Boolean).map((text) => `<p>${esc(text!)}</p>`).join("")}</section>` : ""}
 
   ${acksHtml}
 

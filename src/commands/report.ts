@@ -30,13 +30,16 @@ interface ReportOptions {
  * consumer can diff it. Version-tagged like `doctor --json`.
  */
 export interface ReportJson {
+  work?: Pick<WorkInspection, "selected" | "issues">;
   version: 1;
   impact: ImpactLedger;
   acks: CoveringAck[];
 }
 
 export function buildReportJson(root: string): ReportJson {
+  const { selected, issues } = inspectWorkState(root);
   return {
+    ...(selected || issues.length ? { work: { selected, issues } } : {}),
     version: 1,
     impact: buildImpactLedger(root),
     acks: buildReview(root).coveringAcks,
@@ -61,7 +64,9 @@ export function buildReportData(
   generatedAt: string,
   demo?: DemoExplainer,
 ): ReportData {
+  const { selected, issues } = inspectWorkState(root);
   return {
+    work: { selected, issues },
     review: buildReview(root),
     coveragePercent: buildReport(root).coverage.percent,
     previousPercent: readPreviousPercent(root),
@@ -182,3 +187,4 @@ export async function report(options: ReportOptions = {}): Promise<void> {
     }
   }
 }
+import { inspectWorkState, type WorkInspection } from "../lib/work-state.js";

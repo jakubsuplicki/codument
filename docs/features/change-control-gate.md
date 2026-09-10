@@ -13,6 +13,8 @@ This is the safety check that catches a doc going stale the moment the code it d
 
 ## Design approach
 
+The monitor and report show current work state and pending gates ahead of historical step events. Final-plan approval can be recovered from tracked delivery evidence in a clean history review; working-tree review keeps its existing semantics.
+
 Projects may require approval bound to the selected plan's recorded contract. The gate reads both approval and scope from its selected snapshot, so a working-tree recording cannot authorize a staged change. A governed change without an eligible bound plan is unavailable under that policy; legacy projects retain an explicit migration path.
 
 The gate is split into two parts that must not be confused: a **deterministic enforcer** and an **optional LLM/agent assist** layered on top.
@@ -43,6 +45,8 @@ short verdict and the diagnostic `review` surface cannot silently disagree about
 **Every parser on the verdict path is bundled, never ambient.** The TypeScript engine rides the pinned TS compiler the package itself installs; languages beyond it ride tree-sitter grammars compiled to WASM, shipped inside the package and loaded through a pinned runtime, so the parse is a pure function of content bytes and package version — never of whatever toolchain the machine happens to have. The substrate is lazy (a repo that never needs a grammar never initializes WASM) and fail-loud (a missing or corrupt grammar binary raises, it never silently degrades a precise language to a coarse whole-file verdict); which files are precise, coarse, or unevaluable remains each adapter's decision.
 
 ## Invariants & boundaries
+
+- Paused state is visible in monitor and report output; a clean history review recognizes exact final approval after compaction. *(test: `work.test.ts`)*
 
 - Explicit plan paths use repository-relative native path normalization. An unresolved explicit selection is a refusal, never permission to drop scope diagnostics. *(test: `work.test.ts`)*
 

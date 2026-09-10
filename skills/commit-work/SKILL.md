@@ -12,7 +12,7 @@ Use this after `review-work` is clean, or after the user has approved/deferred e
 1. Check the active plan step is complete, using its recovery copy at `.codument/pending-plans/<repo-relative-plan-path>` after final-step compaction. For the final step, confirm the original doc's `## Delivery Plan` block has been compacted out (plan-with-docs → Compaction on ship) — a shipped feature doc must not commit with a stale delivery checklist still in it.
 2. Check that `review-work` is clean, or that every finding was fixed or explicitly deferred by the user.
 3. Check `git status --short` and `git diff --cached`.
-4. Confirm the already-staged, verified boundary has not changed since `review-work`; do not stage anything here. If it changed, return to `review-work` and rerun `codument verify`.
+4. Confirm `codument work status --json` shows the reviewed step ready and the already-staged, verified boundary unchanged; do not stage here. If it changed, return to review and verification. Respect an explicit no-commit request: leave the step ready and stop.
 5. Commit that boundary with a conventional commit prefix. The managed pre-commit hook runs `codument verify`; when the staged bytes and Codument version are unchanged, it reuses the exact receipt instead of repeating the review:
    - `feat:`
    - `fix:`
@@ -21,7 +21,7 @@ Use this after `review-work` is clean, or after the user has approved/deferred e
    - `refactor:`
    - `chore:`
 6. **If that was the plan's last step, remove only this plan's recovery copy after confirming the commit succeeded, then run `codument doctor --strict` once and report what it says.** If interrupted before cleanup, reconcile the copy with the committed boundary before resuming; a leftover copy does not authorize repeating completed work. Doctor reports; it does not gate — a plan must not be blocked by an adopting repo's pre-existing debt. This is the only moment the loop looks at repo-wide health: staged `verify` answers whether this change is ready, `doctor` answers whether the knowledge base is still worth reading. Once per plan, not once per step.
-7. Re-read `codument steps --plan <active-plan> --json` if the Delivery Plan remains. Name the next unchecked step by its actual ordinal and text, and say when it is the final remaining step. Continue directly to `work-step` unless gated mode or an explicit single-step request requires stopping. If no unchecked step remains or the final Delivery Plan was compacted, report completion; do not invent a next step or treat the missing checklist as a discovery failure. In gated mode, fill the next-step gate from that readback:
+7. After the successful commit, run `codument work finish` to reconcile delivery, then read `codument steps --plan <active-plan> --json` if the Delivery Plan remains. Name the next step and continue to `work-step` unless gated or single-step mode requires stopping. Completed local state must agree with committed delivery; a missing checklist alone is not completion. In gated mode, fill the next-step gate from that readback:
 
    ```text
    Step N is reviewed and committed. Next options:

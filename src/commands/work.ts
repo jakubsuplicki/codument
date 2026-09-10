@@ -1,5 +1,10 @@
 import { approvePlan } from "../lib/plan-approval.js";
-import { inspectWorkState, transitionWork, type WorkAction } from "../lib/work-state.js";
+import {
+  inspectWorkState,
+  transitionWork,
+  prepareWorkFinalDelivery,
+  type WorkAction,
+} from "../lib/work-state.js";
 
 export interface WorkApproveOptions {
   plan: string;
@@ -23,6 +28,7 @@ export function workApprove(options: WorkApproveOptions): void {
 }
 
 export interface WorkCommandOptions {
+  prepareFinal?: boolean;
   plan?: string;
   planId?: string;
   reason?: string;
@@ -47,6 +53,21 @@ export function workCommand(action: WorkAction | "status", options: WorkCommandO
 
 function renderWork(action: WorkAction | "status", options: WorkCommandOptions): void {
   const root = options.root ?? process.cwd();
+  if (options.prepareFinal) {
+    if (action !== "finish") throw new Error("--prepare-final is only valid for work finish");
+    prepareWorkFinalDelivery(root, {
+      plan: options.plan,
+      planId: options.planId,
+      expectedRevision:
+        options.expectRevision === undefined ? undefined : Number(options.expectRevision),
+    });
+    console.log(
+      options.json
+        ? JSON.stringify({ version: 1, prepared: true, stage: "docs/.approvals.json" })
+        : "Final delivery bound. Stage docs/.approvals.json, then review and verify this boundary before work finish.",
+    );
+    return;
+  }
   if (action !== "status")
     transitionWork(root, action, {
       plan: options.plan,

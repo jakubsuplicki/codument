@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import pc from "picocolors";
 import { isPlanPath, normalizePlanPath } from "../lib/plan-steps.js";
-import { APPROVALS_PATH, parseApprovalStore, parseApprovalPolicy, readApprovalPolicy } from "../lib/plan-approval.js";
+import { APPROVALS_PATH, parseApprovalStore, parseApprovalPolicy, readApprovalPolicy, readApprovalStore, finalApprovalForBoundary, finalApprovalScope } from "../lib/plan-approval.js";
+import { workPlanSelection, loadWorkPlan } from "../lib/work-state.js";
 import { ConfigValueError } from "../lib/state-io.js";
 import {
   type Acknowledgment,
@@ -428,6 +429,9 @@ export function registryForBoundary(root: string, boundary: ChangeSet): Registry
 }
 
 export function planForBoundary(root: string, boundary: ChangeSet, selection?: { plan?: string; planId?: string }): ApprovedPlan | null {
+  if (boundary.mode !== "range") selection = workPlanSelection(root, selection);
+  const final = finalApprovalForBoundary(root, boundary, selection);
+  if (final) return finalApprovalScope(final);
   const tracked = listTrackedFiles(root);
   if (!tracked.ok) {
     throw new GateError(`could not enumerate selected plan files: ${tracked.reason}`, "git-failed");
@@ -466,6 +470,33 @@ export function exclusionForBoundary(root: string, boundary: ChangeSet): Exclusi
       ? null
       : validateExclude(exclude, ".codument-meta.json@selected-boundary"),
   ).spec;
+}
+
+function planForWorktree(root: string, baseRef: string, explicit: { plan?: string; planId?: string }): ApprovedPlan | null {
+  const selection = workPlanSelection(root, explicit);
+  const changed = [...getWorkingTreeChanges(root), ...getWorkingTreeDeletions(root)];
+  if (baseRef !== "HEAD" && changed.length === 0) {
+    const final = finalApprovalForBoundary(root, resolveChangeSet(root, { mode: "range", base: baseRef, head: "HEAD" }), explicit);
+    if (final) return finalApprovalScope(final);
+  }
+  const retained = readApprovalStore(root).records.find((record) => record.path === selection.plan && record.planId === selection.planId);
+  if (retained && !retained.finalDelivery) {
+    const pending = loadWorkPlan(root, retained.path, retained.planId);
+    if (pending?.approved && !pending.active) return finalApprovalScope(retained);
+  }
+  if (retained?.finalDelivery) {
+    if (!changed.length) return null;
+    let staged: ChangeSet;
+    try {
+      staged = resolveChangeSet(root, { mode: "staged" });
+    } catch (error) {
+      if (error instanceof ChangeSetError && error.code === "worktree-overlap") return null;
+      throw error;
+    }
+    const final = changed.every((path) => staged.changes.some((entry) => entry.path === path || entry.oldPath === path)) ? finalApprovalForBoundary(root, staged, selection) : null;
+    return final ? finalApprovalScope(final) : null;
+  }
+  return detectApprovedPlanScope(root, selection);
 }
 
 export function buildReview(
@@ -530,7 +561,7 @@ export function buildReview(
     opts.boundary?.additions ??
     opts.addedFiles ??
     (tracked.ok ? changes.filter((f) => !new Set(tracked.paths).has(f)) : []);
-  const plan = opts.boundary ? planForBoundary(root, opts.boundary, opts) : detectApprovedPlanScope(root, opts);
+  const plan = opts.boundary ? planForBoundary(root, opts.boundary, opts) : planForWorktree(root, baseRef, opts);
   const readSelected = opts.boundary
     ? (path: string): string | null => readChangeSetFile(root, opts.boundary as ChangeSet, path)
     : undefined;

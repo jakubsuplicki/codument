@@ -18,6 +18,8 @@ registry pays back on every turn, so the agent *wants* to pull it before it star
 
 ## Design approach
 
+A selector-free context request uses saved work when available. Plan context carries interruption and pending-gate information so retrieved knowledge does not imply permission to resume.
+
 When a page contains identified plans, an explicit identity selects the same ownership map used by the approval and checklist surfaces.
 
 This is the third projection over the registry, and it deliberately looks like the other two
@@ -54,6 +56,10 @@ never a silent truncation. Token counts are the same dependency-free `ceil(chars
 cost ledger and the benchmark use, and are labelled an estimate everywhere they surface.
 
 ## Invariants & boundaries
+
+- Selected-work context preserves the saved plan identity and reports its paused state without changing it. *(test: `work.test.ts`)*
+- Final context reads the retained contract after selected-section compaction. An explicit sibling
+  preview never inherits another section's saved work state. *(test: `work.test.ts`)*
 
 - Explicit plan identity preserves selected-section ownership when multiple plans share a page. *(test: `plan-approval.test.ts`)*
 

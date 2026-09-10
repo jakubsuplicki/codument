@@ -13,6 +13,8 @@ A greenfield project built through the loop tends to collapse into one umbrella 
 
 ## Design approach
 
+Map commands share the explicit work selection, preserving the selected section across a session handoff.
+
 An explicit plan identity selects the same section for ownership routing as for approval and execution. Resume checkpoints do not contribute ownership declarations.
 
 The decomposition the plan already articulates in prose becomes a first-class, approvable, machine-readable artifact — and, crucially, gets a deterministic consumer the loop is **required** to run. This mirrors why step-mirroring works: a deterministic hook the skill must call, not a prose request the agent can skip. The earlier failure was exactly the prose-only path — a rule asking the agent to name a feature from a file's purpose lumped everything into the umbrella already present.
@@ -22,6 +24,8 @@ The hard line is the determinism boundary: the **agent proposes** the semantic c
 The path is forward-only: make new work decompose correctly rather than auto-healing already-lumped registries (backward-compat is not a constraint). And because every project sits at a low feature count early, a file-grain blast carrier (files touched of the in-scope total) gives real resolution before any re-mapping, so the signal is useful from the first commit. Rejected: a per-subdirectory scan as the only mechanism (it produces zero features on the flat-source shape the loop emits) and auto-heal of existing lumped registries.
 
 ## Invariants & boundaries
+
+- Saved work selection routes the map even when other approved plans exist. *(test: `work.test.ts`)*
 
 - Identified plans cannot borrow another section's Feature Map, and checkpoint examples cannot materialize source ownership. *(test: `plan-approval.test.ts`)*
 

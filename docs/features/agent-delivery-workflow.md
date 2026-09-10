@@ -13,6 +13,8 @@ The core loop codument installs into a project's agent instructions: grill the i
 
 ## Design approach
 
+Work selection and pending gates survive sessions independently of human approval. A final delivery retains its approved contract in tracked data and binds it to exact changes before review, allowing verification after the live checklist is compacted.
+
 One neutral workflow, many agents. An agent profile maps the same delivery contract onto each agent's native surface — which instruction files, skills directories, and capabilities that agent supports — so the workflow stays neutral in shape while profiles stay honest about capability differences (a host without hooks simply doesn't get hook-backed nudges). `AGENTS.md` is the canonical cross-agent contract; `CLAUDE.md` remains a Claude compatibility target that defers to it. Claude is the default profile when nothing is detected; Codex/generic stays a first-class selectable target writing `AGENTS.md` and `.agents/skills`.
 
 The loop is gated where a decision is owed, and continuous everywhere else. Source edits never start before a human approves the plan, and every step still passes `work-step` → `review-work` → `commit-work` in order. Work-step stages the exact slice before review; review-work runs one compact verifier over those bytes, completing its generated worksheet only when adversarial evidence is required; commit-work commits the unchanged verified boundary. The pre-commit hook reuses that exact receipt instead of repeating the review. What stops a run is a decision the agent should not make alone — a judgment-call finding, anything touching public interfaces, security, data loss or dependencies, a failed verification, or work outside the approved plan.
@@ -24,6 +26,8 @@ Compaction preserves the selected plan and its next required gate. In gated mode
 Adoption of an existing project is gentle: scan and map what exists, create missing docs only where needed, and mark uncertainty instead of pretending the scan is authoritative.
 
 ## Invariants & boundaries
+
+- Paused work cannot restart through checklist projection. A no-commit boundary stays ready, and compacted delivery becomes completed only when its verified change is observed in Git. *(test: `work.test.ts`)*
 
 - Outcome claims are limited to observed evidence at the agreed user or integration boundary. A
   substitute validates its exercised contract; it cannot establish downstream behavior. Missing
@@ -101,7 +105,7 @@ that has not been implemented. The user approved this plan and authorized commit
 
 - [x] Step 1: Bind human-approved plan scope to a recorded revision and diagnose stale or unbound approval.
 - [x] Step 2: Add explicit active, paused, blocked, superseded, ready, and completed work states.
-- [ ] Step 3: Connect work state to agent handoffs, steps, context, verification, and the live monitor.
+- [x] Step 3: Connect work state to agent handoffs, steps, context, verification, and the live monitor.
 - [ ] Step 4: Ground planning and review in existing files, changed docs, and instruction contracts.
 - [ ] Step 5: Export and validate portable review evidence for the exact reviewed change.
 - [ ] Step 6: Require matching review evidence in the CI template and this repository's workflow.
@@ -341,6 +345,6 @@ including independent plan/step reviewers and isolated evaluation agents, with l
 ### Resume checkpoint
 
 Plan: docs/features/agent-delivery-workflow.md
-Completed implementation: Steps 1–2.
+Completed implementation: Steps 1–3.
 Next gate: independent review, exact staged verification, then commit.
-Resume condition: resolve review findings and obtain a passing receipt before Step 3.
+Resume condition: resolve review findings and obtain a passing receipt before Step 4.

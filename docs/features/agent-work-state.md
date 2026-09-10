@@ -25,7 +25,10 @@ boundary advances progress using that commit's checklist, so unfinished delivery
 behind newer working-tree edits or later unrelated commits. Recovery searches bounded reachable
 history and reports when its window is exhausted. Conflicting writers and invalid or moved state
 fail with a remedy.
-Final-plan compaction and automatic handoffs are integrated by the next approved delivery slice.
+Checklist, context, mapping and verification commands share selected work; an explicit preview of
+another plan grants no execution. The live monitor displays saved interruption and pending gates.
+Final compaction retains approval in tracked data and binds it to the exact final delivery. Recovery
+notes remain local context, so a fresh checkout can verify delivery without them.
 
 ## Invariants & boundaries
 
@@ -42,6 +45,13 @@ Final-plan compaction and automatic handoffs are integrated by the next approved
   *(test: `work.test.ts`)*
 - A final checkbox does not prevent explicit resume while review or delivery remains pending.
   *(test: `work-state.test.ts`)*
+- Paused work cannot emit execution or pass the execution gate. Final compaction survives a fresh
+  checkout; later changes cannot reuse its archived approval. *(test: `work.test.ts`)*
+- Final preparation checks the selected identity and expected state revision under its writer lock.
+  Final read projections remain available through readiness and completion. *(test: `work.test.ts`)*
+- An interruption before final preparation resumes only already-saved work whose recovery context
+  matches the tracked approval. Explicit same-path resume preserves its saved section identity.
+  Modified recovery scope cannot authorize continuation. *(test: `work.test.ts`)*
 
 ## Decisions
 
