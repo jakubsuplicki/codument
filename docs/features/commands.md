@@ -9,60 +9,96 @@ last_reviewed: 2026-09-10
 
 ## In plain terms
 
-These are the lifecycle commands that stand a project up on codument and keep it there. `init` bootstraps a fresh repo (docs tree, registry, agent profile assets, instruction files), `scan` discovers existing source and writes doc scaffolds so an agent can fill them in, `update` re-syncs the managed files after a package upgrade, `adopt` brings an already-onboarded project forward without re-bootstrapping it, and `benchmark` hosts the package-native proof commands. Reach for this feature when you want to understand how a project gets onboarded, re-synced, or proven, as opposed to the steady-state delivery loop that runs once it is set up.
+These commands install Codument, map existing code, and keep managed project files current.
+Discovery proposes documentation boundaries for an agent to review; upgrades preserve authored
+work and project settings. The separate benchmark commands measure bounded, repeatable outcomes.
 
 ## Design approach
 
-Fresh initialization requires revision-bound approval for governed changes. Reinitialization preserves an existing project's adoption choice; existing projects opt in after reviewing their workflow. Use `codument work approve --plan <path>` after human approval, then stage the plan and its tracked approval record together.
+The live repository is authoritative. Onboarding detects its current stack and maps existing code
+only when creating a registry; an authored ownership map is preserved. Existing projects retain
+their approval policy, while new installs require approval bound to the displayed plan revision.
 
-Each command owns a phase of the project lifecycle, and the shape of every command follows from one stance: the user's repo is the source of truth, never the stored metadata. `init` and `scan` are the only commands that create from nothing; everything else reconciles an existing tree against the current package, and reconciliation always re-detects the live project rather than trusting a stale `.codument-meta.json` snapshot, because source globs and frameworks drift between runs.
+Upgrades reconcile the package, local files, and previous synchronization state. Local divergence
+is preserved or backed up before replacement, and shared instruction files change only inside
+managed markers. Adoption reuses that reconciliation instead of maintaining a separate merge path.
 
-Onboarding is one command even when the repo already has code. Installing the workflow over an existing codebase and leaving the registry empty is a half-install that fails silently — the gate has nothing to check and the doc-filling flow has no scaffolds to fill — so `init` performs the discovery half itself when, and only when, it is the case that needs it: the repo has source and the registry is one this run just created. An existing registry is `adopt`'s territory, and proposing over ownership someone authored is not `init`'s call. The escape is an opt-out rather than an opt-in, because the people who would forget the second command are exactly the ones who would not pass a flag to get it. Discovery stays a first-class command regardless: it is the entry point of the zero-commitment trial motion, and the way to re-derive the map later.
-
-The riskiest operation is overwriting a file a user has edited, so `update` is built around a three-way merge: it compares the upstream version, the on-disk version, and a stored hash from the last sync, and only overwrites when the local copy is unchanged from what codument last wrote. When both sides changed, it preserves the user's work by backing it up before applying upstream, never silently clobbering. Instruction files (`AGENTS.md`, `CLAUDE.md`) are the exception: they are co-owned with the user, so codument edits only its own marked-off section and leaves the surrounding prose alone. The whole sync is also failure-isolated: one unwritable or pointer-file entry is skipped with a reason and the run completes, so a single odd entry never strands a half-applied tree.
-
-`adopt` is deliberately thin: it normalizes the registry in place (a stray legacy field is dropped on read, with no migration path), refreshes metadata against the live project, then delegates the managed-file work to `update` so onboarding and upgrade share one merge strategy instead of drifting apart. Refreshing means overwriting only the keys `adopt` owns, over a carried-forward copy of the file. The inverse — rebuilding from a literal and re-listing what to keep — is a whitelist, and a whitelist deletes whatever nobody remembered to add to it: that is how a hand-authored setting survived exactly until the next `adopt`, silently, which is why "just edit the file" was never a workable answer to a project-specific exclusion. This is why there is no separate "re-init" command. `scan` derives feature boundaries from directory structure alone, a heuristic it cannot verify, so it marks every entry it creates as needs-review, places all files in primary ownership (it cannot tell primary from related), and writes an explicit ambiguity marker into each scaffold. It never narrates content: a scaffold is a typed skeleton an agent fills in via the update-docs flow, per the [[doc-audience-layers]] standard. `scan` discovers through the health analyzer's own walker rather than a copy of it, so source discovery and coverage cannot disagree about what counts. That distinction is load-bearing: sharing only the exclusion *spec* is what let scan keep proposing files git ignores long after the analyzer had learned to subtract them. The spec it shares now includes the project's own declared additions, so a build tree a project names is one a scan cannot write into the registry.
-
-`benchmark` is fenced off from the onboarding and delivery commands on purpose: measurement must never tangle with normal work, and it proves only what can be scored deterministically (context routing and final repository state), never an agent's path or a quality judgment. The detail lives in [[proof-benchmarks]].
+Discovery and health checks share source-scope rules, including declared exclusions and Git ignores.
+Directory structure supplies provisional boundaries, not verified knowledge: scaffolds retain their
+uncertainty until documented. [[proof-benchmarks]] owns measurement; it does not run normal delivery.
 
 ## Invariants & boundaries
 
-- New installs require bound approval while reinitialization preserves existing policy and does not silently migrate a legacy project. *(test: `init.test.ts`)*
-
-- `adopt` and `update` preserve every metadata key they do not own, including ones that did not exist when they were written, so a project-declared setting survives onboarding and upgrade alike. *(tests: `adopt.test.ts` "adopt carries the project's own metadata forward" — a declared exclusion block, a key the command has never heard of, the owned keys still overwritten, and the same round-trip through `update`)*
-- `init` is non-destructive, and `--force` is scoped to codument-managed files only: it overwrites the managed scaffolds, but never the human-authored `docs/.registry.json`, nor the non-codument keys (permissions, env, other hooks) in a shared `.claude/settings.json` — those are always read-merged, upserting only codument's own hook. *(tests: `init.test.ts` "does not overwrite existing registry without --force", "does not reset a populated registry under --force", "preserves non-codument settings keys under --force")*
-- `init` and `adopt` read-merge `.codument-meta.json`, preserving the fields codument accumulates (`fileHashes`, `lastScan`, `charter`, and the original init date), so a re-run never discards the change-detection state `update`'s three-way merge depends on. *(tests: `init.test.ts` "preserves accumulated meta (fileHashes, lastScan) on re-init"; `adopt.test.ts` "preserves accumulated meta across adopt")*
-- A present-but-unparseable config or state file (registry, settings, project metadata) is refused, never overwritten: the lifecycle commands fail closed rather than silently rewrite it from empty. *(tests: `init.test.ts` "refuses a corrupt settings.json rather than overwriting it", "refuses a corrupt .codument-meta.json rather than dropping its fields")*
-- `init` writes a Claude hook idempotently: re-running never duplicates the codument hook, and an outdated hook matcher — or an older command form — is upgraded in place. *(tests: `init.test.ts` "does not duplicate hook on re-init" and "updates an existing Claude hook matcher on init")*
-- `init` maps existing source in the same run, but only when the repo has code AND the registry is one it just created; an authored registry is never proposed over, and the opt-out declines it. What it names as the next step follows what the run actually mapped, not merely that discovery ran — a project whose files all sit at the source root scans cleanly and owns nothing, and is not sent to fill scaffolds that were never written. A scope it cannot resolve declines the mapping rather than failing the install: that refusal belongs to discovery, which states it precisely, and the workflow half is worth installing either way. *(tests: `init.test.ts` "mapping existing code" — the one-command case, both skip conditions, the opt-out, and the mapped-nothing hint)*
-- `init` never wires commit-time enforcement unasked: the git pre-commit gate is installed only under the opt-in `--hooks` flag, and a project not yet under git degrades to a printed note pointing at `codument hooks install`, never a failed init. *(test: `hooks-command.test.ts` "init --hooks installs the gate; init without the flag does not")*
-- The installed hook can never break the editor loop: the written command guards its own target, so a project without a local codument install (npx-cache-only, global) gets a silent no-op on every edit — never a module-not-found error — and `init` says at write time that the hook stays dormant and how to wake it. *(tests: `hooks.test.ts` "the installed hook COMMAND is guarded"; `init.test.ts` "writes the GUARDED hook command and warns")*
-- `init` edits only codument's own marked-off section of an instruction file; pre-existing user content is preserved. *(test: `init.test.ts` "appends to existing AGENTS.md")*
-- **A backup is written only when something would be lost.** The three-way merge asks whether each side moved from the recorded hash, which reads "both changed" for an upgrade where upstream and the local copy have *converged* — so the file was backed up and then overwritten with content identical to what was already there. Content equality is therefore asked first: nothing can be lost when there is no difference to lose. It is not a cosmetic fix. One `codument update` left 21 untracked `.backup` files and not one modified file, and nothing sweeps or ignores them, so every upgrade added a layer of litter to the user's `git status` — from the tool whose subject is not leaving mess in a repository. A genuine local divergence is still backed up before upstream is applied; what stops is the vacuous case. The skip reason still distinguishes "nothing moved" from "both moved to the same place", so the ordinary run reads exactly as it always has. *(test: `codemod.test.ts` "a backup is written only when something would be lost" — converged content skipped however it got there, the untouched case worded as before, a first update with no recorded hash, and a real divergence still merged)*
-- `update` refuses to run without `.codument-meta.json`, exiting nonzero. *(test: `update.test.ts` "fails without .codument-meta.json")*
-- `update` overwrites a managed file only when the local copy is unchanged since the last sync; a user-modified file with unchanged upstream is preserved. *(test: `update.test.ts` "preserves user-modified files when upstream unchanged")*
-- `--dry-run` (on `update` and `adopt`) reports the actions it would take and modifies nothing, including the stored metadata version. *(tests: `update.test.ts` "--dry-run does not modify files"; `adopt.test.ts` "dry run does not rewrite legacy registry")*
-- A single unwritable or non-directory (pointer/symlink) managed entry is skipped with a reason and the rest of the `update` run still applies; the blocking entry is left untouched. *(test: `update.test.ts` "skips a pointer-file skill instead of crashing the whole run (ENOTDIR)")*
-
-- **A release that leaves cleanup behind says so at the upgrade, keyed on the version the project is coming FROM.** Syncing the managed files is the mechanical half of an upgrade; the half no file sync can perform is state a release makes stale — records banked against a rule that changed, registry lines a narrowed scope now contradicts. It announces itself nowhere, and `update` is the one moment a human is looking at codument rather than through it, so the note lives here and names the commands that clear it. It must also name any block that got **quieter**, which is the half of a release nobody discovers by using it: learning later that a file silently stopped being watched is how trust in an exit code dies, and a loosening disclosed only in a changelog is a loosening most readers never see. Reading the prior version rather than the installed one is what makes it a note instead of a nag — it appears once per repo and never again — and an unreadable prior version shows it anyway, because an unprovable "they already crossed" costs a screen while a wrong silence costs the cleanup. A dry run prints it too: a preview that hides the part you must act on is not a preview. **A caller that stamps the new version before delegating hands the prior one over explicitly**, or the note is suppressed on the very command whose job is bringing an older project forward — which is what happened: `adopt` writes the refreshed metadata and only then delegates the managed-file sync, so the delegate read the file and concluded there was nothing to migrate from. Re-deriving state a caller has already overwritten is the shape of the bug, not the one call site. *(tests: `update.test.ts` "the upgrade names the cleanup it leaves behind" — the note on a pre-release project naming both cleanup commands and the loosened block, silence once the project is past it, and the dry-run and unreadable-version cases; `adopt.test.ts` "adopt does not swallow the migration note it delegates")*
-- `adopt` normalizes the registry in place, dropping a stray legacy field rather than migrating it, and backs up the prior registry before replacing a changed one. *(test: `adopt.test.ts` "normalizes the registry (dropping stray legacy keys) and installs selected profiles")*
-- `adopt` re-detects the live project rather than trusting stored metadata: the refreshed metadata reflects the current language and source globs, not the stale snapshot. *(test: `adopt.test.ts` "normalizes the registry (dropping stray legacy keys) and installs selected profiles" — asserts re-detected language/globs)*
-- The verdict- and history-bearing commands refuse a workspace of member repositories where a single ref cannot honestly name the state: `review --base` (and the CI workflow a `hooks install --ci` scaffolds, which runs it), `audit <range>`, and `hooks install` at a workspace root each fail closed with a `wrong-topology` diagnostic naming the member to run inside, while the worktree `review` still answers across members. See [[change-control-gate]] and ADR-016 for the aggregation model. *(test: `workspace-refusals.test.ts`)*
-- `scan` runs standalone on an unadopted repo: a missing registry is created as a provisional one rather than erroring, because the zero-commitment trial motion (`scan` then `audit <range>`) must not require installing the workflow first — `init` remains the installer. *(test: `scan.test.ts` "creates a provisional registry when none exists")*
-- `scan` marks every entry it creates as needs-review and emits a layered scaffold with an ambiguity marker, never narrated content. *(tests: `scan.test.ts` "sets status to needs-review on new entries" and "creates scaffold docs with correct frontmatter")*
-- `scan` never overwrites a doc that already exists on disk: an already-documented feature is skipped byte-for-byte, and even a name-collision with an unmapped human-authored file leaves its content intact. When an entry's doc is missing, scan recreates the scaffold but preserves the entry's human-authored fields (ownership split, deps, risk, docs, status), refreshing only the scanned sources. *(tests: `scan.test.ts` "skips already-documented features", "never overwrites an existing doc file on a name collision", "recreates a missing doc but preserves the entry's human-authored fields")*
-- `scan` classifies known utility directory names as concepts and everything else as features, and discovers files through the analyzer's ONE walker — extensions, exclusion globs, and the repository's real gitignore rules alike, never a local copy of any of them — so it proposes exactly the set the gate will govern: generated/tool directories, `.d.ts` artifacts, each language's test conventions, and anything git ignores are all skipped. When the ignore rules cannot be determined it proposes anyway and says so, pointing at the declaration as the remaining lever, because a registry entry is durable: silently writing build output into `primary_sources` outlives the run that guessed it. Its summary also names any declared exclusions in effect, for the same reason `doctor` does — the entries it is about to write were shaped by them. A directory `scan` cannot read is a note rather than a refusal, and the asymmetry is deliberate: an unreadable declaration risks writing WRONG entries that outlive the run, while an unreadable directory only omits — a later run picks those files up, and a permanently unreadable tree would otherwise make `scan` unusable rather than merely incomplete. The omission is recorded to the scan record for the same reason the unverified-scope note is: the entries outlive the console. Because those entries are durable, `scan` is also the one consumer that refuses rather than degrades when the declaration cannot be read at all: it stops before writing anything, since a build tree swept into `primary_sources` because a file could not be parsed is a wrong answer with no expiry, and a failure reported after the writes have landed is one a truncated log never shows. Build output git DOES track (or that has no repository to be tracked by) is the case gitignore cannot reach, and there the project's own declaration is what removes it — the two mechanisms cover different halves of the same problem and both feed the one walker. *(tests: `scan.test.ts` "scan honors the project's own declared exclusions" — swept in undeclared, absent once declared, declared globs honored, an unconfigured run identical, and no registry written when the declaration is unreadable)* *(tests: `scan.test.ts` "classifies concept directories correctly", "ignores generated and tool directories", "excludes .d.ts files", and "scan discovery honors gitignore, exactly as the analyzer does" — ignored output never proposed inside a real repo, the warning when rules are undeterminable, silence when they applied)*
-- `benchmark` is a self-contained command family separate from the delivery loop; its proofs are deterministic, run with no network or model, and the quality benchmark refuses a non-empty target and fails scoring when locked metadata changes. *(tests: `benchmark.test.ts` "exposes the benchmark command family", "does not initialize into a non-empty target directory", "fails quality scoring when locked benchmark metadata changes")*
+- New installs require bound approval. Reinitialization preserves an existing project's policy.
+  *(test: `init.test.ts`)*
+- Adoption and update preserve metadata keys they do not own, including unknown future settings.
+  *(test: `adopt.test.ts`)*
+- Forced initialization affects only managed scaffolds. It preserves authored registry entries
+  and unrelated shared agent settings, including permissions, environment and other hooks.
+  *(test: `init.test.ts`)*
+- Reinitialization and adoption preserve accumulated synchronization state, scan and charter data,
+  and original initialization time. *(tests: `init.test.ts`, `adopt.test.ts`)*
+- Present but unparseable registry, settings or metadata is refused rather than replaced with empty
+  state. *(test: `init.test.ts`)*
+- Reinitialization does not duplicate editor hooks and upgrades outdated hook matchers or command
+  forms in place. *(test: `init.test.ts`)*
+- Existing source is mapped during initialization only when that run created the registry and
+  mapping was not declined. Authored maps remain untouched; unresolved discovery scope does not
+  undo workflow installation. The next action reflects scaffolds actually created.
+  *(test: `init.test.ts`)*
+- Commit hooks are opt-in. Before Git initialization, requesting them produces a setup hint rather
+  than failing installation. *(test: `hooks-command.test.ts`)*
+- A missing local runtime leaves the editor hook dormant without breaking edits; installation
+  explains how to enable it. *(tests: `hooks.test.ts`, `init.test.ts`)*
+- User prose outside managed instruction markers survives initialization. *(test: `init.test.ts`)*
+- Identical local and upstream content requires no backup, even without a prior hash. Genuine
+  divergence is backed up before replacement; reports distinguish convergence from unchanged files.
+  *(test: `codemod.test.ts`)*
+- Update requires project metadata and exits nonzero when it is missing. *(test: `update.test.ts`)*
+- An unchanged local managed file can take an upstream update; a local edit with unchanged upstream
+  is preserved. *(test: `update.test.ts`)*
+- Dry-run adoption and update report proposed actions without changing files or recorded versions.
+  *(tests: `update.test.ts`, `adopt.test.ts`)*
+- An unwritable or non-directory managed entry is left untouched and named as skipped; other update
+  entries can complete. *(test: `update.test.ts`)*
+- Upgrade notices name required cleanup and relaxed enforcement, using the incoming project
+  version even when a delegating caller already updated metadata. An unreadable prior version and
+  a dry run still show the notice; already-upgraded projects are not nagged.
+  *(tests: `update.test.ts`, `adopt.test.ts`)*
+- Adoption normalizes legacy registry fields without migration and backs up a changed registry
+  before replacement. *(test: `adopt.test.ts`)*
+- Adoption re-detects the current language and source scope rather than trusting stored metadata.
+  *(test: `adopt.test.ts`)*
+- Unselected workspace-wide history ranges and root hook installation are refused with a member
+  recovery path. Worktree review can still aggregate members. See [[change-control-gate]] and ADR 016.
+  *(test: `workspace-refusals.test.ts`)*
+- Standalone discovery can create a provisional registry before adoption; workflow installation
+  remains a separate choice. *(test: `scan.test.ts`)*
+- Discovered entries require review. Their layered scaffolds mark ambiguity and contain no invented
+  narrative; detected sources initially receive primary ownership. *(test: `scan.test.ts`)*
+- Discovery never overwrites existing documentation, including unmapped filename collisions. It
+  can restore a missing scaffold while preserving authored ownership, dependencies, risk, supporting
+  docs and status, refreshing only detected sources. *(test: `scan.test.ts`)*
+- Known utility directories become concepts; other discovered boundaries become features. The
+  shared walker excludes generated/tool output, declarations, language-specific tests, Git-ignored
+  content and project-declared exclusions. Undetermined Git ignores and unreadable directories are
+  disclosed and recorded while discovery continues; unreadable scope declarations stop writes.
+  Declared exclusions still cover tracked output that Git ignores cannot remove. Summaries name
+  the exclusions shaping durable proposals. *(test: `scan.test.ts`)*
+- Benchmarks stay separate from delivery, use deterministic scoring without network or model calls,
+  refuse non-empty quality-fixture targets, and reject changed locked metadata. They do not judge
+  subjective quality or an unobserved agent path.
+  *(test: `benchmark.test.ts`)*
 
 ## Decisions
 
-- The registry v2 model `adopt` reads and normalizes directly, with no migration layer: [001-registry-v2-model-no-migration](../architecture/decisions/001-registry-v2-model-no-migration.md).
-- `benchmark` proves only what is deterministically scorable and is fenced off from the delivery commands: [008-benchmark-proof-deterministic-not-judge](../architecture/decisions/008-benchmark-proof-deterministic-not-judge.md).
+- [Registry normalization without migration](../architecture/decisions/001-registry-v2-model-no-migration.md).
+- [Deterministic benchmark proofs](../architecture/decisions/008-benchmark-proof-deterministic-not-judge.md).
 
 ## Key files
 
-- `src/commands/init.ts` — the bootstrap command: creates the docs tree, registry, agent profile assets, and instruction sections from nothing.
-- `src/commands/scan.ts` — the discovery command: derives feature/concept boundaries from source layout and writes needs-review scaffolds for an agent to fill in.
-- `src/commands/update.ts` — the re-sync command: the three-way merge engine that keeps managed files current across upgrades without clobbering user edits.
-- `src/commands/adopt.ts` — the forward-migration command: normalizes an existing registry in place and delegates managed-file work to update.
-- `src/commands/benchmark.ts` — the proof command family's entry point: wires the deterministic context and quality benchmarks behind a fenced-off subcommand tree.
+- `src/commands/init.ts` — workflow installation.
+- `src/commands/scan.ts` — provisional source discovery.
+- `src/commands/update.ts` — managed-file reconciliation.
+- `src/commands/adopt.ts` — adoption of an existing project.
+- `src/commands/benchmark.ts` — bounded evaluation commands.

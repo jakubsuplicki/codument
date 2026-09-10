@@ -9,90 +9,97 @@ last_reviewed: 2026-09-10
 
 ## In plain terms
 
-The core loop codument installs into a project's agent instructions: grill the idea against the docs, write a durable plan, stop for human approval, implement one planned step, verify it, update its mapped docs and registry, review the staged slice, commit, repeat. Codument is not the runner — the CLI installs and audits this workflow; the agent executes it from the generated instruction files and skills. This page is the workflow's contract; the install machinery that writes it into a project is documented with its owning modules.
+Agents ground a request in project docs, write a plan, and wait for human approval. Each approved
+step is implemented, verified, documented, reviewed and committed before work advances. Codument
+supplies the durable context and checks; the coding agent runs the workflow.
 
 ## Design approach
 
-Work selection and pending gates survive sessions independently of human approval. A final delivery retains its approved contract in tracked data and binds it to exact changes before review, allowing verification after the live checklist is compacted.
+Approval, active work and delivery evidence answer different questions. Tracked approval binds the
+selected contract; local state preserves interruptions and the next gate; Git proves delivery.
+Final compaction retains the approved contract and its exact delivery binding, with local recovery
+context available until the commit succeeds. See [[plan-approval]] and [[agent-work-state]].
 
-Branch delivery to CI adds a complete-range review before the final commit. Its portable manifest
-travels with those changes; it does not replace the local staged gate or authorize a broader range.
-Private findings remain local, while receiving CI validates the manifest and reruns its named tests.
+The default loop continues after approval, stopping for decisions that need the human. Gated mode
+keeps the same checks and waits between them. Local review covers the staged slice; branch delivery
+to CI adds a review of the complete range and a portable manifest. Neither boundary authorizes the
+other. [[step-verification]] and [[adversarial-review-gate]] own their enforcement.
 
-One neutral workflow, many agents. An agent profile maps the same delivery contract onto each agent's native surface — which instruction files, skills directories, and capabilities that agent supports — so the workflow stays neutral in shape while profiles stay honest about capability differences (a host without hooks simply doesn't get hook-backed nudges). `AGENTS.md` is the canonical cross-agent contract; `CLAUDE.md` remains a Claude compatibility target that defers to it. Claude is the default profile when nothing is detected; Codex/generic stays a first-class selectable target writing `AGENTS.md` and `.agents/skills`.
+Profiles place the same contract on each host's instruction and skill surfaces. Independent review
+uses a fresh agent when available and discloses reduced independence otherwise. Existing-project
+adoption preserves authored knowledge, creates only needed scaffolds and marks uncertainty.
 
-The loop is gated where a decision is owed, and continuous everywhere else. Source edits never start before a human approves the plan, and every step still passes `work-step` → `review-work` → `commit-work` in order. Work-step stages the exact slice before review; review-work runs one compact verifier over those bytes, completing its generated worksheet only when adversarial evidence is required; commit-work commits the unchanged verified boundary. The pre-commit hook reuses that exact receipt instead of repeating the review. What stops a run is a decision the agent should not make alone — a judgment-call finding, anything touching public interfaces, security, data loss or dependencies, a failed verification, or work outside the approved plan.
-
-The contract governs what the agent *says*, not only what it does. Every gate in the loop hands the user a decision, and a decision buried in the analysis that produced it is a decision the user cannot make — so response altitude joins the quality bar and implementation discipline as a third standing rule: lead with the answer, offer the evidence rather than delivering it. It is a default rather than a mode, because a toggle would still require asking for brevity, which is the friction it removes. The obvious ways to obey it are worse than ignoring it — answering faster by reading less, or shortening a mandated format by dropping one of its parts — so the rule is written with both failure modes closed, and the invariants below pin them.
-
-Compaction preserves the selected plan and its next required gate. In gated mode, the post-commit handoff offers compact-context alongside the actual next step, plan review, and pause; hosts without native compaction use a concise restart note. Continuous execution retains those durable artifacts without adding routine option prompts.
-
-Adoption of an existing project is gentle: scan and map what exists, create missing docs only where needed, and mark uncertainty instead of pretending the scan is authoritative.
+Replies lead with the conclusion and offer supporting detail. Brevity never reduces grounding or
+removes required parts of a decision. Compaction similarly removes working history while preserving
+contracts and the pending gate; it is not permission to advance.
+After any reviewed commit, gated handoff can offer native compaction or a grounded restart note.
 
 ## Invariants & boundaries
 
-- Paused work cannot restart through checklist projection. A no-commit boundary stays ready, and compacted delivery becomes completed only when its verified change is observed in Git. *(test: `work.test.ts`)*
-
-- Outcome claims are limited to observed evidence at the agreed user or integration boundary. A
-  substitute validates its exercised contract; it cannot establish downstream behavior. Missing
-  required evidence keeps acceptance open until obtained or explicitly changed by the user.
-  *(untested host behavior; installation parity is covered by `skill-parity.test.ts`)*
-- Costly builds identify the concrete outcome, effort, and cheapest useful experiment before
-  expensive implementation. Existing evidence is reused; small reversible fixes gain no extra
-  questionnaire or approval gate. *(untested host behavior; carried by the planning and TDD skills)*
-- Routine review-to-commit waits apply only in gated mode. A single-step request still owes review
-  and commit, then stops before another step; a post-commit handoff names the actual next step and
-  distinguishes the final remaining step from a completed plan. *(tests: `scaffold.test.ts` managed
-  workflow contract; `skill-parity.test.ts` installed/tracked text parity; agent execution itself is
-  instruction-driven and not enforced by these text checks)*
-- Paused or redirected work retains a transient checkpoint naming its plan, unfinished step, next
-  gate, reason, and resume condition. Resume reconciles that note with current docs and Git state;
-  approval is not execution state, and implementation completion never erases review or commit
-  obligations. Final-step compaction retains a local recovery copy of the approved plan and pending
-  gate until commit succeeds; recovery preserves the durable doc and renews review when staged
-  bytes change. *(behavioral instruction contract; no autonomous runner or lifecycle database)*
-- Plans without a Feature Map retrieve context through their scoped files or features and the
-  registry's owners; they do not require a whole-registry read for one ownership question. Context
-  budgets remain soft so selected contracts are retained. *(instruction contract; context routing
-  behavior is covered by `context-pack.test.ts`)*
-
-- **The guidance sends the agent through the cheap door.** The loop's most frequent question is *which doc owns this file* — asked before every source edit, by every domain skill's Definition of Done, and by the documentation rule itself. Roughly a dozen places answered it by instructing a flat read of `docs/.registry.json`, which in the field is 72KB read to learn four lines; `context --file --owner` answers it deterministically in one, from the same resolver the gate uses, and appeared almost nowhere. A tool that ships an expensive door and a cheap one, and documents the expensive one, has not built the cheap one for anyone. The registry stays named where it is genuinely the subject — registering a new source, re-pointing an entry, or reading the whole map on purpose — because the fix is routing one question, not hiding the file. *(test: `skill-parity.test.ts` "the guidance routes an ownership question through the cheap door" — no shipped or dogfooded instruction reads the whole map to find one file's owner, and the command that answers it is named where the question is asked)*
-- Every implementation step passes the gate sequence `work-step` → `review-work` → `commit-work`, and the agent never advances to the next plan step without review and commit in between. This holds in both modes: running without waiting removes the pauses between the gates, never a gate. *(pinned by the managed-section assertions in `scaffold.test.ts` — the generated instructions carry the gate text)*
-- **The active boundary is staged once and verified once.** `work-step` stages only its own files, `review-work` uses `codument verify` as the single normal gate, and `commit-work` does not restage or invoke a second review surface. Non-trivial work takes one worksheet-producing invocation plus one record-and-verify invocation; the hook reuses the resulting exact receipt. *(tests: `scaffold.test.ts` installed-skill contract; `verify.test.ts` field-shaped invocation budget)*
-- **Repo-wide health is looked at once per plan, and it reports rather than gates.** Staged `verify` answers whether *this change* is ready; `doctor` answers whether the knowledge base is still worth reading and runs once, when the last step is committed. Putting repo-wide health in the per-step gate would block an adopting project on inherited debt. *(behavioral — carried in the `commit-work` skill; the delivery loop is not itself executed by the CLI)*
-- Source edits never start before the plan is approved. After approval the steps run without waiting for routine confirmation, and only a decision the agent should not make alone stops the run — a judgment-call finding, a change touching public interfaces, security, data loss or dependencies, a failed verification, or work outside the approved plan. *(pause conditions and the approval precondition pinned by `scaffold.test.ts`; the rest is behavioral)*
-- The gated one-step-at-a-time loop is always reachable by asking for it in plain language, and that choice holds for the session rather than expiring after one step. Only the user resolves review findings in that mode. *(the off phrases are pinned by `scaffold.test.ts`; enforcement is behavioral)*
-- The workflow executes in the agent, never in the CLI: codument installs, audits, and gates — it does not drive the coding agent.
-- Claude is the default profile when no agent files are detected; other profiles are selected explicitly or by detection. *(test: `agent-profiles.test.ts` "defaults to claude when no agent files exist")*
-- Choosing compact-context never bypasses the review-and-commit gate or starts the next step automatically. *(pinned by the `commit-work` skill assertions in `scaffold.test.ts`)*
-- **The loop's own housekeeping is checked, not left to discipline.** The final step compacts the plan's delivery scaffolding out of the doc it lived in, and that instruction had no reading outside the agent obeying it every time — so a doc whose checklist is complete is now named by the health surface. This is the same stance the loop takes everywhere else: a rule the tool mandates and does not check is one that reads as optional the first time a run is under pressure. *(the `shipped-scaffolding` finding in [[registry-health]]; the compaction instruction itself is pinned by the `work-step` skill assertions in `scaffold.test.ts`)*
-- The contract names the escape when the agent cannot invoke the CLI as written. The whole loop assumes `codument …` runs and its arguments arrive intact; where a launcher breaks that assumption the agent sees an argument-count error from codument and has no reason to suspect the launcher, so the instruction is keyed to that symptom and gives a different way to invoke rather than describing a platform. A guarantee the loop depends on is worth one line even when it holds almost everywhere — the session that hit it lost the acknowledgment route for its entire run. *(pinned by the mangled-argument assertions in `scaffold.test.ts`, which require the symptom, both invocations, and the line's position inside the loop it serves)*
-- The response-altitude rule never licenses reading less, and never excuses a mandated format from carrying its required parts — brevity that drops the grounding clause, or an exemption that lets a format skip a part, is the regression. *(pinned by the response-altitude assertions in `scaffold.test.ts`, which require the grounding clause inside the section and forbid an exemption phrasing)*
+- Paused work cannot restart through checklist projection. Uncommitted work stays ready, and
+  completion requires its verified delivery to be observed in Git. *(test: `work.test.ts`)*
+- Outcome claims stop at the observed user or integration boundary. Substitutes prove only what
+  they exercised; missing required evidence keeps acceptance open unless the user changes it.
+  *(untested host behavior; installed guidance: `skill-parity.test.ts`)*
+- Costly work identifies its outcome, effort and cheapest useful experiment before implementation.
+  Existing evidence is reused; small reversible fixes gain no extra interview or approval gate.
+  *(untested host behavior; planning and TDD instruction contract)*
+- Routine review-to-commit waits apply only in gated mode. A single-step request still receives
+  review and commit, then stops; handoffs name the actual next step and distinguish a final remaining
+  step from completion. *(tests: `scaffold.test.ts`, `skill-parity.test.ts`; execution is behavioral)*
+- Interruptions retain the selected plan, unfinished step, next gate, reason and resume condition.
+  Resume reconciles that checkpoint with current docs and Git; approval is not execution state.
+  Final recovery preserves the compacted doc and renews review after staged changes. Implementation
+  completion never erases review or commit obligations. *(instruction contract; `work.test.ts` covers state)*
+- Plans retrieve ownership from Scope and the Feature Map. A missing Map does not require reading
+  the whole registry; soft budgets retain selected contracts. *(test: `context-pack.test.ts`)*
+- One-file ownership questions use `context --file --owner`, sharing the gate's resolver. Read the
+  full registry when editing or inspecting the map itself. *(test: `skill-parity.test.ts`)*
+- Every step passes implementation, review and commit in that order before another step starts.
+  Continuous execution removes routine waits, never gates. *(test: `scaffold.test.ts`)*
+- Local work stages only its own slice and uses the compact verifier as its normal gate. Required
+  review uses its generated worksheet; commit does not restage or introduce another local review
+  surface, and the hook reuses an exact receipt. Branch CI review remains a separate obligation.
+  *(tests: `scaffold.test.ts`, `verify.test.ts`)*
+- Repository health is checked at plan completion and reports inherited debt rather than blocking
+  each delivery step. *(behavioral instruction in the commit skill)*
+- Source implementation requires human-approved scope. After approval, stop for judgment-call
+  findings, public-interface, security, data-loss or dependency decisions, failed verification, or
+  work outside the plan. *(test: `scaffold.test.ts` for installed gates; execution is behavioral)*
+- A spoken request can enable gated mode for the session. Only the user resolves findings in that
+  mode. *(test: `scaffold.test.ts` for routing; execution is behavioral)*
+- The CLI installs, audits and gates work; it never runs the coding agent. *(architectural boundary)*
+- Claude is the default when no profile is detected; other profiles remain selectable explicitly or
+  through detection. *(test: `agent-profiles.test.ts`)*
+- Compact-context never bypasses review or commit and never starts another step automatically.
+  Hosts without native compaction receive a grounded restart note. *(test: `scaffold.test.ts`)*
+- Final delivery compacts its completed checklist into durable knowledge. Health checks name
+  completed scaffolding left behind. *(test: `scaffold.test.ts`; [[registry-health]])*
+- Instructions recognize launcher argument-splitting failures and name alternate CLI invocations
+  instead of asking the agent to keep changing quotes. *(test: `scaffold.test.ts`)*
+- Response brevity never licenses reading less or omitting a mandated format's required parts.
+  *(test: `scaffold.test.ts`)*
 
 ## Decisions
 
-- Approval stays exact and belongs to the selected plan, with scope and discovery agreeing on that
-  selection; malformed approval is diagnosed without being normalized into authorization. See
-  [[plan-step-mirroring]] and [[change-control-gate]].
-- Resume checkpoints preserve approved engineering work across interruptions. Explicit active, paused, blocked, and superseded work states preserve the pending gate; this workflow adds no
-  autonomous runner or domain-specific research lifecycle.
-- The feedback's general lessons apply to outcome evidence and proportionate planning. Private
-  project reports were not independently verifiable and do not become product facts. Deferred
-  transport, ownership-health, capture-availability, and history-selection work is recorded in
-  [[adversarial-review-gate]], [[registry-health]], [[token-cost-tracking]], and [[history-audit]].
-- Planning review uses existing Scope as well as new-file routing. Host capabilities determine whether a fresh independent agent is available; missing independence and missing contracts are disclosed.
-- `AGENTS.md` is the canonical cross-agent instruction file when a project supports multiple agents; `CLAUDE.md` remains a compatibility target (the agent-neutral pivot).
-- Claude became the default profile in 0.6.0, replacing the original Codex/generic default; both remain first-class installs.
-- Skills group around the delivery loop — `grill-with-docs`, `plan-with-docs`, `tdd`, `work-step`, `review-work`, `commit-work`, `update-docs` — not around tools or file types.
-- Working plan state stays durable enough that compaction can be offered after every reviewed-and-committed step, not only at feature completion.
-- Running an approved plan without waiting is the default, inverting the original opt-in autopilot. The opt-in default made the slowest possible loop the shipped one — three routine confirmations per step, none of which asked the user a real question — while the confirmations that matter fire on their own regardless. The escape is a spoken phrase rather than a project setting, and it holds for the session: a configured opt-out would need a file to edit and a session to remember it, which is the friction the flip exists to remove, and one that expired after a step would repeat the original bug.
-- Response altitude is a standing rule in the contract, not an opt-in mode. A brevity toggle would still require the user to ask for brevity, which is the friction it exists to remove. Rejected alongside it: a compression *register* (dropping articles, abbreviating, substituting symbols) — the failure being fixed was surface area, not spelling, and abbreviations measure as no cheaper under the tokenizer while costing the reader.
+- [[plan-approval]] binds permission to one selected contract; [[plan-step-mirroring]] and
+  [[change-control-gate]] use the same scope selection. Malformed approval cannot become permission.
+- [[agent-work-state]] preserves interruptions and pending delivery without an autonomous runner
+  or a domain-specific research lifecycle.
+- Scope and new-file mappings are complementary grounding. Missing contracts and unavailable
+  independent review are disclosed; reviewer self-report does not authenticate independence.
+- `AGENTS.md` is the shared contract; `CLAUDE.md` is a compatibility surface. Skills group around
+  delivery responsibilities, while profiles provide host-specific placement and capabilities.
+- Approved plans run continuously by default because routine confirmations add no decision.
+  Gated mode is an explicit, session-persistent spoken choice that needs no project setting.
+- Response altitude is a standing rule, not a brevity toggle or abbreviated writing register.
+  Decisions need less surface area, not compressed spelling or reduced evidence gathering.
 
 ## Key files
 
-- `src/lib/agent-profiles.ts` — the profile model: maps the neutral workflow onto each agent's instruction files, skills directories, and capability set. ([[lib]] owns the module; this page owns the workflow it installs)
-- `src/lib/scaffold.ts` — the install surface: templates, the marker-bounded managed instruction section, skills copying. ([[project-charter-gate]] and [[lib]] document the machinery)
-- `skills/` — the delivery-loop skill sources `init` installs into a project.
+- `src/lib/agent-profiles.ts` — host placement and capabilities; [[lib]] owns implementation.
+- `src/lib/scaffold.ts` — managed installation surfaces; [[project-charter-gate]] and [[lib]] own machinery.
+- `skills/` — instructions that agents execute during delivery.
 
 ## Delivery Plan — reliable approvals, context, and session control
 Plan-ID: a08f294d-ca64-49d8-bc21-df4408c2d660
@@ -110,7 +117,7 @@ that has not been implemented. The user approved this plan and authorized commit
 - [x] Step 4: Ground planning and review in existing files, changed docs, and instruction contracts.
 - [x] Step 5: Export and validate portable review evidence for the exact reviewed change.
 - [x] Step 6: Require matching review evidence in the CI template and this repository's workflow.
-- [ ] Step 7: Expose missing context and compact the command and workflow documentation.
+- [x] Step 7: Expose missing context and compact the command and workflow documentation.
 - [ ] Step 8: Compact the shared-library and registry-health documentation without losing contracts.
 - [ ] Step 9: Report capture availability and export only explicit, portable usage summaries.
 - [ ] Step 10: Capture Codex usage locally alongside the existing Claude feed without double counting.
@@ -346,6 +353,6 @@ including independent plan/step reviewers and isolated evaluation agents, with l
 ### Resume checkpoint
 
 Plan: docs/features/agent-delivery-workflow.md
-Completed implementation: Steps 1–6.
+Completed implementation: Steps 1–7.
 Next gate: independent review, exact staged verification, then commit.
-Resume condition: resolve review findings and obtain a passing receipt before Step 7.
+Resume condition: resolve review findings and obtain a passing receipt before Step 8.

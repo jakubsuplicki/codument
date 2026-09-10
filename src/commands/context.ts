@@ -52,6 +52,7 @@ interface ContextJson {
   unknownFeatures: string[];
   unmappedFile: string | null;
   planErrors: string[];
+  omissions: ContextPack["omissions"];
   estimatedTokens: number;
   budget: number | null;
   trimmed: string[];
@@ -152,6 +153,7 @@ function resolve(
     // typo'd row that routes nothing must be a visible flag, exactly like an
     // unknown slug. (A map with SOME valid rows still packs; these warn.)
     planErrors: [...map.errors.map((e) => `line ${e.line}: ${e.message}`), ...unowned.map((file) => `no owner for scoped input ${file}; register its owner or inspect it directly`)],
+    unownedInputs: unowned,
   };
 }
 
@@ -273,6 +275,7 @@ export function contextCommand(options: ContextCliOptions = {}): void {
       unknownFeatures: pack.unknownFeatures,
       unmappedFile: pack.unmappedFile,
       planErrors: pack.planErrors,
+      omissions: pack.omissions,
       estimatedTokens: pack.estimatedTokens,
       budget,
       trimmed,
@@ -292,16 +295,16 @@ export function contextCommand(options: ContextCliOptions = {}): void {
   );
   console.log();
 
+  for (const omission of pack.omissions) {
+    const problem = omission.reason === "unowned" ? "no feature owns" : omission.reason === "unknown-feature" ? "unknown feature" : "unreadable mapped doc";
+    console.log(pc.yellow(`  ⚠ ${problem}${omission.reason === "unowned" ? "" : ":"} ${omission.input}`));
+    console.log(pc.dim(`    ${omission.recovery}`));
+  }
   if (pack.unmappedFile) {
-    console.log(pc.yellow(`  ⚠ no feature owns ${pack.unmappedFile} — nothing to pack.`));
-    console.log(pc.dim("    Map it into a feature's primary_sources (or run `codument scan`)."));
     return;
   }
   if (pack.entries.length === 0) {
     console.log(pc.yellow("  No matching registry entries."));
-    if (pack.unknownFeatures.length > 0) {
-      console.log(pc.dim(`    unknown: ${pack.unknownFeatures.join(", ")}`));
-    }
     return;
   }
 
@@ -326,17 +329,10 @@ export function contextCommand(options: ContextCliOptions = {}): void {
       ),
     );
   }
-  if (pack.unknownFeatures.length > 0) {
-    console.log(
-      pc.yellow(
-        `  ⚠ unknown feature(s) named but not in the registry: ${pack.unknownFeatures.join(", ")}`,
-      ),
-    );
-  }
   if (pack.planErrors.length > 0) {
     console.log(
       pc.yellow(
-        `  ⚠ ${pack.planErrors.length} malformed Feature-Map row(s) skipped — this pack may be incomplete:`,
+        `  ⚠ ${pack.planErrors.length} plan input issue(s) — this pack may be incomplete:`,
       ),
     );
     for (const e of pack.planErrors) console.log(`      ${e}`);

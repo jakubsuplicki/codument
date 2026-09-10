@@ -49,21 +49,28 @@ export interface ContextEntry {
   estimatedTokens: number;
 }
 
+export interface ContextOmission {
+  input: string;
+  reason: "unowned" | "unknown-feature" | "unreadable-doc";
+  recovery: string;
+}
+
 export interface ContextPack {
   selector: ContextSelector;
   /** Selected features first (sorted), then their one-hop dependencies (sorted).
    *  Head-first by priority so a budget can trim from the tail without dropping
    *  the thing the agent actually asked for. */
   entries: ContextEntry[];
-  /** Selected slugs the registry does not know (feature/plan selectors) — a flag,
+  /** Selected or one-hop dependency slugs the registry does not know — a flag,
    *  not a fact, exactly like the plan grounding's `unknownFeatures`. */
   unknownFeatures: string[];
   /** A `--file` path no feature's `primary_sources` owns — surfaced, never guessed. */
   unmappedFile: string | null;
-  /** For a `--plan` selector, malformed Feature-Map rows the parser rejected —
-   *  surfaced (not silently dropped) so a typo'd row that routes nothing is a
-   *  visible flag, exactly as an unknown slug is. Empty for other selectors. */
+  /** Plan-input diagnostics, including malformed map rows and unowned Scope paths.
+   *  Preserved for existing consumers alongside structured omissions. */
   planErrors: string[];
+  /** Missing inputs remain visible even when valid context is returned or trimmed. */
+  omissions: ContextOmission[];
   /** Sum of every entry's estimate — the whole pack's rough size. */
   estimatedTokens: number;
 }
@@ -119,9 +126,10 @@ export interface ContextPackInput {
   unmappedFile: string | null;
   /** Malformed Feature-Map rows for a `--plan` selector, pre-formatted. */
   planErrors: string[];
+  unownedInputs?: string[];
   /** doc path -> contents for every selected feature AND its one-hop deps. The
    *  impure reads live in `gatherContextPack`, keeping this pure. A doc absent
-   *  from the map yields empty orientation/invariants for that feature. */
+   *  from the map yields empty sections plus an explicit omission for that feature. */
   docContents: Map<string, string>;
 }
 
@@ -130,6 +138,7 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
   const { selector, registry, docContents } = input;
   const selected = sortStrings(input.selected.filter((s) => registry.features[s]));
   const selectedSet = new Set(selected);
+  const unknown = new Set([...input.unknownFeatures, ...input.selected.filter((slug) => !registry.features[slug])]);
 
   // One-hop dependency features: the depends_on edges of selected features that
   // are not themselves selected. One hop only — a dependency is a signpost, and
@@ -137,6 +146,7 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
   const dependency = new Set<string>();
   for (const slug of selected) {
     for (const dep of registry.features[slug].depends_on) {
+      if (!registry.features[dep]) unknown.add(dep);
       if (!selectedSet.has(dep) && registry.features[dep]) dependency.add(dep);
     }
   }
@@ -184,14 +194,21 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
   for (const slug of selected) makeSelected(slug);
   for (const slug of [...dependency].sort()) makeDependency(slug);
 
+  const omissions: ContextOmission[] = [
+    ...sortStrings([...(input.unownedInputs ?? []), ...(input.unmappedFile ? [input.unmappedFile] : [])]).map((path): ContextOmission => ({ input: path, reason: "unowned", recovery: "Register its owner in docs/.registry.json or inspect the input directly, then rerun context." })),
+    ...sortStrings(unknown).map((slug): ContextOmission => ({ input: slug, reason: "unknown-feature", recovery: "Check the selector and dependency names against docs/.registry.json, correct the intended name, then rerun context." })),
+    ...sortStrings(entries.filter((entry) => !docContents.has(entry.doc)).map((entry) => entry.doc)).map((path): ContextOmission => ({ input: path, reason: "unreadable-doc", recovery: "Restore or make the mapped doc readable; codument doctor checks its registry entry." })),
+  ];
+
   return {
     selector,
     entries,
-    unknownFeatures: [...input.unknownFeatures].sort(),
+    unknownFeatures: sortStrings(unknown),
     unmappedFile: input.unmappedFile,
     // Preserved in parse order (line-ascending, already deterministic) — not
     // sorted, so the line numbers still read top-to-bottom.
     planErrors: [...input.planErrors],
+    omissions,
     estimatedTokens: entries.reduce((sum, e) => sum + e.estimatedTokens, 0),
   };
 }
@@ -330,10 +347,11 @@ export function selectPlanFeatures(registry: Registry, rows: FeatureMapRow[], sc
   return { selected: sortStrings(selected), unowned: sortStrings(unowned) };
 }
 
-export type ContextResolution =
+export type ContextResolution = (
   | { kind: "feature"; input: string; selected: string[]; unknownFeatures: string[]; unmappedFile: null; planErrors: string[] }
   | { kind: "file"; input: string; selected: string[]; unknownFeatures: string[]; unmappedFile: string | null; planErrors: string[] }
-  | { kind: "plan"; input: string; selected: string[]; unknownFeatures: string[]; unmappedFile: null; planErrors: string[] };
+  | { kind: "plan"; input: string; selected: string[]; unknownFeatures: string[]; unmappedFile: null; planErrors: string[] }
+) & { unownedInputs?: string[] };
 
 // Impure wrapper: resolve the selector against the registry, read each in-scope
 // doc (selected features + their one-hop deps) off disk, then build the pure
@@ -364,7 +382,7 @@ export function gatherContextPack(
     try {
       docContents.set(entry.doc, readFileSync(docPath, "utf8"));
     } catch {
-      // unreadable doc → empty orientation/invariants for that feature, never a throw
+      // The pure projection names the omitted doc while preserving other context.
     }
   }
 
@@ -375,6 +393,7 @@ export function gatherContextPack(
     unknownFeatures: resolution.unknownFeatures,
     unmappedFile: resolution.kind === "file" ? resolution.unmappedFile : null,
     planErrors: resolution.planErrors,
+    unownedInputs: resolution.unownedInputs,
     docContents,
   });
 }

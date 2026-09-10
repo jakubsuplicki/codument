@@ -18,6 +18,11 @@ registry pays back on every turn, so the agent *wants* to pull it before it star
 
 ## Design approach
 
+Missing owners, unknown selected or dependency features, and unreadable mapped docs produce
+structured omissions with recovery guidance. Valid context remains available, and budget trimming
+does not remove these diagnostics. A missing contract is visibly absent rather than indistinguishable
+from an intentionally empty section.
+
 A selector-free context request uses saved work when available. Plan context carries interruption and pending-gate information so retrieved knowledge does not imply permission to resume.
 
 When a page contains identified plans, an explicit identity selects the same ownership map used by the approval and checklist surfaces.
@@ -56,6 +61,10 @@ never a silent truncation. Token counts are the same dependency-free `ceil(chars
 cost ledger and the benchmark use, and are labelled an estimate everywhere they surface.
 
 ## Invariants & boundaries
+
+- Omission records name unowned inputs, unknown dependencies and unreadable docs with recovery
+  guidance. They survive budget trimming while selected contracts and their test references remain
+  intact; human output also diagnoses a partially usable pack. *(test: `context-pack.test.ts`)*
 
 - Plan context retrieves existing scoped owners without a Feature Map; absolute plan paths resolve relative to the requested repository. Registered supporting instructions and direct docs use the same ownership answer. *(test: `plan-grounding.test.ts`)*
 

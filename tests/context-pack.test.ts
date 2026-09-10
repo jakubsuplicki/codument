@@ -66,6 +66,31 @@ function doc(inPlainTerms: string, invariants = ""): string {
 }
 
 describe("buildContextPack — the pure projection", () => {
+  it("distinguishes an intentionally empty readable doc from an unavailable doc", () => {
+    const input: ContextPackInput = { selector: { kind: "feature", value: "blank" }, selected: ["blank"], registry: registryOf({ blank: {} }), unknownFeatures: [], unmappedFile: null, planErrors: [], docContents: new Map([["docs/features/blank.md", ""]]) };
+    assert.deepEqual(buildContextPack(input).omissions, []);
+    assert.equal(buildContextPack({ ...input, docContents: new Map() }).omissions[0].reason, "unreadable-doc");
+  });
+  it("retains valid contracts and structured recovery for every omitted input under a tiny budget", () => {
+    const registry = registryOf({ kept: { depends_on: ["missing-doc", "unknown"] }, "missing-doc": {} });
+    const pack = buildContextPack({
+      selector: { kind: "plan", value: "docs/plans/change.md" },
+      selected: ["kept"], registry, unknownFeatures: [], unmappedFile: null,
+      unownedInputs: ["src/orphan.ts"], planErrors: [],
+      docContents: new Map([["docs/features/kept.md", doc("Keep this orientation.", "- Preserve the contract. *(test: `kept.test.ts`)*")]]),
+    });
+    assert.deepEqual(pack.omissions.map(({ input, reason }) => ({ input, reason })), [
+      { input: "src/orphan.ts", reason: "unowned" },
+      { input: "unknown", reason: "unknown-feature" },
+      { input: "docs/features/missing-doc.md", reason: "unreadable-doc" },
+    ]);
+    assert.ok(pack.omissions.every((omission) => omission.recovery.length > 0));
+    const trimmed = applyBudget(pack, 1).pack;
+    assert.deepEqual(trimmed.omissions, pack.omissions);
+    assert.equal(trimmed.entries[0].invariants, pack.entries[0].invariants);
+    assert.deepEqual(trimmed.entries[0].testPointers, ["kept.test.ts"]);
+    assert.deepEqual(pack.unknownFeatures, ["unknown"]);
+  });
   const registry = registryOf({
     gate: {
       primary_sources: ["src/gate.ts", "src/verdict.ts"],
@@ -240,6 +265,26 @@ describe("selectedFromPlanRows — plan selector routes via the Feature Map", ()
   });
 });
 
+it("CLI reports an unreadable doc and an unowned plan input while retaining valid grounded context", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codument-context-omissions-"));
+  try {
+    const registry = registryOf({ gate: { primary_sources: ["src/gate.ts"], depends_on: ["blocked", "unknown"] }, blocked: { doc: "docs/blocked" } });
+    await write(root, "docs/.registry.json", JSON.stringify(registry));
+    await write(root, "docs/features/gate.md", doc("Retain this context.", "- Keep the invariant. *(test: `gate.test.ts`)*"));
+    await mkdir(join(root, "docs/blocked"));
+    await write(root, "docs/plans/change.md", "## Delivery Plan\nStatus: approved\n\n- [ ] Change\n\n### Scope\n- `src/gate.ts`\n- `src/orphan.ts`\n");
+    const run = (...args: string[]) => execFileSync(process.execPath, [CLI, "context", "--plan", "docs/plans/change.md", ...args], { cwd: root, encoding: "utf8" });
+    const pack = JSON.parse(run("--json", "--budget", "1"));
+    assert.equal(pack.entries[0].summary, "Retain this context.");
+    assert.deepEqual(pack.entries[0].testPointers, ["gate.test.ts"]);
+    assert.deepEqual(pack.omissions.map((item: { reason: string }) => item.reason), ["unowned", "unknown-feature", "unreadable-doc"]);
+    const human = run();
+    assert.match(human, /unreadable mapped doc: docs\/blocked/);
+    assert.match(human, /no feature owns src\/orphan.ts/);
+    assert.match(human, /Restore or make the mapped doc readable/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 describe("gatherContextPack — impure wrapper over the registry + docs", () => {
   let root: string;
 
@@ -296,7 +341,7 @@ describe("gatherContextPack — impure wrapper over the registry + docs", () => 
     assert.deepEqual(pack.selector, { kind: "file", value: "src/orphan.ts" });
   });
 
-  it("a missing doc yields empty orientation, never a throw", async () => {
+  it("a missing doc yields an explicit omission without preventing other retrieval", async () => {
     const registry = await readRegistry();
     // point store at a nonexistent doc by removing it from disk first
     await rm(join(root, "docs/features/store.md"), { force: true });
@@ -309,6 +354,8 @@ describe("gatherContextPack — impure wrapper over the registry + docs", () => 
       planErrors: [],
     });
     assert.equal(pack.entries[0].summary, "");
+    assert.equal(pack.omissions[0].reason, "unreadable-doc");
+    assert.equal(pack.omissions[0].input, "docs/features/store.md");
   });
 });
 
@@ -487,7 +534,7 @@ describe("codument context — end-to-end through the real CLI", () => {
     // ...and the malformed row is surfaced, not silently dropped
     assert.ok(parsed.planErrors.length >= 1, JSON.stringify(parsed.planErrors));
     // the human path warns too
-    assert.match(run(["context", "--plan", "docs/plans/mixed.md"]), /malformed Feature-Map row/);
+    assert.match(run(["context", "--plan", "docs/plans/mixed.md"]), /plan input issue/);
   });
 
   it("fails gracefully when --plan points at a directory (no uncaught stack trace)", () => {
