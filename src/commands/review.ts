@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve as resolvePath } from "node:path";
+import { join, relative, resolve as resolvePath } from "node:path";
 import pc from "picocolors";
 import { isPlanPath, normalizePlanPath } from "../lib/plan-steps.js";
 import { APPROVALS_PATH, parseApprovalStore, parseApprovalPolicy, readApprovalPolicy, readApprovalStore, finalApprovalForBoundary, finalApprovalScope } from "../lib/plan-approval.js";
@@ -115,6 +115,8 @@ import {
   runnerUnavailable,
 } from "../lib/review-confirm.js";
 import { emitCaught } from "../lib/review-events.js";
+import { atomicWriteFileSync } from "../lib/events.js";
+import { REVIEW_MANIFEST_PATH, parseReviewTransfer, portableReviewBoundary, transferDigest, testContentDigest, buildReviewTransfer, validateReviewTransfer, transferredReviews, type TransferBinding, type TransferTest, type ReviewTransfer } from "../lib/review-transfer.js";
 import {
   countResolvedMovedSymbols,
   evaluateReviewGate,
@@ -138,6 +140,10 @@ import {
 import { versionSkewNotice } from "../lib/version.js";
 
 interface ReviewOptions {
+  committed?: boolean;
+  pending?: boolean;
+  export?: string;
+  reviewFile?: string;
   plan?: string;
   planId?: string;
   root?: string;
@@ -527,6 +533,7 @@ export function buildReview(
     boundary?: ChangeSet;
   } = {},
 ): ReviewReport {
+  if (opts.boundary?.mode === "range") baseRef = opts.boundary.bases[0].sha;
   const registry = opts.boundary
     ? registryForBoundary(root, opts.boundary)
     : readRegistrySync(join(root, "docs", ".registry.json"));
@@ -818,6 +825,13 @@ export function buildReview(
 
 export async function review(options: ReviewOptions = {}): Promise<void> {
   const root = options.root ?? process.cwd();
+  const portable = options.committed || options.pending;
+  if ((portable && (!options.base || options.staged || options.paths)) || (options.committed && options.pending) || ((options.export || options.reviewFile) && !portable) || (options.export && (options.record || options.bundle || options.reviewFile)) || (options.reviewFile && (options.record || options.bundle))) {
+    console.log(pc.red("  ✗ portable evidence requires --base <ref> with --committed or --pending; export, record, bundle and review-file are separate actions"));
+    process.exitCode = 1;
+    return;
+  }
+  if (options.reviewFile) options.requireReview = true;
   // The same resolution buildReview performs, for the gate paths that scope a
   // real-change set outside the report itself.
   let { spec: exclusion } =
@@ -900,7 +914,17 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // The gate path below is synchronous; adapters that parse through a WASM
     // grammar load it here or fail loud when reached cold.
     await warmAdaptersForRepo(root);
-    if (options.staged || options.paths) {
+    if (portable) {
+      const dirty = options.pending ? resolveChangeSet(root, { mode: "staged" }).dirtyOutside : [...getWorkingTreeChanges(root), ...getWorkingTreeDeletions(root)];
+      if (dirty.some((path) => path !== REVIEW_MANIFEST_PATH)) throw new GateError("portable review requires working files to match its snapshot; stage, commit or set aside other working changes first", "git-failed");
+      if (dirty.includes(REVIEW_MANIFEST_PATH)) parseReviewTransfer(readFileSync(join(root, REVIEW_MANIFEST_PATH), "utf8"));
+      const boundary = resolveChangeSet(root, { mode: "range", base: options.base!, head: options.pending ? "INDEX" : "HEAD" });
+      portableReviewBoundary(boundary, readChangeSetFile(root, boundary, REVIEW_MANIFEST_PATH));
+      exclusion = exclusionForBoundary(root, boundary);
+      exclusion = { ...exclusion, globs: [...exclusion.globs, REVIEW_MANIFEST_PATH] };
+      report = buildReview(root, undefined, "HEAD", undefined, { plan: options.plan, planId: options.planId, requireIndependentAck: options.requireIndependentAck === true, exclusion, boundary });
+      effectiveBase = boundary.bases[0].sha;
+    } else if (options.staged || options.paths) {
       const boundary = resolveChangeSet(
         root,
         options.paths ? { mode: "explicit-staged", paths: options.paths } : { mode: "staged" },
@@ -1035,7 +1059,51 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const focusedBinding = report.boundary ? changeSetBinding(report.boundary) : undefined;
+  const snapshotRead = portable && report.boundary ? (path: string): string | null => readChangeSetFile(root, report.boundary!, path) : undefined;
+  const focusedBinding = report.boundary ? portable ? portableReviewBoundary(report.boundary, snapshotRead!(REVIEW_MANIFEST_PATH)) : changeSetBinding(report.boundary) : undefined;
+  const oracle = portable || options.record || options.requireReview ? currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths) : "";
+  const policy = portable ? transferDigest({
+    metadata: snapshotRead!(".codument-meta.json"),
+    testCommand: resolveTestCommand(root, options.testCommand),
+    testTimeout: resolveTestTimeout(root, options.testTimeout),
+    requireIndependentAck: options.requireIndependentAck === true,
+  }) : null;
+  const reviewOracle = portable ? transferDigest({ oracle, policy }) : oracle;
+  const portableBinding: TransferBinding | null = portable ? {
+    base: effectiveBase,
+    content: focusedBinding!.fingerprint,
+    policy: policy!,
+    oracle: transferDigest(oracle),
+    approval: report.plan?.planId && report.plan.approvalDigest ? { path: report.plan.plan, planId: report.plan.planId, digest: report.plan.approvalDigest } : null,
+  } : null;
+  let receivedReview: ReviewTransfer | null = null;
+  if (options.export || options.reviewFile) {
+    try {
+      if (options.reviewFile) receivedReview = validateReviewTransfer(readFileSync(resolvePath(root, options.reviewFile), "utf8"), portableBinding!, snapshotRead!);
+      else {
+        const { set } = computeRealChange(report, report.deletions, exclusion);
+        const resolveTest = (ref: string): string | null => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS);
+        const covering = findCoveringReviews(root, effectiveBase, set, resolveTest, reviewOracle, focusedBinding, snapshotRead);
+        const refs = [...new Set(covering.flatMap((record) => record.findings.flatMap((finding) => finding.failingTest ? [finding.failingTest] : [])))].sort();
+        const tests: TransferTest[] = refs.map((reference) => {
+          const resolved = resolveTest(reference);
+          const path = resolved ? relative(root, resolved).replace(/\\/g, "/") : null;
+          const content = path ? snapshotRead!(path) : null;
+          return { reference, path: content === null ? null : path, digest: content === null ? null : testContentDigest(content) };
+        });
+        const record = buildReviewTransfer(portableBinding!, focusedBinding!, covering, tests);
+        atomicWriteFileSync(resolvePath(root, options.export!), `${JSON.stringify(record, null, 2)}\n`);
+        console.log(`  Exported ${record.attestations.length} covering review(s) → ${options.export}`);
+        return;
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      if (options.json) console.log(JSON.stringify({ version: 2, gate: "unavailable", reason }));
+      else console.log(pc.red(`  ✗ ${reason}`));
+      process.exitCode = 1;
+      return;
+    }
+  }
 
   // --bundle: emit the oracle an adversarial reviewer attacks (the touched features'
   // documented invariants + their test pointers, the diff, ownership/blast facts),
@@ -1144,8 +1212,9 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       realChangeSet,
       provisional.findings,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths),
+      reviewOracle,
       focusedBinding?.fingerprint,
+      snapshotRead,
     );
     // `files` rides along as scoping information for the NEXT `--bundle` (what moved
     // since this recording), computed by the CLI like the fingerprint is — an agent
@@ -1154,7 +1223,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     const path = writeReview(root, {
       ...provisional,
       diffFingerprint: fp,
-      files: gatherReviewedFiles(root, realChangeSet),
+      files: gatherReviewedFiles(root, realChangeSet, snapshotRead),
     });
     console.log(`  ${pc.green("✓")} Recorded adversarial review → ${path}`);
     // A recording used to replace whatever was there, because the filename was keyed
@@ -1167,8 +1236,9 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       effectiveBase,
       realChangeSet,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths),
+      reviewOracle,
       focusedBinding,
+      snapshotRead,
     ).length;
     if (onRecord > 1) {
       console.log(
@@ -1301,13 +1371,14 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // EVERY covering artifact, not the first found: two attestations of one change
     // set can now coexist, and picking one of them would pick a verdict — in the
     // lenient direction, since the loser's findings would go unenforced.
-    const covering = findCoveringReviews(
+    const covering = receivedReview ? transferredReviews(receivedReview) : findCoveringReviews(
       root,
       effectiveBase,
       realChangeSet,
       resolveTest,
-      currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths),
+      reviewOracle,
       focusedBinding,
+      snapshotRead,
     );
     // A missing key and an explicit null both mean the same thing to a reader: this
     // artifact does not say what oracle it answered.

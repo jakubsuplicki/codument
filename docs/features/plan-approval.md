@@ -26,11 +26,15 @@ binding disappears. Conflicting writers and invalid state require recovery rathe
 with defaults. Durable knowledge outside an embedded plan remains independently maintainable.
 
 Final preparation binds the compacted document and delivery changes to a Git base while retaining
-the approved contract. Only that binding's own payload is canonicalized out of its digest; approval
-contracts and all other changes remain covered. A later change cannot inherit archived permission.
+the approved contract. Its own binding payload and a schema-valid reserved review manifest are
+excluded from its digest so portable review can accompany the delivery without circular hashing.
+Approval contracts and all other changes remain covered. A later change cannot inherit archived permission.
 Preparation precedes final review, and corrections require preparing and verifying the boundary again.
 
 ## Invariants & boundaries
+
+- Final compaction and portable review coexist even when the approved plan was never committed in
+  an earlier slice. Invalid reserved evidence is never self-excluded. *(test: `review-transfer.test.ts`)*
 
 - Approval includes the source map actually consumed by routing, including a supported sibling map outside a standalone delivery section. Scope verification and checklist discovery share the same ambiguity refusal. *(test: `plan-approval.test.ts`)*
 

@@ -204,6 +204,10 @@ program
     "Review the branch's drift since it diverged from <ref> (merge-base..working-tree), not just uncommitted changes",
   )
   .option("--staged", "Review the exact Git index snapshot instead of the whole dirty working tree")
+  .option("--committed", "With --base: review committed HEAD exactly, for portable review evidence")
+  .option("--pending", "With --base: review the complete branch change through the index before its final commit")
+  .option("--export <file>", "Export all covering committed-range reviews without private findings prose")
+  .option("--review-file <file>", "Validate portable committed-range review evidence and rerun its named tests")
   .option(
     "--paths <paths...>",
     "Inspect explicit staged paths; diagnostic until the selection covers every staged path",

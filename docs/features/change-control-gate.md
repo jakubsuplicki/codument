@@ -46,6 +46,12 @@ short verdict and the diagnostic `review` surface cannot silently disagree about
 
 ## Invariants & boundaries
 
+- Portable review explicitly selects a complete branch range through committed content or the index.
+  It validates all transferred attestations and reruns their named tests; it never substitutes a
+  staged-step receipt for review of earlier branch changes. *(test: `review-transfer.test.ts`)*
+- Range analysis uses its resolved branch base for source drift and ownership history, preserving
+  stale-document findings after the source changes have committed. *(test: `review-transfer.test.ts`)*
+
 - Documentation-only contract changes retain the prior contract in review and request matching review evidence. Required bound approval applies to these governed contract changes too. *(test: `review-boundary.test.ts`)*
 
 - Paused state is visible in monitor and report output; a clean history review recognizes exact final approval after compaction. *(test: `work.test.ts`)*

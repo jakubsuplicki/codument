@@ -175,6 +175,7 @@ export interface IndexChange {
   oldPath?: string;
   /** Git's blob object id for the indexed content. Absent for deletions. */
   contentOid?: string;
+  contentMode?: string;
 }
 
 // A COPY is not a move. Git reports `C` alongside `R` when copy detection is on
@@ -449,34 +450,34 @@ function parseDiffNameStatusZ(out: string): Array<{
   return entries;
 }
 
-function indexBlobOids(root: string): Map<string, string> {
+function indexEntries(root: string): Map<string, { contentOid: string; contentMode: string }> {
   let out: string;
   try {
     out = git(root, ["ls-files", "--stage", "-z"]);
   } catch (err) {
     throw new GateError(`git ls-files --stage failed: ${(err as Error).message}`, "git-failed");
   }
-  const oids = new Map<string, string>();
+  const entries = new Map<string, { contentOid: string; contentMode: string }>();
   for (const record of out.split("\0")) {
     if (!record) continue;
     const tab = record.indexOf("\t");
     if (tab < 0) continue;
     const header = record.slice(0, tab).split(" ");
     if (header[2] !== "0") continue;
-    oids.set(record.slice(tab + 1), header[1]);
+    entries.set(record.slice(tab + 1), { contentOid: header[1], contentMode: header[0] });
   }
-  return oids;
+  return entries;
 }
 
-function getStagedChangesIn(root: string): IndexChange[] {
+function getStagedChangesIn(root: string, base?: string): IndexChange[] {
   if (!isGitRepo(root)) return [];
   let out: string;
   try {
-    out = git(root, ["diff", "--cached", "--name-status", "-M", "-z"]);
+    out = git(root, ["diff", "--cached", "--name-status", "-M", "-z", ...(base ? [base] : [])]);
   } catch (err) {
     throw new GateError(`git diff --cached failed: ${(err as Error).message}`, "git-failed");
   }
-  const oids = indexBlobOids(root);
+  const indexed = indexEntries(root);
   const changes: IndexChange[] = [];
   for (const entry of parseDiffNameStatusZ(out)) {
     if (entry.code.startsWith("R")) {
@@ -484,14 +485,14 @@ function getStagedChangesIn(root: string): IndexChange[] {
         path: entry.path,
         status: "renamed",
         oldPath: entry.oldPath,
-        contentOid: oids.get(entry.path),
+        ...indexed.get(entry.path),
       });
     } else if (entry.code.startsWith("A")) {
-      changes.push({ path: entry.path, status: "added", contentOid: oids.get(entry.path) });
+      changes.push({ path: entry.path, status: "added", ...indexed.get(entry.path) });
     } else if (entry.code.startsWith("D")) {
       changes.push({ path: entry.path, status: "deleted" });
     } else {
-      changes.push({ path: entry.path, status: "modified", contentOid: oids.get(entry.path) });
+      changes.push({ path: entry.path, status: "modified", ...indexed.get(entry.path) });
     }
   }
   return changes.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
@@ -881,10 +882,12 @@ export function getGitPath(root: string, path: string): string | null {
 export function getStagedChanges(
   root: string,
   workspace: Workspace = resolveWorkspace(root),
+  base?: string,
 ): IndexChange[] {
+  if (base && workspace.isWorkspace) throw new GateError("a staged range requires one selected repository", "wrong-topology");
   const changes: IndexChange[] = [];
   for (const member of workspace.members) {
-    for (const change of getStagedChangesIn(member.root)) {
+    for (const change of getStagedChangesIn(member.root, base)) {
       changes.push({
         ...change,
         path: prefixed(member.prefix, change.path),
@@ -931,11 +934,24 @@ export function getBlobOidAtRef(
   path: string,
   workspace: Workspace = resolveWorkspace(root),
 ): string | null {
+  return getTreeEntryAtRef(root, ref, path, workspace)?.contentOid ?? null;
+}
+
+/** A selected Git tree entry binds behavior-changing file modes as well as content. */
+export function getTreeEntryAtRef(
+  root: string,
+  ref: string,
+  path: string,
+  workspace: Workspace = resolveWorkspace(root),
+): { contentOid: string; contentMode: string } | null {
   const owner = repoFor(workspace, path);
   if (!owner) return null;
   try {
-    const oid = git(owner.member.root, ["rev-parse", "--verify", `${ref}:${owner.relPath}`]).trim();
-    return oid.length > 0 ? oid : null;
+    const listing = git(owner.member.root, ["ls-tree", "-z", ref, "--", owner.relPath]);
+    const entry = listing.split("\0").find((record) => record.slice(record.indexOf("\t") + 1) === owner.relPath);
+    if (!entry) return null;
+    const [contentMode, , contentOid] = entry.slice(0, entry.indexOf("\t")).split(" ");
+    return contentMode && contentOid ? { contentOid, contentMode } : null;
   } catch {
     return null;
   }

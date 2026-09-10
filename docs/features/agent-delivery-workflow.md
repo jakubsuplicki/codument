@@ -104,7 +104,7 @@ that has not been implemented. The user approved this plan and authorized commit
 - [x] Step 2: Add explicit active, paused, blocked, superseded, ready, and completed work states.
 - [x] Step 3: Connect work state to agent handoffs, steps, context, verification, and the live monitor.
 - [x] Step 4: Ground planning and review in existing files, changed docs, and instruction contracts.
-- [ ] Step 5: Export and validate portable review evidence for the exact reviewed change.
+- [x] Step 5: Export and validate portable review evidence for the exact reviewed change.
 - [ ] Step 6: Require matching review evidence in the CI template and this repository's workflow.
 - [ ] Step 7: Expose missing context and compact the command and workflow documentation.
 - [ ] Step 8: Compact the shared-library and registry-health documentation without losing contracts.
@@ -342,6 +342,6 @@ including independent plan/step reviewers and isolated evaluation agents, with l
 ### Resume checkpoint
 
 Plan: docs/features/agent-delivery-workflow.md
-Completed implementation: Steps 1–4.
+Completed implementation: Steps 1–5.
 Next gate: independent review, exact staged verification, then commit.
-Resume condition: resolve review findings and obtain a passing receipt before Step 5.
+Resume condition: resolve review findings and obtain a passing receipt before Step 6.

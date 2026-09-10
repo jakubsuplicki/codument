@@ -16,6 +16,7 @@ import { ConfigValueError, readBoundedState, withStateLock } from "./state-io.js
 import { resolveChangeSet, readChangeSetFile, type ChangeSet } from "./change-set.js";
 import { parsePlanScope } from "./plan-steps.js";
 import { readBlobAtRef } from "./two-ref.js";
+import { REVIEW_MANIFEST_PATH, parseReviewTransfer } from "./review-transfer.js";
 
 export const APPROVALS_PATH = "docs/.approvals.json";
 export interface PlanApprovalRecord {
@@ -273,7 +274,12 @@ export function finalDeliveryFingerprint(
   boundary: ChangeSet,
   store: ApprovalStore,
   planId: string,
+  manifest: string | null = null,
 ): string {
+  if (boundary.changes.some((change) => change.path === REVIEW_MANIFEST_PATH)) {
+    if (manifest === null) throw new ConfigValueError(REVIEW_MANIFEST_PATH, "final delivery", "the reserved manifest must contain valid review evidence");
+    parseReviewTransfer(manifest);
+  }
   const canonical = structuredClone(store);
   const selected = canonical.records.find((record) => record.planId === planId);
   if (selected) delete selected.finalDelivery;
@@ -281,7 +287,7 @@ export function finalDeliveryFingerprint(
     .update(
       JSON.stringify([
         boundary.bases,
-        boundary.changes.filter((change) => change.path !== APPROVALS_PATH),
+        boundary.changes.filter((change) => change.path !== APPROVALS_PATH && change.path !== REVIEW_MANIFEST_PATH),
         canonical,
       ]),
     )
@@ -323,7 +329,7 @@ export function finalApprovalForBoundary(
     )
       return false;
     // A narrower range after final delivery must not inherit an archived approval.
-    return finalDeliveryFingerprint(selected, store, record.planId) === final.fingerprint;
+    return finalDeliveryFingerprint(selected, store, record.planId, readChangeSetFile(root, selected, REVIEW_MANIFEST_PATH)) === final.fingerprint;
   });
   if (matches.length > 1)
     throw new ConfigValueError(
@@ -406,12 +412,13 @@ export function prepareFinalDelivery(
         "final delivery",
         "compact and stage the durable plan document before preparing final delivery",
       );
-    if (record.finalDelivery?.fingerprint === finalDeliveryFingerprint(boundary, store, planId))
+    const manifest = readChangeSetFile(root, boundary, REVIEW_MANIFEST_PATH);
+    if (record.finalDelivery?.fingerprint === finalDeliveryFingerprint(boundary, store, planId, manifest))
       return record;
     store.revision++;
     record.finalDelivery = {
       base: boundary.bases[0].sha,
-      fingerprint: finalDeliveryFingerprint(boundary, store, planId),
+      fingerprint: finalDeliveryFingerprint(boundary, store, planId, manifest),
     };
     const encoded = JSON.stringify(store, null, 2) + "\n";
     parseApprovalStore(encoded);

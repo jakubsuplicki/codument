@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { join, isAbsolute, relative } from "node:path";
 import {
   type ChangeSetBinding,
   parseChangeSetBinding,
@@ -248,10 +248,11 @@ export function gatherDiffFingerprint(
   root: string,
   base: string,
   changedSources: string[],
+  readText?: (path: string) => string | null,
 ): string {
   const files = changedSources.map((path) => ({
     path,
-    content: readChangeSetFile(root, path),
+    content: readText ? readText(path) : readChangeSetFile(root, path),
   }));
   return diffFingerprint(base, files);
 }
@@ -260,11 +261,11 @@ export function gatherDiffFingerprint(
 // byte normalization the fingerprint uses, so a file that did not move between
 // record time and bundle time hashes identically. Not a coverage claim: nothing on
 // the gate's path reads the result (see `ReviewArtifact.files`).
-export function gatherReviewedFiles(root: string, changeSetPaths: string[]): ReviewedFile[] {
+export function gatherReviewedFiles(root: string, changeSetPaths: string[], readText?: (path: string) => string | null): ReviewedFile[] {
   return [...changeSetPaths]
     .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
     .map((path) => {
-      const content = readChangeSetFile(root, path);
+      const content = readText ? readText(path) : readChangeSetFile(root, path);
       return {
         path,
         hash:
@@ -296,8 +297,9 @@ export function gatherReviewFingerprint(
   oracleFp = "",
   /** Exact focused projection. Empty keeps the legacy fingerprint byte-identical. */
   boundaryFp = "",
+  readText?: (path: string) => string | null,
 ): string {
-  const sourcesFp = gatherDiffFingerprint(root, base, changeSetPaths);
+  const sourcesFp = gatherDiffFingerprint(root, base, changeSetPaths, readText);
   // Each distinct named test, keyed by the finding's raw ref (stable across the
   // writer and the gate) and bound to its current content — or an absence marker
   // when it no longer resolves, so a deletion moves the fingerprint too.
@@ -309,9 +311,8 @@ export function gatherReviewFingerprint(
     let body = "\0absent";
     if (resolved) {
       try {
-        body = createHash("sha256")
-          .update(byteNormalize(readFileSync(resolved, "utf8")), "utf8")
-          .digest("hex");
+        const content = readText ? readText((isAbsolute(resolved) ? relative(root, resolved) : resolved).replace(/\\/g, "/")) : readFileSync(resolved, "utf8");
+        if (content !== null) body = createHash("sha256").update(byteNormalize(content), "utf8").digest("hex");
       } catch {
         body = "\0absent";
       }
@@ -500,6 +501,7 @@ export function findCoveringReviews(
    *  today's docs rather than the artifact. */
   oracleFp = "",
   boundary?: ChangeSetBinding,
+  readText?: (path: string) => string | null,
 ): ReviewArtifact[] {
   return readReviews(root).filter(
     (r) =>
@@ -513,6 +515,7 @@ export function findCoveringReviews(
         resolveTest,
         oracleFp,
         boundary?.fingerprint,
+        readText,
       ),
   );
 }

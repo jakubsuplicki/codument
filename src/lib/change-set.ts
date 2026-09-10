@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { isAbsolute, posix, sep } from "node:path";
 import { GateError } from "./gate-error.js";
 import {
-  getBlobOidAtRef,
+  getTreeEntryAtRef,
   getHeadSha,
   getIndexWorktreeOverlaps,
   getStagedChanges,
@@ -30,6 +30,8 @@ export interface ChangeSetEntry {
   oldPath?: string;
   /** Git object id of the exact selected content. Absent for deletions. */
   contentOid?: string;
+  /** Git file type and executable mode of the selected entry. */
+  contentMode?: string;
 }
 
 export interface ChangeSetBase {
@@ -257,6 +259,7 @@ function fingerprint(bases: readonly ChangeSetBase[], changes: readonly ChangeSe
       status: change.status,
       oldPath: change.oldPath ?? null,
       contentOid: change.contentOid ?? null,
+      contentMode: change.contentMode ?? null,
     })),
   };
   return createHash("sha256").update(JSON.stringify(payload), "utf8").digest("hex");
@@ -371,14 +374,18 @@ function resolveRange(
     );
   }
   const head = options.head ?? "HEAD";
-  const resolved = resolveBase(root, options.base, head);
-  const entries: ChangeSetEntry[] = changedPathsBetween(root, resolved.sha, head).map((change) => ({
+  const resolved = head === "INDEX" && options.base === EMPTY_TREE_SHA && !getHeadSha(root) ? { sha: EMPTY_TREE_SHA } : resolveBase(root, options.base, head === "INDEX" ? "HEAD" : head);
+  const entries: ChangeSetEntry[] = head === "INDEX" ? getStagedChanges(root, workspace, resolved.sha) : changedPathsBetween(root, resolved.sha, head).map((change) => ({
     ...change,
     ...(change.status === "deleted"
       ? {}
-      : { contentOid: getBlobOidAtRef(root, head, change.path, workspace) ?? undefined }),
+      : getTreeEntryAtRef(root, head, change.path, workspace) ?? {}),
   }));
   ensureContentOids(entries);
+  if (head === "INDEX") {
+    const overlaps = getIndexWorktreeOverlaps(root, entries, workspace);
+    if (overlaps.length) throw new ChangeSetError("worktree-overlap", `working-tree bytes differ from the selected index snapshot: ${overlaps.join(", ")}`, overlaps);
+  }
   const bases = [{ prefix: "", sha: resolved.sha }];
   return project("range", bases, head, true, entries, [], currentDirty(root, workspace));
 }
@@ -390,7 +397,7 @@ export function resolveChangeSet(root: string, options: ChangeSetOptions): Chang
 
 /** Read a text file from the same snapshot the change set describes. */
 export function readChangeSetFile(root: string, set: ChangeSet, path: string): string | null {
-  if (set.mode === "range") return readBlobAtRef(root, set.head, path);
+  if (set.mode === "range" && set.head !== "INDEX") return readBlobAtRef(root, set.head, path);
   const content = readIndexText(root, path);
   return content === null ? null : byteNormalize(content);
 }

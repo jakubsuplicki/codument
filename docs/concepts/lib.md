@@ -13,6 +13,10 @@ The shared foundation layer every command and hook is built on. Nothing here orc
 
 ## Design approach
 
+Snapshot readers support complete branch review through the index as well as committed ranges.
+Portable coverage and final approval share a strict reserved-manifest exclusion; their content and
+contract checks remain separate authorities. See [[adversarial-review-gate]] and [[plan-approval]].
+
 Shared workflow instructions and report projections preserve the difference between permission, interruption, readiness and delivered work. Tracked final approval survives compaction; local recovery context is not its authority.
 
 Tracked approval and runtime control records refuse oversized or unreadable state. Mutating control records use an exclusive writer lock with an explicit revision check, so conflicting writers receive a recovery action instead of overwriting each other.

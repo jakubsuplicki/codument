@@ -44,6 +44,12 @@ ownership.
 
 ## Invariants & boundaries
 
+- An explicit aggregate review can select the full branch through the index and retain coverage
+  after identical bytes commit. It includes earlier branch changes, rejects overlapping worktree
+  edits, and never promotes a staged-step attestation to range coverage. *(test: `review-transfer.test.ts`)*
+- Selected content includes Git file mode as well as bytes. A mode change cannot inherit a receipt
+  for an otherwise identical source file. *(test: `review-transfer.test.ts`)*
+
 - An invariant removal cannot clear review by removing its own oracle: staged verification requests a worksheet containing both contracts and their test pointers. *(test: `review-boundary.test.ts`)*
 
 - Paused work cannot pass execution verification. Exact final approval remains usable without local recovery data and becomes unavailable when delivery changes. *(test: `work.test.ts`)*

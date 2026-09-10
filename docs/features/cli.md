@@ -29,6 +29,11 @@ Focused review is an explicit extension of the existing command: `review --stage
 Git index, while `review --paths` selects staged paths for diagnosis. Bare `review` remains the
 working-tree compatibility surface, so existing scripts do not silently change meaning.
 
+Portable review uses `--base <ref> --committed` for the complete committed range, or `--base <ref>
+--pending` for that branch through the index before committing. `--export <file>` carries its matching
+reviews; `--review-file <file>` validates them and requires review. These explicit modes preserve
+the existing worktree meaning of `--base` on its own.
+
 `verify` is the normal local delivery gate. It checks the complete staged boundary in compact form,
 with deterministic JSON and full diagnostics available explicitly. When a non-trivial boundary needs
 review evidence, the command creates the worksheet it accepts back through `--record`; its help names
@@ -45,6 +50,9 @@ A retired flag stays registered, and its help text says it is retired. Deleting 
 One command is a signpost, not an action: `run` (aliased `autopilot`) exists only to explain that codument does not run your coding agent. The CLI's whole remit is setup and deterministic checks; the delivery loop lives in the agent's instructions, so the binary's job is to redirect rather than to execute, and that boundary is stated in the command's own output. Since an approved plan runs on its own, the signpost has no trigger left to hand out — what it points at instead is the boundary itself and the way to slow the loop down, which keeps the command honest rather than vestigial.
 
 ## Invariants & boundaries
+
+- Portable review flags select a complete repository range and cannot combine with staged subsets;
+  export, record, bundle and received evidence are separate actions. *(test: `review-transfer.test.ts`)*
 
 - Final preparation, verification, readiness and observed completion remain distinct CLI actions. *(test: `work.test.ts`)*
 

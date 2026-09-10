@@ -29,10 +29,16 @@ Coverage then requires both the re-derived content fingerprint and an exact base
 boundary-fingerprint match. A review from another staged set can help scope a later delta read, but it
 can never clear that later gate.
 
-**The bundle is the oracle, and it is Codument's unfair advantage.** "Assume it is wrong" is a stance, not a method: wrong against what? Generic "review my code" agents flail and nitpick because they have no ground truth. Codument already extracts the documented `## Invariants & boundaries
+The bundle supplies the documented invariants, test references, plan, and ownership facts that the reviewer attacks. It introduces no separate source of truth.
 
-- Review includes before/after documented contracts and registered workflow instructions, preserving removed invariants and their test references even when an owner is removed. Missing inputs are named, and this grounding is bound into review evidence. *(tests: `review-bundle.test.ts`, `review-boundary.test.ts`)*
-- Documentation-only durable changes, invariant changes in any boundary, and material registered instruction changes require review independently of source-change counting. Whitespace, metadata, plan progress, and path-only Key files maintenance are housekeeping; ordinary companion prose does not retire the single-source proportionality rule. *(tests: `review-bundle.test.ts`, `review-gate.test.ts`, `review-boundary.test.ts`)*` layer and its test pointers, the plan, and symbol-grained ownership, so it can hand the adversary a contract to check against instead of an open-ended hunt. The bundle introduces no new source of truth; it is derived purely from committed docs and the deterministic change-state.
+Portable evidence carries every covering attestation for an explicitly reviewed complete repository
+range. Reviewers can inspect the full branch through its staged endpoint before the final commit;
+identical committed bytes retain that coverage in a fresh checkout. Local step receipts remain local
+to their reviewed slice. The transfer contains opaque contract and finding references, repository
+test references, declared attribution and dispositions; private review prose remains local.
+
+The recipient checks the base, content, policy, approval, contracts and named test snapshots, then
+reruns those tests under the existing finding policy. Attribution is self-reported, not authenticated.
 
 **Verify, don't trust — this breaks the who-reviews-the-reviewer regress.** The adversary only produces candidate findings. A finding counts as blocking only once a deterministic step confirms it: run the cited failing test, see it red; the fix flips it green. We never trust the adversary's judgment, only the reproduction. This mirrors the change-control gate's rule that it verifies an ack's *form*, never its semantic truth. It also bounds the dominant failure mode — adversary false-positives turning into alarm fatigue — because an unconfirmed finding cannot block.
 
@@ -41,6 +47,22 @@ can never clear that later gate.
 **Proportionality is mandatory, not optional.** Two extra agent passes on every one-line edit is how a good gate gets disabled. Bundle depth is gated on blast radius, which Codument already computes: a trivial single-symbol edit touching no documented invariant skips the heavy pass; a risk-tagged, invariant-touching, or multi-file diff gets the full adversary.
 
 ## Invariants & boundaries
+
+- Portable coverage excludes only the schema-valid reserved review manifest from its own digest.
+  Missing, malformed, stale, partial and wrong-base evidence cannot clear the gate. Source, policy,
+  registry, documentation and test changes remain bound. *(test: `review-transfer.test.ts`)*
+- Runtime runner and timeout overrides belong to review policy, and selected Git file modes belong
+  to the reviewed content. Changing either invalidates portable coverage even if source text stays
+  identical. *(test: `review-transfer.test.ts`)*
+- Every covering review travels together. Claimed resolution and a clean sibling review cannot
+  override an observed failing test; advisory and unrunnable findings remain disclosed.
+  *(tests: `review-transfer.test.ts`, `review-confirm.test.ts`)*
+- Review includes before/after documented contracts and registered workflow instructions, preserving
+  removed invariants and their tests even when ownership is removed. Missing inputs are named and
+  bound into evidence. *(tests: `review-bundle.test.ts`, `review-boundary.test.ts`)*
+- Durable documentation-only changes, invariant changes, and material registered instruction changes
+  require review independently of source counts. Formatting, metadata, progress and path-only Key
+  files maintenance remain housekeeping. *(tests: `review-bundle.test.ts`, `review-gate.test.ts`)*
 
 - Committed-range review uses the selected range's paths; historical owners and member-specific
   base snapshots retain prior contracts. Excluded additions and deletions cannot suppress a

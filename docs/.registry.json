@@ -23,7 +23,8 @@
         "src/lib/review-artifact.ts",
         "src/lib/review-bundle.ts",
         "src/lib/review-confirm.ts",
-        "src/lib/review-gate.ts"
+        "src/lib/review-gate.ts",
+        "src/lib/review-transfer.ts"
       ],
       "related_sources": [
         "src/cli.ts",
