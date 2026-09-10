@@ -122,7 +122,7 @@ that has not been implemented. The user approved this plan and authorized commit
 - [x] Step 9: Report capture availability and export only explicit, portable usage summaries.
 - [x] Step 10: Capture Codex usage locally alongside the existing Claude feed without double counting.
 - [x] Step 11: Add explicit workspace-root and member selection for history audits.
-- [ ] Step 12: Add realistic retrieval, approval-change, and interrupted-work benchmark scenarios.
+- [x] Step 12: Add realistic retrieval, approval-change, and interrupted-work benchmark scenarios.
 - [ ] Step 13: Run bounded independent agent comparisons and finish integrated verification.
 
 ### Outcome
@@ -353,6 +353,6 @@ including independent plan/step reviewers and isolated evaluation agents, with l
 ### Resume checkpoint
 
 Plan: docs/features/agent-delivery-workflow.md
-Completed implementation: Steps 1–11.
+Completed implementation: Steps 1–12.
 Next gate: independent review, exact staged verification, then commit.
-Resume condition: resolve review findings and obtain a passing receipt before Step 12.
+Resume condition: resolve review findings and obtain a passing receipt before Step 13.

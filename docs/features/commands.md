@@ -26,8 +26,12 @@ managed markers. Adoption reuses that reconciliation instead of maintaining a se
 Discovery and health checks share source-scope rules, including declared exclusions and Git ignores.
 Directory structure supplies provisional boundaries, not verified knowledge: scaffolds retain their
 uncertainty until documented. [[proof-benchmarks]] owns measurement; it does not run normal delivery.
+Session benchmark initialization requires an explicit task and integration condition. Scoring requires
+an external attempt record; taking a snapshot supplies a binding and never invents an agent run.
 
 ## Invariants & boundaries
+
+- Session benchmark flags are explicit, incompatible scenario modes are refused, and absent observation records cannot score as completed runs. *(test: `benchmark-sessions.test.ts`)*
 
 - New installs require bound approval. Reinitialization preserves an existing project's policy.
   *(test: `init.test.ts`)*

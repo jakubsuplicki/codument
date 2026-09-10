@@ -227,7 +227,8 @@
         "src/lib/benchmark-context.ts",
         "src/lib/benchmark-quality.ts",
         "src/lib/benchmark-seeded.ts",
-        "src/lib/detector-result.ts"
+        "src/lib/detector-result.ts",
+        "src/lib/benchmark-sessions.ts"
       ],
       "related_sources": [],
       "docs": [

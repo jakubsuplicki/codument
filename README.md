@@ -885,6 +885,18 @@ npx codument benchmark score /tmp/bench-loop --mode loop --baseline /tmp/bench-n
 
 Each bug has a hidden detector test that passes only when the bug is fixed; the answer key never ships into the scenario, so the agent can't read it. The `--baseline` comparison reports the loop-vs-no-loop delta. Because the no-loop baseline catches ~nothing by construction, the honest claim is "review catches X% that would otherwise ship," not a natural-catch-rate comparison.
 
+Session scenarios compare the same engineering information with ordinary docs or integrated workflow guidance:
+
+```bash
+npx codument benchmark init /tmp/session-run --scenario retrieval --condition integrated --json
+# Save the initialization output outside the fixture, then let an independent agent attempt BENCHMARK_TASK.md.
+npx codument benchmark score /tmp/session-run --snapshot
+# Record the actual attempt and snapshot in an external observation file.
+npx codument benchmark score /tmp/session-run --session-record /tmp/observed-run.json --json
+```
+
+Choose `retrieval`, `approval-change` or `interrupted-work`, and `plain` or `integrated`. Scores include missed constraints and unnecessary stops; observed time, interventions and available usage remain separate. Initialization and synthetic tests do not count as agent attempts. See the [observation format and limits](docs/features/proof-benchmarks.md).
+
 </details>
 
 <details>

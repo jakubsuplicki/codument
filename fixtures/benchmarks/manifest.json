@@ -39,6 +39,16 @@
       ]
     },
     {
+      "id": "session-control",
+      "type": "session-comparison",
+      "path": "session-control",
+      "status": "active",
+      "commands": [
+        "codument benchmark init <dir> --scenario <task> --condition <plain|integrated>",
+        "codument benchmark score <dir> --session-record <observation.json> --json"
+      ]
+    },
+    {
       "id": "doc-bloat",
       "type": "doc-bloat",
       "path": "doc-bloat",

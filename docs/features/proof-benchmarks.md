@@ -9,21 +9,55 @@ last_reviewed: 2026-09-10
 
 ## In plain terms
 
-A package-native way to show that docs-backed delivery helps, without a private repo, a human judge, or a hidden evaluation. Three deterministic benchmarks ship with Codument. The context benchmark asks whether registry-guided context routing selects a smaller, more relevant working set than a naive whole-project scan. The quality benchmark ships a fixture task, lets any agent attempt it, and scores the final repo state with tests and rule-based checks. The catch-rate benchmark ships a diff that carries planted bugs and measures how many the review step catches before commit, comparing a review loop against shipping the diff straight to commit. All run with no network and no AI model, so a skeptic can rerun them and get the same numbers. The honest boundary: Codument can deterministically score context selection and final state, but the agent's path between is not deterministic, so the benchmark never claims universal token savings or deterministic agent behavior.
+Package-native fixtures measure whether documentation and workflow guardrails help on bounded tasks. Context routing, final-state quality and planted-bug checks are deterministic. Session comparisons add actual agent attempts at contract retrieval, changed approval and interrupted work, with valid controls that reveal unnecessary stops. Codument initializes and scores these fixtures locally; an external operator supplies the agent attempts. No scorer calls a model or uses a human or AI judge. Results describe the observed fixtures, never universal quality or token savings.
 
 ## Design approach
 
-Proof lives in a `benchmark` command family kept separate from `scan`/`adopt`/the delivery loop, so measurement never tangles with normal work. The surface stays three subcommands: `benchmark context`, `benchmark init <dir>` (the quality task, or the catch-rate scenario with `--seeded`), and `benchmark score <dir>` (with `--mode` and `--baseline` for catch-rate runs).
+Proof lives in a separate `benchmark` command family: `context`, `init` and `score`. Quality and seeded catch-rate fixtures retain their existing defaults. Explicit session scenarios select a task and either ordinary documentation or Codument workflow integration; both conditions receive the same task, code, contracts, approval history and handoff.
 
 The **context benchmark** runs over a fixed fixture with relevant, adjacent, and irrelevant areas and a registry mapping each task to its docs and sources. For a task it compares a naive context (everything a broad scan would pull) against the registry-guided context (the task feature's docs and sources plus declared dependencies), estimating tokens with a stable local character-count heuristic — the heuristic's exact value matters less than its consistency, since the benchmark compares two strategies over the same fixture. It reports token reduction alongside relevance coverage (required docs found, required sources found, irrelevant files included) and can emit schema-versioned JSON.
 
 The **quality benchmark** ships a dependency-free fixture app with a constrained, realistic task. `init` copies the fixture, installs the agent profile assets, writes the task prompt to disk, and prints it; the agent does the work; `score` evaluates the final directory with deterministic checks — tests pass, typecheck, black-box behavior, the registry still maps touched sources, required docs updated, source boundaries respected, locked fixture files untouched, and forbidden shortcuts absent. The score is a transparent evidence bundle plus a numeric summary; the bundle is the real proof, the number is for a README screenshot.
 
-What it deliberately is not: it never claims Codument always cuts raw tokens (a tiny task spends more on workflow than it saves), never needs network, model, or hosted telemetry, never calls a model to benchmark, never uses an agent or human as the primary judge, and never times wall-clock (too variable across agents and machines).
+Scoring never needs a network, model or hosted telemetry. Observed session duration and available usage are reported separately from the grade: a small task may spend more on workflow than it saves. Missing measurements retain their reason.
+
+Session fixtures keep their behavioral detectors outside the worker directory. An external observer retains the initialization binding, then records the actual attempt and its final file binding. Scoring checks immutable task inputs, approved contracts, permitted changes and black-box behavior. It distinguishes failed constraints from failures of an authorized control, including unnecessary permission stops. Different correct implementations can pass. A changed approval blocks only the dependent request; a resumed step must recheck changed work while retaining usable existing work.
+
+The observation records attempt provenance, status, interventions, elapsed time, optional usage and limitations. It binds the original input and observed final files, including saved workflow state and staged content. A commit-ready claim also runs the behavioral checks against staged blobs, and a changed commit violates the fixture's no-commit constraint. Unnecessary approval stops are counted separately from ordinary failed control behavior. Missing, malformed, oversized or mismatched evidence is unavailable, never a comparable zero. A failed attempt remains a failed attempt even if some checks pass; synthetic scorer tests are explicitly separate from agent sessions. These bindings detect changed inputs and outputs, but do not authenticate the observer or independently prove an agent's reported review actions.
+
+Initialize with `benchmark init <dir> --scenario <retrieval|approval-change|interrupted-work> --condition <plain|integrated> --json`. Save that output outside the fixture before starting an agent. After the attempt, `benchmark score <dir> --snapshot` returns its final binding without grading it. Supply `benchmark score <dir> --session-record <observation.json> --json` to grade. The external observation has these required fields:
+
+```json
+{
+  "version": 1,
+  "fixture": "session-control",
+  "task": "retrieval",
+  "condition": "integrated",
+  "runId": "from-initialization",
+  "inputDigest": "from-initialization",
+  "finalDigest": "from-post-attempt-snapshot",
+  "kind": "agent",
+  "status": "completed",
+  "agent": "actual-agent-description",
+  "startedAt": "2026-09-10T00:00:00Z",
+  "finishedAt": "2026-09-10T00:01:00Z",
+  "usage": null,
+  "usageUnavailableReason": "Host did not expose counts for this attempt",
+  "interventions": [],
+  "limitations": ["One bounded attempt; not a general quality estimate"]
+}
+```
+
+Status may also be `blocked` or `failed`; unit fixtures use `kind: test`. Available usage supplies nonnegative integer `input` and `output` counts with a null absence reason. Interventions contain a `kind` of `clarification`, `approval` or `environment`, plus a short `detail`. Record observed facts, including failed attempts and missing metrics; initialization or a synthetic handoff does not establish an agent run.
 
 The **catch-rate benchmark** is the ground-truth proof behind the review gate (see [[review-effectiveness-metric]]). It ships a fixed buggy diff — an agent's "completed" feature branch carrying planted, documented bugs — laid as uncommitted working-tree changes over a committed baseline. The user runs their agent two ways: a *no-loop* run commits the diff as-is, a *loop* run reviews the diff and fixes what it catches. Scoring runs one hidden detector per bug (a test that passes iff that bug is fixed) and reports a catch rate plus the loop-vs-no-loop delta. The load-bearing choice is that the diff is *fixed*, not agent-authored: the planted bugs are reliably present and the score is reproducible. The answer key (the bug manifest and the detectors) lives only in the published package, never in the initialized scenario, and the buggy diff carries no markers naming the planted bugs, so the agent must find them by reviewing the diff rather than read them off the page; `init` lays the baseline as a real git commit so `review` has a base to diff against. The honest boundary on this benchmark: a no-loop baseline is ~0% by construction (no review, no catch), so the comparison is "0% vs X%" — proof that review catches X% that would otherwise ship, not a natural-catch-rate baseline; an agent-implements-the-task variant is a possible later iteration. False-positive rate is out of scope until decoy bugs exist, and a single run is not statistically definitive — the harness scores whatever runs happen and the user can repeat.
 
 ## Invariants & boundaries
+
+- Session conditions preserve their engineering information and expose real stale approval and paused work state. Integration changes installed workflow guidance, never the task or answer availability. *(test: `benchmark-sessions.test.ts`)*
+- Session scores exercise dependent constraints and valid controls, accept alternative correct implementations, and count unauthorized changes and unnecessary stops. Missing or changed observation/input bindings, linked inputs and changed locked contracts are refused. Saved work and staged content participate in the observed final binding. *(test: `benchmark-sessions.test.ts`)*
+- Commit-ready work must satisfy behavior, scope and protected-contract checks in the actual index, including staged changes hidden by restored working files; unrequested commits fail. Coding errors in an authorized control remain missed constraints, independently of reported unnecessary stops. *(test: `benchmark-sessions.test.ts`)*
+- Agent observations remain distinct from deterministic test fixtures; duration, usage availability and interventions are evidence, not scoring weights. No autonomous agent runner is included. *(test: `benchmark-sessions.test.ts`; independent attempts are recorded separately)*
 
 - Context collection preserves real filename characters when converting native separators; it
   never trims a filename or rewrites a literal POSIX backslash before reading or scoring it. *(test:
@@ -49,3 +83,4 @@ The **catch-rate benchmark** is the ground-truth proof behind the review gate (s
 - `src/lib/benchmark-quality.ts` — the quality-fixture lifecycle: `init` copies the fixture and writes the task; `score` runs the deterministic final-state checks and the evidence bundle. Also owns the shared scaffolding helpers (target guard, agent-asset install, meta) the seeded benchmark reuses.
 - `src/lib/benchmark-seeded.ts` — the catch-rate lifecycle: `init --seeded` lays the buggy diff over a committed baseline; `score` runs the hidden per-bug detectors, reports the catch rate and per-bug breakdown, and compares loop vs no-loop runs.
 - `src/lib/detector-result.ts` — the dependency-free rule that turns a detector's process result into caught / survived, and refuses to score a run that did not complete.
+- `src/lib/benchmark-sessions.ts` — matched session inputs, observation integrity and deterministic constraint/control scoring.

@@ -15,6 +15,7 @@ Proof ships as a `benchmark` command family, separate from `scan`/`adopt`/the de
 
 - **Context routing** — for a fixture task, compare a naive whole-project context against the registry-guided working set, reporting token reduction (a stable local heuristic) plus relevance coverage (required docs/sources found, irrelevant files included).
 - **Final repo state** — ship a fixture task, let any agent attempt it, and score the resulting directory with rule-based checks (tests, typecheck, black-box behavior, registry coverage, docs updated, boundaries respected, locked files untouched).
+- **Matched session tasks** — supply identical engineering information with and without workflow integration, then score externally observed agent attempts against fixed constraints and valid controls. Retain failures, unnecessary stops, interventions and missing metrics. Input and final-state bindings prevent accidental mixing or post-observation edits; provenance remains attributed, not authenticated. Synthetic handoffs and scorer tests never count as real agent sessions.
 
 The score is a transparent **evidence bundle** plus a numeric summary; the bundle is the proof, the number is for a README screenshot. It runs with no network, no model, and no hosted telemetry, and works from packed package contents, not only the source repo.
 
@@ -24,4 +25,4 @@ The score is a transparent **evidence bundle** plus a numeric summary; the bundl
 
 **Bad / accepted:** the benchmark scores context selection and final state, not the agent's path between them, which stays nondeterministic — so it can never claim universal token savings or deterministic agent behavior, only fixture-local routing and final-state quality.
 
-**Rejected alternatives:** an AI or human judge as the primary score (not reproducible); a hosted telemetry pipeline or persistent usage tracking on normal commands (network + privacy cost); a raw token-savings headline (false on small tasks); a wall-clock timing score (varies too much across agents, machines, and review habits).
+**Rejected alternatives:** an AI or human judge as the primary score (not reproducible); a hosted telemetry pipeline or persistent usage tracking on normal commands (network + privacy cost); a raw token-savings headline (false on small tasks); a wall-clock timing score (varies too much across agents, machines, and review habits). Session duration and available usage may be reported as observations, separately from the deterministic grade. The package never starts an autonomous agent runner.
