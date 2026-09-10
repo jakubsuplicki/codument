@@ -49,13 +49,88 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe("work approval CLI", () => {
+  it("keeps a verified step ready until its commit is observed, then resumes the next step", () => {
+    put(path, plan.replace("- [ ] Implement", "- [ ] Implement\n- [ ] Follow up"));
+    assert.equal(cli("work", "approve", "--plan", path).status, 0);
+    git("add", path, "docs/.approvals.json");
+    git("commit", "-qm", "approval");
+    assert.equal(cli("work", "start", "--plan", path).status, 0);
+    const revision = JSON.parse(cli("work", "status", "--json").stdout).state.revision;
+    assert.equal(
+      cli(
+        "work",
+        "pause",
+        "--reason",
+        "Break",
+        "--gate",
+        "review",
+        "--expect-revision",
+        String(revision),
+      ).status,
+      0,
+    );
+    assert.equal(cli("work", "resume").status, 0);
+    put(
+      path,
+      readFileSync(join(root, path), "utf8") + "\n### Resume checkpoint\nVerification pending.\n",
+    );
+    git("add", path);
+    const progressVerification = cli("verify");
+    assert.equal(
+      progressVerification.status,
+      0,
+      progressVerification.stdout + progressVerification.stderr,
+    );
+    put(path, readFileSync(join(root, path), "utf8").replace("- [ ] Implement", "- [x] Implement"));
+    const unstagedProgress = cli("work", "finish");
+    assert.equal(unstagedProgress.status, 1);
+    assert.match(unstagedProgress.stdout + unstagedProgress.stderr, /working-tree bytes differ/);
+    assert.doesNotMatch(unstagedProgress.stdout + unstagedProgress.stderr, /at verifiedDelivery/);
+    git("add", path);
+    const verified = cli("verify");
+    assert.equal(verified.status, 0, verified.stdout + verified.stderr);
+    const ready = cli("work", "finish", "--json");
+    assert.equal(ready.status, 0, ready.stdout + ready.stderr);
+    assert.equal(JSON.parse(ready.stdout).selected.status, "ready");
+    const status = cli("work", "status", "--json");
+    assert.equal(JSON.parse(status.stdout).selected.status, "ready");
+    git("commit", "-qm", "deliver step");
+    put("README.md", "Unrelated later work.\n");
+    git("add", "README.md");
+    git("commit", "-qm", "later work");
+    put(path, readFileSync(join(root, path), "utf8").replace("- [ ] Follow up", "- [x] Follow up"));
+    const observed = cli("work", "status", "--json");
+    assert.equal(JSON.parse(observed.stdout).selected.status, "active");
+    assert.equal(JSON.parse(observed.stdout).selected.step, 2);
+    assert.equal(
+      JSON.parse(observed.stdout).state.records[0].status,
+      "ready",
+      "reads do not mutate saved state",
+    );
+    assert.equal(cli("work", "finish").status, 0);
+    assert.equal(
+      JSON.parse(cli("work", "status", "--json").stdout).state.records[0].status,
+      "active",
+    );
+  });
   it("requires a new review when the selected approved plan changes on the same staged bytes", () => {
-    put(path, plan.replace("Status: approved", "Plan-ID: first\nStatus: approved") + "\n" + plan.replace("Status: approved", "Plan-ID: second\nStatus: approved"));
-    for (const id of ["first", "second"]) assert.equal(cli("work", "approve", "--plan", path, "--plan-id", id).status, 0);
-    git("add", path, "docs/.approvals.json"); git("commit", "-qm", "approvals");
+    put(
+      path,
+      plan.replace("Status: approved", "Plan-ID: first\nStatus: approved") +
+        "\n" +
+        plan.replace("Status: approved", "Plan-ID: second\nStatus: approved"),
+    );
+    for (const id of ["first", "second"])
+      assert.equal(cli("work", "approve", "--plan", path, "--plan-id", id).status, 0);
+    git("add", path, "docs/.approvals.json");
+    git("commit", "-qm", "approvals");
     put("src/alpha.ts", "export const alpha = 2;\n");
     put("settings.json", '{"enabled":true}\n');
-    put(path, readFileSync(join(root, path), "utf8") + "\n## Design approach\nThe source now returns the updated constant.\n");
+    put(
+      path,
+      readFileSync(join(root, path), "utf8") +
+        "\n## Design approach\nThe source now returns the updated constant.\n",
+    );
     git("add", "src/alpha.ts", "settings.json", path);
     const prepare = cli("verify", "--plan", path, "--plan-id", "first");
     assert.match(prepare.stdout, /REVIEW REQUIRED/);
@@ -74,7 +149,10 @@ describe("work approval CLI", () => {
   it("normalizes explicit plan paths and refuses an unresolved selection", () => {
     assert.equal(cli("work", "approve", "--plan", path).status, 0);
     git("add", path, "docs/.approvals.json");
-    for (const selected of [join(root, path), ...(process.platform === "win32" ? [path.replaceAll("/", "\\")] : [])]) {
+    for (const selected of [
+      join(root, path),
+      ...(process.platform === "win32" ? [path.replaceAll("/", "\\")] : []),
+    ]) {
       const result = cli("review", "--staged", "--plan", selected, "--json");
       assert.equal(JSON.parse(result.stdout).plan?.plan, path, result.stdout + result.stderr);
     }
@@ -84,7 +162,9 @@ describe("work approval CLI", () => {
   });
   it("diagnoses a malformed map in the explicitly selected section", () => {
     const first = plan.replace("Status: approved", "Plan-ID: first\nStatus: approved");
-    const second = plan.replace("Status: approved", "Plan-ID: second\nStatus: approved") + "\n### Feature Map\n| source | owner |\n| src/alpha.ts | alpha |\n";
+    const second =
+      plan.replace("Status: approved", "Plan-ID: second\nStatus: approved") +
+      "\n### Feature Map\n| source | owner |\n| src/alpha.ts | alpha |\n";
     put(path, first + "\n" + second);
     const result = cli("map", "check", "--plan", path, "--plan-id", "second", "--json");
     assert.equal(JSON.parse(result.stdout).malformedMap, true);

@@ -100,7 +100,7 @@ history selection. The durable layers above describe current behavior; this bloc
 that has not been implemented. The user approved this plan and authorized committing the earlier repair tranche and each verified implementation step.
 
 - [x] Step 1: Bind human-approved plan scope to a recorded revision and diagnose stale or unbound approval.
-- [ ] Step 2: Add explicit active, paused, blocked, superseded, ready, and completed work states.
+- [x] Step 2: Add explicit active, paused, blocked, superseded, ready, and completed work states.
 - [ ] Step 3: Connect work state to agent handoffs, steps, context, verification, and the live monitor.
 - [ ] Step 4: Ground planning and review in existing files, changed docs, and instruction contracts.
 - [ ] Step 5: Export and validate portable review evidence for the exact reviewed change.
@@ -341,6 +341,6 @@ including independent plan/step reviewers and isolated evaluation agents, with l
 ### Resume checkpoint
 
 Plan: docs/features/agent-delivery-workflow.md
-Completed implementation: Step 1.
+Completed implementation: Steps 1–2.
 Next gate: independent review, exact staged verification, then commit.
-Resume condition: resolve review findings and obtain a passing receipt before Step 2.
+Resume condition: resolve review findings and obtain a passing receipt before Step 3.

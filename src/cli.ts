@@ -20,7 +20,7 @@ import { stepsCommand } from "./commands/steps.js";
 import { update } from "./commands/update.js";
 import { verify } from "./commands/verify.js";
 import { watch } from "./commands/watch.js";
-import { workApprove } from "./commands/work.js";
+import { workApprove, workCommand } from "./commands/work.js";
 import { ExcludedSourceError, RegistryError } from "./lib/registry.js";
 import { ConfigValueError, StateFileError } from "./lib/state-io.js";
 import { GateError } from "./lib/two-ref.js";
@@ -37,6 +37,25 @@ work.command("approve")
   .option("--root <dir>", "Project root (default: current directory)")
   .option("--json", "Machine-readable approval record")
   .action(workApprove);
+
+work.command("status")
+  .description("Read selected work, its pending gate and any recovery needs without changing state")
+  .option("--json", "Machine-readable work state")
+  .option("--root <dir>", "Project root (default: current directory)")
+  .action((options) => workCommand("status", options));
+for (const action of ["start", "pause", "block", "resume", "supersede", "finish"] as const) {
+  work.command(action)
+    .description(`${action} selected approved work; finish records readiness and observed delivery without committing`)
+    .option("--plan <path>", "Approved plan to select; supersede names its replacement")
+    .option("--plan-id <id>", "Explicit plan section identity")
+    .option("--reason <text>", "Reason for interruption or switching work")
+    .option("--resume-when <text>", "Condition required to resume blocked work")
+    .option("--gate <gate>", "Pending gate: implement, verify, document, review, commit")
+    .option("--expect-revision <n>", "Refuse if local state changed since this revision")
+    .option("--json", "Machine-readable work state")
+    .option("--root <dir>", "Project root (default: current directory)")
+    .action((options) => workCommand(action, options));
+}
 
 program
   .name("codument")

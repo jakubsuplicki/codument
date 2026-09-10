@@ -554,7 +554,8 @@
       "doc": "docs/features/agent-work-state.md",
       "type": "feature",
       "primary_sources": [
-        "src/commands/work.ts"
+        "src/commands/work.ts",
+        "src/lib/work-state.ts"
       ],
       "related_sources": [],
       "docs": [],

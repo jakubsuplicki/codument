@@ -15,6 +15,10 @@ This is the front door: the `codument` binary a user types into a terminal. It o
 
 The work approval command records a plan revision after human approval and tells callers which tracked artifacts must be staged together. Plan-aware commands accept a section identity, so a document containing several plans need not rely on an implicit section guess.
 
+Work commands also expose explicit selection, pause, block, resume, supersession and readiness.
+Status has read-only JSON output; mutations support a revision precondition for concurrent agents.
+Finishing reports pending delivery and never performs a commit.
+
 The entry point is deliberately thin: a declarative table of commands mapped to handlers, with parsing delegated to a standard argument parser. Every command's behaviour lives in its own handler under [[commands]], not here, so this file stays a wiring manifest rather than a place logic accretes. That keeps each command independently testable through its own handler and keeps the surface readable as a single glance at "what can this tool do."
 
 The surface is intentionally small and stable, because the command names are a public contract: users script against them and the agent is instructed to invoke them by name. New capability is added as a new command or flag, not by overloading an existing one. The version the binary reports is sourced from the package manifest at runtime rather than restated here, so the reported version cannot drift from the published package.
@@ -41,6 +45,8 @@ One command is a signpost, not an action: `run` (aliased `autopilot`) exists onl
 ## Invariants & boundaries
 
 - Approval recording is explicit, stale plans cannot emit execution, and unstaged rerecording cannot clear stale staged approval. *(test: `work.test.ts`)*
+- Work status distinguishes saved state from reconciled progress, and a verified step remains ready
+  until its exact change is committed. *(test: `work.test.ts`)*
 
 - The version the binary reports is read from the package manifest at runtime, so it cannot diverge from the published package version. *(untested)*
 - **A command's help text is a routing surface, and answers to the same rule as the report.** Help is where a reader who is already stuck looks first, so an option described in terms the tool no longer honours costs more than silence: they compose the command it taught them and are refused. `ack`'s help therefore leads with the fact that most changes never need it — a move the parser proves left the contract alone is reported and never blocks — and names the file grain as the ordinary route, with the per-symbol form reserved for a move on an adapter that reports no signature to compare. This was found by auditing the release rather than by a test: prose in a `.description()` string is invisible to the gate that keeps every other route honest. *(untested at this boundary — the grains themselves are pinned by `remedies.test.ts` and the refusals by `ack.test.ts`)*
