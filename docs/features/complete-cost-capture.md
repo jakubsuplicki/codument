@@ -2,24 +2,24 @@
 title: Complete Cost Capture
 status: current
 type: feature
-last_reviewed: 2026-06-19
+last_reviewed: 2026-09-10
 ---
 
-## Summary
+## In plain terms
 
-The feed and the `watch` view currently follow only the **newest** agent transcript per repo, and present cost through a cryptic strip. This plan makes local capture **complete** (all sessions, including historical) and the `watch` view **legible** — led by a plain-words verdict (`clean` / `drifting` / `at risk` / `off-plan`) over a true, feature-attributed cost total, so a stranger looking at one screenshot understands what the agent is doing, what it's costing, and what's at risk.
+The monitor follows all discoverable matching Claude and Codex inputs and presents estimated cost over the captured ledger. Capture availability is separate: local files, session counts and elapsed time cannot prove complete usage or billing. [[token-cost-tracking]] owns current capture, replay and export contracts.
 
-This is built as **one complete, tested piece** — correctness (multi-session + backfill) and legibility (the verdict frame) land together. There is no intermediate ship; commits are held until the whole piece is done, tested, and the user says go.
+The verdict leads the view, followed by estimated spend, active work, scope and named findings. The earlier capture and presentation decisions below explain that layout.
 
 ## Background: one assumption, three symptoms
 
-A single design choice — *pump only the newest transcript* (`resolveSessionLog` returns one file; `resetFeed` rebuilds only cursor-touched + active sessions) — is the root cause of three observed problems:
+The original design choice — *pump only the newest transcript* (`resolveSessionLog` returns one file; `resetFeed` rebuilds only cursor-touched + active sessions) — is the root cause of three observed problems:
 
 1. **Jumping figure.** The live total swaps between concurrent windows as focus moves.
 2. **Under-count.** Total spend reflects only one of several concurrent sessions (~23% undercount measured on the dogfood repo).
 3. **No retroactive pickup.** Sessions never observed live are not ingested, though the agent's transcripts persist on disk regardless of the watcher.
 
-The underlying data is sound: per-turn usage is the agent's own API usage, copied verbatim, priced by a rate table verified to the cent against a real log. Only **discovery** and **presentation** are wrong.
+Usage comes from agent-reported counts and is priced at render time. Source availability and schema limits can leave gaps; successful discovery or rendering alone never establishes complete metering.
 
 ## Current decision (scope)
 
@@ -80,7 +80,7 @@ The **symbol carries the meaning**; color only reinforces (survives screenshots,
 
 ### Honesty rules
 
-- **Cost provenance** — the headline number is the all-sessions total; `· 4 sessions · 164h` is the proof it is complete. The span unit scales with magnitude (minutes → hours → days), so a multi-week project reads `· 31 sessions · 20d`, not `· 487h`. If capture is partial, the label degrades to `$X captured · N of M sessions` with a dim "run backfill to complete" — never a silently-wrong total. (The span is the **calendar range** the sessions cover — first→last captured event, wall-clock elapsed — so it reads as "31 sessions over 30 days" and never exceeds real elapsed time. It is deliberately *not* summed session time, which would double-count overlapping sessions and inflate idle.)
+- **Cost provenance** - Cost sums captured events and stays an estimate. Session count and the calendar span describe observed history, not completeness. The span uses first-to-last captured event rather than summing overlapping session durations. Host capture states disclose unavailable, unsupported and partial evidence. *(tests: `watch.test.ts`, `codex-feed.test.ts`)*
 - **Blast radius ≠ coverage** — `blast radius 7 of 64` (features *this change* touches, live) sits on the Touched line; `docs 96%` (registry ownership, the `doctor` number) sits in the footer. Different scope, different place, never the same number.
 - **Clean ≠ empty tree** — a `✓ CLEAN` verdict means nothing codument *governs* (source or docs) changed, not that the working tree is empty. When only config/asset files change (e.g. `app.json`, an image), the gloss reads `"N files changed · not source or docs"` — never "working tree clean". The partition is `sources ∪ docs ∪ other ∪ excluded`, so the verdict cannot silently imply an empty tree while real files sit uncommitted — including the last bucket, which is the same false-clean one step further out: a step that edited only its tests has a working tree that is not clean, and the change set had no name for those files until the buckets were made to add up. (Caught dogfooding the verdict frame against a real repo, 2026-06-19; the excluded half a field session later.)
 - **A note about the change reads every bucket the change was split into, and the classifier does the reading.** The severity ladder is the verdict's job; the aggravator beside it — "with no test" on a risk touch — is a claim about what came along, and it must be asked of the whole change rather than of the governed slice. It was not: the live wiring asked only the source bucket, and a conventionally named test is precisely what the exclusion spec moves OUT of that bucket, so the predicate could never return true. Every risk touch read "with no test" for six releases, including this repository's own runs over a change that added sixteen — a false statement, rendered in the loudest line on the frame, on the surface whose subject is telling you the truth about your change. The lesson is not "read the other bucket": test work legitimately lands in three of them (excluded for a conventional name, source for a plainly-named harness, other for a fixture), so any single-bucket reading is the same defect in a smaller size. **The classifier derives it from the state it was already handed, and the option that let a caller supply it is gone** — the unit tests passed that flag directly, which is how they proved the grammar while leaving the question the surface actually asks unasked. A value a caller can pass wrongly is a value that will be, and the type cannot catch it because both answers typecheck. *(tests: `verdict.test.ts` "at-risk when a risk-tagged feature is touched" and "finds the test wherever the change classifier had to put it" — all three buckets counted; `watch.test.ts` "stops claiming 'no test' once the change actually carries one" — the wiring, through the CLI over a real repo, which is the half a flag-driven unit test cannot reach)*
@@ -102,7 +102,7 @@ The **symbol carries the meaning**; color only reinforces (survives screenshots,
 
 ## Known limitations
 
-- **Slug collision (low).** Discovery trusts the `~/.claude/projects` slug dir, and the slug maps `/`, `.`, and `-` all to `-`, so paths differing only by those characters (`/repo/a` vs `/repo.a`) would share a dir and conflate. Low real-world frequency; pre-existing, now extended from "newest of the wrong sessions" to "all of them".
-- **Single-writer.** `pumpFeed`/`backfillFeed` append without a lock (as the existing log always has), so two concurrent backfills on one repo could double-emit. Fine for the interactive one-shot; a hosted collector would add locking.
+- **Repository identity** - Discovery uses recorded repository identity, including worktree roots; a directory slug cannot authorize capture. Missing or conflicting provenance is named. *(tests: `agent-feed.test.ts`, `codex-feed.test.ts`)*
+- **Writer conflicts** - Producers and rebuilds share a local exclusive transaction. A busy or abandoned lock is a named retry condition; replay protection also survives cursor replacement. *(test: `codex-feed.test.ts`)*
 - **Drift age deferred.** The drift finding reads "doc not updated" rather than "doc Nd behind"; the day count needs doc-mtime threading into the renderer — a later legibility polish (`DriftFinding.staleDays` is the wired-but-unpopulated seam).
-- **Completeness flag latent.** The cost label can degrade to "captured · N of M sessions", but currently always reads complete (the live feed + backfill capture every session); detecting partial capture at render time is a future refinement.
+- **Best-effort capture** - Internal formats, missing inputs and inherited history limit reconstruction. Capture status names those limits separately from the estimated cost of captured counts. *(tests: `agent-feed.test.ts`, `codex-feed.test.ts`)*

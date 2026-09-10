@@ -14,7 +14,7 @@ import { readRecentEvents, type CodumentEvent } from "../lib/events.js";
 import { summarizeImpact } from "../lib/impact-ledger.js";
 import { summarizeTokens } from "../lib/token-report.js";
 import { loadRates, type RateTable } from "../lib/token-cost.js";
-import { pumpFeed } from "../lib/claude-feed.js";
+import { inspectAgentCapture, pumpAgentFeed, renderCapture, type CaptureReport } from "../lib/agent-feed.js";
 import { resolveScopeSync } from "../lib/analyze.js";
 import { readRegistrySync } from "../lib/registry.js";
 import { ConfigValueError, StateFileError } from "../lib/state-io.js";
@@ -31,7 +31,7 @@ interface WatchOptions {
   dir?: string;
   once?: boolean;
   interval?: string | number;
-  /** Auto-tail the active Claude session log into events.jsonl (default on). */
+  /** Auto-capture local Claude and Codex session usage into events.jsonl (default on). */
   feed?: boolean;
 }
 
@@ -60,6 +60,7 @@ export interface ActivityItem {
 }
 
 interface RenderOpts {
+  capture?: CaptureReport;
   work?: Pick<WorkInspection, "selected" | "issues">;
   /** Animation frame counter; advanced by the fast render tick. */
   tick?: number;
@@ -337,7 +338,7 @@ export function renderFrame(
     };
     const delta = deltaCost > 0 ? `   ${pc.dim(`+${formatCost(deltaCost)} this session`)}` : "";
     lines.push(
-      `  ${pc.bold("cost")}  ${pc.bold(formatCost(total))}  ${pc.dim(`·  ${costProvenance(cost)} · est.`)}${delta}`,
+      `  ${pc.bold("cost")}  ${pc.bold(tokens.totals.cost === null ? "unpriced" : formatCost(total))}  ${pc.dim(`·  ${costProvenance(cost)} · est.`)}${delta}`,
     );
     const u = tokens.totals.usage;
     const fresh = u.input + u.output + u.cacheCreate;
@@ -466,6 +467,7 @@ export function renderFrame(
 
   // ── Footer — coverage (the badge/contract keeps the "docs coverage:" text,
   // distinct from blast radius above) + an honest disclaimer. ──────────────
+  if (opts.capture) lines.push(renderCapture(opts.capture));
   const footer = [`docs coverage: ${pc.bold(cov)}`];
   if (review.plan) footer.push(pc.dim(`plan: ${review.plan.plan}`));
   footer.push(pc.dim("Ctrl-C to stop · facts, not a safety guarantee"));
@@ -516,6 +518,7 @@ function gatherActivity(
 }
 
 interface FrameData {
+  capture: CaptureReport;
   work: Pick<WorkInspection, "selected" | "issues">;
   review: ReviewReport;
   coverage: DoctorReport;
@@ -555,7 +558,7 @@ function gatherFrameData(root: string): FrameData {
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
   const totalFeatures = Object.keys(registry.features).length;
   const { selected, issues } = inspectWorkState(root);
-  return { review, coverage, events, activity, mood: selected?.status === "blocked" || issues.length ? "alert" : selected && selected.status !== "active" ? "idle" : mood, rates, totalFeatures, work: { selected, issues } };
+  return { capture: inspectAgentCapture(root), review, coverage, events, activity, mood: selected?.status === "blocked" || issues.length ? "alert" : selected && selected.status !== "active" ? "idle" : mood, rates, totalFeatures, work: { selected, issues } };
 }
 
 /** Builds one frame's data from the repo and renders it. Exported for the live demo. */
@@ -568,6 +571,7 @@ export function buildFrame(root: string, now: string, tick = 0): string {
     rates: d.rates,
     totalFeatures: d.totalFeatures,
     work: d.work,
+    capture: d.capture,
   });
 }
 
@@ -590,7 +594,7 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
 
   if (options.once) {
     // Single frame, no screen clear — for CI/tests and one-shot inspection.
-    if (feedOn) pumpFeed(root);
+    if (feedOn) pumpAgentFeed(root);
     console.log(buildFrame(root, clockLabel(new Date())));
     return;
   }
@@ -606,7 +610,7 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
   // is mood-adaptive (fast only while working) so an idle watcher barely wakes.
   const dataMs = Math.max(500, Number(options.interval) || 2000);
 
-  if (feedOn) pumpFeed(root);
+  if (feedOn) pumpAgentFeed(root);
   let cache = gatherFrameData(root);
   let tick = 0;
   // Non-null while a permanent failure is keeping `cache` from refreshing, so
@@ -631,6 +635,7 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
         rates: cache.rates,
         totalFeatures: cache.totalFeatures,
         work: cache.work,
+        capture: cache.capture,
         sinceTs: startedAt,
       },
     );
@@ -660,7 +665,7 @@ export async function watch(options: WatchOptions = {}): Promise<void> {
   };
   scheduleAnim();
   const dataTimer = setInterval(() => {
-    if (feedOn) pumpFeed(root); // tail new session-log turns before recomputing
+    if (feedOn) pumpAgentFeed(root); // tail new session-log turns before recomputing
     void (async () => {
       try {
         // Re-check per tick: the first .py appearing mid-session must warm,

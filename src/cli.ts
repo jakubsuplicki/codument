@@ -339,22 +339,23 @@ program
   .option("--once", "Render a single frame and exit (for CI/inspection)")
   .option("--interval <ms>", "Refresh interval in milliseconds (default 2000)")
   .option("--dir <path>", "Repo to watch (default: current directory)")
-  .option("--no-feed", "Do not auto-tail the Claude session log into events.jsonl")
+  .option("--no-feed", "Do not auto-capture local Claude and Codex session usage")
   .action(watch);
 
 program
   .command("feed")
   .description(
-    "Tail the active Claude Code session log and normalize per-turn token usage + tool activity into .codument/events.jsonl (consumed by watch and any reader of the event stream)",
+    "Capture repository-scoped local Claude and Codex usage into .codument/events.jsonl",
   )
   .option("--once", "Single backfill pass and exit")
   .option("--status", "Inspect capture availability without ingesting any session")
-  .option("--json", "With --status: emit machine-readable capture availability")
+  .option("--json", "Machine-readable status or one-shot capture result")
+  .option("--input <file>", "One-shot Codex JSONL input with recorded run and repository identity")
   .option("--interval <ms>", "Poll interval in milliseconds (default 1000)")
   .option("--dir <path>", "Repo to feed (default: current directory)")
   .option(
     "--reset",
-    "Rebuild feed-sourced events from the transcript at the current normalization (re-prices stale/unpriced events); preserves manual emits and review notes",
+    "Rebuild Claude events and replay Codex inputs with captured-count deduplication; preserve other events",
   )
   .option(
     "--backfill",

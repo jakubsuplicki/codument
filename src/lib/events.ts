@@ -8,8 +8,12 @@ import {
   fsyncSync,
   closeSync,
   renameSync,
+  realpathSync,
+  fstatSync,
+  readSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { withStateLock } from "./state-io.js";
 
 // Append-only flow-event log at .codument/events.jsonl. It carries richer flow
 // events than the deterministic coverage artifact — review summaries, work-step
@@ -28,7 +32,25 @@ function eventsPath(root: string): string {
   return join(root, ".codument", "events.jsonl");
 }
 
-export function appendEvent(
+const heldEventLocks = new Set<string>();
+/** Synchronous feed transactions and individual producers share one writer boundary. */
+export function withEventLock<T>(root: string, operation: () => T): T {
+  let canonical: string;
+  try { canonical = realpathSync(root); } catch { canonical = resolve(root); }
+  const path = eventsPath(process.platform === "win32" ? canonical.toLowerCase() : canonical);
+  if (heldEventLocks.has(path)) return operation();
+  return withStateLock(path, () => {
+    heldEventLocks.add(path);
+    try { return operation(); }
+    finally { heldEventLocks.delete(path); }
+  });
+}
+
+export function appendEvent(root: string, event: Omit<CodumentEvent, "ts"> & { ts?: string }): void {
+  withEventLock(root, () => appendUnlocked(root, event));
+}
+
+function appendUnlocked(
   root: string,
   event: Omit<CodumentEvent, "ts"> & { ts?: string },
 ): void {
@@ -40,7 +62,14 @@ export function appendEvent(
     ...(event.message !== undefined ? { message: event.message } : {}),
     ...(event.data !== undefined ? { data: event.data } : {}),
   };
-  appendFileSync(eventsPath(root), JSON.stringify(record) + "\n");
+  const line = JSON.stringify(record) + "\n";
+  const fd = openSync(eventsPath(root), "a+");
+  try {
+    const size = fstatSync(fd).size;
+    const last = Buffer.alloc(1);
+    const needsBoundary = size > 0 && readSync(fd, last, 0, 1, size - 1) === 1 && last[0] !== 10;
+    appendFileSync(fd, (needsBoundary ? "\n" : "") + line);
+  } finally { closeSync(fd); }
 }
 
 export interface EventLogRead {
@@ -113,6 +142,10 @@ export function atomicWriteFileSync(path: string, content: string): void {
  * truncates the file rather than leaving a stray blank line.
  */
 export function rewriteEvents(root: string, events: CodumentEvent[]): void {
+  withEventLock(root, () => rewriteUnlocked(root, events));
+}
+
+function rewriteUnlocked(root: string, events: CodumentEvent[]): void {
   const dir = join(root, ".codument");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const body = events.map((e) => JSON.stringify(e)).join("\n");

@@ -71,7 +71,7 @@ describe("capture availability", () => {
     }) + "\n");
     assert.equal(host().state, "available");
     assert.equal(host().capturedEvents, 1);
-    assert.equal(inspectAgentCapture(root, home).hosts.find(row => row.host === "codex")!.state, "unsupported");
+    assert.equal(inspectAgentCapture(root, home).hosts.find(row => row.host === "codex")!.state, "unavailable");
   });
 
   it("retains valid ledger events while exposing malformed or unreadable input", () => {

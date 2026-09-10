@@ -47,6 +47,8 @@ what that view could not read. [[token-cost-tracking]] owns availability and sum
 
 ## Invariants & boundaries
 
+- Event producers and feed rebuilds share an exclusive local transaction; concurrent capture cannot inflate usage, and rebuilding one host preserves other hosts and manual events. Captured identity anchors replay across cursor loss; writer conflicts and incomplete ledgers remain visible. *(test: `codex-feed.test.ts`)*
+
 - Workflow skill mirrors preserve handoffs, and reports display saved interruptions. Host compliance remains untested. *(tests: `agent-profiles.test.ts`, `work.test.ts`)*
 - Approval writers refuse an existing lock or stale revision and preserve the last valid record. *(test: `plan-approval.test.ts`)*
 - Scored and gated results depend on repository state, never wall clock or randomness; identical inputs produce identical output. *(tests: `analyze.test.ts`, `change-state.test.ts`)*

@@ -1,6 +1,4 @@
-import pc from "picocolors";
-import { backfillFeed, pumpFeed, resetFeed, resolveSessionLogs } from "../lib/claude-feed.js";
-import { inspectAgentCapture, renderCapture } from "../lib/agent-feed.js";
+import { inspectAgentCapture, pumpAgentFeed, renderCapture } from "../lib/agent-feed.js";
 
 interface FeedOptions {
   root?: string;
@@ -11,135 +9,51 @@ interface FeedOptions {
   backfill?: boolean;
   status?: boolean;
   json?: boolean;
+  input?: string;
 }
 
-const NO_SESSION = (root: string): void => {
-  console.log(
-    pc.yellow("codument feed: no active Claude Code session log found for this project."),
-  );
-  console.log(
-    pc.dim(
-      `  Looked under ~/.claude/projects for a session with cwd ${root}. Run this from a repo where Claude Code is (or was) active.`,
-    ),
-  );
-};
-
-/**
- * Producer side of the live view: tail the active Claude Code transcript and
- * normalize its per-turn token usage + tool activity into
- * .codument/events.jsonl, which `watch` and any reader of the event stream consume. Idempotent
- * — safe to run alongside `watch` or restart at will.
- */
+/** Capture local host usage without running or configuring either agent. */
 export async function feed(options: FeedOptions = {}): Promise<void> {
   const root = options.root ?? options.dir ?? process.cwd();
-
+  const error = (message: string) => {
+    console.log(options.json ? JSON.stringify({ error: message }) : message);
+    process.exitCode = 1;
+  };
   if (options.status) {
     if (options.once || options.backfill || options.reset) {
-      const error = "feed --status is read-only; choose a capture action separately.";
-      console.log(options.json ? JSON.stringify({ error }) : error);
-      process.exitCode = 1;
+      error("feed --status is read-only; choose a capture action separately.");
       return;
     }
-    const capture = inspectAgentCapture(root);
+    const capture = inspectAgentCapture(root, undefined, undefined, options.input);
     console.log(options.json ? JSON.stringify(capture, null, 2) : renderCapture(capture));
     return;
   }
-  if (options.json) {
-    console.log(JSON.stringify({ error: "Use feed --status --json to inspect capture availability." }));
-    process.exitCode = 1;
+  if (options.json && !(options.once || options.backfill || options.reset || options.input)) {
+    error("Use --once, --backfill, --reset, --input or --status with --json.");
     return;
   }
-
-  // Maintenance one-shot: rebuild feed-sourced events under the current
-  // normalization (re-prices stale/unpriced events). Runs even with no live
-  // session, since it can rebuild from the transcripts the cursor already knows.
-  if (options.reset) {
-    const { removed, kept, preserved, emitted, session } = resetFeed(root);
-    console.log(
-      `${pc.green("✓")} feed reset · re-fed ${emitted} event${emitted === 1 ? "" : "s"}, ` +
-        `dropped ${removed} stale, kept ${kept} other`,
-    );
-    if (preserved > 0) {
-      console.log(
-        pc.yellow(
-          `  ⚠ preserved ${preserved} event${preserved === 1 ? "" : "s"} from transcript(s) no longer present — kept as-is, not re-priced`,
-        ),
-      );
+  const pump = () => pumpAgentFeed(root, options);
+  const show = (result: ReturnType<typeof pump>) => {
+    if (options.json) console.log(JSON.stringify(result, null, 2));
+    else {
+      console.log("codument feed: captured " + result.emitted + " events from " + result.sessions + " local inputs.");
+      for (const host of result.hosts) if (host.reasons.length) console.log("  " + host.host + ": " + host.reasons.join(", "));
+      console.log("  Captured counts are not complete usage or billing. Use feed --status for availability.");
     }
-    if (removed === 0 && emitted === 0 && preserved === 0) {
-      console.log(
-        pc.dim("  (nothing to rebuild — no feed events and no Claude session for this project)"),
-      );
-    } else if (!session) {
-      console.log(
-        pc.dim("  (no active session resolved — rebuilt from prior feed history only)"),
-      );
-    }
-    if (options.backfill) {
-      console.log(
-        pc.dim("  (--backfill was redundant with --reset — reset already rebuilds from every matching session)"),
-      );
-    }
-    return;
-  }
-
-  // Retroactive one-shot: ingest every matching transcript from offset 0, adding
-  // only turns not already captured — picks up sessions that were never watched.
-  if (options.backfill) {
-    const { sessions, newSessions, added } = backfillFeed(root);
-    if (sessions === 0) {
-      NO_SESSION(root);
-      process.exitCode = 1;
-      return;
-    }
-    console.log(
-      `${pc.green("✓")} backfill · +${added} event${added === 1 ? "" : "s"} from ` +
-        `${newSessions} of ${sessions} session${sessions === 1 ? "" : "s"}`,
-    );
-    if (added === 0) {
-      console.log(pc.dim("  (already complete — every turn was already captured)"));
-    }
-    return;
-  }
-
-  // Guard on the full matching set (the same discovery `pumpFeed` uses), not the
-  // single newest — otherwise the command can report "no session" in a fallback
-  // case where `pumpFeed` would in fact find and pump one.
-  const sessions = resolveSessionLogs(root);
-  if (sessions.length === 0) {
-    NO_SESSION(root);
-    process.exitCode = 1;
-    return;
-  }
-
-  if (options.once) {
-    const { emitted } = pumpFeed(root);
-    console.log(
-      `${pc.green("✓")} fed ${emitted} event${emitted === 1 ? "" : "s"} into .codument/events.jsonl`,
-    );
-    return;
-  }
-
-  const label = sessions.length === 1 ? sessions[0] : `${sessions.length} sessions`;
-  console.log(pc.bold("codument feed") + pc.dim(`  ·  ${label}`));
-  console.log(
-    pc.dim("  normalizing token usage + tool activity → .codument/events.jsonl · Ctrl-C to stop"),
-  );
-
-  const intervalMs = Math.max(250, Number(options.interval) || 1000);
-  const first = pumpFeed(root);
-  if (first.emitted) console.log(pc.dim(`  +${first.emitted} (backfill)`));
-
-  const timer = setInterval(() => {
-    const { emitted } = pumpFeed(root);
-    if (emitted) console.log(pc.dim(`  +${emitted}`));
-  }, intervalMs);
-
-  const stop = () => {
-    clearInterval(timer);
-    process.stdout.write("\n");
-    process.exit(0);
   };
+  const first = pump();
+  show(first);
+  if (first.sessions === 0) {
+    if (!options.json) console.log("  No matching session input; an explicit Codex JSON file needs a session_meta header with its run id and absolute cwd.");
+    process.exitCode = 1;
+    return;
+  }
+  if (options.once || options.reset || options.backfill || options.input) return;
+  const timer = setInterval(() => {
+    const result = pump();
+    if (result.emitted || result.hosts.some(host => host.reasons.some(reason => reason !== "session-directory-missing"))) show(result);
+  }, Math.max(250, Number(options.interval) || 1000));
+  const stop = () => { clearInterval(timer); process.stdout.write("\n"); process.exit(0); };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 }

@@ -568,6 +568,8 @@ describe("renderFrame token block", () => {
       NOW,
     );
     assert.match(frame, /unpriced/i);
+    assert.match(frame, /cost\s+unpriced/);
+    assert.doesNotMatch(frame, /cost\s+\$0/);
   });
 });
 

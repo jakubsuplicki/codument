@@ -5,18 +5,21 @@ import {
   openSync,
   readSync,
   closeSync,
-  readFileSync,
   realpathSync,
   mkdirSync,
 } from "node:fs";
 import { join, relative, resolve, basename, isAbsolute } from "node:path";
 import { homedir } from "node:os";
+import { createHash } from "node:crypto";
+import { readBoundedState } from "./state-io.js";
 import { allSources, type Registry, readRegistrySync } from "./registry.js";
 import {
   appendEvent,
   readAllEvents,
   rewriteEvents,
   atomicWriteFileSync,
+  withEventLock,
+  readEventLog,
   type CodumentEvent,
 } from "./events.js";
 
@@ -61,6 +64,7 @@ interface SessionInfo {
   malformed: boolean;
   limited: boolean;
   incompleteUsage: boolean;
+  conflictingIdentity: boolean;
 }
 /** Cache only the inspected snapshot; growth and rotation reopen its diagnostics. */
 const sessionCwdCache = new Map<string, { size: number; modified: number; info: SessionInfo }>();
@@ -70,14 +74,17 @@ function sessionInfo(file: string): SessionInfo {
   const cached = sessionCwdCache.get(key);
   if (cached?.size === stat.size && cached.modified === stat.mtimeMs) return cached.info;
   const head = readHead(file, 1_000_000);
-  const info: SessionInfo = { cwd: null, sessionId: null, malformed: false, limited: stat.size > 1_000_000, incompleteUsage: false };
+  const info: SessionInfo = { cwd: null, sessionId: null, malformed: false, limited: stat.size > 1_000_000, incompleteUsage: false, conflictingIdentity: false };
   const lines = head.split("\n");
   if (info.limited) lines.pop();
   for (const line of lines) {
     if (!line.trim()) continue;
     try {
       const record = JSON.parse(line);
-      if (!info.cwd && record && typeof record.cwd === "string" && isAbsolute(record.cwd)) info.cwd = record.cwd;
+      if (record && typeof record.cwd === "string" && isAbsolute(record.cwd)) {
+        if (info.cwd && repositoryKey(info.cwd) !== repositoryKey(record.cwd)) info.conflictingIdentity = true;
+        info.cwd ??= record.cwd;
+      }
       if (!info.sessionId && typeof record?.sessionId === "string" && record.sessionId.trim()) info.sessionId = record.sessionId;
       if (record?.type === "assistant") {
         const usage = record.message?.usage;
@@ -120,6 +127,9 @@ export interface SessionDiscovery {
   malformed: number;
   limited: number;
   incompleteUsage: number;
+  conflictingIdentity: number;
+  truncated: number;
+  invalidState: boolean;
 }
 
 function repositoryKey(path: string): string {
@@ -129,7 +139,9 @@ function repositoryKey(path: string): string {
 
 /** Bounded discovery keeps omissions visible rather than presenting a complete empty answer. */
 export function discoverSessionLogs(root: string, home = homedir()): SessionDiscovery {
-  const result: SessionDiscovery = { sessions: [], missing: false, unreadable: 0, unidentified: 0, malformed: 0, limited: 0, incompleteUsage: 0 };
+  const result: SessionDiscovery = { sessions: [], missing: false, unreadable: 0, unidentified: 0, malformed: 0, limited: 0, incompleteUsage: 0, conflictingIdentity: 0, truncated: 0, invalidState: false };
+  try { result.truncated = Object.values(readFeedState(root).partial).filter(Boolean).length; }
+  catch { result.invalidState = true; }
   const projects = claudeProjectsDir(home);
   let directories: string[];
   try { directories = readdirSync(projects).sort(); }
@@ -162,6 +174,7 @@ export function discoverSessionLogs(root: string, home = homedir()): SessionDisc
           if (info.malformed) result.malformed++;
           if (info.limited) result.limited++;
           if (info.incompleteUsage) result.incompleteUsage++;
+          if (info.conflictingIdentity) result.conflictingIdentity++;
         }
       } catch { result.unreadable++; }
     }
@@ -401,6 +414,8 @@ interface FeedState {
   offsets: Record<string, number>;
   /** Last attributed feature per session, for carry-forward across restarts. */
   feature: Record<string, string>;
+  /** Source completeness cannot be restored merely by replacing its cursor. */
+  partial: Record<string, boolean>;
 }
 
 function feedStatePath(root: string): string {
@@ -408,18 +423,24 @@ function feedStatePath(root: string): string {
 }
 
 function readFeedState(root: string): FeedState {
-  try {
-    const parsed = JSON.parse(readFileSync(feedStatePath(root), "utf-8"));
-    return {
-      offsets: parsed.offsets ?? {},
-      feature: parsed.feature ?? {},
-    };
-  } catch {
-    return { offsets: {}, feature: {} };
-  }
+  const raw = readBoundedState(feedStatePath(root));
+  if (raw === null) return { offsets: {}, feature: {}, partial: {} };
+  const parsed = JSON.parse(raw);
+  const dictionary = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+  if (!dictionary(parsed) || !dictionary(parsed.offsets) ||
+    Object.entries(parsed.offsets).some(([path, offset]) => !isAbsolute(path) || typeof offset !== "number" || !Number.isSafeInteger(offset) || offset < 0) ||
+    (parsed.feature !== undefined && (!dictionary(parsed.feature) || Object.values(parsed.feature).some(value => typeof value !== "string"))) ||
+    (parsed.partial !== undefined && (!dictionary(parsed.partial) || Object.values(parsed.partial).some(value => typeof value !== "boolean")))) throw new Error("invalid Claude capture state; preserve and repair feed-state.json");
+  return { offsets: parsed.offsets as Record<string, number>, feature: (parsed.feature ?? {}) as Record<string, string>, partial: (parsed.partial ?? {}) as Record<string, boolean> };
 }
 
 function writeFeedState(root: string, state: FeedState): void {
+  const previous = readFeedState(root);
+  state.partial = { ...previous.partial, ...state.partial };
+  for (const [path, offset] of Object.entries(previous.offsets)) {
+    try { if (statSync(path).size < offset) state.partial[path] = true; }
+    catch { state.partial[path] = true; }
+  }
   const dir = join(root, ".codument");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   atomicWriteFileSync(feedStatePath(root), JSON.stringify(state, null, 2) + "\n");
@@ -519,14 +540,23 @@ function parseSession(
     } catch {
       continue; // skip malformed lines, keep advancing the offset
     }
-    const result = recordToEvents(record, { root, registry: reg, prevFeature: feature });
+    const row = record as Record<string, unknown>;
+    if (typeof row?.cwd === "string" && (!isAbsolute(row.cwd) || repositoryKey(row.cwd) !== repositoryKey(root))) continue;
+    // Legacy records without a UUID get a deterministic private-content digest;
+    // no transcript text is persisted as replay identity.
+    if (row && typeof row === "object" && typeof row.uuid !== "string") {
+      row.uuid = createHash("sha256").update(JSON.stringify(record)).digest("hex");
+    }
+    const result = recordToEvents(record, { root, registry: reg, prevFeature: feature, sessionId: sessionIdOf(session) ?? undefined });
     feature = result.feature;
     // Backfill skips turns already captured (keyed by the record's uuid), but
     // only after carrying the feature forward — so a later un-captured turn in
     // the same file still attributes correctly across the skipped one.
     if (skipUuids) {
       const uid = (record as Record<string, unknown>)?.uuid;
-      if (typeof uid === "string" && skipUuids.has(uid)) continue;
+      const identity = JSON.stringify([result.events[0]?.data?.session ?? null, uid]);
+      if (typeof uid === "string" && skipUuids.has(identity)) continue;
+      if (typeof uid === "string" && result.events.length) skipUuids.add(identity);
     }
     events.push(...result.events);
   }
@@ -545,6 +575,11 @@ function parseSession(
  * appended and the newest matching session (for display continuity).
  */
 export function pumpFeed(root: string, home = homedir()): PumpResult {
+  if (!resolveSessionLogs(root, home).length) return { emitted: 0, session: null };
+  return withEventLock(root, () => pumpLocked(root, home));
+}
+
+function pumpLocked(root: string, home: string): PumpResult {
   const matching = resolveSessionLogs(root, home);
   if (matching.length === 0) return { emitted: 0, session: null };
   const active = newestOf(matching);
@@ -557,6 +592,7 @@ export function pumpFeed(root: string, home = homedir()): PumpResult {
   let registry: Registry | undefined;
   let emitted = 0;
   let advancedAny = false;
+  const known = knownFeedUuids(root);
   for (const session of sessions) {
     const off = state.offsets[session] ?? 0;
     let size: number;
@@ -566,9 +602,10 @@ export function pumpFeed(root: string, home = homedir()): PumpResult {
       continue; // transcript vanished — nothing to pump from it
     }
     if (size === off) continue; // no new bytes (idle) — skip before reading the registry
+    if (off > size) state.partial[session] = true;
 
     registry ??= readRegistrySync(join(root, "docs", ".registry.json"));
-    const parsed = parseSession(root, session, state, registry);
+    const parsed = parseSession(root, session, state, registry, known);
     for (const ev of parsed.events) appendEvent(root, ev);
     emitted += parsed.events.length;
     if (parsed.advanced) {
@@ -587,9 +624,11 @@ export function pumpFeed(root: string, home = homedir()): PumpResult {
  *  record whose uuid is present rather than any single event. */
 function knownFeedUuids(root: string): Set<string> {
   const seen = new Set<string>();
-  for (const ev of readAllEvents(root)) {
+  const ledger = readEventLog(root);
+  if (ledger.state === "partial" || ledger.state === "unavailable") throw new Error("feed: ledger is incomplete; preserve and repair it before capturing");
+  for (const ev of ledger.events) {
     const id = (ev.data as Record<string, unknown> | undefined)?.uuid;
-    if (typeof id === "string") seen.add(id);
+    if (typeof id === "string" && isFeedSourced(ev)) seen.add(JSON.stringify([ev.data?.session ?? null, id]));
   }
   return seen;
 }
@@ -616,19 +655,22 @@ export interface BackfillResult {
  * backfilled.
  */
 export function backfillFeed(root: string, home = homedir()): BackfillResult {
+  if (!resolveSessionLogs(root, home).length) return { sessions: 0, newSessions: 0, added: 0, session: null };
+  return withEventLock(root, () => backfillLocked(root, home));
+}
+
+function backfillLocked(root: string, home: string): BackfillResult {
   const matching = resolveSessionLogs(root, home);
   const active = newestOf(matching);
   if (matching.length === 0) return { sessions: 0, newSessions: 0, added: 0, session: null };
 
-  // Single-writer assumption: like the live pump, this appends without a lock,
-  // so two concurrent backfills on one root could double-emit a turn. That suits
-  // the interactive one-shot this is built for; a collector would add locking.
+  // Ledger reads, appends and cursor writes share the producer lock.
   const known = knownFeedUuids(root);
   const realState = readFeedState(root);
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
   // A throwaway state so every session parses from offset 0 (the whole file);
   // the live cursor in realState is advanced separately, to EOF.
-  const fromZero: FeedState = { offsets: {}, feature: {} };
+  const fromZero: FeedState = { offsets: {}, feature: {}, partial: {} };
 
   let added = 0;
   let newSessions = 0;
@@ -638,8 +680,6 @@ export function backfillFeed(root: string, home = homedir()): BackfillResult {
     if (parsed.events.length > 0) {
       for (const ev of parsed.events) {
         appendEvent(root, ev);
-        const id = (ev.data as Record<string, unknown> | undefined)?.uuid;
-        if (typeof id === "string") known.add(id); // guard against repeats within this run too
       }
       added += parsed.events.length;
       newSessions++;
@@ -662,6 +702,7 @@ export function backfillFeed(root: string, home = homedir()): BackfillResult {
 function isFeedSourced(event: CodumentEvent): boolean {
   const data = event.data as Record<string, unknown> | undefined;
   if (!data || typeof data !== "object") return false;
+  if (data.host === "codex" || (data.source !== undefined && data.source !== "feed")) return false;
   return (
     data.source === "feed" ||
     typeof data.session === "string" ||
@@ -695,6 +736,15 @@ export interface ResetResult {
  * destroy-before-rebuild window.
  */
 export function resetFeed(root: string, home = homedir()): ResetResult {
+  if (!existsSync(join(root, ".codument")) && !resolveSessionLogs(root, home).length) {
+    return { removed: 0, kept: 0, preserved: 0, emitted: 0, session: null };
+  }
+  return withEventLock(root, () => resetLocked(root, home));
+}
+
+function resetLocked(root: string, home: string): ResetResult {
+  const ledger = readEventLog(root);
+  if (ledger.state === "partial" || ledger.state === "unavailable") throw new Error("feed reset: ledger is incomplete; preserve and repair it before rebuilding");
   const prior = readFeedState(root);
   const all = readAllEvents(root);
   const matching = resolveSessionLogs(root, home);
@@ -724,15 +774,20 @@ export function resetFeed(root: string, home = homedir()): ResetResult {
   // Record the sessionId of every transcript that still exists so we can tell a
   // genuinely-gone session apart from a turn the rebuild simply chose not to
   // re-emit (e.g. a zero-usage `<synthetic>` turn).
-  const state: FeedState = { offsets: {}, feature: {} };
+  const state: FeedState = { offsets: {}, feature: {}, partial: { ...prior.partial } };
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
   const rebuilt: CodumentEvent[] = [];
   const presentSessionIds = new Set<string>();
+  const rebuiltIds = new Set<string>();
+  const partialSessions = new Set<string>();
   for (const session of sessions) {
     if (!existsSync(session)) continue; // transcript gone — its events are orphans
     const sid = sessionIdOf(session);
     if (sid) presentSessionIds.add(sid);
-    const parsed = parseSession(root, session, state, registry);
+    const parsed = parseSession(root, session, state, registry, rebuiltIds);
+    const size = statSync(session).size;
+    if ((prior.offsets[session] ?? 0) > size || parsed.offset < size || sessionInfo(session).malformed) state.partial[session] = true;
+    if (sid && state.partial[session]) partialSessions.add(sid);
     for (const ev of parsed.events) {
       rebuilt.push(ev);
       const sessionId = ev.data?.session;
@@ -751,6 +806,9 @@ export function resetFeed(root: string, home = homedir()): ResetResult {
   // resurrecting turns the rebuild intentionally dropped.
   const orphaned = feedEvents.filter((e) => {
     const sid = (e.data as Record<string, unknown> | undefined)?.session;
+    const identity = JSON.stringify([sid ?? null, e.data?.uuid]);
+    if (rebuiltIds.has(identity)) return false;
+    if (typeof sid === "string" && partialSessions.has(sid)) return true;
     return !(typeof sid === "string" && presentSessionIds.has(sid));
   });
 

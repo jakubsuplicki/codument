@@ -558,16 +558,37 @@ npx codument watch --dir ../other  # watch another repo without cd
 
 ### `codument feed` — populate the event log from the agent's session
 
-`feed` is the producer behind the live view: it tails the active Claude Code session transcript (the per-turn log Claude Code already writes), normalizes each turn's token usage + tool activity into `.codument/events.jsonl`, and attributes it to a feature via the registry. `watch` runs it for you each refresh (disable with `watch --no-feed`); call it directly for a one-shot backfill or a headless/CI populate.
+`feed` captures existing local Claude and Codex usage for the requested repository. `watch` runs
+it on each refresh; `watch --no-feed` disables capture. Manual `emit tokens` remains available
+for any host. Session formats are best-effort and captured counts are estimates, never a bill.
 
 ```bash
-npx codument feed              # tail the session log continuously
-npx codument feed --once       # single backfill pass, then exit
-npx codument feed --dir ../other
+npx codument feed --once          # capture matching local sessions
+npx codument feed --backfill      # replay inputs without counting them twice
 npx codument feed --status --json # inspect availability without ingesting
+npx codument feed --input usage.jsonl --json # import only this Codex input
 ```
 
-It reads telemetry that already exists (no extra token cost), is idempotent (a byte-offset cursor means restarts never double-count), and is best-effort against Claude Code's internal transcript format. It's the Claude-specific adapter for the otherwise vendor-neutral `emit` + events-log seam.
+Codex discovery reads `CODEX_HOME/sessions`, or `~/.codex/sessions` by default. A recorded absolute
+repository path must match the requested root, including when that root is a Git worktree. Unknown
+models remain unpriced; counter resets, incomplete inputs and conflicting representations of one
+run are disclosed. Capture does not change either agent's configuration or run a model.
+Inherited cumulative histories contribute no counts because copied usage cannot be reliably separated
+from new work; their capture status remains partial.
+
+An explicit input accepts a local Codex rollout or the [documented completed-turn JSON stream](https://learn.chatgpt.com/docs/non-interactive-mode).
+The latter needs a local provenance header before its events, since the documented stream does not
+establish a repository. Supply the actual thread id and absolute repository path; model is optional:
+
+```json
+{"type":"session_meta","payload":{"id":"actual-thread-id","cwd":"/absolute/repository","model":"actual-model-id"}}
+```
+
+The following `thread.started` must name the same id. Capture stores normalized usage and replay
+identity, without retaining transcript content. `--reset` rebuilds Claude capture and replays Codex
+inputs against already captured counters; it preserves manual events and unavailable-source history.
+An interrupted writer leaves a visible lock: check that process before removing its abandoned lock
+and retrying. Corrupt cursor or ledger input is named and preserved for repair.
 
 ### `codument steps` — mirror the active plan's checklist
 

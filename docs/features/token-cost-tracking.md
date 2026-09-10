@@ -30,9 +30,24 @@ Export creates a new file and refuses the live ledger or an existing output, inc
 
 The pipeline is producers, a pricing layer, a reducer, and two views, all riding the append-only event log.
 
-**Counts in, two producers.** Usage enters as `type: "tokens"` events: either an agent reports them explicitly (the vendor-neutral seam any agent can target), or the feed auto-tails the agent's own session transcript and normalizes its per-turn usage into the same events. The explicit seam is the contract other agents implement; the feed is a Claude-specific convenience built on top of it, not a dependency of it. Producers store counts only, never cost.
+Manual reporting is vendor-neutral. Local Claude and Codex adapters share that event ledger and
+read only existing session inputs. Recorded repository identity must match the requested root;
+working in a Git worktree does not authorize another worktree's logs. The monitor captures both
+hosts by default; explicit Codex file ingestion selects that input alone. Internal session formats
+remain best-effort. A documented completed-turn stream needs a local repository/run header before
+capture because the stream alone supplies no repository provenance.
 
-**The feed is best-effort by design.** It reads Claude Code's internal transcript format, which codument does not own, so every field is read defensively and a shape change degrades to fewer events, never a crash. It follows *every* transcript whose recorded working directory matches the repo, not just the newest, because concurrent agent windows each write their own session file and following only one under-counts and makes the live total jump between windows. Tailing is cheap (it reads telemetry that already exists) and idempotent (per-session byte cursors mean a restart never double-counts). Three maintenance modes round it out: live tail, a retroactive backfill that ingests never-watched sessions keyed by turn so re-running adds nothing, and a reset that rebuilds feed-sourced events under the current normalization to re-price events left stale by an older model-id mapping.
+Replay protection belongs to captured evidence as well as cursors. Writers share one exclusive local
+transaction so simultaneous capture, manual append and reset cannot interleave a ledger replacement.
+Claude turns retain replay identity across copies and restarts, and rebuild preserves unrelated hosts
+and history whose source is unavailable or visibly incomplete. Codex captures monotonic usage deltas
+and refuses a second usage representation of the same run. Cursor reset never resets already captured
+usage. A changed or ambiguous stream is partial evidence. Inherited cumulative history has no reliable
+boundary separating copied usage from new work, so it contributes no counts and remains explicitly
+unavailable. Explicit completed-turn streams avoid that cumulative-history ambiguity. Decreasing
+counters never manufacture new usage. Cache is a subdivision of input and
+reasoning is a subdivision of output, so normalization keeps buckets disjoint. Missing counts are
+reported; missing model/rate data remains unpriced. No transcript text or derived price is persisted.
 
 **Pricing is a pure lookup, agent-neutral.** Cost is derived per bucket from a rate table of USD-per-million-token rates. Anthropic usage splits into four buckets (fresh input, output, cache read, cache create) with very different prices, and the trap the design exists to avoid is summing them at one rate: cache reads are roughly ten times cheaper than fresh input yet dominate the token count in agentic coding, so a single-rate sum massively over-bills. Built-in rates cover Claude and stay accurate; any other model is priced from a user-supplied rate file merged over the defaults, so a new vendor or fine-tune is priced without a codument release. Model lookup is exact-match only: a typo or an unknown id surfaces visibly as "unpriced" rather than as a plausible-but-wrong bill.
 
@@ -41,6 +56,10 @@ The pipeline is producers, a pricing layer, a reducer, and two views, all riding
 **Two views, same captured log.** `watch` leads with a verdict and a cost headline (the all-sessions total plus a since-this-run delta and a where-it-went breakdown) and is a live consumer that auto-runs the feed. `cost` prints the complete ledger that the watch top-N omits, sorted by spend, as a pure read that never tails or mutates the log. Its share-percent column uses largest-remainder rounding so it sums to exactly 100 rather than drifting, and a real-but-tiny row reads under one percent rather than a misleading zero.
 
 ## Invariants & boundaries
+
+- Codex capture requires recorded repository/run identity, rejects conflicting and unsupported inputs, and reads incrementally without persisting transcripts. Explicit completed-turn input needs matching thread identity. Read-only status exposes malformed usage before ingestion. *(test: `codex-feed.test.ts`)*
+- Cumulative and completed-turn usage cannot count the same run twice. Replay, copies, cursor loss, truncation, counter resets and inherited history do not inflate captured usage; ambiguous evidence stays partial. Cache and reasoning subdivisions are never added twice. *(test: `codex-feed.test.ts`)*
+- Capture and manual event writers share an exclusive transaction; a busy writer or incomplete ledger is preserved and named. Appending preserves an existing final record without a line terminator. Every Claude cursor replacement preserves evidence of truncated history, so backfill followed by reset cannot drop captured turns. Rebuild cannot drop Codex/manual events or double-count repeated turns. *(tests: `codex-feed.test.ts`, `claude-feed.test.ts`)*
 
 - Capture reports distinguish readable-empty inputs from unavailable or unsupported hosts, and name partial evidence while retaining valid ledger events. Missing usage fields, malformed source records and inspection limits remain visible. *(test: `agent-feed.test.ts`)*
 - Session identity comes from an absolute repository path in a complete top-level record, never a directory slug or nested tool input. Discovery and reset share the same inspected identity, including large opening records, and reset also recognizes identities on rebuilt events. They reject foreign input; prior cursors cannot authorize another repository, and existing captured history survives an unavailable source. *(tests: `agent-feed.test.ts`, `claude-feed.test.ts`)*
@@ -65,10 +84,15 @@ The pipeline is producers, a pricing layer, a reducer, and two views, all riding
 
 ## Decisions
 
+- Local capture uses recorded provenance, not directory naming. Bare JSON streams require a local provenance header; competing usage representations are refused because their turn identities cannot be safely reconciled.
+- Recorded parent, fork and referenced history are excluded from cumulative usage capture until a reliable new-work boundary exists. These are internal formats with separate lineage fields, confirmed against the [Codex recorder](https://github.com/openai/codex/blob/main/codex-rs/rollout/src/recorder.rs); unknown boundaries remain partial evidence.
+
 - Availability describes observable local inputs, not complete metering. Manual reports remain vendor-neutral, Claude capture remains best-effort, and unsupported hosts are explicit. Sharing requires an explicit summary export; raw transcripts stay local and imported summaries never become live usage. See [[agent-delivery-workflow]] for the approved cross-host work.
 - Token counts are the source of truth and cost is derived at render time, never persisted (Codument is not a metering tool): [009-token-counts-are-truth-cost-derived-at-render](../architecture/decisions/009-token-counts-are-truth-cost-derived-at-render.md).
 
 ## Key files
+
+- `src/lib/codex-feed.ts` — repository-scoped usage capture and replay diagnostics.
 
 - `src/lib/agent-feed.ts` — host capture availability and limitations.
 - `src/lib/token-cost.ts` — the pricing layer: derives an estimated cost from raw counts at render time, and resolves the agent-neutral rate table by merging user overrides over the built-in Claude defaults.

@@ -13,6 +13,9 @@ This is the front door: the `codument` binary a user types into a terminal. It o
 
 ## Design approach
 
+Feed and watch capture local Claude and Codex inputs. An explicit JSON file selects one Codex input
+and accepts one-shot machine-readable results; recorded provenance is required.
+
 Capture status is an explicit read-only feed mode with JSON output. Cost inspection includes capture
 availability; an explicit export writes a new privacy-limited usage summary. These actions do not
 start capture or import a shared summary. [[token-cost-tracking]] owns their contracts.
