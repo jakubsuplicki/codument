@@ -2,7 +2,7 @@
 title: Proof benchmarks
 status: current
 type: feature
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-14
 ---
 
 # Proof benchmarks
@@ -75,6 +75,11 @@ The **catch-rate benchmark** is the ground-truth proof behind the review gate (s
 ## Decisions
 
 - The benchmark proof model: a deterministic, package-native `benchmark` command family that never uses a judge: [008-benchmark-proof-deterministic-not-judge](../architecture/decisions/008-benchmark-proof-deterministic-not-judge.md).
+- The [recorded session comparison](../../fixtures/benchmarks/session-control/comparison-2026-09-14.json)
+  retains every attempt, including the staged-delivery failure and format-sensitive unavailable
+  result. Both conditions handled changed approval and interrupted work. Integrated runs also
+  reported finalization friction; a passing fixture score does not prove a smooth workflow.
+  The small sample and interrupted timing support no general quality, speed or token-savings claim.
 
 ## Key files
 

@@ -66,6 +66,16 @@ interface SessionInfo {
   incompleteUsage: boolean;
   conflictingIdentity: boolean;
 }
+
+function hasValidUsage(record: Record<string, unknown>): boolean {
+  const message = record.message as Record<string, unknown> | undefined;
+  const usage = message?.usage as Record<string, unknown> | undefined;
+  const valid = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+  return !!usage && valid(usage.input_tokens) && valid(usage.output_tokens) &&
+    typeof message?.model === "string" && !!message.model.trim() &&
+    typeof record.timestamp === "string" && !!record.timestamp &&
+    [usage.cache_read_input_tokens, usage.cache_creation_input_tokens].every(value => value === undefined || valid(value));
+}
 /** Cache only the inspected snapshot; growth and rotation reopen its diagnostics. */
 const sessionCwdCache = new Map<string, { size: number; modified: number; info: SessionInfo }>();
 function sessionInfo(file: string): SessionInfo {
@@ -87,12 +97,7 @@ function sessionInfo(file: string): SessionInfo {
       }
       if (!info.sessionId && typeof record?.sessionId === "string" && record.sessionId.trim()) info.sessionId = record.sessionId;
       if (record?.type === "assistant") {
-        const usage = record.message?.usage;
-        const valid = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-        if (!usage || !valid(usage.input_tokens) || !valid(usage.output_tokens) ||
-          typeof record.message?.model !== "string" || !record.message.model.trim() ||
-          typeof record.timestamp !== "string" ||
-          [usage.cache_read_input_tokens, usage.cache_creation_input_tokens].some(value => value !== undefined && !valid(value))) {
+        if (!hasValidUsage(record)) {
           info.incompleteUsage = true;
         }
       }
@@ -340,7 +345,7 @@ export function recordToEvents(record: unknown, ctx: FeedContext): RecordResult 
   // Token event for the turn (input/output/cache, incl. thinking & reading).
   const usage = msg.usage as Record<string, unknown> | undefined;
   const model = typeof msg.model === "string" ? msg.model : undefined;
-  if (usage && model) {
+  if (usage && model && hasValidUsage(rec)) {
     const input = coerceNum(usage.input_tokens);
     const output = coerceNum(usage.output_tokens);
     const cacheRead = coerceNum(usage.cache_read_input_tokens);
@@ -503,6 +508,7 @@ function parseSession(
   state: FeedState,
   registry?: Registry,
   skipUuids?: Set<string>,
+  rebuiltUsage?: Set<string>,
 ): ParsedSession {
   const carried = state.feature[session] ?? null;
   const idle = (offset: number): ParsedSession => ({
@@ -538,6 +544,7 @@ function parseSession(
     try {
       record = JSON.parse(line);
     } catch {
+      state.partial[session] = true;
       continue; // skip malformed lines, keep advancing the offset
     }
     const row = record as Record<string, unknown>;
@@ -548,6 +555,7 @@ function parseSession(
       row.uuid = createHash("sha256").update(JSON.stringify(record)).digest("hex");
     }
     const result = recordToEvents(record, { root, registry: reg, prevFeature: feature, sessionId: sessionIdOf(session) ?? undefined });
+    if (row?.type === "assistant" && !hasValidUsage(row)) state.partial[session] = true;
     feature = result.feature;
     // Backfill skips turns already captured (keyed by the record's uuid), but
     // only after carrying the feature forward — so a later un-captured turn in
@@ -558,6 +566,8 @@ function parseSession(
       if (typeof uid === "string" && skipUuids.has(identity)) continue;
       if (typeof uid === "string" && result.events.length) skipUuids.add(identity);
     }
+    if (row?.type === "assistant" && hasValidUsage(row))
+      rebuiltUsage?.add(JSON.stringify([sessionIdOf(session) ?? null, row.uuid]));
     events.push(...result.events);
   }
 
@@ -779,12 +789,13 @@ function resetLocked(root: string, home: string): ResetResult {
   const rebuilt: CodumentEvent[] = [];
   const presentSessionIds = new Set<string>();
   const rebuiltIds = new Set<string>();
+  const rebuiltUsage = new Set<string>();
   const partialSessions = new Set<string>();
   for (const session of sessions) {
     if (!existsSync(session)) continue; // transcript gone — its events are orphans
     const sid = sessionIdOf(session);
     if (sid) presentSessionIds.add(sid);
-    const parsed = parseSession(root, session, state, registry, rebuiltIds);
+    const parsed = parseSession(root, session, state, registry, rebuiltIds, rebuiltUsage);
     const size = statSync(session).size;
     if ((prior.offsets[session] ?? 0) > size || parsed.offset < size || sessionInfo(session).malformed) state.partial[session] = true;
     if (sid && state.partial[session]) partialSessions.add(sid);
@@ -807,6 +818,12 @@ function resetLocked(root: string, home: string): ResetResult {
   const orphaned = feedEvents.filter((e) => {
     const sid = (e.data as Record<string, unknown> | undefined)?.session;
     const identity = JSON.stringify([sid ?? null, e.data?.uuid]);
+    // Rebuilt activity cannot supersede usage that was missing or invalid. Valid
+    // zero-usage turns still deliberately replace stale synthetic token events.
+    if (e.type === "tokens") {
+      if (rebuiltUsage.has(identity)) return false;
+      if (typeof sid === "string" && partialSessions.has(sid)) return true;
+    }
     if (rebuiltIds.has(identity)) return false;
     if (typeof sid === "string" && partialSessions.has(sid)) return true;
     return !(typeof sid === "string" && presentSessionIds.has(sid));

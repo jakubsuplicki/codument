@@ -186,8 +186,9 @@ function recordReview(
       "complete invariantsChecked and signer, and keep every finding in the generated worksheet shape",
     );
   }
+  const snapshotRead = (path: string) => readChangeSetFile(root, boundary, path);
   const resolveTest = (reference: string) =>
-    resolveTestPath(root, reference, DEFAULT_TEST_SEARCH_DIRS);
+    resolveTestPath(root, reference, DEFAULT_TEST_SEARCH_DIRS, snapshotRead);
   const fingerprint = gatherReviewFingerprint(
     root,
     base,
@@ -196,11 +197,12 @@ function recordReview(
     resolveTest,
     currentOracle(root, base, report.state, boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths),
     binding.fingerprint,
+    snapshotRead,
   );
   writeReview(root, {
     ...provisional,
     diffFingerprint: fingerprint,
-    files: gatherReviewedFiles(root, realChangeSet),
+    files: gatherReviewedFiles(root, realChangeSet, snapshotRead),
   });
 }
 
@@ -214,8 +216,9 @@ function assessReview(
   options: VerifyOptions,
 ): ReviewAssessment {
   const binding = changeSetBinding(boundary);
+  const snapshotRead = (path: string) => readChangeSetFile(root, boundary, path);
   const resolveTest = (reference: string) =>
-    resolveTestPath(root, reference, DEFAULT_TEST_SEARCH_DIRS);
+    resolveTestPath(root, reference, DEFAULT_TEST_SEARCH_DIRS, snapshotRead);
   const covering = findCoveringReviews(
     root,
     base,
@@ -223,6 +226,7 @@ function assessReview(
     resolveTest,
     currentOracle(root, base, report.state, boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths),
     binding,
+    snapshotRead,
   );
   const recordedFindings = covering.length > 0 ? mergeCoveringFindings(covering) : null;
   const hasReproduction = recordedFindings?.some((finding) => finding.failingTest) === true;
@@ -230,14 +234,15 @@ function assessReview(
   // claim. Probing npx for a missing review or a clean review would add a 15-second
   // subprocess to the ordinary green path and can leave a timed-out Windows shell
   // holding the repository open after the command already returned.
-  const resolvedCommand = hasReproduction ? resolveTestCommand(root, options.testCommand) : null;
-  const resolvedTimeout = hasReproduction ? resolveTestTimeout(root, options.testTimeout) : null;
+  const resolvedCommand = hasReproduction ? resolveTestCommand(root, options.testCommand, snapshotRead) : null;
+  const resolvedTimeout = hasReproduction ? resolveTestTimeout(root, options.testTimeout, snapshotRead) : null;
   const confirmed = recordedFindings
     ? confirmFindings(
         recordedFindings,
         hasReproduction
           ? makeTestRunner({
               root,
+              snapshot: boundary,
               command: resolvedCommand?.command,
               timeoutMs: resolvedTimeout?.timeoutMs,
             })

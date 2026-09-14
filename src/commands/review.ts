@@ -1062,13 +1062,13 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const snapshotRead = portable && report.boundary ? (path: string): string | null => readChangeSetFile(root, report.boundary!, path) : undefined;
+  const snapshotRead = report.boundary ? (path: string): string | null => readChangeSetFile(root, report.boundary!, path) : undefined;
   const focusedBinding = report.boundary ? portable ? portableReviewBoundary(report.boundary, snapshotRead!(REVIEW_MANIFEST_PATH)) : changeSetBinding(report.boundary) : undefined;
   const oracle = portable || options.record || options.requireReview ? currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths) : "";
   const policy = portable ? transferDigest({
     metadata: snapshotRead!(".codument-meta.json"),
-    testCommand: resolveTestCommand(root, options.testCommand),
-    testTimeout: resolveTestTimeout(root, options.testTimeout),
+    testCommand: resolveTestCommand(root, options.testCommand, snapshotRead),
+    testTimeout: resolveTestTimeout(root, options.testTimeout, snapshotRead),
     requireIndependentAck: options.requireIndependentAck === true,
   }) : null;
   const reviewOracle = portable ? transferDigest({ oracle, policy }) : oracle;
@@ -1085,7 +1085,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       if (options.reviewFile) receivedReview = validateReviewTransfer(readFileSync(resolvePath(root, options.reviewFile), "utf8"), portableBinding!, snapshotRead!);
       else {
         const { set } = computeRealChange(report, report.deletions, exclusion);
-        const resolveTest = (ref: string): string | null => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS);
+        const resolveTest = (ref: string): string | null => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS, snapshotRead);
         const covering = findCoveringReviews(root, effectiveBase, set, resolveTest, reviewOracle, focusedBinding, snapshotRead);
         const refs = [...new Set(covering.flatMap((record) => record.findings.flatMap((finding) => finding.failingTest ? [finding.failingTest] : [])))].sort();
         const tests: TransferTest[] = refs.map((reference) => {
@@ -1209,7 +1209,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       return;
     }
     const { set: realChangeSet } = computeRealChange(report, report.deletions, exclusion);
-    const resolveTest = (ref: string) => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS);
+    const resolveTest = (ref: string) => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS, snapshotRead);
     const fp = gatherReviewFingerprint(
       root,
       effectiveBase,
@@ -1358,11 +1358,11 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
   if (options.requireReview) {
     // Flag > `testCommand` in .codument-meta.json > the built-in default. A project
     // declares its runner once instead of re-typing it on every gated run.
-    const resolvedTest = resolveTestCommand(root, options.testCommand);
+    const resolvedTest = resolveTestCommand(root, options.testCommand, snapshotRead);
     // Same precedence, same refusal discipline: how slow the suite is, like how it is
     // run, is a fact about the project. Codument's own budget expiring is codument's
     // fact and never the project's fault, so it must be the project's to set.
-    const resolvedTimeout = resolveTestTimeout(root, options.testTimeout);
+    const resolvedTimeout = resolveTestTimeout(root, options.testTimeout, snapshotRead);
     const { set: realChangeSet, realDeletions } = computeRealChange(
       report,
       report.deletions,
@@ -1371,7 +1371,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // A covering review binds both the reviewed sources AND the tests its findings
     // name; resolveTest locates a finding's test exactly as the runner does, so a
     // tampered or deleted test moves the fingerprint and reopens the gate.
-    const resolveTest = (ref: string) => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS);
+    const resolveTest = (ref: string) => resolveTestPath(root, ref, DEFAULT_TEST_SEARCH_DIRS, snapshotRead);
     // EVERY covering artifact, not the first found: two attestations of one change
     // set can now coexist, and picking one of them would pick a verdict — in the
     // lenient direction, since the loser's findings would go unenforced.
@@ -1396,6 +1396,9 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
             mergeCoveringFindings(covering),
             makeTestRunner({
               root,
+              // Portable review already permits its own reserved transport file
+              // outside the snapshot. It must not disable a committed red test.
+              snapshot: portable && report.boundary ? { ...report.boundary, dirtyOutside: report.boundary.dirtyOutside.filter(path => path !== REVIEW_MANIFEST_PATH) } : report.boundary,
               command: resolvedTest.command,
               timeoutMs: resolvedTimeout.timeoutMs,
             }),

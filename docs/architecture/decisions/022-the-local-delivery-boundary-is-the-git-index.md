@@ -49,9 +49,10 @@ and the ordinary green path has one command instead of a sequence of overlapping
 
 **Bad / accepted:** the workflow stages before review, and a partially staged in-scope file must be
 restaged or reverted before it can be verified. Two actors sharing one index still share one delivery
-boundary—already-staged work is part of the next commit, not background noise. Test execution is not
-made hermetic: a selected test can still observe an unstaged dependency outside the boundary, which
-is disclosed rather than hidden.
+boundary—already-staged work is part of the next commit, not background noise. Tracked test inputs
+follow the index even when working copies differ. Execution is not hermetic: installed dependencies
+remain shared environment, and a missing generated input that prevents test loading is reported as
+unavailable rather than a reproduced assertion failure.
 
 **Compatibility:** CI remains range-based and authoritative. Existing `review`, `doctor`, and report
 surfaces keep their established defaults during the migration; the focused verification command is

@@ -2,7 +2,7 @@
 title: Core library
 status: current
 type: concept
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-14
 ---
 
 # Core library
@@ -44,6 +44,7 @@ Control records have bounded reads, atomic writes and exclusive revision-checked
 Telemetry readers retain valid events alongside explicit empty, partial or unavailable input state.
 Existing event-only consumers keep their compatibility view; capture-aware consumers can disclose
 what that view could not read. [[token-cost-tracking]] owns availability and summary privacy.
+Rebuilding activity does not erase captured usage that incomplete source data cannot reconstruct.
 
 ## Invariants & boundaries
 

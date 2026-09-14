@@ -107,6 +107,66 @@ describe("codument verify", () => {
     await rm(repo, { recursive: true, force: true, maxRetries: 60, retryDelay: 300 });
   });
 
+  it("keeps named-test evidence and execution in the index despite unrelated dirty inputs", async () => {
+    await put(".codument-meta.json", JSON.stringify({ testCommand: "node --test {file}" }));
+    await put("tests/proof.test.cjs", 'const {test}=require("node:test"); const assert=require("node:assert/strict"); test("proof",()=>assert.equal(require("./value.cjs"),1));\n');
+    await put("tests/value.cjs", "module.exports=1;\n");
+    git(["add", "."]);
+    git(["commit", "-qm", "tracked runner and finding test"]);
+    await put("src/a.ts", "export function a(value: string): string { return value; }\n");
+    await put("docs/features/alpha.md", "# Alpha\n\n## Invariants & boundaries\n\n- Returns a string. *(test: tests/proof.test.cjs)*\n");
+    git(["add", "src/a.ts", "docs/features/alpha.md"]);
+    assert.equal(verify().status, 1);
+    const worksheet = JSON.parse(await readFile(join(repo, ".codument/review-worksheet.json"), "utf8"));
+    worksheet.invariantsChecked = ["Selected source and named test checked"];
+    worksheet.signer = "fixture reviewer";
+    worksheet.findings = [{citation: "src/a.ts:1", detail: "Resolved fixture finding", failingTest: "tests/proof.test.cjs", status: "resolved"}];
+    await put(".codument/review-worksheet.json", JSON.stringify(worksheet));
+    const recorded = verify(["--record", ".codument/review-worksheet.json"]);
+    assert.equal(recorded.status, 0, recorded.stdout + recorded.stderr);
+
+    await put("tests/proof.test.cjs", "throw new Error('unstaged test must not run');\n");
+    await put("tests/value.cjs", "module.exports=2;\n");
+    await put(".codument-meta.json", JSON.stringify({ testCommand: "missing-runner {file}" }));
+    assert.equal(verify().status, 0);
+    const detailed = verify(["--json"]);
+    assert.equal(detailed.status, 0, detailed.stdout + detailed.stderr);
+    const result = JSON.parse(detailed.stdout);
+    assert.equal(result.review.covered, true);
+    assert.equal(result.review.confirmUnavailable, undefined, "selected tests actually run");
+    assert.ok(result.ignoredDirtyCount >= 3);
+    assert.match(await readFile(join(repo, "tests/proof.test.cjs"), "utf8"), /unstaged test/);
+    const stagedReview = spawnSync(process.execPath, [CLI, "review", "--staged", "--require-review", "--json"], {cwd:repo, encoding:"utf8"});
+    assert.equal(stagedReview.status, 0, stagedReview.stdout + stagedReview.stderr);
+    assert.equal(JSON.parse(stagedReview.stdout).reviewGate.adjudicated, 1);
+    assert.equal(JSON.parse(stagedReview.stdout).reviewGate.unjudged, 0);
+    git(["add", "tests/proof.test.cjs"]);
+    assert.equal(verify(["--json"]).status, 1, "a staged test change reopens evidence");
+  });
+
+  it("reports missing generated test inputs as unavailable after isolating dirty work", async () => {
+    await put(".gitignore", ".codument/\ndist/\n");
+    await put(".codument-meta.json", JSON.stringify({testCommand:"node --test {file}"}));
+    await put("dist/value.cjs", "module.exports=1;\n");
+    await put("tests/proof.test.cjs", 'const value=require("../dist/value.cjs"); require("node:test").test("value",()=>require("node:assert/strict").equal(value,1));\n');
+    await put("note.txt", "original\n");
+    git(["add", "."]); git(["commit", "-qm", "test with generated environment"]);
+    await put("src/a.ts", "export function a(value: string): string { return value; }\n");
+    await put("docs/features/alpha.md", "# Alpha\n\n## Invariants & boundaries\n- Returns a string. *(test: tests/proof.test.cjs)*\n");
+    git(["add", "src/a.ts", "docs/features/alpha.md"]);
+    verify();
+    const worksheet=JSON.parse(await readFile(join(repo,".codument/review-worksheet.json"),"utf8"));
+    worksheet.invariantsChecked=["Selected source checked"]; worksheet.signer="fixture reviewer";
+    worksheet.findings=[{citation:"src/a.ts:1",detail:"Fixture finding",failingTest:"tests/proof.test.cjs",status:"resolved"}];
+    await put(".codument/review-worksheet.json",JSON.stringify(worksheet));
+    assert.equal(verify(["--record",".codument/review-worksheet.json"]).status,0);
+    await put("note.txt","unrelated dirty note\n");
+    const result=JSON.parse(verify(["--json"]).stdout);
+    assert.equal(result.review.blockingFindings.length,0,"missing generated input is not a reproduced bug");
+    assert.equal(result.review.unjudged,1);
+    assert.match(result.review.confirmUnavailable,/unjudged|advisory|could not|unavailable/i);
+  });
+
   it("passes a trivial staged step in one compact command and writes an exact receipt", async () => {
     await put("src/a.ts", "export function a(): number { return 2; }\n");
     git(["add", "src/a.ts"]);

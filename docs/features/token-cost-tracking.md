@@ -2,7 +2,7 @@
 title: Token cost tracking
 status: current
 type: feature
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-14
 ---
 
 # Token cost tracking
@@ -56,6 +56,10 @@ reported; missing model/rate data remains unpriced. No transcript text or derive
 **Two views, same captured log.** `watch` leads with a verdict and a cost headline (the all-sessions total plus a since-this-run delta and a where-it-went breakdown) and is a live consumer that auto-runs the feed. `cost` prints the complete ledger that the watch top-N omits, sorted by spend, as a pure read that never tails or mutates the log. Its share-percent column uses largest-remainder rounding so it sums to exactly 100 rather than drifting, and a real-but-tiny row reads under one percent rather than a misleading zero.
 
 ## Invariants & boundaries
+
+- Rebuilt activity does not replace captured token evidence when that turn's usage is missing or
+  invalid. Reset preserves the valid counts and partial-capture diagnostics without duplication;
+  valid zero-usage notices still replace stale synthetic events. *(test: `claude-feed.test.ts`)*
 
 - Codex capture requires recorded repository/run identity, rejects conflicting and unsupported inputs, and reads incrementally without persisting transcripts. Explicit completed-turn input needs matching thread identity. Read-only status exposes malformed usage before ingestion. *(test: `codex-feed.test.ts`)*
 - Cumulative and completed-turn usage cannot count the same run twice. Replay, copies, cursor loss, truncation, counter resets and inherited history do not inflate captured usage; ambiguous evidence stays partial. Cache and reasoning subdivisions are never added twice. *(test: `codex-feed.test.ts`)*

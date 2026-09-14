@@ -46,16 +46,18 @@ const sortStrings = (values: Iterable<string>): string[] =>
 const supportsDirectImports = (path: string): boolean =>
   /\.(?:test|spec)\.(?:ts|tsx|mts|cts)$/.test(path);
 
-function resolveChangedPin(reference: string, changedTests: Set<string>): string | null {
+function resolveChangedPin(reference: string, changedTests: Set<string>, readText: TestImpactInput["readText"]): string | null {
   const normalized = normalizeInputPath(reference);
   // The same two locations the invariant runner resolves: an explicit repo path,
   // then the conventional tests/ root. First match wins, so duplicate basenames do
   // not fan one pin out into several invented claims.
-  for (const dir of DEFAULT_TEST_SEARCH_DIRS) {
-    const candidate = dir ? `${dir}/${normalized}` : normalized;
-    if (changedTests.has(candidate)) return candidate;
+  const candidates = DEFAULT_TEST_SEARCH_DIRS.map(dir => dir ? `${dir}/${normalized}` : normalized);
+  if (!candidates.some(candidate => changedTests.has(candidate))) return null;
+  for (const candidate of candidates) {
+    if (readText(candidate) !== null) return changedTests.has(candidate) ? candidate : null;
   }
-  return null;
+  // A surviving pin still identifies deleted evidence when no live candidate resolves.
+  return candidates.find(candidate => changedTests.has(candidate)) ?? null;
 }
 
 function primaryFeaturesForSource(registry: Registry, source: string): string[] {
@@ -96,7 +98,7 @@ export function computeTestImpact(input: TestImpactInput): TestImpact {
     for (const invariant of parseInvariants(doc)) {
       if (invariant.annotation.kind !== "pinned") continue;
       for (const pointer of invariant.annotation.pointers) {
-        const test = resolveChangedPin(pointer.file, changedSet);
+        const test = resolveChangedPin(pointer.file, changedSet, input.readText);
         if (!test) continue;
         const features = pinned.get(test) ?? new Set<string>();
         features.add(feature);

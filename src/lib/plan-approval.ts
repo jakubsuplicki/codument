@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { atomicWriteFileSync } from "./events.js";
@@ -15,7 +16,8 @@ import {
 import { ConfigValueError, readBoundedState, withStateLock } from "./state-io.js";
 import { resolveChangeSet, readChangeSetFile, type ChangeSet } from "./change-set.js";
 import { parsePlanScope } from "./plan-steps.js";
-import { readBlobAtRef } from "./two-ref.js";
+import { readBlobAtRef, EMPTY_TREE_SHA } from "./two-ref.js";
+import { getHeadSha } from "./git.js";
 import { REVIEW_MANIFEST_PATH, parseReviewTransfer } from "./review-transfer.js";
 
 export const APPROVALS_PATH = "docs/.approvals.json";
@@ -277,7 +279,12 @@ export function finalDeliveryFingerprint(
   manifest: string | null = null,
 ): string {
   if (boundary.changes.some((change) => change.path === REVIEW_MANIFEST_PATH)) {
-    if (manifest === null) throw new ConfigValueError(REVIEW_MANIFEST_PATH, "final delivery", "the reserved manifest must contain valid review evidence");
+    if (manifest === null)
+      throw new ConfigValueError(
+        REVIEW_MANIFEST_PATH,
+        "final delivery",
+        "the reserved manifest must contain valid review evidence",
+      );
     parseReviewTransfer(manifest);
   }
   const canonical = structuredClone(store);
@@ -287,7 +294,9 @@ export function finalDeliveryFingerprint(
     .update(
       JSON.stringify([
         boundary.bases,
-        boundary.changes.filter((change) => change.path !== APPROVALS_PATH && change.path !== REVIEW_MANIFEST_PATH),
+        boundary.changes.filter(
+          (change) => change.path !== APPROVALS_PATH && change.path !== REVIEW_MANIFEST_PATH,
+        ),
         canonical,
       ]),
     )
@@ -312,7 +321,11 @@ export function finalApprovalForBoundary(
   const previous = parseApprovalStore(readBlobAtRef(root, boundary.bases[0].sha, APPROVALS_PATH));
   const matches = candidates.filter((record) => {
     const final = record.finalDelivery!;
-    if (previous.records.find((row) => row.planId === record.planId)?.finalDelivery?.fingerprint === final.fingerprint) return false;
+    if (
+      previous.records.find((row) => row.planId === record.planId)?.finalDelivery?.fingerprint ===
+      final.fingerprint
+    )
+      return false;
     if (
       boundary.mode === "range" &&
       !boundary.changes.some((change) => change.path === APPROVALS_PATH)
@@ -329,7 +342,14 @@ export function finalApprovalForBoundary(
     )
       return false;
     // A narrower range after final delivery must not inherit an archived approval.
-    return finalDeliveryFingerprint(selected, store, record.planId, readChangeSetFile(root, selected, REVIEW_MANIFEST_PATH)) === final.fingerprint;
+    return (
+      finalDeliveryFingerprint(
+        selected,
+        store,
+        record.planId,
+        readChangeSetFile(root, selected, REVIEW_MANIFEST_PATH),
+      ) === final.fingerprint
+    );
   });
   if (matches.length > 1)
     throw new ConfigValueError(
@@ -360,6 +380,47 @@ export function retainedPlanMarkdown(record: PlanApprovalRecord): string {
   return identifyPlan(record.contract, record.planId);
 }
 
+/** A tracked final binding is consumed by its matching reachable delivery, even
+ * when a normal Git commit interrupted the local readiness bookkeeping. */
+export function finalApprovalWasDelivered(root: string, record: PlanApprovalRecord): boolean {
+  const final = record.finalDelivery;
+  const head = final ? getHeadSha(root) : null;
+  if (!final || !head || head === final.base) return false;
+  const commits = execFileSync(
+    "git",
+    [
+      "rev-list",
+      "--max-count=257",
+      final.base === EMPTY_TREE_SHA ? head : `${final.base}..${head}`,
+    ],
+    {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+      maxBuffer: 1024 * 1024,
+    },
+  )
+    .trim()
+    .split(/\r?\n/)
+    .filter(Boolean);
+  for (const commit of commits.slice(0, 256)) {
+    const boundary = resolveChangeSet(root, { mode: "range", base: final.base, head: commit });
+    const archived = finalApprovalForBoundary(root, boundary, {
+      plan: record.path,
+      planId: record.planId,
+    });
+    if (archived?.digest === record.digest) return true;
+  }
+  if (commits.length > 256)
+    throw new ConfigValueError(
+      record.path,
+      "final delivery",
+      "delivery history exceeds the recovery window; inspect the recorded base before retrying",
+    );
+  return false;
+}
+
 /** Called after saving approved recovery context, compacting the plan, and staging the final slice. */
 export function prepareFinalDelivery(
   root: string,
@@ -384,6 +445,12 @@ export function prepareFinalDelivery(
         path,
         "approval",
         "selected approval changed; record the required human approval before final delivery",
+      );
+    if (finalApprovalWasDelivered(root, record))
+      throw new ConfigValueError(
+        path,
+        "final delivery",
+        "this approved final boundary was already delivered; use work finish to reconcile it and a newly approved plan for later work",
       );
     const recovery = readBoundedState(join(root, ".codument/pending-plans", path));
     if (
@@ -413,7 +480,10 @@ export function prepareFinalDelivery(
         "compact and stage the durable plan document before preparing final delivery",
       );
     const manifest = readChangeSetFile(root, boundary, REVIEW_MANIFEST_PATH);
-    if (record.finalDelivery?.fingerprint === finalDeliveryFingerprint(boundary, store, planId, manifest))
+    if (
+      record.finalDelivery?.fingerprint ===
+      finalDeliveryFingerprint(boundary, store, planId, manifest)
+    )
       return record;
     store.revision++;
     record.finalDelivery = {

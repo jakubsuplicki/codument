@@ -2,7 +2,7 @@
 title: Plan approval
 status: current
 type: feature
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-11
 ---
 
 # Plan approval
@@ -30,6 +30,8 @@ the approved contract. Its own binding payload and a schema-valid reserved revie
 excluded from its digest so portable review can accompany the delivery without circular hashing.
 Approval contracts and all other changes remain covered. A later change cannot inherit archived permission.
 Preparation precedes final review, and corrections require preparing and verifying the boundary again.
+A matching final commit consumes that approval even when local readiness bookkeeping was interrupted.
+Later work needs its own approved plan; preparing again cannot reopen the delivered identity.
 
 ## Invariants & boundaries
 
@@ -54,6 +56,8 @@ Preparation precedes final review, and corrections require preparing and verifyi
 - Final approval remains verifiable from tracked data after compaction, including a fresh clone and
   a broader review range. Changed delivery content invalidates it; an archived identity cannot
   authorize new work. *(test: `work.test.ts`)*
+- A direct commit cannot leave final approval reusable through stale local state. Preparation checks
+  reachable committed delivery before changing its binding. *(test: `work.test.ts`)*
 - Compaction removes only the selected section and preserves sibling plans. Restoring an archived
   unchecked checklist grants no execution, while saved pending delivery can resume for corrections.
   *(test: `work.test.ts`)*

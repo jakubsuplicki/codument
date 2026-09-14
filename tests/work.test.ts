@@ -50,12 +50,81 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe("work approval CLI", () => {
+  it("consumes verified final approval when a direct commit skips readiness bookkeeping", () => {
+    put(".codument-meta.json", '{"requireBoundApproval":true}\n');
+    assert.equal(cli("work", "approve", "--plan", path).status, 0);
+    git("add", path, "docs/.approvals.json", ".codument-meta.json");
+    git("commit", "-qm", "approval");
+    assert.equal(cli("work", "start", "--plan", path).status, 0);
+    put(
+      `.codument/pending-plans/${path}`,
+      readFileSync(join(root, path), "utf8").replace("- [ ]", "- [x]"),
+    );
+    put(path, "# Alpha\n\n## In plain terms\nReturns the updated value.\n");
+    put("src/alpha.ts", "export const alpha = 2;\n");
+    git("add", path, "src/alpha.ts");
+    assert.equal(cli("work", "finish", "--prepare-final").status, 0);
+    git("add", "docs/.approvals.json");
+    assert.match(cli("verify").stdout, /REVIEW REQUIRED/);
+    const worksheetPath = ".codument/review-worksheet.json";
+    const worksheet = JSON.parse(readFileSync(join(root, worksheetPath), "utf8"));
+    worksheet.invariantsChecked = [
+      "The synthetic final contract and exact staged boundary were reviewed",
+    ];
+    worksheet.signer = "fixture reviewer";
+    put(worksheetPath, JSON.stringify(worksheet));
+    const verified = cli("verify", "--record", worksheetPath);
+    assert.equal(verified.status, 0, verified.stdout + verified.stderr);
+    const localBefore = readFileSync(join(root, ".codument/work-state.json"), "utf8");
+    const approvalBefore = readFileSync(join(root, "docs/.approvals.json"), "utf8");
+    git("commit", "-qm", "final delivery before readiness bookkeeping");
+    put("later.txt", "Unrelated later work\n");
+    git("add", "later.txt");
+    git("commit", "-qm", "later unrelated work");
+    put("src/alpha.ts", "export const alpha = 3;\n");
+    put(path, "# Alpha\n\n## In plain terms\nReturns a later value.\n");
+    git("add", path, "src/alpha.ts");
+    const refused = cli("work", "finish", "--prepare-final");
+    assert.equal(refused.status, 1);
+    assert.match(refused.stdout + refused.stderr, /already delivered/);
+    assert.equal(readFileSync(join(root, "docs/.approvals.json"), "utf8"), approvalBefore);
+    const inspected = cli("work", "status", "--json");
+    assert.equal(JSON.parse(inspected.stdout).selected.status, "completed");
+    assert.equal(
+      readFileSync(join(root, ".codument/work-state.json"), "utf8"),
+      localBefore,
+      "status remains read-only",
+    );
+    assert.equal(cli("work", "finish").status, 0);
+    assert.match(git("diff", "--cached", "--name-only"), /src\/alpha.ts/);
+    assert.equal(cli("work", "resume", "--plan", path).status, 1);
+    assert.equal(
+      cli("verify", "--plan", path).status,
+      1,
+      "the archived plan cannot authorize later staged work",
+    );
+
+    // The committed approval freezes permission even when review evidence was
+    // lost, but it must never manufacture verified completion from approval alone.
+    put(".codument/work-state.json", localBefore);
+    const receiptPath = join(root, ".git/codument/verify-receipt.json");
+    rmSync(receiptPath, { force: true });
+    const missing = JSON.parse(cli("work", "status", "--json").stdout);
+    assert.notEqual(missing.selected.status, "completed");
+    assert.match(missing.issues.join(" "), /verification evidence/);
+    assert.equal(cli("work", "finish").status, 1);
+    assert.equal(cli("work", "finish", "--prepare-final").status, 1);
+  });
+
   it("keeps working-tree views available after an unstaged final correction", () => {
     assert.equal(cli("work", "approve", "--plan", path).status, 0);
     git("add", path, "docs/.approvals.json");
     git("commit", "-qm", "approval");
     assert.equal(cli("work", "start", "--plan", path).status, 0);
-    put(`.codument/pending-plans/${path}`, readFileSync(join(root, path), "utf8").replace("[ ]", "[x]"));
+    put(
+      `.codument/pending-plans/${path}`,
+      readFileSync(join(root, path), "utf8").replace("[ ]", "[x]"),
+    );
     put(path, "# Alpha\n\n## In plain terms\nReturns the updated value.\n");
     put("src/alpha.ts", "export const alpha = 2;\n");
     git("add", path, "src/alpha.ts");
@@ -64,7 +133,10 @@ describe("work approval CLI", () => {
     put("src/alpha.ts", "export const alpha = 3;\n");
     const review = cli("review", "--json");
     assert.equal(JSON.parse(review.stdout).plan, null, review.stdout + review.stderr);
-    for (const args of [["report", "--json"], ["watch", "--once", "--no-feed"]]) {
+    for (const args of [
+      ["report", "--json"],
+      ["watch", "--once", "--no-feed"],
+    ]) {
       const projected = cli(...args);
       assert.equal(projected.status, 0, projected.stdout + projected.stderr);
     }

@@ -2,7 +2,7 @@
 title: Agent work state
 status: current
 type: feature
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-11
 ---
 
 # Agent work state
@@ -29,6 +29,9 @@ Checklist, context, mapping and verification commands share selected work; an ex
 another plan grants no execution. The live monitor displays saved interruption and pending gates.
 Final compaction retains approval in tracked data and binds it to the exact final delivery. Recovery
 notes remain local context, so a fresh checkout can verify delivery without them.
+A direct commit made before readiness was saved can still reconcile final completion from matching
+verification and committed delivery. Consumed approval alone never substitutes for missing review
+evidence; missing or mismatched evidence requires recovery and cannot reopen permission.
 
 ## Invariants & boundaries
 
@@ -52,6 +55,9 @@ notes remain local context, so a fresh checkout can verify delivery without them
 - An interruption before final preparation resumes only already-saved work whose recovery context
   matches the tracked approval. Explicit same-path resume preserves its saved section identity.
   Modified recovery scope cannot authorize continuation. *(test: `work.test.ts`)*
+- Final delivery committed before local readiness was saved reconciles from its matching receipt,
+  including after later unrelated commits, without touching newer staged work. Lost verification
+  evidence is reported instead of manufacturing completion. *(test: `work.test.ts`)*
 
 ## Decisions
 

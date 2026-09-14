@@ -32,6 +32,7 @@ import {
   prepareFinalDelivery,
   approvalDigest,
   retainedPlanMarkdown,
+  finalApprovalWasDelivered,
 } from "./plan-approval.js";
 
 export const WORK_STATE_PATH = ".codument/work-state.json";
@@ -246,6 +247,51 @@ function committedStep(root: string, record: WorkRecord, commit: string): number
   return activeStep(steps)?.n ?? null;
 }
 
+/** Recover the verified readiness that a direct commit skipped persisting. The
+ * final approval proves consumption; only its matching receipt proves review. */
+function reconcileInterruptedFinal(root: string, record: WorkRecord): boolean {
+  if (record.delivery) return false; // Existing readiness follows its established proof path.
+  const approval = readApprovalStore(root).records.find(
+    (row) =>
+      row.path === record.path &&
+      row.planId === record.planId &&
+      row.digest === record.approvalDigest,
+  );
+  if (!approval || !finalApprovalWasDelivered(root, approval)) return false;
+  const receiptPath = getGitPath(root, "codument/verify-receipt.json");
+  const raw = receiptPath ? readBoundedState(receiptPath) : null;
+  let receipt: ReturnType<typeof parseVerificationReceipt> = null;
+  try {
+    if (raw) receipt = parseVerificationReceipt(JSON.parse(raw));
+  } catch {
+    /* Named recovery error below. */
+  }
+  if (
+    !receipt ||
+    !["staged", "explicit-staged"].includes(receipt.boundary.mode) ||
+    !verificationReceiptCovers(receipt, receipt.boundary, version, {
+      path: record.path,
+      planId: record.planId,
+      digest: record.approvalDigest,
+    })
+  )
+    throw invalid(
+      "final approval was already delivered, but matching verification evidence is unavailable; preserve the committed boundary and recover its review evidence before finishing",
+    );
+  const commit = delivered(root, receipt.boundary);
+  if (!commit || committedStep(root, { ...record, delivery: receipt.boundary }, commit) !== null)
+    throw invalid(
+      "final approval was already delivered, but its saved verification does not match; recover the committed delivery evidence before finishing",
+    );
+  record.status = "completed";
+  record.step = null;
+  record.nextGate = "implement";
+  record.reason = null;
+  record.resumeCondition = null;
+  record.delivery = null;
+  return true;
+}
+
 /** Reconcile observations in the returned projection without rewriting local state. */
 export function inspectWorkState(root: string): WorkInspection {
   const state = readWorkState(root);
@@ -255,6 +301,7 @@ export function inspectWorkState(root: string): WorkInspection {
   const issues: string[] = [];
   if (current.status !== "superseded" && current.status !== "completed") {
     try {
+      if (reconcileInterruptedFinal(root, current)) return { state, selected: current, issues };
       const plan = loadWorkPlan(root, current.path, current.planId);
       if (!plan?.approved || plan.approval?.digest !== current.approvalDigest)
         issues.push(
@@ -307,6 +354,7 @@ function approvedSelection(root: string, options: WorkOptions, fallback?: WorkRe
 }
 
 function resumeRecord(root: string, record: WorkRecord, plan: ActivePlan): void {
+  if (reconcileInterruptedFinal(root, record)) return;
   let completed = false;
   if (record.approvalDigest !== plan.approval!.digest) {
     record.delivery = null;
@@ -575,24 +623,26 @@ export function transitionWork(root: string, action: WorkAction, options: WorkOp
           throw invalid("the plan has already been delivered");
         resumeRecord(root, current, plan);
       } else if (action === "finish") {
-        if (current.status !== "active" && current.status !== "ready")
-          throw invalid("resume interrupted work before marking it ready");
-        const plan = approvedSelection(root, options, current);
-        if (current.approvalDigest !== plan.approval!.digest)
-          throw invalid(
-            "approval changed; explicitly resume the revised plan before finishing work",
-          );
-        if (current.delivery && delivered(root, current.delivery)) {
-          resumeRecord(root, current, plan);
-          if (current.step === null) current.status = "completed";
-        } else {
-          if (current.step === null || !plan.steps.find((step) => step.n === current!.step)?.done)
-            throw invalid("the selected delivery step is not complete");
-          current.delivery = verifiedDelivery(root, plan, current.step);
-          current.status = "ready";
-          current.nextGate = "commit";
-          current.reason = "Verified step is ready; commit is still pending.";
-          current.resumeCondition = "Commit the verified staged boundary.";
+        if (!reconcileInterruptedFinal(root, current)) {
+          if (current.status !== "active" && current.status !== "ready")
+            throw invalid("resume interrupted work before marking it ready");
+          const plan = approvedSelection(root, options, current);
+          if (current.approvalDigest !== plan.approval!.digest)
+            throw invalid(
+              "approval changed; explicitly resume the revised plan before finishing work",
+            );
+          if (current.delivery && delivered(root, current.delivery)) {
+            resumeRecord(root, current, plan);
+            if (current.step === null) current.status = "completed";
+          } else {
+            if (current.step === null || !plan.steps.find((step) => step.n === current!.step)?.done)
+              throw invalid("the selected delivery step is not complete");
+            current.delivery = verifiedDelivery(root, plan, current.step);
+            current.status = "ready";
+            current.nextGate = "commit";
+            current.reason = "Verified step is ready; commit is still pending.";
+            current.resumeCondition = "Commit the verified staged boundary.";
+          }
         }
       }
       current.updatedAt = now;

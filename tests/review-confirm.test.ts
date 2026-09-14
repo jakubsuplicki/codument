@@ -170,6 +170,12 @@ describe("makeTestRunner — exit code maps to outcome", () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
+  it("keeps a real assertion red alongside loader-like diagnostics", () => {
+    writeFileSync(join(tmp, "mixed.test.cjs"), 'console.error("Error: Cannot find module optional-fixture"); require("node:test").test("actual assertion",()=>require("node:assert/strict").equal(2,1));\n');
+    const result=makeTestRunner({root:tmp,command:["node","--test","{file}"]})("mixed.test.cjs");
+    assert.equal(result.outcome,"failed");
+  });
+
   // Deterministic, fast: drive the runner with `node -e` instead of a real test
   // runner, so we exercise the exit-code → outcome mapping without npx/tsx.
   it("exit 0 → passed", () => {

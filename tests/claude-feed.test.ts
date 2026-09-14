@@ -12,6 +12,7 @@ import {
   backfillFeed,
   resetFeed,
   normalizeModelId,
+  discoverSessionLogs,
   type FeedContext,
 } from "../src/lib/claude-feed.js";
 import { costOf } from "../src/lib/token-cost.js";
@@ -855,6 +856,45 @@ describe("resetFeed (rebuild feed-sourced events at current normalization)", () 
     assert.deepEqual(summarizeTokens(readAllEvents(root)).totals, before);
     resetFeed(root, home);
     assert.deepEqual(summarizeTokens(readAllEvents(root)).totals, before);
+  });
+
+  it("preserves valid usage when rebuilt activity has missing or invalid usage", async () => {
+    const original = JSON.parse(rec("retained"));
+    original.message.content = [{ type: "tool_use", name: "Read", input: { file_path: join(root, "src/a.ts") } }];
+    const valid = JSON.stringify(original) + "\n";
+    await writeFile(log, valid);
+    pumpFeed(root, home);
+    for (const usage of [undefined, { input_tokens: -1, output_tokens: 1 }, { input_tokens: 1.5, output_tokens: 2 }, { input_tokens: 7, output_tokens: "bad" }]) {
+      for (const padding of ["", "x".repeat(valid.length)]) {
+        const damaged = structuredClone(original);
+        damaged.message.usage = usage;
+        damaged.padding = padding;
+        await writeFile(log, JSON.stringify(damaged) + "\n");
+        for (let repeat = 0; repeat < 2; repeat++) {
+          resetFeed(root, home);
+          const events = readAllEvents(root);
+          assert.equal(events.filter(e => e.type === "read").length, 1);
+          const tokens = events.filter(e => e.type === "tokens");
+          assert.equal(tokens.length, 1, "incomplete activity must not supersede captured usage");
+          assert.equal(tokens[0].data?.input, 1000);
+          assert.equal(tokens[0].data?.output, 200);
+          assert.ok(discoverSessionLogs(root, home).truncated > 0, "partial evidence remains visible");
+        }
+      }
+    }
+    await writeFile(log, valid);
+    resetFeed(root, home);
+    assert.equal(readAllEvents(root).filter(e => e.type === "tokens").length, 1);
+    const incomplete = structuredClone(original);
+    delete incomplete.message.usage;
+    await writeFile(log, JSON.stringify(incomplete) + "\n" + valid);
+    for (let repeat = 0; repeat < 2; repeat++) {
+      resetFeed(root, home);
+      const tokens = readAllEvents(root).filter(e => e.type === "tokens");
+      assert.equal(tokens.length, 1, "a skipped duplicate did not reconstruct token evidence");
+      assert.equal(tokens[0].data?.input, 1000);
+      assert.equal(readAllEvents(root).filter(e => e.type === "read").length, 1);
+    }
   });
 
   it("never imports a foreign transcript merely because an old cursor names it", async () => {

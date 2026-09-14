@@ -45,6 +45,22 @@ function reader(files: Record<string, string>): (path: string) => string | null 
 }
 
 describe("computeTestImpact", () => {
+  it("resolves an unchanged root pin before attributing a changed duplicate basename", () => {
+    const impact = computeTestImpact({
+      changedPaths: ["tests/shared.test.ts"],
+      registry: registry(),
+      readText: reader({
+        "docs/features/alpha.md": "## Invariants & boundaries\n\n- Alpha stays stable. *(test: shared.test.ts)*\n",
+        "shared.test.ts": "// The actual invariant test is unchanged.\n",
+        "tests/shared.test.ts": 'import { beta } from "../src/beta.js";\n',
+      }),
+    });
+    assert.deepEqual(impact.attributed, [
+      { test: "tests/shared.test.ts", feature: "beta", via: "direct-import" },
+    ]);
+    assert.deepEqual(impact.dependents, []);
+  });
+
   it("treats an explicit invariant pin as authoritative over imports", () => {
     const files = {
       "docs/features/alpha.md":

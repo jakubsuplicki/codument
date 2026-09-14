@@ -2,7 +2,7 @@
 title: Adversarial review gate
 status: in-progress
 type: feature
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-14
 ---
 
 # Adversarial review gate
@@ -30,6 +30,10 @@ boundary-fingerprint match. A review from another staged set can help scope a la
 can never clear that later gate.
 
 The bundle supplies the documented invariants, test references, plan, and ownership facts that the reviewer attacks. It introduces no separate source of truth.
+
+Finding-test resolution, recorded content and runner configuration use the review's selected
+snapshot. Dirty working inputs are isolated for staged reproduction, without changing the user's
+files. Missing environment inputs remain named limitations rather than invented test results.
 
 Portable evidence carries every covering attestation for an explicitly reviewed complete repository
 range. Reviewers can inspect the full branch through its staged endpoint before the final commit;

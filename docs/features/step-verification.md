@@ -2,7 +2,7 @@
 title: Focused step verification
 status: current
 type: feature
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-14
 ---
 
 # Focused step verification
@@ -42,7 +42,17 @@ supported direct imports are a fallback signal; an unattributed test is named ra
 Test changes participate in impact and review invalidation but never wake a doc or require registry
 ownership.
 
+Named finding tests and runner configuration follow the selected snapshot too. When working inputs
+differ, reproduction uses a temporary indexed checkout with installed dependencies available. It
+never rewrites the user's files; missing untracked or generated runner inputs are reported as
+unavailable. Reproduction in a dirty aggregate workspace requires selecting one repository.
+
 ## Invariants & boundaries
+
+- A pin resolves against existing snapshot candidates before changed-test attribution; an unchanged
+  root test cannot lend its contract to a changed duplicate basename. *(test: `test-impact.test.ts`)*
+- Unstaged edits to a named test, its tracked imports or runner settings cannot change staged
+  evidence or compact/detailed verdicts; a staged edit still reopens review. *(test: `verify.test.ts`)*
 
 - An explicit aggregate review can select the full branch through the index and retain coverage
   after identical bytes commit. It includes earlier branch changes, rejects overlapping worktree

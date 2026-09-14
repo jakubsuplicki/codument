@@ -2,7 +2,7 @@
 title: Change-control gate
 status: current
 type: feature
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-14
 ---
 
 # Change-control gate
@@ -49,6 +49,10 @@ outside the report. Explicit invariant pins and supported direct TypeScript impo
 to registry features, and those features enter the same dependency projection as source impact.
 Unattributed tests remain named, so the detailed human and JSON surfaces expose the blind spot
 without manufacturing a prose obligation.
+
+Named finding tests follow the same selected snapshot for resolution, content and reproduction.
+Unrelated working-tree edits cannot replace the test or its tracked runner inputs; unavailable
+reproduction environments remain visible. [[step-verification]] owns the execution boundary.
 
 Compact verification is a projection of this same engine, not a second gate. It reuses the
 boundary-scoped registry, exclusions, real-change set, review oracle, and detailed renderer, so its

@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "binding": {
+    "base": "95143fed3a71fbe8689bd5c8b4cb6681779738d6",
+    "content": "fec366981abb8178480926e62861ded67e90b7b49e58908af8649a8daea1293c",
+    "policy": "0d372d4fcc2291603b9a4b282ca9c16d9fe8c740a06c74eea632c1d5fdf4c87b",
+    "oracle": "54d58d9bdfd6c7b56e95ebe3d002580401fa629f43ea2e0f8b7b3451d1e8a95e",
+    "approval": {
+      "path": "docs/features/agent-delivery-workflow.md",
+      "planId": "54b28b08-1809-4e11-9c72-ad96a880cc09",
+      "digest": "047fbce3e7cb03f7db1016d3d31a02cf988b1570247914f8463001fff8b41b7e"
+    }
+  },
+  "attestations": [
+    {
+      "id": "9cced093cd0917f3b9757008a9a9c7332dfbf0da03accdc940dffe84322edf90",
+      "source": "83b82d780c04c430c66c55af21abb115895e3e40ad433082ff334447f2a1d170",
+      "reviewer": "Independent reviewer /root/corrected_delivery_review with fresh feeds_review and transport_review agents",
+      "checked": [
+        "0d7e843c6b348c0ff655ba7f3cb2d3fd090f6439fd3b23968802588ab7386a4e",
+        "1391370ee9b08073575e17fbbd1f5fe707722ef11b1ca66f56e25e7f0b6fbb88",
+        "1cd0c6d27c8fba0626a49ae30a2361bc89f9c3dd37f3b438d0006b0b9d3b98d5",
+        "341ad58c588d4a95842372e1be6959af4d096a0d30e4051849a37840a78ab1bd",
+        "3fbf1be26c0ffdf11d610541d4015d3571c05005b6d54d056b33f142f861089f",
+        "9598b4ad475a954da5ee1910e607fb7deedff45b96f0a670798b50898cb9b372",
+        "c74011af10929c9e675d76573489c4e845ab85a3f8aa073bc62f40f60dd6eefc",
+        "cdc9cd7cb0211c14d706be124d7e2e23ce44313cdf54e1df7005a1bbb7660f08",
+        "d12e884813f2a86b1d2d1e45017e282fdaf74bb39ce89af56ec714eca6685dec",
+        "df7e6891c890ecce224aa941e142b3fafdb98edb242776c548d089ae1ecf9217",
+        "e19d617a6ed3b3f19203cb7b22dc8af0ccbf15c257c1b8ff07f6b199d6cc70f6",
+        "ef2ec22e5caff20eec03900b613b8aeb88b1efba00e58f155daa9e5185ae0d3b",
+        "f5c1c8c0d9907491455c31fadd9a2e15ca73a5b03fdbcbc4d6f4c173d4795e95"
+      ],
+      "findings": [
+        {
+          "id": "ecd3d203a096288743d976331ec5508e154dc7d68e114179b362d86a52236526",
+          "test": "tests/claude-feed.test.ts",
+          "disposition": "resolved"
+        },
+        {
+          "id": "440d772796c6e77ad43a972ac30ef798fcbda8fb89d4a6160fb1b063e6b69100",
+          "test": "tests/verify.test.ts",
+          "disposition": "resolved"
+        },
+        {
+          "id": "9d1f82440e7fb5ad494c7ebb09ce28bae23da62e7b4b03fb9aa811c4bc47d932",
+          "test": "tests/test-impact.test.ts",
+          "disposition": "resolved"
+        },
+        {
+          "id": "2aeb3f7c0e96060c0ed28945b446155307c69b0e329d71bb270f908fbcb485b0",
+          "test": "tests/verify.test.ts",
+          "disposition": "resolved"
+        },
+        {
+          "id": "a0f6bc60b1867a1435682a2d2c0695b347895e29d8da8925f515b20f0c52a94a",
+          "test": "tests/review-transfer.test.ts",
+          "disposition": "resolved"
+        },
+        {
+          "id": "d724b9ff15a1a72a2c5904524c5a0c0d7892ea752def2a9f63f2459d199ffeed",
+          "test": "tests/work.test.ts",
+          "disposition": "resolved"
+        }
+      ]
+    }
+  ],
+  "tests": [
+    {
+      "reference": "tests/claude-feed.test.ts",
+      "path": "tests/claude-feed.test.ts",
+      "digest": "24b7e7c22f0d1bda9037bc1ce1080068e7b821cc78c89e4ff24b304929fde9c6"
+    },
+    {
+      "reference": "tests/review-transfer.test.ts",
+      "path": "tests/review-transfer.test.ts",
+      "digest": "79f54cd4fbb9bacf2fbb49a32759b7cbdb5ebddc1b49a8d621afd0e7da3725d6"
+    },
+    {
+      "reference": "tests/test-impact.test.ts",
+      "path": "tests/test-impact.test.ts",
+      "digest": "444ca357a928dad1e8c2277c046b02cebe2f148e689ed6f9a7646aef2040c216"
+    },
+    {
+      "reference": "tests/verify.test.ts",
+      "path": "tests/verify.test.ts",
+      "digest": "fa7403d2b945890d1a3d6afeb2a18b750e5910abb6dcfdabbb94385733ecb3bc"
+    },
+    {
+      "reference": "tests/work.test.ts",
+      "path": "tests/work.test.ts",
+      "digest": "f9b20fb2b7d936710cf1734f03507b9e63b80dafb1bf3b9234ae90d6becb7212"
+    }
+  ],
+  "attribution": "self-reported",
+  "digest": "95f8cf8537f52e0d50a79854cd8bc59f02d8713f895eb1a2cd09c378205b009f"
+}

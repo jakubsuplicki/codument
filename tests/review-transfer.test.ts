@@ -50,6 +50,22 @@ function fixture() {
 }
 
 describe("portable review CLI", () => {
+  it("keeps a committed red test confirmed when its valid manifest is untracked", () => {
+    const f=fixture();
+    try {
+      f.put("src/alpha.ts", "export const alpha = 2;\n");
+      f.put("tests/alpha.test.cjs", 'require("node:test").test("red",()=>require("node:assert/strict").equal(2,1));\n');
+      f.git("add", "."); f.git("commit", "-qm", "reviewed change");
+      const flags=["--base",f.base,"--committed"];
+      f.record(flags,[{citation:"src/alpha.ts:1",detail:"Fixture red",failingTest:"tests/alpha.test.cjs",status:"resolved"}]);
+      assert.equal(f.run("review",...flags,"--require-review").status,1);
+      f.ok("review",...flags,"--export",".codument-review.json");
+      const result=f.run("review",...flags,"--review-file",".codument-review.json","--require-review","--json");
+      assert.equal(result.status,1,result.stdout+result.stderr);
+      assert.equal(JSON.parse(result.stdout).reviewGate.blockingFindings.length,1);
+      assert.equal(JSON.parse(result.stdout).reviewGate.unjudged,0);
+    } finally {f.dispose();}
+  });
   it("runs both shipped CI recipes in fresh checkouts and refuses missing or stale evidence", () => {
     const f = fixture();
     try {

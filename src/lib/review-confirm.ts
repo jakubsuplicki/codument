@@ -1,10 +1,13 @@
 import {
   spawnSync,
+  execFileSync,
   type SpawnSyncOptionsWithStringEncoding,
   type SpawnSyncReturns,
 } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
-import { delimiter, join, resolve, sep } from "node:path";
+import { existsSync, realpathSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { delimiter, join, resolve, sep, relative } from "node:path";
+import { tmpdir } from "node:os";
+import { readChangeSetFile, type ChangeSet } from "./change-set.js";
 import { readMetaSync } from "./codemod.js";
 import type { ReviewFinding, ReviewFindingStatus } from "./review-artifact.js";
 
@@ -170,6 +173,13 @@ export interface TestRunnerOptions {
   timeoutMs?: number;
   /** Directories to resolve a bare test name against (default repo root + tests). */
   searchDirs?: readonly string[];
+  /** A selected Git snapshot; dirty working inputs must not enter reproduction. */
+  snapshot?: ChangeSet;
+}
+
+type SnapshotRead = (path: string) => string | null;
+function runnerMeta(root: string, readText?: SnapshotRead): ReturnType<typeof readMetaSync> {
+  return readText ? JSON.parse(readText(".codument-meta.json") ?? "null") : readMetaSync(root);
 }
 
 // `--no-install` makes the default resolution LOCAL-ONLY: the verdict path must
@@ -398,13 +408,13 @@ export interface ResolvedTestCommand {
  * problem — it does not throw, because `readMetaSync` runs on nearly every command
  * path and a typo here must not break `scan` or `doctor`.
  */
-export function resolveTestCommand(root: string, flag?: readonly string[]): ResolvedTestCommand {
+export function resolveTestCommand(root: string, flag?: readonly string[], readText?: SnapshotRead): ResolvedTestCommand {
   const fromFlag = normalizeTestCommand(flag);
   if (fromFlag) return { command: fromFlag, problem: null };
 
   let declared: string | undefined;
   try {
-    declared = readMetaSync(root)?.testCommand;
+    declared = runnerMeta(root, readText)?.testCommand;
   } catch {
     // A malformed meta file is reported by the commands that validate it; the
     // runner degrades to its default rather than adding a second failure mode.
@@ -467,7 +477,7 @@ export interface ResolvedTestTimeout {
  * silently obeyed: a budget of zero or less would make every test read unrunnable, which
  * is a silent always-green — the precise failure this gate exists to prevent.
  */
-export function resolveTestTimeout(root: string, flag?: string | number): ResolvedTestTimeout {
+export function resolveTestTimeout(root: string, flag?: string | number, readText?: SnapshotRead): ResolvedTestTimeout {
   const fallbackMs = DEFAULT_TEST_TIMEOUT_SECONDS * 1000;
   const settle = (parsed: number | string): ResolvedTestTimeout =>
     typeof parsed === "number"
@@ -483,7 +493,7 @@ export function resolveTestTimeout(root: string, flag?: string | number): Resolv
   }
   let declared: unknown;
   try {
-    declared = readMetaSync(root)?.testTimeoutSeconds;
+    declared = runnerMeta(root, readText)?.testTimeoutSeconds;
   } catch {
     // Same degrade as the command resolver: a malformed meta file is reported by the
     // commands that validate it, and must not add a second failure mode here.
@@ -518,8 +528,18 @@ export function resolveTestPath(
   root: string,
   testRef: string,
   searchDirs: readonly string[],
+  readText?: SnapshotRead,
 ): string | null {
   const rootAbs = resolve(root);
+  if (readText) {
+    for (const dir of searchDirs) {
+      const candidate = resolve(rootAbs, dir, testRef);
+      if (!candidate.startsWith(rootAbs + sep)) continue;
+      const path = relative(rootAbs, candidate).replace(/\\/g, "/");
+      if (readText(path) !== null) return candidate;
+    }
+    return null;
+  }
   // Canonicalize the root once so the symlink re-check compares realpaths.
   let rootReal: string;
   try {
@@ -606,14 +626,15 @@ const TEST_FAILED = /^\s*not ok\b/m;
 // and map the result. A missing file, a spawn error, or a kill/timeout is
 // `unrunnable` (never a pass); exit 0 is `passed`; any nonzero exit is `failed`.
 export function makeTestRunner(opts: TestRunnerOptions): TestRunner {
+  const readText = opts.snapshot ? (path: string) => readChangeSetFile(opts.root, opts.snapshot!, path) : undefined;
   // Resolution lives HERE, not at each call site: `invariantProbes` and any future
   // consumer take an optional command, so a caller that omits it must still get the
   // project's declared runner rather than silently falling back to codument's own.
-  const command = opts.command ?? resolveTestCommand(opts.root).command ?? DEFAULT_TEST_COMMAND;
+  const command = opts.command ?? resolveTestCommand(opts.root, undefined, readText).command ?? DEFAULT_TEST_COMMAND;
   const searchDirs = opts.searchDirs ?? DEFAULT_TEST_SEARCH_DIRS;
   // Resolved here for the same reason the command is: a caller that omits the budget
   // must get the PROJECT's, not codument's own guess about how slow its tests are.
-  const timeout = opts.timeoutMs ?? resolveTestTimeout(opts.root).timeoutMs;
+  const timeout = opts.timeoutMs ?? resolveTestTimeout(opts.root, undefined, readText).timeoutMs;
   // Spawn the child in a clean env (see cleanNodeTestEnv) so its verdict is a pure
   // function of the project, never the ambient shell: strips the parent test-runner
   // context AND ambient NODE_OPTIONS, incl. an IDE debugger's auto-attach injection
@@ -622,9 +643,35 @@ export function makeTestRunner(opts: TestRunnerOptions): TestRunner {
   // must stay offline; a project-owned command keeps its own network policy.
   const env = command === DEFAULT_TEST_COMMAND ? defaultTestEnv() : cleanNodeTestEnv();
   return (testRef: string): TestRunResult => {
-    const resolved = resolveTestPath(opts.root, testRef, searchDirs);
+    const resolved = resolveTestPath(opts.root, testRef, searchDirs, readText);
     if (!resolved) return { outcome: "unrunnable", detail: `test not found: ${testRef}` };
-    const argv = command.map((a) => (a === "{file}" ? resolved : a));
+    if (opts.snapshot && opts.snapshot.dirtyOutside.length > 0) {
+      // Never swap the user's files to run tests. A private checkout also keeps
+      // relative imports, runner scripts and configuration in the selected tree.
+      if (opts.snapshot.bases.length !== 1 || opts.snapshot.bases[0].prefix !== "")
+        return { outcome: "unrunnable", detail: "snapshot test execution requires selecting one repository" };
+      const temporary = mkdtempSync(join(tmpdir(), "codument-review-test-"));
+      if (!resolve(temporary).startsWith(resolve(tmpdir()) + sep)) throw new Error("snapshot cleanup escaped its temporary directory");
+      try {
+        const gitEnv: NodeJS.ProcessEnv = { ...env, GIT_OPTIONAL_LOCKS: "0" };
+        if (opts.snapshot.head !== "INDEX")
+          return { outcome: "unrunnable", detail: "committed test execution requires a clean selected checkout" };
+        execFileSync("git", ["checkout-index", "--all", `--prefix=${temporary.replace(/\\/g, "/")}/`], { cwd: opts.root, env: gitEnv, stdio: "pipe", windowsHide: true });
+        // Installed dependencies are execution environment, never copied project
+        // inputs. Missing generated/ignored inputs remain explicitly unrunnable.
+        const dependencies = join(opts.root, "node_modules");
+        if (existsSync(dependencies) && !existsSync(join(temporary, "node_modules")))
+          symlinkSync(dependencies, join(temporary, "node_modules"), process.platform === "win32" ? "junction" : "dir");
+        return makeTestRunner({ root: temporary, command, timeoutMs: timeout, searchDirs })(relative(opts.root, resolved));
+      } catch (error) {
+        return { outcome: "unrunnable", detail: `snapshot test execution unavailable: ${(error as Error).message}` };
+      } finally {
+        rmSync(temporary, { recursive: true, force: true, maxRetries: 3 });
+      }
+    }
+    const executableTest = resolveTestPath(opts.root, relative(opts.root, resolved), [""]);
+    if (!executableTest) return { outcome: "unrunnable", detail: `test is unavailable inside the selected checkout: ${testRef}` };
+    const argv = command.map((a) => (a === "{file}" ? executableTest : a));
     // win32-safe: a .cmd shim (npx/npm/vitest) needs a shell since Node's
     // CVE-2024-27980 hardening; POSIX spawns exactly as before.
     const res = spawnArgvSync(argv, { cwd: opts.root, timeout, encoding: "utf8", env });
@@ -663,6 +710,12 @@ export function makeTestRunner(opts: TestRunnerOptions): TestRunner {
       return { outcome: "unrunnable", detail: "test exited without a status code" };
     }
     if (res.status === 0) return { outcome: "passed" };
+    // node --test wraps a file that could not even load in a failing TAP test.
+    // That wrapper is not a reproduced assertion. Keep actual test-body failures
+    // authoritative when the same output also contains dependency diagnostics.
+    const loaderFailure = /^# Error(?: \[ERR_MODULE_NOT_FOUND\])?: (?:Cannot find (?:module|package)|ENOENT:)/m.test(out);
+    const bodyFailure = /^\s+(?:code: ['"]ERR_ASSERTION['"]|error: (?!['"]test failed['"]).+)/m.test(out);
+    if (loaderFailure && !bodyFailure) return { outcome: "unrunnable", detail: "test could not load a required input or dependency; prepare the selected checkout's test environment" };
     // Nonzero exit: distinguish a real test failure from a TOOLCHAIN failure
     // (missing runner, module resolution, npx auto-install error, bad tsconfig).
     // Trusting the exit code alone reads "could not run the test" as "test red" and

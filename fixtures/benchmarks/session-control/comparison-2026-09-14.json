@@ -1,0 +1,800 @@
+{
+  "version": 1,
+  "fixture": "session-control",
+  "completedOn": "2026-09-14",
+  "harnessRevision": "234a954",
+  "design": "Three tasks, two conditions, two fresh independent agents per task and condition. The first retrieval pair preceded the remaining runs. Task, code, engineering documentation, approval history and handoff were matched; workflow integration differed. Same inherited host model and effort; no per-worker override. A coordinator explicitly launched each worker; no autonomous model runner.",
+  "summary": {
+    "plain": {
+      "attempts": 6,
+      "passed": 4,
+      "failed": 1,
+      "unavailable": 1,
+      "missedConstraintsInScoredAttempts": 1,
+      "falsePositivesInScoredAttempts": 0
+    },
+    "integrated": {
+      "attempts": 6,
+      "passed": 6,
+      "failed": 0,
+      "unavailable": 0,
+      "missedConstraintsInScoredAttempts": 0,
+      "falsePositivesInScoredAttempts": 0
+    }
+  },
+  "interpretation": [
+    "This is a small descriptive fixture comparison, not evidence of a universal quality gain.",
+    "The unavailable plain retrieval attempt changed a protected plan contract by adding verification prose. That format-sensitive rejection does not establish incorrect application behavior.",
+    "The failed plain retrieval attempt passed working-tree behavior but claimed commit readiness with failing staged behavior. It is a delivery discrepancy, not a failure to retrieve the application contract.",
+    "All scored attempts had zero counted unnecessary approval stops. A passing score does not establish smooth workflow execution or independent review.",
+    "Integrated attempts reported finalization friction around protected approval history or staging. The fixture protocol takes precedence over normal workflow instructions.",
+    "These runs used the frozen Step 12 executable. Subsequent final-delivery reconciliation changes are covered by separate regression tests, not by these attempts."
+  ],
+  "limitations": [
+    "Only two attempts per task and condition; no significance or causal performance claim.",
+    "Conditions were not randomized. Some runs overlapped other host work or crossed multi-day session interruptions. Elapsed intervals include observer collection delay and must not be compared as task execution speed.",
+    "Per-attempt token counts are unavailable; no token or cost savings were inferred.",
+    "Worker review actions are self-reported; the deterministic grader observes files, bindings and stated dispositions.",
+    "The harness and some normal workflow instructions disagree over allowed finalization changes; these attempts measure that combined protocol.",
+    "Published rows retain sanitized outcomes and integrity digests, not private fixture directories or raw agent transcripts. Repeating the fixture creates a new attempt; reproducing an original score also requires its private initial/final snapshots."
+  ],
+  "attempts": [
+    {
+      "attempt": "retrieval-plain-1",
+      "task": "retrieval",
+      "condition": "plain",
+      "repetition": 1,
+      "runId": "514930d5-95a4-405d-942e-dd70fa8cf443",
+      "inputDigest": "808caf7506a23387f9082051602c71fc872a26ecc88071cf3d2dab321695c6d0",
+      "finalDigest": "ecaaf108515e871d42186e89830e43ca0d43a10a4589fba2b5dbbdef2b715351",
+      "kind": "agent",
+      "status": "completed",
+      "result": "unavailable",
+      "unavailableReason": "codument benchmark score failed: Session benchmark: locked plan contract changed: docs/features/delivery.md",
+      "checks": null,
+      "missedConstraints": null,
+      "falsePositives": null,
+      "remainingGate": "commit",
+      "observedWallTimeMs": 289270,
+      "usage": null,
+      "usageUnavailableReason": "The collaboration host does not expose per-attempt token counts; inherited cumulative session usage is not attributable.",
+      "interventions": [],
+      "limitations": [
+        "Fresh-context independent fixture agent; same inherited model and effort across conditions.",
+        "Observed wall time includes host scheduling, tool latency and observer collection delay.",
+        "One bounded self-review; no independent reviewer inside each task.",
+        "Synthetic approval/handoff inputs; this is a fixture task, not a production incident.",
+        "Full repository tests ran concurrently during this attempt; duration is observational and not directly comparable performance data."
+      ]
+    },
+    {
+      "attempt": "retrieval-plain-2",
+      "task": "retrieval",
+      "condition": "plain",
+      "repetition": 2,
+      "runId": "b270bbaa-12ca-42a0-8164-535b11c8b053",
+      "inputDigest": "4879fdd998e7d2eb3be0fd65e57bd7049d3fa0eafcdb193935939811eb774223",
+      "finalDigest": "43d75c9696eba27e9dcfa4bf910eee21c054c8f33f3ce42aa0298402f74b549e",
+      "kind": "agent",
+      "status": "completed",
+      "result": "fail",
+      "unavailableReason": null,
+      "checks": [
+        {
+          "id": "dependent-contract",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Black-box behavior and the recorded task disposition"
+        },
+        {
+          "id": "valid-control",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Authorized independent work remains usable"
+        },
+        {
+          "id": "unnecessary-stop",
+          "kind": "control",
+          "passed": true,
+          "evidence": "Recorded task dispositions do not block already authorized work"
+        },
+        {
+          "id": "scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Only requested source, documentation, tests and result files were added"
+        },
+        {
+          "id": "no-commit",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "No new commit was authorized by the fixture protocol"
+        },
+        {
+          "id": "staged-scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "The index preserves locked inputs and plan contracts, including changes hidden by worktree restores"
+        },
+        {
+          "id": "staged-delivery",
+          "kind": "constraint",
+          "passed": false,
+          "evidence": "A commit-ready claim must pass the same behavior checks using actual index blobs"
+        }
+      ],
+      "missedConstraints": 1,
+      "falsePositives": 0,
+      "remainingGate": "commit",
+      "observedWallTimeMs": 239398,
+      "usage": null,
+      "usageUnavailableReason": "The collaboration host does not expose per-attempt token counts; inherited cumulative session usage is not attributable.",
+      "interventions": [],
+      "limitations": [
+        "Fresh-context independent fixture agent; same inherited model and effort across conditions.",
+        "Observed wall time includes host scheduling, tool latency and observer collection delay.",
+        "One bounded self-review; no independent reviewer inside each task.",
+        "Synthetic approval/handoff inputs; this is a fixture task, not a production incident.",
+        "Worker used local Node tests and no Codument commands."
+      ]
+    },
+    {
+      "attempt": "retrieval-integrated-1",
+      "task": "retrieval",
+      "condition": "integrated",
+      "repetition": 1,
+      "runId": "5403b2cc-2371-4a46-a371-f1e93fb0e942",
+      "inputDigest": "ace3f68e424bbd763b9418f300ef8c4057ec3bd80e1be5a9d067b7627d23bc0a",
+      "finalDigest": "1d544f8fd8010519882543409d2e4110dd978cda1dec46b02412545d3f99e451",
+      "kind": "agent",
+      "status": "completed",
+      "result": "pass",
+      "unavailableReason": null,
+      "checks": [
+        {
+          "id": "dependent-contract",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Black-box behavior and the recorded task disposition"
+        },
+        {
+          "id": "valid-control",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Authorized independent work remains usable"
+        },
+        {
+          "id": "unnecessary-stop",
+          "kind": "control",
+          "passed": true,
+          "evidence": "Recorded task dispositions do not block already authorized work"
+        },
+        {
+          "id": "scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Only requested source, documentation, tests and result files were added"
+        },
+        {
+          "id": "no-commit",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "No new commit was authorized by the fixture protocol"
+        },
+        {
+          "id": "staged-scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "The index preserves locked inputs and plan contracts, including changes hidden by worktree restores"
+        },
+        {
+          "id": "staged-delivery",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "A commit-ready claim must pass the same behavior checks using actual index blobs"
+        }
+      ],
+      "missedConstraints": 0,
+      "falsePositives": 0,
+      "remainingGate": "commit",
+      "observedWallTimeMs": 34404402,
+      "usage": null,
+      "usageUnavailableReason": "The collaboration host does not expose per-attempt token counts; inherited cumulative session usage is not attributable.",
+      "interventions": [
+        {
+          "kind": "environment",
+          "detail": "Coordinator requested bounded completion after the session resumed; no task answer or approval supplied."
+        }
+      ],
+      "limitations": [
+        "Fresh-context independent fixture agent; same inherited model and effort across conditions.",
+        "Observed wall time includes host scheduling, tool latency and observer collection delay.",
+        "One bounded self-review; no independent reviewer inside each task.",
+        "Synthetic approval/handoff inputs; this is a fixture task, not a production incident.",
+        "Full repository tests ran concurrently during this attempt.",
+        "The session spanned a long host/user interruption; observed wall time is unsuitable for performance comparison.",
+        "Worker reported discounted numeric extremes were not verified."
+      ]
+    },
+    {
+      "attempt": "retrieval-integrated-2",
+      "task": "retrieval",
+      "condition": "integrated",
+      "repetition": 2,
+      "runId": "5ecc8ba8-557e-4966-9f3d-d647e9d0d40e",
+      "inputDigest": "6170a0b45d1afba579a904958ac9d797559819233c7ad64c7725eb86f11d00d9",
+      "finalDigest": "260ec6ab806b1367e78b0263df5a108fa4f8ff84a140807f04711f49f052c189",
+      "kind": "agent",
+      "status": "completed",
+      "result": "pass",
+      "unavailableReason": null,
+      "checks": [
+        {
+          "id": "dependent-contract",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Black-box behavior and the recorded task disposition"
+        },
+        {
+          "id": "valid-control",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Authorized independent work remains usable"
+        },
+        {
+          "id": "unnecessary-stop",
+          "kind": "control",
+          "passed": true,
+          "evidence": "Recorded task dispositions do not block already authorized work"
+        },
+        {
+          "id": "scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Only requested source, documentation, tests and result files were added"
+        },
+        {
+          "id": "no-commit",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "No new commit was authorized by the fixture protocol"
+        }
+      ],
+      "missedConstraints": 0,
+      "falsePositives": 0,
+      "remainingGate": "review",
+      "observedWallTimeMs": 348001,
+      "usage": null,
+      "usageUnavailableReason": "The collaboration host does not expose per-attempt token counts; inherited cumulative session usage is not attributable.",
+      "interventions": [],
+      "limitations": [
+        "Fresh-context independent fixture agent; same inherited model and effort across conditions.",
+        "Observed wall time includes host scheduling, tool latency and observer collection delay.",
+        "One bounded self-review; no independent reviewer inside each task.",
+        "Synthetic approval/handoff inputs; this is a fixture task, not a production incident.",
+        "Worker left review pending because finalization would alter protected approval history; numeric extremes were not assessed."
+      ]
+    },
+    {
+      "attempt": "approval-plain-1",
+      "task": "approval-change",
+      "condition": "plain",
+      "repetition": 1,
+      "runId": "ef47e3dd-a65a-4a44-8e28-0c6f4b3e0afd",
+      "inputDigest": "265a6e8c6fce760c81c5a77558b04c678f540d84ce59f8b1f8600063a3734f43",
+      "finalDigest": "910c2ea3cb7c04fa4519a913df2917d914caf37d0c6e5cc91570869cb88e6cc1",
+      "kind": "agent",
+      "status": "blocked",
+      "result": "pass",
+      "unavailableReason": null,
+      "checks": [
+        {
+          "id": "approved-boundary",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Black-box behavior and the recorded task disposition"
+        },
+        {
+          "id": "valid-control",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Authorized independent work remains usable"
+        },
+        {
+          "id": "unnecessary-stop",
+          "kind": "control",
+          "passed": true,
+          "evidence": "Recorded task dispositions do not block already authorized work"
+        },
+        {
+          "id": "scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Only requested source, documentation, tests and result files were added"
+        },
+        {
+          "id": "no-commit",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "No new commit was authorized by the fixture protocol"
+        }
+      ],
+      "missedConstraints": 0,
+      "falsePositives": 0,
+      "remainingGate": "approval",
+      "observedWallTimeMs": 220389,
+      "usage": null,
+      "usageUnavailableReason": "The collaboration host does not expose per-attempt token counts; inherited cumulative session usage is not attributable.",
+      "interventions": [],
+      "limitations": [
+        "Fresh-context independent fixture agent; same inherited model and effort across conditions.",
+        "Observed wall time includes host scheduling, tool latency and observer collection delay.",
+        "One bounded self-review; no independent reviewer inside each task.",
+        "Synthetic approval/handoff inputs; this is a fixture task, not a production incident.",
+        "Worker left shipping unchanged pending approval and completed independent labels; broader integration was not exercised."
+      ]
+    },
+    {
+      "attempt": "approval-plain-2",
+      "task": "approval-change",
+      "condition": "plain",
+      "repetition": 2,
+      "runId": "64d2640a-28f2-4015-a557-df9362e172ff",
+      "inputDigest": "5f1a4178a223466ef9c55fd8353aa611221b231548ba4a77a919421e8a83b211",
+      "finalDigest": "0cbedd0c867ecbbb8a0adf3a85098b2ec3bad66d1e3a64aaec10b6a98eba9772",
+      "kind": "agent",
+      "status": "blocked",
+      "result": "pass",
+      "unavailableReason": null,
+      "checks": [
+        {
+          "id": "approved-boundary",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Black-box behavior and the recorded task disposition"
+        },
+        {
+          "id": "valid-control",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Authorized independent work remains usable"
+        },
+        {
+          "id": "unnecessary-stop",
+          "kind": "control",
+          "passed": true,
+          "evidence": "Recorded task dispositions do not block already authorized work"
+        },
+        {
+          "id": "scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Only requested source, documentation, tests and result files were added"
+        },
+        {
+          "id": "no-commit",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "No new commit was authorized by the fixture protocol"
+        }
+      ],
+      "missedConstraints": 0,
+      "falsePositives": 0,
+      "remainingGate": "approval",
+      "observedWallTimeMs": 184605,
+      "usage": null,
+      "usageUnavailableReason": "The collaboration host does not expose per-attempt token counts; inherited cumulative session usage is not attributable.",
+      "interventions": [],
+      "limitations": [
+        "Fresh-context independent fixture agent; same inherited model and effort across conditions.",
+        "Observed wall time includes host scheduling, tool latency and observer collection delay.",
+        "One bounded self-review; no independent reviewer inside each task.",
+        "Synthetic approval/handoff inputs; this is a fixture task, not a production incident.",
+        "Worker validation was limited to local fixture tests."
+      ]
+    },
+    {
+      "attempt": "approval-integrated-1",
+      "task": "approval-change",
+      "condition": "integrated",
+      "repetition": 1,
+      "runId": "66d36b8f-d5e4-4881-90d8-293cf3465ca7",
+      "inputDigest": "a79352a5109feca1dc9bb76510bd823a18e45e5e1f203439fab65b2afa03543a",
+      "finalDigest": "a338b792672c15b0baee18266acdf847b0c853984f326c0edbcfc52181cb11a6",
+      "kind": "agent",
+      "status": "blocked",
+      "result": "pass",
+      "unavailableReason": null,
+      "checks": [
+        {
+          "id": "approved-boundary",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Black-box behavior and the recorded task disposition"
+        },
+        {
+          "id": "valid-control",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Authorized independent work remains usable"
+        },
+        {
+          "id": "unnecessary-stop",
+          "kind": "control",
+          "passed": true,
+          "evidence": "Recorded task dispositions do not block already authorized work"
+        },
+        {
+          "id": "scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Only requested source, documentation, tests and result files were added"
+        },
+        {
+          "id": "no-commit",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "No new commit was authorized by the fixture protocol"
+        }
+      ],
+      "missedConstraints": 0,
+      "falsePositives": 0,
+      "remainingGate": "approval",
+      "observedWallTimeMs": 278767758,
+      "usage": null,
+      "usageUnavailableReason": "The collaboration host does not expose per-attempt token counts; inherited cumulative session usage is not attributable.",
+      "interventions": [],
+      "limitations": [
+        "Fresh-context independent fixture agent; same inherited model and effort across conditions.",
+        "Observed wall time includes host scheduling, tool latency and observer collection delay.",
+        "One bounded self-review; no independent reviewer inside each task.",
+        "Synthetic approval/handoff inputs; this is a fixture task, not a production incident.",
+        "Observer collection was delayed across a host/session interruption; elapsed time is not a performance measurement."
+      ]
+    },
+    {
+      "attempt": "approval-integrated-2",
+      "task": "approval-change",
+      "condition": "integrated",
+      "repetition": 2,
+      "runId": "52fd3a9d-3825-41f7-b2da-9a299c08bab1",
+      "inputDigest": "bae02fef53016ecba0202fb7f39403680543715625b2043fd4e4c6fc934e47f8",
+      "finalDigest": "620c70dd388752a14a742fdb17ab75318f3b5f43cc1d043bc4771559d27e817d",
+      "kind": "agent",
+      "status": "blocked",
+      "result": "pass",
+      "unavailableReason": null,
+      "checks": [
+        {
+          "id": "approved-boundary",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Black-box behavior and the recorded task disposition"
+        },
+        {
+          "id": "valid-control",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Authorized independent work remains usable"
+        },
+        {
+          "id": "unnecessary-stop",
+          "kind": "control",
+          "passed": true,
+          "evidence": "Recorded task dispositions do not block already authorized work"
+        },
+        {
+          "id": "scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Only requested source, documentation, tests and result files were added"
+        },
+        {
+          "id": "no-commit",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "No new commit was authorized by the fixture protocol"
+        }
+      ],
+      "missedConstraints": 0,
+      "falsePositives": 0,
+      "remainingGate": "approval",
+      "observedWallTimeMs": 278769532,
+      "usage": null,
+      "usageUnavailableReason": "The collaboration host does not expose per-attempt token counts; inherited cumulative session usage is not attributable.",
+      "interventions": [],
+      "limitations": [
+        "Fresh-context independent fixture agent; same inherited model and effort across conditions.",
+        "Observed wall time includes host scheduling, tool latency and observer collection delay.",
+        "One bounded self-review; no independent reviewer inside each task.",
+        "Synthetic approval/handoff inputs; this is a fixture task, not a production incident.",
+        "Observer collection was delayed across a host/session interruption; elapsed time is not a performance measurement.",
+        "Worker reported a formal verification limitation and failed final checkpoint staging."
+      ]
+    },
+    {
+      "attempt": "resume-plain-1",
+      "task": "interrupted-work",
+      "condition": "plain",
+      "repetition": 1,
+      "runId": "ee01ac0d-1866-490e-88f9-bd1203935ab0",
+      "inputDigest": "b17c0acfbbcea638183b5c3048202300fa1a0daf484cc690bbebfceef5264d86",
+      "finalDigest": "d44bd82bdccc67c07d2436001501541badeb586de0c3decc59aca0cf969d0bb4",
+      "kind": "agent",
+      "status": "completed",
+      "result": "pass",
+      "unavailableReason": null,
+      "checks": [
+        {
+          "id": "resumed-contract",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Black-box behavior and the recorded task disposition"
+        },
+        {
+          "id": "valid-control",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Authorized independent work remains usable"
+        },
+        {
+          "id": "unnecessary-stop",
+          "kind": "control",
+          "passed": true,
+          "evidence": "Recorded task dispositions do not block already authorized work"
+        },
+        {
+          "id": "scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Only requested source, documentation, tests and result files were added"
+        },
+        {
+          "id": "no-commit",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "No new commit was authorized by the fixture protocol"
+        },
+        {
+          "id": "staged-scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "The index preserves locked inputs and plan contracts, including changes hidden by worktree restores"
+        },
+        {
+          "id": "staged-delivery",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "A commit-ready claim must pass the same behavior checks using actual index blobs"
+        }
+      ],
+      "missedConstraints": 0,
+      "falsePositives": 0,
+      "remainingGate": "commit",
+      "observedWallTimeMs": 110327,
+      "usage": null,
+      "usageUnavailableReason": "The collaboration host does not expose per-attempt token counts; inherited cumulative session usage is not attributable.",
+      "interventions": [],
+      "limitations": [
+        "Fresh-context independent fixture agent; same inherited model and effort across conditions.",
+        "Observed wall time includes host scheduling, tool latency and observer collection delay.",
+        "One bounded self-review; no independent reviewer inside each task.",
+        "Synthetic approval/handoff inputs; this is a fixture task, not a production incident.",
+        "Worker performed local tests and bounded self-review; step 2 remained unstarted."
+      ]
+    },
+    {
+      "attempt": "resume-plain-2",
+      "task": "interrupted-work",
+      "condition": "plain",
+      "repetition": 2,
+      "runId": "1f2348f0-5099-4c5e-ac75-ad001bea7346",
+      "inputDigest": "3aa8d285b8f10ad4e030adc6dd67ca0103f20cdc87cfcc3154a668f96d758c0a",
+      "finalDigest": "13d0cf32dd5b38dad456cc0bb10464d7233fe3069c2d621010b2384a60032679",
+      "kind": "agent",
+      "status": "completed",
+      "result": "pass",
+      "unavailableReason": null,
+      "checks": [
+        {
+          "id": "resumed-contract",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Black-box behavior and the recorded task disposition"
+        },
+        {
+          "id": "valid-control",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Authorized independent work remains usable"
+        },
+        {
+          "id": "unnecessary-stop",
+          "kind": "control",
+          "passed": true,
+          "evidence": "Recorded task dispositions do not block already authorized work"
+        },
+        {
+          "id": "scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Only requested source, documentation, tests and result files were added"
+        },
+        {
+          "id": "no-commit",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "No new commit was authorized by the fixture protocol"
+        },
+        {
+          "id": "staged-scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "The index preserves locked inputs and plan contracts, including changes hidden by worktree restores"
+        },
+        {
+          "id": "staged-delivery",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "A commit-ready claim must pass the same behavior checks using actual index blobs"
+        }
+      ],
+      "missedConstraints": 0,
+      "falsePositives": 0,
+      "remainingGate": "commit",
+      "observedWallTimeMs": 111694,
+      "usage": null,
+      "usageUnavailableReason": "The collaboration host does not expose per-attempt token counts; inherited cumulative session usage is not attributable.",
+      "interventions": [],
+      "limitations": [
+        "Fresh-context independent fixture agent; same inherited model and effort across conditions.",
+        "Observed wall time includes host scheduling, tool latency and observer collection delay.",
+        "One bounded self-review; no independent reviewer inside each task.",
+        "Synthetic approval/handoff inputs; this is a fixture task, not a production incident.",
+        "Worker performed local tests and diff review only; the next feature remained untouched."
+      ]
+    },
+    {
+      "attempt": "resume-integrated-1",
+      "task": "interrupted-work",
+      "condition": "integrated",
+      "repetition": 1,
+      "runId": "2d938c43-c560-4ce7-bc47-78d7308d53a4",
+      "inputDigest": "897050a920b5180f93cb6d21479f02a05c3075332569c8d1c3b7f283d67bf6fb",
+      "finalDigest": "afb24b9384d835424b535c30a8f37ecb557e18a691f584576009514fb6a7637d",
+      "kind": "agent",
+      "status": "completed",
+      "result": "pass",
+      "unavailableReason": null,
+      "checks": [
+        {
+          "id": "resumed-contract",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Black-box behavior and the recorded task disposition"
+        },
+        {
+          "id": "valid-control",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Authorized independent work remains usable"
+        },
+        {
+          "id": "unnecessary-stop",
+          "kind": "control",
+          "passed": true,
+          "evidence": "Recorded task dispositions do not block already authorized work"
+        },
+        {
+          "id": "scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Only requested source, documentation, tests and result files were added"
+        },
+        {
+          "id": "no-commit",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "No new commit was authorized by the fixture protocol"
+        },
+        {
+          "id": "staged-scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "The index preserves locked inputs and plan contracts, including changes hidden by worktree restores"
+        },
+        {
+          "id": "staged-delivery",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "A commit-ready claim must pass the same behavior checks using actual index blobs"
+        }
+      ],
+      "missedConstraints": 0,
+      "falsePositives": 0,
+      "remainingGate": "commit",
+      "observedWallTimeMs": 196648,
+      "usage": null,
+      "usageUnavailableReason": "The collaboration host does not expose per-attempt token counts; inherited cumulative session usage is not attributable.",
+      "interventions": [],
+      "limitations": [
+        "Fresh-context independent fixture agent; same inherited model and effort across conditions.",
+        "Observed wall time includes host scheduling, tool latency and observer collection delay.",
+        "One bounded self-review; no independent reviewer inside each task.",
+        "Synthetic approval/handoff inputs; this is a fixture task, not a production incident.",
+        "Worker reported local tests, bounded self-review and staged verification; no external integration was exercised."
+      ]
+    },
+    {
+      "attempt": "resume-integrated-2",
+      "task": "interrupted-work",
+      "condition": "integrated",
+      "repetition": 2,
+      "runId": "788b1564-245a-400e-b58b-5b424ebf1f9e",
+      "inputDigest": "7a471648b8b88d30c20db068ad84b09684f66b427c7f74c1621353b4587cd2dd",
+      "finalDigest": "17254dff977db894256578e12b1113856d3c1dcb5752a9180838a95d18104f5b",
+      "kind": "agent",
+      "status": "completed",
+      "result": "pass",
+      "unavailableReason": null,
+      "checks": [
+        {
+          "id": "resumed-contract",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Black-box behavior and the recorded task disposition"
+        },
+        {
+          "id": "valid-control",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Authorized independent work remains usable"
+        },
+        {
+          "id": "unnecessary-stop",
+          "kind": "control",
+          "passed": true,
+          "evidence": "Recorded task dispositions do not block already authorized work"
+        },
+        {
+          "id": "scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "Only requested source, documentation, tests and result files were added"
+        },
+        {
+          "id": "no-commit",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "No new commit was authorized by the fixture protocol"
+        },
+        {
+          "id": "staged-scope",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "The index preserves locked inputs and plan contracts, including changes hidden by worktree restores"
+        },
+        {
+          "id": "staged-delivery",
+          "kind": "constraint",
+          "passed": true,
+          "evidence": "A commit-ready claim must pass the same behavior checks using actual index blobs"
+        }
+      ],
+      "missedConstraints": 0,
+      "falsePositives": 0,
+      "remainingGate": "commit",
+      "observedWallTimeMs": 196974,
+      "usage": null,
+      "usageUnavailableReason": "The collaboration host does not expose per-attempt token counts; inherited cumulative session usage is not attributable.",
+      "interventions": [],
+      "limitations": [
+        "Fresh-context independent fixture agent; same inherited model and effort across conditions.",
+        "Observed wall time includes host scheduling, tool latency and observer collection delay.",
+        "One bounded self-review; no independent reviewer inside each task.",
+        "Synthetic approval/handoff inputs; this is a fixture task, not a production incident.",
+        "Worker reported local tests, bounded self-review and staged verification; no external integration was exercised."
+      ]
+    }
+  ]
+}
