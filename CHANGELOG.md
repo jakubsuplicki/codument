@@ -5,6 +5,46 @@ All notable changes to Codument are recorded here. The format follows
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while it
 remains pre-1.0.
 
+## [0.20.0] - 2026-09-14
+
+This release makes docs-backed agent work easier to resume and ties approval,
+verification, and review evidence to the changes actually being delivered.
+
+### Added
+
+- Revision-bound plan approval and durable work state, including explicit pause,
+  resume, supersession, and verified readiness with a pending commit.
+- A staged verification workflow that checks the Git index, includes tests as
+  evidence, and preserves the approved contract when completed plans are compacted.
+- Portable review evidence for committed changes and a CI gate that requires it.
+- Clearer context retrieval, missing-context reporting, grounded plan and review
+  checks, and more compact documentation and agent guidance.
+- Local Codex usage capture, capture-availability reporting, usage-summary export,
+  and explicit repository selection for history audits.
+- Twelve matched fixture-agent attempts covering retrieval, approval changes, and
+  interrupted work. Results and limitations are included in the benchmark fixtures;
+  they do not establish token savings or a general speed improvement.
+
+### Fixed
+
+- Completed final-delivery approvals cannot be reused after a direct Git commit
+  bypasses readiness bookkeeping.
+- Claude usage history survives resets when replayed activity has missing or
+  invalid usage data, including duplicate transcript records.
+- Named review tests use the selected staged test, tracked dependencies, and runner
+  configuration. Missing generated inputs are reported as unavailable.
+- A valid reserved review manifest no longer prevents committed-test reproduction.
+- Duplicate test filenames resolve consistently before changed-test attribution.
+- The package and lockfile now agree on the release version.
+
+### Upgrading
+
+- Run `codument update` to refresh managed workflow files after installing.
+- Re-record review evidence for the new version. CI requires a current portable
+  manifest for its selected base and committed changes.
+- Usage capture remains local and best effort; unavailable measurements are
+  reported explicitly rather than presented as zero usage.
+
 ## [0.19.0] - 2026-08-16
 
 The rule is written; the surface is not — plan 49, ADR 021.

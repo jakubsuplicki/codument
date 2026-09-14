@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "revision": 6,
+  "revision": 8,
   "records": [
     {
       "planId": "54b28b08-1809-4e11-9c72-ad96a880cc09",
@@ -13,6 +13,19 @@
       "finalDelivery": {
         "base": "234a95400e42fe3fbe71723064c5c0734d906282",
         "fingerprint": "f1016cc45723d94d287f0940be54365bfa4d5a1adfd4426f4bf54c651d126a7b"
+      }
+    },
+    {
+      "planId": "612c7e7e-e344-4f6c-8690-25c19dc0b399",
+      "path": "docs/features/agent-delivery-workflow.md",
+      "revision": 7,
+      "digest": "f638c64c64ee8ea844824dff154997b79ffb1d97631c42afd4b6cd818bb3af90",
+      "contract": "## Delivery Plan\n\n\n- [ ] Step 1: Prepare and commit the verified 0.20.0 release metadata and portable review evidence for human npm publication.\n\n### Scope\n\n- `package.json`, `package-lock.json`, `CHANGELOG.md`: bump the release version and describe the existing reviewed changes.\n- `docs/features/agent-delivery-workflow.md`, `docs/.approvals.json`, `.codument-review.json`: retain this approved release contract and refresh exact delivery evidence.\n- `src/**`, `tests/**`, `docs/**`, `skills/**`, `templates/**`, `agents/**`, `rules/**`, `fixtures/**`, `.agents/**`, `.github/**`, `AGENTS.md`, `CLAUDE.md`, `README.md`, `.codument-meta.json`: existing reviewed branch contents included in the release review; no implementation or contract edits authorized by this release step.\n\n### Outcome\n\nThe previously reviewed implementation is committed and the release metadata, npm package, and portable review evidence agree on 0.20.0. The user publishes to npm. No remote publish, push, tag, dependency change, or implementation change is included.\n\n### Acceptance criteria\n\nPackage and lockfile versions agree; dependencies and scripts are unchanged. Changelog describes the reviewed behavior and benchmark limitations. Build and typecheck pass; initialization, update, and package hygiene tests pass. Package contains expected runtime and workflow assets without private session data. Full-branch and exact staged review gates pass. Release preparation is committed as the user.\n\n### Verification\n\nReuse the completed full implementation suite and independent review at 78e35a2. Check the release-only structural diff, rebuild, run init/update/hygiene tests, inspect a local npm pack, and refresh independent full-branch and exact staged evidence. Local Windows verification does not establish Linux CI or npm publication.\n\n### Approval\n\nThe user explicitly requested: \"ok commit all, then stage release and ill update npm with new version, bump version as well\". This records that authorized release work; it grants no further implementation scope.\n\n### Open questions\n\nNone.",
+      "approvedAt": "2026-09-14T08:49:58.805Z",
+      "signer": "Codex recording the user's explicit release request",
+      "finalDelivery": {
+        "base": "78e35a2d8b70dfe711d60c8e8ce157348e553b47",
+        "fingerprint": "2efc31bdeea2d2159569cebb9f62af9c3f792f0c64ffb9ec95959e6838ba1d1e"
       }
     },
     {
