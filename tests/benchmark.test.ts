@@ -278,6 +278,9 @@ describe("benchmark command", () => {
           "--cache",
           join(tmpdir(), "codument-npm-cache"),
           "pack",
+          // This fixture tests package contents. Lifecycle builds are exercised
+          // separately; rebuilding dist here races the other CLI test processes.
+          "--ignore-scripts",
           "--json",
           "--pack-destination",
           tmp,

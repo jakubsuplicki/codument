@@ -367,14 +367,12 @@ export function confirmCondition(input: {
   const noEvidence = input.unadjudicated - timedOut;
   if (noEvidence > 0) {
     causes.push({
-      text: `${count(noEvidence)} could not be adjudicated: the runner produced no test evidence, so ${reads(noEvidence)}${input.consequence}`,
+      text: `${count(noEvidence)} could not be adjudicated: ${input.runnerUnavailable ?? "the runner produced no test evidence"}, so ${reads(noEvidence)}${input.consequence}`,
       remedy: "runner",
     });
   }
-  // Only when nothing else already explains it: a run whose outcomes are on the
-  // table is judged by those outcomes, never by a probe. A runner that resolved and
-  // then emitted nothing is already named above, and saying "not found" beside it
-  // would be false.
+  // A known availability failure explains missing evidence; timeouts and actual
+  // verdicts remain authoritative. Do not duplicate a cause already named above.
   if (causes.length === 0 && input.runnerUnavailable) {
     causes.push({ text: input.runnerUnavailable, remedy: "runner" });
   }
@@ -626,6 +624,9 @@ const TEST_FAILED = /^\s*not ok\b/m;
 // and map the result. A missing file, a spawn error, or a kill/timeout is
 // `unrunnable` (never a pass); exit 0 is `passed`; any nonzero exit is `failed`.
 export function makeTestRunner(opts: TestRunnerOptions): TestRunner {
+  // Test resolution returns canonical paths. Use the same root for relative
+  // reconstruction, including /var aliases and linked project directories.
+  try { opts = { ...opts, root: realpathSync(opts.root) }; } catch { /* missing root stays unrunnable */ }
   const readText = opts.snapshot ? (path: string) => readChangeSetFile(opts.root, opts.snapshot!, path) : undefined;
   // Resolution lives HERE, not at each call site: `invariantProbes` and any future
   // consumer take an optional command, so a caller that omits it must still get the

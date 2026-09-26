@@ -18,7 +18,7 @@ import {
 import { type AnchorChange, fileContentTransition, isPreciseFile } from "./fingerprint.js";
 import { movesOnly, type RenamePair } from "./git.js";
 import { resolveOwner, splitAnchorId } from "./ownership.js";
-import { activeStep, extractStatus, isApproved, isPlanPath, parseDeliveryPlan, parsePlanScope, readPlanDocuments } from "./plan-steps.js";
+import { activeStep, extractStatus, isApproved, isPlanPath, parseDeliveryPlan, parsePlanScope, readPlanDocuments, withoutDeliveryPlans } from "./plan-steps.js";
 import { assessPlanApproval, readApprovalStore, readApprovalPolicy, type ApprovalStore } from "./plan-approval.js";
 import { selectedPlanId, normalizePlanPath } from "./plan-steps.js";
 import { ConfigValueError } from "./state-io.js";
@@ -1117,7 +1117,8 @@ export function resolveDocPointers(
       }
     }
     if (text === null) continue; // absent or unreadable — nothing to read a pointer out of
-    const paths = removed.filter((p) => namesPath(text, p));
+    const durable = withoutDeliveryPlans(text);
+    const paths = removed.filter((p) => namesPath(durable, p));
     if (paths.length > 0) out.push({ doc, paths });
   }
   return out;

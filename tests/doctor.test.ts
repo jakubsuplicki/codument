@@ -302,6 +302,92 @@ describe("doctor separates what this change produced from what the repo arrived 
     );
   });
 
+  it("keeps existing debt inherited after unrelated edits and finds new failures in untouched docs", async () => {
+    await project();
+    const doc = "docs/features/old.md";
+    const oldText = "# Old\n\n## In plain terms\nLegacy behavior.\n\n[Old debt](missing.md)\n[Live reference](fresh.md)\n";
+    await writeFile(join(dir, doc), oldText);
+    execFileSync("git", ["add", "-A"], {cwd: dir});
+    execFileSync("git", ["commit", "-qm", "existing debt"], {cwd: dir});
+    await writeFile(join(dir, doc), oldText + "\nUnrelated explanation.\n[New debt](new-missing.md)\n");
+    const edited = buildReport(dir).lint.attribution!;
+    assert.ok(edited.inherited.some(f => f.message.endsWith("dangling link to missing.md")));
+    assert.ok(edited.fromThisChange.some(f => f.message.endsWith("dangling link to new-missing.md")));
+    await writeFile(join(dir, doc), oldText);
+    await rm(join(dir, "docs/features/fresh.md"));
+    const removed = buildReport(dir).lint.attribution!;
+    assert.ok(removed.fromThisChange.some(f => f.file === doc && f.message.endsWith("dangling link to fresh.md")));
+  });
+
+  it("does not reclassify existing bloat just because its line count changed", async () => {
+    await project();
+    const doc = join(dir, "docs/features/old.md");
+    const body = "# Old\n\n## In plain terms\n" + "Existing explanation.\n".repeat(20);
+    await writeFile(doc, body);
+    execFileSync("git", ["add", "-A"], {cwd: dir});
+    execFileSync("git", ["commit", "-qm", "existing bloat"], {cwd: dir});
+    await writeFile(doc, body + "Clarification.\n");
+    const attribution = buildReport(dir, {bloat: {wholeDocLines: 10}}).lint.attribution!;
+    assert.ok(attribution.inherited.some(f => f.id === "bloated-doc"));
+    assert.ok(!attribution.fromThisChange.some(f => f.id === "bloated-doc"));
+  });
+
+  it("isolates historical Git reads from repository selectors without altering the user index", async () => {
+    await project();
+    const index = readFileSync(join(dir, ".git/index"));
+    const result = execFileSync("node", [CLI, "doctor", "--strict", "--json"], {
+      cwd: dir, encoding: "utf8", env: {...process.env, GIT_DIR: join(dir, ".git"), GIT_WORK_TREE: dir},
+    });
+    assert.deepEqual(JSON.parse(result).lint.attribution.fromThisChange, []);
+    assert.deepEqual(readFileSync(join(dir, ".git/index")), index);
+  });
+
+  it("reports unavailable baseline attribution when the temporary directory cannot be created", async () => {
+    await project();
+    const unavailable = join(dir, "missing-temp-parent", "tmp");
+    const result = execFileSync("node", [CLI, "doctor", "--json"], {
+      cwd: dir, encoding: "utf8", env: {...process.env, TMPDIR: unavailable, TEMP: unavailable, TMP: unavailable},
+    });
+    assert.equal(JSON.parse(result).lint.attribution, null);
+  });
+
+  it("compares inherited findings in SHA-256 repositories", async () => {
+    await project();
+    await rm(join(dir, ".git"), {recursive: true, force: true});
+    execFileSync("git", ["init", "-q", "--object-format=sha256"], {cwd: dir});
+    execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=test@example.invalid", "add", "-A"], {cwd: dir});
+    execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=test@example.invalid", "commit", "-qm", "SHA-256 baseline"], {cwd: dir});
+    assert.deepEqual(buildReport(dir).lint.attribution?.fromThisChange, []);
+  });
+
+  it("does not execute configured checkout filters during historical health analysis", async () => {
+    await project();
+    await writeFile(join(dir, ".gitattributes"), "*.md filter=health-test\n");
+    execFileSync("git", ["add", "-A"], {cwd: dir});
+    execFileSync("git", ["commit", "-qm", "filtered docs"], {cwd: dir});
+    // A required failing smudge would make checkout fail if advisory analysis
+    // executed it. Its absence from the snapshot must preserve attribution.
+    execFileSync("git", ["config", "filter.health-test.smudge", "exit 1"], {cwd: dir});
+    execFileSync("git", ["config", "filter.health-test.required", "true"], {cwd: dir});
+    assert.deepEqual(buildReport(dir).lint.attribution?.fromThisChange, []);
+  });
+
+  it("warms historical languages after the last source is deleted and staged", async () => {
+    await project();
+    const registry = JSON.parse(readFileSync(join(dir, "docs/.registry.json"), "utf8"));
+    registry.features.old.primary_sources.push("src/old.go");
+    await writeFile(join(dir, "src/old.go"), "package app\nfunc Old() int { return 1 }\n");
+    await writeFile(join(dir, "docs/.registry.json"), JSON.stringify(registry));
+    execFileSync("git", ["add", "-A"], {cwd: dir});
+    execFileSync("git", ["commit", "-qm", "historical Go"], {cwd: dir});
+    await rm(join(dir, "src/old.go"));
+    registry.features.old.primary_sources.pop();
+    await writeFile(join(dir, "docs/.registry.json"), JSON.stringify(registry));
+    execFileSync("git", ["add", "-A"], {cwd: dir});
+    const result = JSON.parse(execFileSync("node", [CLI, "doctor", "--strict", "--json"], {cwd: dir, encoding: "utf8"}));
+    assert.deepEqual(result.lint.attribution.fromThisChange, []);
+  });
+
   it("the human surface leads with what this change produced, and says which is which", async () => {
     await project();
     await rm(join(dir, "src", "old.ts"));
@@ -666,6 +752,14 @@ describe("codument doctor --strict (CLI gating)", () => {
       JSON.stringify({ version, initialized: "2026-01-01", project: {} }),
     );
     assert.doesNotMatch(run(["doctor"], clean).stdout, /scaffolded at/, "in sync, no nudge");
+  });
+
+  it("names newer managed skills instead of silently accepting an older executable", async () => {
+    await writeFile(join(clean, ".codument-meta.json"), JSON.stringify({version: "999.0.0"}));
+    const result = run(["doctor"], clean);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /managed workflow requires 999\.0\.0/);
+    assert.match(result.stdout, /install a matching CLI/);
   });
 
   it("a corrupt meta file cannot crash the advisory surface — the nudge names the repair", async () => {

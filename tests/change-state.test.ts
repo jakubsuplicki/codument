@@ -869,6 +869,23 @@ describe("a doc naming a path this change removed", () => {
     );
   });
 
+  it("retains deleted paths in embedded delivery plans but still checks durable sections", () => {
+    const plan = "## Delivery Plan\nStatus: approved\n### Scope\n- `i18n/format.ts`\n- [ ] Delete the unused formatter\n";
+    write("docs/concepts/i18n.md", `# i18n\n\n${plan}\n## Decisions\nFormatting stays locale-aware.\n`);
+    assert.deepEqual(resolveDocPointers(dir, registry as never, ["i18n/format.ts"]), []);
+    write("docs/concepts/i18n.md", `# i18n\n\n${plan}\n## Key files\n- \`i18n/format.ts\` — formatter\n`);
+    assert.deepEqual(resolveDocPointers(dir, registry as never, ["i18n/format.ts"]), [
+      { doc: "docs/concepts/i18n.md", paths: ["i18n/format.ts"] },
+    ]);
+  });
+
+  it("excludes all historical plan sections in snapshot reads without mistaking examples for headings", () => {
+    const text = "# i18n\n## Delivery Plan — old\n- [x] Remove `i18n/format.ts`\n## Delivery Plan — current\nStatus: approved\n### Scope\n- `i18n/format.ts`\n- [ ] Finish cleanup\n";
+    assert.deepEqual(resolveDocPointers(dir, registry as never, ["i18n/format.ts"], () => text), []);
+    const example = "# i18n\n```md\n## Delivery Plan\n```\n## Key files\n- `i18n/format.ts`\n";
+    assert.equal(resolveDocPointers(dir, registry as never, ["i18n/format.ts"], () => example).length, 2);
+  });
+
   it("a path is a path, never a fragment of a longer one", () => {
     write(
       "docs/concepts/i18n.md",

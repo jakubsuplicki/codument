@@ -273,6 +273,19 @@ describe("makeTestRunner — exit code maps to outcome", () => {
 });
 
 describe("cleanNodeTestEnv — a spawned test's verdict is a pure function of the code", () => {
+  it("runs named tests through a symlinked project root", () => {
+    const root = mkdtempSync(join(tmpdir(), "codument-linked-runner-"));
+    const alias = `${root}-link`;
+    try {
+      writeFileSync(join(root, "pass.test.js"), "process.exit(0);\n");
+      symlinkSync(root, alias, process.platform === "win32" ? "junction" : "dir");
+      const run = makeTestRunner({root: alias, command: [process.execPath, "{file}"]});
+      assert.equal(run("pass.test.js").outcome, "passed");
+    } finally {
+      rmSync(alias, {recursive: true, force: true});
+      rmSync(root, {recursive: true, force: true});
+    }
+  });
   it("strips the parent test context, ambient NODE_OPTIONS, coverage, and the VS Code debugger injection", () => {
     const env = cleanNodeTestEnv({
       PATH: "/usr/bin",
@@ -657,14 +670,17 @@ describe("confirmCondition (one wording for every surface that runs tests)", () 
     assert.doesNotMatch(msg, RUNNER_ROUTE);
   });
 
-  it("keeps the default-runner probe as a last resort, never alongside a real cause", () => {
+  it("uses a known runner failure to explain missing evidence without overriding a timeout", () => {
     assert.match(
       confirmCondition({ ...base, runnerUnavailable: "confirm step could not run: no local tsx (the default runner resolves local-only, never the network)" }) ?? "",
       /no local tsx/,
     );
-    // A declared runner is judged by outcomes, so the probe must not also fire.
-    assert.doesNotMatch(
+    assert.match(
       confirmCondition({ ...base, unadjudicated: 1, runnerUnavailable: "confirm step could not run: no local tsx (the default runner resolves local-only, never the network)" }) ?? "",
+      /no local tsx/,
+    );
+    assert.doesNotMatch(
+      confirmCondition({ ...base, unadjudicated: 1, timedOut: 1, runnerUnavailable: "no local tsx" }) ?? "",
       /no local tsx/,
     );
   });

@@ -1,10 +1,11 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, symlink, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   parseDeliveryPlan,
+  normalizePlanPath,
   parsePlanScope,
   activeStep,
   extractStatus,
@@ -17,6 +18,24 @@ import {
 } from "../src/lib/plan-steps.js";
 import { readRecentEvents } from "../src/lib/events.js";
 import { renderFrame } from "../src/commands/watch.js";
+
+describe("plan paths through repository aliases", () => {
+  it("normalizes either root spelling, including a missing plan, and still refuses outside paths", async () => {
+    const temporary = await mkdtemp(join(tmpdir(), "codument-plan-alias-"));
+    try {
+      const project = join(temporary, "project");
+      const alias = join(temporary, "alias");
+      const outside = join(temporary, "outside");
+      await mkdir(join(project, "docs/features"), {recursive: true});
+      await mkdir(join(outside, "docs/features"), {recursive: true});
+      await symlink(project, alias, process.platform === "win32" ? "junction" : "dir");
+      const canonical = await realpath(project);
+      assert.equal(normalizePlanPath(canonical, join(alias, "docs/features/missing.md")), "docs/features/missing.md");
+      assert.equal(normalizePlanPath(alias, join(canonical, "docs/features/missing.md")), "docs/features/missing.md");
+      assert.throws(() => normalizePlanPath(canonical, join(outside, "docs/features/missing.md")), /inside this repository/);
+    } finally { await rm(temporary, {recursive: true, force: true}); }
+  });
+});
 
 describe("scope belongs to the selected plan", () => {
   const old = "## Delivery Plan — old\nStatus: approved\n- [x] shipped\n### Scope\n- `src/old.ts`\n";

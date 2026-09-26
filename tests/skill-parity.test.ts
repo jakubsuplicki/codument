@@ -13,6 +13,30 @@ import { join, relative, sep } from "node:path";
 const SHIPPED = "skills";
 const TRACKED_MIRROR = join(".agents", "skills");
 
+describe("proportional delivery guidance", () => {
+  it("keeps verified cleanup compact without dropping approval or independent implementation review", () => {
+    const plan = readFileSync(join(SHIPPED, "plan-with-docs/SKILL.md"), "utf8");
+    const work = readFileSync(join(SHIPPED, "work-step/SKILL.md"), "utf8");
+    const review = readFileSync(join(SHIPPED, "review-work/SKILL.md"), "utf8");
+    assert.match(plan, /Compact verified dead-code cleanup/);
+    assert.match(plan, /No textual imports alone is not proof/);
+    assert.match(plan, /Retain explicit human approval/);
+    assert.match(plan, /fresh independent review/);
+    assert.match(work, /Skip duplicate native to-do and watch-event projections/);
+    assert.match(review, /deletion is never automatically trivial/);
+    assert.match(plan, /commit pending/);
+  });
+
+  it("checks executable capabilities and uses project checks before named-test reproduction", () => {
+    const work = readFileSync(join(SHIPPED, "work-step/SKILL.md"), "utf8");
+    assert.match(work, /codument --help/);
+    assert.match(work, /must list `work` and `verify`/);
+    assert.match(work, /Do not substitute older commands/);
+    assert.match(work, /testCommand/);
+    assert.match(work, /TAP reporter/);
+  });
+});
+
 /** Every file under `root`, as paths relative to it, sorted. */
 function filesUnder(root: string): string[] {
   const out: string[] = [];

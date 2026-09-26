@@ -2,7 +2,7 @@
 title: Registry health
 status: current
 type: feature
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-25
 ---
 
 # Registry health
@@ -28,6 +28,12 @@ conventions are anchored; ordinary domain code under a generic test-like name st
 The headline averages only applicable ratios. Foundation entries need no outgoing dependencies;
 isolated entries may indicate missing wiring. Scores use repository state, never elapsed time.
 Missing scope evidence is disclosed beside the score rather than converted into confidence.
+
+Health attribution compares current findings with each repository's committed baseline under the
+same rules. Editing a subject does not make its existing debt new, and a newly broken reference
+can be attributed even when the referring document did not change. Historical inputs are inspected
+in a temporary snapshot without changing user files or the index; an unavailable baseline is
+disclosed rather than described as introduced debt.
 
 Bare health reporting is advisory. `--strict` gates actionable findings introduced by the working
 change; inherited debt remains visible. Explicit invariant execution asks a broader whole-repository
@@ -59,13 +65,18 @@ writing standard. Neither a high score nor a clean diff substitutes for knowledg
 - `--verify-invariants` runs each cited test file once through the project runner and reports green, broken, unpinned, unrunnable, untested or honest boundaries. Any parenthetical test citation counts, including prose citations; trailing asides do not hide it. The honesty ratio excludes unrunnable and deliberate non-testable boundaries. Bare output and JSON have no invariant block. TAP evidence is required to classify a red test as broken; a non-TAP failure remains unrunnable, so reporter gaps must be disclosed. Runner refusal and undecidable counts appear in human and JSON output; timeouts are named separately and point to the clock. Project command/timeout declarations and per-run overrides share the review gate's resolution and diagnostics. *(tests: `adversarial-review-testcommand-parity.test.ts`, `invariant-check.test.ts`, `doctor.test.ts`, `review-confirm.test.ts`)*
 - A Git subdirectory is refused with both roots named and a discriminated JSON error; a genuine repository root or standalone non-Git directory still scores. *(test: `doctor.test.ts`)*
 - A badge shows N/A when no ratio applies, never a misleading zero. *(test: `badge.test.ts`)*
-- A scaffold version older than the running package produces one human-only advisory naming both versions and the update remedy; a downgrade produces no notice. Corrupt metadata produces a repair pointer; neither affects findings, JSON or exit status. *(test: `doctor.test.ts`)*
+- Version skew is advisory in either direction: older managed files name the update remedy, while newer managed skills require a matching executable. Corrupt metadata names a repair; notices do not affect findings, JSON or exit status. *(test: `doctor.test.ts`)*
 - Human output explicitly identifies coverage as registry membership and dependencies, not quality. *(honest boundary: output disclaimer; no semantic test)*
 - Reported gate languages use the same support manifest parity-tested against the README and registered adapters. *(test: `language-matrix.test.ts`)*
 - Path enumeration counts distinct non-test paths. Built-in test citations are exempt anywhere in prose, while line anchors still apply to tests. Project-only test exclusions do not extend this exemption; literal JVM test source sets are exempt across languages. *(test: `prose-altitude.test.ts`)*
 - Registered-doc altitude checks are deterministic, lexical and informational: exported-symbol prose mirrors, file line anchors, and path lists or role-less Key files entries. They never gate strict mode; warning promotion requires separate false-fire evidence. They use the gate's language adapters, with required grammar initialization; malformed source may yield no symbols, but wiring failures cannot silently erase a language's reading. *(tests: `prose-altitude.test.ts`, `doctor.test.ts`)*
 - Fenced mirrors name declarations of owned symbols, not usage calls. Named shapes qualify directly; value declarations need an export marker. Each fence produces at most one informational finding at its first declaration, including an unclosed fence; unrelated names, output and configuration examples stay silent. *(test: `prose-altitude.test.ts`)*
-- New-versus-inherited attribution is derived from each finding's own subject file in the working change, never a feature-wide rule or stored baseline. Subjectless findings stay inherited. Non-repositories have no attribution split, not an empty one. *(test: `doctor.test.ts`)*
+- New-versus-inherited attribution compares findings against committed inputs under the same lint configuration, without a saved baseline. Existing bloat stays inherited when its measurements change, distinct new broken references remain new, and missing baseline evidence yields unavailable attribution. Strict mode conservatively checks all findings when attribution is unavailable. *(test: `doctor.test.ts`)*
+- Historical analysis preserves user files and index state, isolates inherited Git repository
+  selectors, and can inspect a language removed entirely by the staged change. Temporary-storage
+  failures retain valid output with unavailable attribution. *(test: `doctor.test.ts`)*
+- Historical snapshots preserve the repository's object format and do not execute configured
+  checkout filters. Advisory analysis cannot fetch or run project filter tooling. *(test: `doctor.test.ts`)*
 - `doctor --fix` only removes source claims contradicted by missing paths, unmatched patterns, Git ignores or explicit project exclusions. Built-in heuristics, new ownership, manifest routing and doc edits require judgment and remain untouched. Fixability follows each finding's evidence; remaining kinds are always named, and the report reflects the post-fix state. Repeating repair is harmless. *(tests: `doctor.test.ts`, `analyze.test.ts`)*
 - Owned dependency manifests are named with an impact-only alternative, never rewritten automatically: changing ownership changes what wakes. The ecosystem name list is explicit, real source is not guessed to be packaging, and deliberately retained ownership remains possible. *(test: `analyze.test.ts`)*
 - Tree registrations own matching in-scope files like literal registrations. Unmatched patterns inspect their own literal-prefix tree, including content outside source coverage. A literal claim shadowed by its own entry's tree is named in either source field; another entry's refinement stays valid. Out-of-scope content never enters the coverage denominator merely because it is governed. *(test: `analyze.test.ts`)*

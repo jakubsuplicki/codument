@@ -7,6 +7,20 @@ description: Execute the next approved Codument delivery-plan step, using the re
 
 Use this when the user says to continue, work the next step, or implement the approved plan.
 
+## Compatibility and project checks
+
+At the first delivery action in a session, inspect `codument --help` from the executable you will
+actually use: it must list `work` and `verify`. A version string alone does not establish capability.
+If either is absent, repair the installation before executing this workflow: rebuild a linked
+Codument checkout with `npm run build`, or install the matching package and run `codument update`.
+Do not substitute older commands or invent manual approval/review checkpoints. Reuse this check
+for the session unless the executable changes.
+
+Run the project's existing relevant tests, lint and type checks. Codument's named-test reproduction
+is a separate review check, not a requirement to install its own test runner. When reproduction is
+needed, declare the project's file-targeted runner once with `testCommand` in `.codument-meta.json`
+(including `{file}`); use a TAP reporter so failures are distinguishable from toolchain errors.
+
 ## Workflow
 
 1. Read `codument work status --json` and the selected plan under `docs/features`, `docs/concepts`, or `docs/plans`. Reconcile saved work with Git; hand its pending review or commit to the owning skill before starting another step. Explicitly resume interrupted work only when its resume condition is satisfied and the user has authorized continuation.
@@ -26,6 +40,11 @@ Use this when the user says to continue, work the next step, or implement the ap
     - Pause here
 
 ## Plan Checklist Mirror
+
+For the compact dead-code cleanup path in `plan-with-docs`, one inline checklist is sufficient.
+Skip duplicate native to-do and watch-event projections unless requested. Preserve the work state,
+staged verification, independent review and no-commit handoff; add a Resume checkpoint only if
+interrupted, not after each command.
 
 The plan doc's `## Delivery Plan` checklist is the source of truth; the panels below are one-way projections of it, so a step is never "done" until its `- [ ]` is `- [x]` in the doc.
 

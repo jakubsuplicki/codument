@@ -30,7 +30,18 @@ function readOwnPackage(): { root: string; version: string } {
 
 const own = readOwnPackage();
 
-export const version: string = own.version;
+declare const __CODUMENT_BUILD_VERSION__: string | undefined;
+
+// Source execution uses the checkout's manifest. Bundles retain the identity of
+// the code that was actually built, even after a linked checkout changes version.
+export const version: string = typeof __CODUMENT_BUILD_VERSION__ === "string"
+  ? __CODUMENT_BUILD_VERSION__
+  : own.version;
+
+export function buildVersionMismatch(): string | null {
+  return version === own.version ? null
+    : `codument stale build: executable ${version}, package ${own.version}. Run \`npm run build\` in the linked Codument checkout, or reinstall the matching package before running \`codument update\`.`;
+}
 
 /** The directory holding codument's own package.json, in both layouts. */
 export function ownPackageRoot(): string {
@@ -53,8 +64,7 @@ export function compareVersions(a: string, b: string): number {
  * One-line nudge when the project was scaffolded by an OLDER codument than the
  * one running — after an upgrade the installed skills/managed sections silently
  * lag until `codument update` re-syncs them. Null when in sync, never
- * scaffolded, or scaffolded by a NEWER version (downgrades are the user's
- * call, not a nudge). A present-but-unparseable meta file cannot crash an
+ * scaffolded. Newer managed skills need a matching executable as well. A present-but-unparseable meta file cannot crash an
  * advisory surface: the notice then names the repair instead of the skew.
  */
 export function versionSkewNotice(root: string): string | null {
@@ -71,6 +81,8 @@ export function versionSkewNotice(root: string): string | null {
     throw err;
   }
   if (!meta || typeof meta.version !== "string" || !meta.version) return null;
-  if (compareVersions(meta.version, version) >= 0) return null;
+  const compared = compareVersions(meta.version, version);
+  if (compared === 0) return null;
+  if (compared > 0) return `codument ${version} installed, managed workflow requires ${meta.version} — install a matching CLI before following these skills`;
   return `codument ${version} installed, project scaffolded at ${meta.version} — run \`codument update\` to re-sync the managed files`;
 }

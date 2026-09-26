@@ -22,6 +22,11 @@ Two independent adversarial gates, and the docs-backed workflow that produces th
 
 ## Install
 
+After upgrading, run `codument update` and check that `codument --help` lists `work` and `verify`.
+If a linked checkout has an older executable, run `npm run build` there first. Release packages
+are rebuilt and smoke-tested before packing; a stale build reports its own version and refuses
+actions against a different package version.
+
 ```bash
 npm install -D codument
 npx codument init
@@ -487,6 +492,13 @@ Every covering review travels together with opaque references and declared attri
 findings stay local, and CI reruns named tests. Attribution is self-reported. Write SARIF output outside
 the checkout so generating the report does not make the inspected snapshot dirty.
 
+### Verified dead-code cleanup
+
+Ask the agent to use the compact cleanup path: one short approved step in the owning doc, evidence
+covering callers plus dynamic and public entry points, relevant project checks, and independent
+review of the staged removal. Tests are verification evidence, not source-map entries. No imports
+alone does not prove code is unused. Uncertain removals use the full planning path.
+
 ### `codument ack` — clear a change that owes no doc change
 
 Most changes never reach this command. A move the parser can prove left the contract alone is reported and never blocks, so there is nothing to sign — that is the whole of ADR 020. What remains are the few events the gate can prove happened and cannot judge for you: new or vanished public surface, a governed tree decaying, and a change to a file no adapter can read whose owner declared a risk. For those, an ack records a fingerprint-bound, **auto-invalidating** decision so `review` stops flagging it. Pick the grain that matches what you are answering for.
@@ -777,11 +789,16 @@ There is no `--exclude` flag on purpose. Scope is a repository artifact your rev
 
 ### Declaring your test runner
 
+Run your project's normal tests, lint and type checks as usual. Codument only needs a reproduction
+runner when a review finding names a test, or when you explicitly request invariant execution.
+A clean or missing review does not require installing `tsx`. For Vitest, use its
+[TAP reporter](https://vitest.dev/guide/reporters.html#tap-reporter) so failures can be adjudicated.
+
 The same file is where you say how one test file runs, for the two modes that execute tests — the adversarial-review confirm step and `doctor --verify-invariants`:
 
 ```json
 {
-  "testCommand": "vitest run {file}",
+  "testCommand": "vitest run --reporter=tap {file}",
   "testTimeoutSeconds": 300
 }
 ```

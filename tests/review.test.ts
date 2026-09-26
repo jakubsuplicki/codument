@@ -1003,7 +1003,7 @@ describe("--require-review names the could-not-run condition (no resolvable tsx)
     }
   }
 
-  it("a project without resolvable tsx sees the named condition, not a silent advisory", async () => {
+  it("does not probe tsx before a review has a named test to reproduce", async () => {
     // non-trivial diff (two changed sources) in a project with no node_modules
     await scaffold({
       "src/auth/login.ts": "export const login = () => { return 7; };\n",
@@ -1011,9 +1011,7 @@ describe("--require-review names the could-not-run condition (no resolvable tsx)
     });
     const { status, stdout } = run(["review", "--require-review"], tmp);
     assert.equal(status, 1, "uncovered non-trivial diff still fails the gate");
-    assert.match(stdout, /confirm step could not run/);
-    assert.match(stdout, /no local tsx/);
-    assert.match(stdout, /--test-command/);
+    assert.doesNotMatch(stdout, /confirm step could not run|no local tsx/);
   });
 
   it("a custom --test-command suppresses the condition (the project owns its runner)", async () => {
@@ -1028,14 +1026,14 @@ describe("--require-review names the could-not-run condition (no resolvable tsx)
     assert.doesNotMatch(stdout, /confirm step could not run/);
   });
 
-  it("--json carries the condition on the reviewGate shape", async () => {
+  it("--json has no runner condition when no reproduction is required", async () => {
     await scaffold({
       "src/auth/login.ts": "export const login = () => { return 9; };\n",
       "src/lib/db.ts": "export const db = { v: 9 };\n",
     });
     const { stdout } = run(["review", "--require-review", "--json"], tmp);
     const report = JSON.parse(stdout);
-    assert.match(report.reviewGate.confirmUnavailable, /no local tsx/);
+    assert.equal(report.reviewGate.confirmUnavailable, undefined);
   });
 
   it("a declared testCommand suppresses it too — the runner is project config, not a per-run flag", async () => {
@@ -3829,7 +3827,14 @@ describe("a declared runner that does not exist reaches the verdict (plan 49)", 
     await scaffold({
       "src/auth/login.ts": "export const login = () => { return 14; };\n",
       "src/lib/db.ts": "export const db = { v: 14 };\n",
+      "broken.test.ts": "// named reproduction\n",
     });
+    await writeFile(join(tmp, "findings.json"), JSON.stringify({
+      invariantsChecked: ["login returns a constant"],
+      findings: [{ citation: "src/auth/login.ts:1", detail: "wrong constant", status: "confirmed", failingTest: "broken.test.ts" }],
+      signer: "test",
+    }));
+    execFileSync("node", [CLI, "review", "--record", "findings.json"], {cwd: tmp});
     const { stdout } = run(
       ["review", "--require-review", "--test-command", "definitely-not-a-real-runner {file}"],
       tmp,

@@ -1387,6 +1387,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     // A missing key and an explicit null both mean the same thing to a reader: this
     // artifact does not say what oracle it answered.
     unstampedCovering = covering.filter((r) => !r.bundleStamp).length;
+    const hasReproduction = covering.some((review) => review.findings.some((finding) => finding.failingTest));
     // Re-derive each finding's status by RUNNING its named test — never trust a
     // status the artifact merely claims. A red test re-promotes to confirmed; a
     // toolchain failure (missing runner, resolution error) is unrunnable → advisory.
@@ -1422,7 +1423,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
       budgetMs: resolvedTimeout.timeoutMs,
       noun: "finding",
       consequence: "advisory rather than judged",
-      runnerUnavailable: runnerUnavailable(root, resolvedTest.command),
+      runnerUnavailable: hasReproduction ? runnerUnavailable(root, resolvedTest.command) : null,
     });
     reviewGate = evaluateReviewGate(
       {

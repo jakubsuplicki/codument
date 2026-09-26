@@ -1,6 +1,6 @@
 {
   "name": "codument",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "description": "Docs-based guardrails for AI coding workflows: coverage scoring, doc-drift checks, and diff safety review.",
   "type": "module",
   "bin": {
@@ -31,6 +31,7 @@
     "format": "biome format --write ./src ./tests",
     "test": "tsx --test tests/*.test.ts",
     "prepublishOnly": "npm run build && npm test",
+    "prepack": "npm run build 1>&2 && tsx --test tests/cli.test.ts 1>&2",
     "demo": "tsup >/dev/null && node dist/cli.js demo",
     "demo:live": "tsup >/dev/null && node dist/cli.js demo --live"
   },

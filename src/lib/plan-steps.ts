@@ -1,5 +1,5 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { join, relative, isAbsolute, resolve, sep } from "node:path";
+import { readFileSync, readdirSync, realpathSync } from "node:fs";
+import { basename, dirname, join, relative, isAbsolute, resolve, sep } from "node:path";
 import { appendEvent, readRecentEvents } from "./events.js";
 import { assessPlanApproval, readApprovalPolicy, readApprovalStore, type ApprovalAssessment } from "./plan-approval.js";
 import { ConfigValueError } from "./state-io.js";
@@ -133,6 +133,14 @@ function checkpointMask(lines: string[]): boolean[] {
     if (heading && /^resume checkpoint\s*$/i.test(heading[2])) depth = heading[1].length;
     return depth !== null;
   });
+}
+
+/** Historical scope is not a live documentation pointer. Preserve durable
+ * sections and use the same Markdown boundaries as approval and checklist reads. */
+export function withoutDeliveryPlans(markdown: string): string {
+  const lines = markdown.split(/\r?\n/);
+  const sections = sectionSteps(instructionLines(markdown), /\b(?:delivery plan|definition of done)\b/i);
+  return lines.filter((_, index) => !sections.some(({ start, end }) => index >= start && index < end)).join("\n");
 }
 
 /** One selection for approval and work. A standalone plan may use document
@@ -380,7 +388,13 @@ export function isPlanPath(path: string): boolean {
 }
 
 export function normalizePlanPath(root: string, path: string): string {
-  const rel = relative(resolve(root), resolve(root, path)).split(sep).join("/");
+  let rel = relative(resolve(root), resolve(root, path)).split(sep).join("/");
+  if (!isPlanPath(rel) && isAbsolute(path)) {
+    // Git may return the canonical root while the caller names the same repo
+    // through an OS alias. Resolve the parent so missing plans still normalize.
+    try { rel = relative(realpathSync(root), join(realpathSync(dirname(path)), basename(path))).split(sep).join("/"); }
+    catch { /* retain the invalid-path diagnostic when the parent is unavailable */ }
+  }
   if (!isPlanPath(rel)) throw new ConfigValueError(path, "plan path", "choose a supported plan inside this repository");
   return rel;
 }

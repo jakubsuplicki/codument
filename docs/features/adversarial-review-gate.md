@@ -2,7 +2,7 @@
 title: Adversarial review gate
 status: in-progress
 type: feature
-last_reviewed: 2026-09-14
+last_reviewed: 2026-09-25
 ---
 
 # Adversarial review gate
@@ -51,6 +51,14 @@ reruns those tests under the existing finding policy. Attribution is self-report
 **Proportionality is mandatory, not optional.** Two extra agent passes on every one-line edit is how a good gate gets disabled. Bundle depth is gated on blast radius, which Codument already computes: a trivial single-symbol edit touching no documented invariant skips the heavy pass; a risk-tagged, invariant-touching, or multi-file diff gets the full adversary.
 
 ## Invariants & boundaries
+
+- Named-test execution treats a linked project root and its canonical path as the same checkout,
+  while preserving containment checks against escaping test references. *(test: `review-confirm.test.ts`)*
+
+- Review probes runner availability only when a covering finding names a test to reproduce. Missing,
+  clean and judgment-only reviews do not require a local default runner. A known unavailable runner
+  is named when explaining missing reproduction evidence; timeouts retain their own remedy.
+  *(tests: `review.test.ts`, `review-confirm.test.ts`)*
 
 - Portable coverage excludes only the schema-valid reserved review manifest from its own digest.
   Missing, malformed, stale, partial and wrong-base evidence cannot clear the gate. Source, policy,

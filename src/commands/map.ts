@@ -12,6 +12,7 @@ import { resolveActivePlan, parsePlanScope } from "../lib/plan-steps.js";
 import { workPlanSelection, workPlanMarkdown } from "../lib/work-state.js";
 import {
   ExcludedSourceError,
+  assertNoExcludedSource,
   isSourcePattern,
   readRegistrySync,
   sourceNames,
@@ -391,7 +392,20 @@ export function mapCheck(options: MapCliOptions = {}): void {
     return;
   }
   const { map } = resolved;
-  const errors = map.errors;
+  const errors: Array<{ line?: number; path?: string; message: string }> = [...map.errors];
+  const scope = resolveScopeSync(root);
+  for (const row of map.rows) {
+    try {
+      assertNoExcludedSource(row.feature, undefined, { primary_sources: [row.pathOrGlob] }, scope.spec);
+    } catch (error) {
+      if (!(error instanceof ExcludedSourceError)) throw error;
+      const rule = declaredRuleFor(error.path, scope.configured);
+      errors.push({
+        path: row.pathOrGlob,
+        message: rule ? new ExcludedSourceError(error.key, error.path, error.field, rule).message : error.message,
+      });
+    }
+  }
   const warnings = shapeWarnings(map);
 
   // A plan that WROTE a "Feature Map" heading but produced no parseable rows and
@@ -425,7 +439,7 @@ export function mapCheck(options: MapCliOptions = {}): void {
           // flag this, not treat the plan as source-free and skip the adversary.
           malformedMap,
           rows: map.rows.length,
-          errors: errors.map((e) => ({ line: e.line, message: e.message })),
+          errors: errors.map((e) => ({ line: e.line, path: e.path, message: e.message })),
           warnings: warnings.map((w) => w.message),
           grounding,
         },
@@ -446,7 +460,7 @@ export function mapCheck(options: MapCliOptions = {}): void {
     process.exitCode = 1;
     return;
   }
-  for (const e of errors) console.log(pc.red(`  ✗ line ${e.line}: ${e.message}`));
+  for (const e of errors) console.log(pc.red(`  ✗ ${e.path ? `row "${e.path}"` : `line ${e.line}`}: ${e.message}`));
   for (const w of warnings) console.log(pc.yellow(`  ▲ ${w.message}`));
   if (errors.length === 0 && warnings.length === 0) {
     console.log(pc.green(`  ✓ Feature Map OK — ${map.rows.length} rows`));

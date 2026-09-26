@@ -7,6 +7,16 @@ description: Review the current diff against the approved Codument plan, tests, 
 
 Use this after a planned step has been implemented and before committing.
 
+If this is the session's first workflow action, run the compatibility check from `work-step`
+before lifecycle commands. The actual executable must expose `work` and `verify`; repair a
+mismatch instead of substituting older commands or manual checkpoints.
+
+For compact dead-code cleanup, use the same generated worksheet and independent reviewer. Check the
+unused-code evidence against exports, dynamic loading, framework entry points and side effects;
+deletion is never automatically trivial. Do not demand a second plan or a separate review bundle
+when the worksheet already supplies the reviewed boundary. Historical paths inside the plan remain
+valid scope; durable Key files and registry pointers must describe what remains.
+
 ## Review Order
 
 1. Read `codument work status --json` and its approved plan step. After final compaction, use the tracked contract and final-delivery binding in `docs/.approvals.json`; the pending-plans recovery copy supplies working context only. Inspect the compacted doc in the staged boundary as usual.

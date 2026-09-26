@@ -24,9 +24,16 @@ import { workApprove, workCommand } from "./commands/work.js";
 import { ExcludedSourceError, RegistryError } from "./lib/registry.js";
 import { ConfigValueError, StateFileError } from "./lib/state-io.js";
 import { GateError } from "./lib/two-ref.js";
-import { version } from "./lib/version.js";
+import { buildVersionMismatch, version } from "./lib/version.js";
 
 const program = new Command();
+program.hook("preAction", () => {
+  const mismatch = buildVersionMismatch();
+  if (mismatch) {
+    console.error(mismatch);
+    process.exit(1);
+  }
+});
 
 const work = program.command("work").description("Record approved work and manage its delivery state");
 work.command("approve")
@@ -110,7 +117,7 @@ program
   )
   .option(
     "--test-command <argv...>",
-    'How to run a cited invariant test under --verify-invariants; the literal {file} token is the resolved path. Pass as ONE quoted string, e.g. --test-command "vitest run {file}". OVERRIDES "testCommand" in .codument-meta.json (default: npx --no-install tsx --test {file} — local-only, never a network fetch)',
+    'How to run a cited invariant test under --verify-invariants; the literal {file} token is the resolved path. Pass as ONE quoted string, e.g. --test-command "vitest run --reporter=tap {file}". OVERRIDES "testCommand" in .codument-meta.json (default: npx --no-install tsx --test {file} — local-only, never a network fetch)',
   )
   .option(
     "--test-timeout <seconds>",
@@ -181,7 +188,7 @@ program
   )
   .option(
     "--test-command <argv...>",
-    'how to run a finding\'s named test under --require-review; the literal {file} token is the resolved path. Pass the whole command as ONE quoted string, e.g. --test-command "npx tsx --test {file}" or "vitest run {file}". OVERRIDES "testCommand" in .codument-meta.json, which is where a project should declare its runner once (default: npx --no-install tsx --test {file} — local-only, never a network fetch). Point at a TAP-emitting runner for non-node:test projects',
+    'how to run a finding\'s named test under --require-review; the literal {file} token is the resolved path. Pass the whole command as ONE quoted string, e.g. --test-command "npx tsx --test {file}" or "vitest run --reporter=tap {file}". OVERRIDES "testCommand" in .codument-meta.json, which is where a project should declare its runner once (default: npx --no-install tsx --test {file} — local-only, never a network fetch). Point at a TAP-emitting runner for non-node:test projects',
   )
   .option(
     "--test-timeout <seconds>",

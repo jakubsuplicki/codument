@@ -14,11 +14,18 @@ import { GateError } from "./gate-error.js";
 // ENOBUFS, which the catch-to-empty helpers below swallowed into a false "clean."
 const GIT_MAX_BUFFER = 512 * 1024 * 1024;
 
+const gitEnvironments = new AsyncLocalStorage<NodeJS.ProcessEnv>();
+
+/** Scope disposable-snapshot reads without changing the caller's Git/index environment. */
+export function withGitEnvironment<T>(env: NodeJS.ProcessEnv, read: () => T): T {
+  return gitEnvironments.run(env, read);
+}
+
 function git(root: string, args: string[]): string {
   return execFileSync("git", args, {
     cwd: root,
     encoding: "utf-8",
-    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+    env: { ...(gitEnvironments.getStore() ?? process.env), GIT_OPTIONAL_LOCKS: "0" },
     stdio: ["ignore", "pipe", "ignore"],
     maxBuffer: GIT_MAX_BUFFER,
   });

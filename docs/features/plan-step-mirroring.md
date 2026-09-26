@@ -2,7 +2,7 @@
 title: Plan step mirroring
 status: current
 type: feature
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-25
 ---
 
 # Plan step mirroring
@@ -34,6 +34,13 @@ plans must declare approval within the selected one. Examples and quoted materia
 authorization nor work to perform.
 
 ## Invariants & boundaries
+
+- Explicit plan paths through an alias of the repository root normalize to the same supported
+  in-repository identity; genuinely outside paths remain refused. *(test: `work.test.ts`)*
+
+- Transient plan sections can name removed paths as historical scope. Durable pointer checks use
+  the same Markdown heading boundaries as plan selection and preserve sibling durable sections;
+  example headings cannot hide live references. *(test: `change-state.test.ts`)*
 
 - Paused work and explicit previews of other plans cannot emit execution; saved selection resolves otherwise ambiguous plans. *(test: `work.test.ts`)*
 - Removing one identified plan leaves sibling selection intact; restored archived checklists cannot

@@ -7,6 +7,10 @@ description: Turn resolved decisions into a Codument feature plan with scope, no
 
 Use this after grilling has resolved enough uncertainty to create an implementation plan. The output is a durable feature or concept doc that the agent can resume from later.
 
+Before lifecycle commands, run the session compatibility check from `work-step`: the actual
+`codument --help` must list `work` and `verify`. Repair a mismatch before recording approval;
+do not substitute older commands or manual checkpoints. Reuse a completed session check.
+
 ## Boundary With Grill With Docs
 
 `plan-with-docs` is for writing the agreed plan, not for discovering the work's boundaries. Use it only when the important decisions are already settled enough to define scope, non-goals, acceptance criteria, verification, and implementation steps.
@@ -36,6 +40,27 @@ When those questions remain, switch to `grill-with-docs` first. Ask one sharp de
 
 ## Delivery Plan Format
 
+### Compact verified dead-code cleanup
+
+For a small removal within an existing feature, use one short Delivery Plan in its owning doc:
+one checkbox, exact Scope, evidence that the code is unused, and the relevant verification commands.
+The outcome is removal with unchanged supported behavior. Do not create a new feature doc, Feature
+Map, ADR, separate research phase or repeated checkpoints for that removal.
+
+Eligibility requires checking callers, exports/public entry points, framework discovery, routes,
+dynamic imports and side-effect registration. No textual imports alone is not proof. If any use or
+behavioral effect remains uncertain, use the normal grilling/planning path. Include associated tests
+and assets only when their removal is supported by the same evidence; retain coverage of live behavior.
+
+Retain explicit human approval of the exact scope. If the user already requested that named removal
+and the evidence confirms it without expanding scope, record that approval without asking again.
+Otherwise present the compact step for approval. Skip the separate plan-adversary pass only for this
+verified cleanup; the implementation still requires fresh independent review, ownership and registry
+repair, any genuinely affected docs, project checks and staged `codument verify`.
+
+Run the single step through review once; do not split it into planning/checkpoint/review substeps.
+Honor a no-commit request by leaving verified work ready with its commit pending.
+
 ```markdown
 ## Delivery Plan
 
@@ -59,6 +84,9 @@ Evidence needed at the affected boundary, including any integration that remains
 ```
 
 ## Feature Map (required when the plan introduces source files)
+
+Tests are evidence, not source ownership. Keep test paths in Verification and invariant citations,
+not Feature Map rows; `map check` and materialization share the same source exclusions.
 
 A plan that adds source files MUST carry a fenced `feature-map` block. This is the decomposition decision made explicit and approvable: it routes each source path to the feature that owns it, and `work-step` consumes it via `codument map` so files land in the right feature instead of being lumped into one umbrella feature.
 

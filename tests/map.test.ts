@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseFeatureMap } from "../src/lib/feature-map.js";
-import { materializeFile, materializeFileTo, shapeWarnings } from "../src/commands/map.js";
+import { mapCheck, materializeFile, materializeFileTo, shapeWarnings } from "../src/commands/map.js";
 import { readRegistrySync, ExcludedSourceError } from "../src/lib/registry.js";
 
 const MAP_MD = `
@@ -17,6 +17,59 @@ src/main.ts     | app-shell | feature | DOM wiring  [secondary: board]
 `;
 
 const rows = parseFeatureMap(MAP_MD).rows;
+
+describe("map check source exclusions", () => {
+  let root: string;
+  beforeEach(async () => { root = await mkdtemp(join(tmpdir(), "codument-map-check-")); });
+  afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+
+  for (const path of ["src/widget.test.ts", "src/**/*.test.ts", "__tests__/*.ts", "generated/widget.ts"]) {
+    it(`rejects ${path} before materialization`, async () => {
+      await writeFile(join(root, "plan.md"), `\`\`\`feature-map\n${path} | widget | feature | Widget behavior\n\`\`\`\n`);
+      await writeFile(join(root, ".codument-meta.json"), JSON.stringify({ exclude: { dirs: ["generated"] } }));
+      const lines: string[] = [];
+      const original = console.log;
+      const exitCode = process.exitCode;
+      try {
+        console.log = (line: string) => lines.push(line);
+        mapCheck({root, plan: "plan.md", json: true});
+        const result = JSON.parse(lines.join("\n"));
+        assert.equal(result.ok, false);
+        assert.equal(process.exitCode, 1);
+        assert.match(result.errors[0].message, /exclude|exclusion|out-of-scope/);
+        assert.equal(result.errors[0].path, path);
+      } finally { console.log = original; process.exitCode = exitCode; }
+    });
+  }
+
+  it("accepts a mixed source glob without treating its excluded descendants as sources", async () => {
+    await writeFile(join(root, "plan.md"), "```feature-map\nsrc/**/*.ts | widget | feature | Widget behavior\n```\n");
+    await writeFile(join(root, ".codument-meta.json"), JSON.stringify({exclude: {globs: ["src/*/*.ts"]}}));
+    const original = console.log;
+    const exitCode = process.exitCode;
+    try {
+      let result: {ok?: boolean} = {};
+      console.log = (line: string) => { result = JSON.parse(line); };
+      mapCheck({root, plan: "plan.md", json: true});
+      assert.equal(result.ok, true);
+    } finally { console.log = original; process.exitCode = exitCode; }
+  });
+
+  it("accepts recursive patterns that can cross a test-like segment into real source", async () => {
+    await writeFile(join(root, "plan.md"), "```feature-map\nsrc/**/test_**.py | widget | feature | Widget behavior\n```\n");
+    const original = console.log;
+    const exitCode = process.exitCode;
+    try {
+      let result: {ok?: boolean} = {};
+      console.log = (line: string) => { result = JSON.parse(line); };
+      mapCheck({root, plan: "plan.md", json: true});
+      assert.equal(result.ok, true);
+      const map = parseFeatureMap(await readFile(join(root, "plan.md"), "utf8"));
+      await mkdir(join(root, "docs"), {recursive: true});
+      assert.equal(materializeFile(root, map.rows, "src/app/test_helpers/format.py").status, "created");
+    } finally { console.log = original; process.exitCode = exitCode; }
+  });
+});
 
 describe("materializeFile", () => {
   let root: string;

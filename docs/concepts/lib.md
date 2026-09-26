@@ -2,7 +2,7 @@
 title: Core library
 status: current
 type: concept
-last_reviewed: 2026-09-14
+last_reviewed: 2026-09-25
 ---
 
 # Core library
@@ -27,9 +27,9 @@ manifest rather than copy a support list. Specialized parsing, verdict and bench
 in [[change-control-gate]], [[complete-cost-capture]] and [[proof-benchmarks]] respectively; token
 producer and pricing contracts live in [[token-cost-tracking]].
 
-Package version and bundled grammar assets resolve from Codument's own named package in bundled
-and unbundled layouts, never from a consumer's manifest. The same resolution serves the version
-and grammar consumers.
+Bundled grammar assets resolve from Codument's own named package in bundled and source layouts,
+never from a consumer manifest. Executables retain their build version and reject a mismatched
+package; source execution uses the checkout version. This keeps stale linked builds diagnosable.
 
 Snapshot consumers use selected source, policy and documentation throughout. Staged delivery and
 complete branch review through the index retain distinct boundaries. Portable review and final
@@ -47,6 +47,14 @@ what that view could not read. [[token-cost-tracking]] owns availability and sum
 Rebuilding activity does not erase captured usage that incomplete source data cannot reconstruct.
 
 ## Invariants & boundaries
+
+- Disposable historical reads can isolate Git environment settings without changing the caller's
+  repository or index selection. Temporary failures remain unavailable evidence. *(test: `doctor.test.ts`)*
+
+- Map preflight and registry authoring apply the same source exclusion guard; mixed patterns do not
+  make their test descendants ownable. *(tests: `map.test.ts`, `registry.test.ts`)*
+- Build identity cannot be replaced by an edited package manifest. Managed workflow guidance checks
+  capabilities, and compact cleanup retains independent review. *(tests: `cli.test.ts`, `skill-parity.test.ts`)*
 
 - Explicit repository views keep history refs, registry and blob reads together, including roots with nested members. The view is isolated across concurrent calls and restored after failure; normal workspace discovery and caches retain their meaning. *(test: `history-audit-selection.test.ts`)*
 

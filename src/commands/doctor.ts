@@ -1,15 +1,18 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { devNull, tmpdir } from "node:os";
 import { join } from "node:path";
 import pc from "picocolors";
 import { atomicWriteFileSync } from "../lib/events.js";
 import { LANGUAGE_MATRIX, warmAdaptersForRepo } from "../lib/fingerprint.js";
 import {
   assertRootIsRepoToplevel,
-  getWorkingTreeChanges,
-  getWorkingTreeDeletions,
-  getWorkingTreeRenames,
+  getHeadSha,
+  getGitPath,
+  forgetWorkspace,
   isGitRepo,
   resolveWorkspace,
+  withGitEnvironment,
 } from "../lib/git.js";
 import { deadAcks, sweepDeadAcks } from "./ack.js";
 import { GateError } from "../lib/two-ref.js";
@@ -146,10 +149,9 @@ export interface DoctorReport {
      * identically, so the loop's only whole-repo health surface was unreadable at
      * exactly the moment it had something new to say.
      *
-     * Derived, never a baseline file: a finding is this change's when its subject
-     * file is in the working tree's change set. No recorded baseline means no second
-     * source of truth to rot. Null when there is no repository to ask, which is
-     * honestly different from "nothing here is new".
+     * Derived from each repository's committed HEAD, never a saved baseline file.
+     * Existing findings stay inherited when their subject is edited. Null means
+     * the baseline could not be established, not that no findings are new.
      */
     attribution: { fromThisChange: LintFinding[]; inherited: LintFinding[] } | null;
   };
@@ -258,53 +260,78 @@ export function buildReport(
     inScopeSourceCount: result.inScopeSourceCount,
     coverage: result.coverage,
     scope,
-    lint: { count: findings.length, byId, findings, notes, attribution: attribute(root, findings) },
+    lint: { count: findings.length, byId, findings, notes, attribution: attribute(root, findings, opts) },
   };
 }
 
-/**
- * Which of these findings this repo state just produced.
- *
- * A finding is this change's when its own subject file is in the working tree's
- * change set — the tightest reading, and deliberately so. Attributing by FEATURE
- * would mark every pre-existing finding on a feature as new the moment someone edits
- * one of its files, which reproduces the unreadable pile it exists to fix, in the
- * other direction. A finding with no subject file has nothing to match and stays
- * inherited: over-attributing is the failure that costs, since the whole value of
- * the split is that the short list is trustworthy.
- *
- * The change set is the same one `review` scopes to — changes, deletions and a
- * rename's origin — because a `missing-source` finding about a path this change just
- * deleted is exactly the kind the reader must not lose in sixty-nine others. Fails
- * to null rather than to empty: no repository to ask is a different answer from
- * "nothing here is new", and reporting the second would be the unknown-is-not-empty
- * conflation this codebase refuses everywhere else.
- */
+/** Compare the same lint against committed inputs without replacing user files or
+ * borrowing the user's index. A changed subject alone does not establish causation. */
 function attribute(
   root: string,
   findings: LintFinding[],
+  opts: ReportOptions,
 ): { fromThisChange: LintFinding[]; inherited: LintFinding[] } | null {
-  // Asked before the listers, because outside a repository they answer "nothing
-  // changed" rather than refusing — and reporting every finding as inherited on the
-  // strength of that would be the unknown-is-not-empty conflation, dressed as a fact.
   if (!isGitRepo(root)) return null;
-  let touched: Set<string>;
+  if (findings.length === 0) return { fromThisChange: [], inherited: [] };
+  let snapshot: string | undefined;
   try {
-    const renames = getWorkingTreeRenames(root);
-    touched = new Set([
-      ...getWorkingTreeChanges(root),
-      ...getWorkingTreeDeletions(root),
-      ...renames.map((r) => r.from),
-    ]);
+    const env: NodeJS.ProcessEnv = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
+    const localVariables = execFileSync("git", ["rev-parse", "--local-env-vars"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    for (const name of localVariables.trim().split(/\r?\n/)) delete env[name];
+    snapshot = mkdtempSync(join(tmpdir(), "codument-health-base-"));
+    const baselineRoot = snapshot;
+    return withGitEnvironment(env, () => {
+      const workspace = resolveWorkspace(root);
+      if (workspace.unreadable.length || workspace.uninitialized.length) return null;
+      for (const member of workspace.members) {
+        const head = getHeadSha(member.root);
+        if (!head) return null;
+        const objects = getGitPath(member.root, "objects");
+        if (!objects) return null;
+        const objectFormat = execFileSync("git", ["rev-parse", "--show-object-format"], {cwd: member.root, env, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]}).trim();
+        const target = join(baselineRoot, member.prefix);
+        mkdirSync(target, { recursive: true });
+        const checkoutEnv = {...env, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: "1"};
+        execFileSync("git", ["init", "--quiet", "--template=", `--object-format=${objectFormat}`, target], { env: checkoutEnv, stdio: "pipe" });
+        const memberEnv = { ...env, GIT_INDEX_FILE: join(target, ".git", "index") };
+        execFileSync("git", ["read-tree", head], { cwd: member.root, env: memberEnv, stdio: "pipe" });
+        // Read existing objects through the snapshot's empty config. Health checks
+        // must not execute project smudge filters or trigger their network fetches.
+        execFileSync("git", ["checkout-index", "--all", "--force"], { cwd: target, env: {...checkoutEnv, GIT_OBJECT_DIRECTORY: objects}, stdio: "pipe" });
+      }
+      const scope = resolveScopeSync(baselineRoot);
+      const baseline = analyze({
+        root: baselineRoot,
+        registry: readRegistrySync(join(baselineRoot, "docs", ".registry.json")),
+        bloat: { ...DEFAULT_BLOAT_THRESHOLDS, ...opts.bloat },
+        highFanoutThreshold: opts.highFanoutThreshold,
+        exclusion: scope.spec,
+        declaredScopeUnreadable: scope.unreadable,
+        declaredExclusions: scope.configured,
+      });
+      if (scope.unreadable || baseline.scope.unreadableDirs?.length || baseline.scope.gitIgnore === "unavailable") return null;
+      const old = baseline.lint.filter(f => f.severity === "warn");
+      if (!existsSync(join(baselineRoot, "docs", ".registry.json"))) old.push(missingRegistryFinding());
+      // Bloat counts and completed-checklist sizes are measurements of an existing
+      // finding. Broken links are separate defects even in the same document.
+      const identity = (f: LintFinding) => JSON.stringify([
+        f.id, f.feature ?? null, f.file ? normalizeRelPath(f.file) : null,
+        ["bloated-doc", "shipped-scaffolding"].includes(f.id) ? null : f.message,
+      ]);
+      const inherited = new Set(old.map(identity));
+      return {
+        fromThisChange: findings.filter(f => !inherited.has(identity(f))),
+        inherited: findings.filter(f => inherited.has(identity(f))),
+      };
+    });
   } catch {
     return null;
+  } finally {
+    if (snapshot) {
+      forgetWorkspace(snapshot);
+      rmSync(snapshot, { recursive: true, force: true, maxRetries: 3 });
+    }
   }
-  const isNew = (f: LintFinding): boolean =>
-    f.file !== undefined && touched.has(normalizeRelPath(f.file));
-  return {
-    fromThisChange: findings.filter(isNew),
-    inherited: findings.filter((f) => !isNew(f)),
-  };
 }
 
 /**
@@ -699,6 +726,7 @@ function printHuman(report: DoctorReport, strictFail: boolean, gatingCount: numb
     // either way the split says nothing the flat list does not, so it is not drawn.
     console.log(`  Lint: ${pc.yellow(String(lint.count))} findings`);
     for (const finding of lint.findings) row(finding);
+    if (lint.attribution === null) console.log(pc.dim("  Attribution unavailable: committed baseline could not be established; findings are not claimed as introduced by this change."));
   } else {
     // What this repo state just produced leads, and what it arrived with follows
     // under its own heading. Rendering them identically is what made the whole
@@ -751,7 +779,7 @@ function printHuman(report: DoctorReport, strictFail: boolean, gatingCount: numb
     const inherited = report.lint.count - gatingCount;
     console.log(
       pc.red(
-        `  Strict: ${gatingCount} finding${gatingCount === 1 ? "" : "s"} from this change, failing (exit 1).` +
+        `  Strict: ${gatingCount} finding${gatingCount === 1 ? "" : "s"} ${report.lint.attribution === null ? "with attribution unavailable" : "from this change"}, failing (exit 1).` +
           (inherited > 0 ? ` ${inherited} inherited — reported, never gated.` : "") +
           " Notes are awareness-only and never count.",
       ),

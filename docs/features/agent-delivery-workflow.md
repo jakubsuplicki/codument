@@ -2,7 +2,7 @@
 title: Agent delivery workflow
 status: current
 type: concept
-last_reviewed: 2026-09-14
+last_reviewed: 2026-09-25
 ---
 
 # Agent delivery workflow
@@ -29,12 +29,25 @@ Profiles place the same contract on each host's instruction and skill surfaces. 
 uses a fresh agent when available and discloses reduced independence otherwise. Existing-project
 adoption preserves authored knowledge, creates only needed scaffolds and marks uncertainty.
 
+Verified dead-code removal can use a compact approved step in the owning doc. Evidence must cover
+public and dynamic entry points as well as ordinary callers; absence of textual imports is not
+enough. This path removes duplicate planning and progress bookkeeping while retaining ownership,
+project checks, staged verification and independent implementation review. Uncertain removals use
+the normal decision process. A request to leave changes uncommitted preserves readiness and the
+pending commit rather than claiming delivery.
+
 Replies lead with the conclusion and offer supporting detail. Brevity never reduces grounding or
 removes required parts of a decision. Compaction similarly removes working history while preserving
 contracts and the pending gate; it is not permission to advance.
 After any reviewed commit, gated handoff can offer native compaction or a grounded restart note.
 
 ## Invariants & boundaries
+
+- Session preflight checks the executable's workflow capabilities before using the skills. A stale
+  installation is repaired rather than replaced with manual gate approximations. *(test: `skill-parity.test.ts`)*
+- Compact cleanup retains explicit scope approval and independent deletion review, with no duplicate
+  plan-adversary pass or progress projections. Dynamic usage uncertainty disqualifies the shortcut.
+  *(instruction contract: `skill-parity.test.ts`; agent execution remains untested)*
 
 - Paused work cannot restart through checklist projection. Uncommitted work stays ready, and
   completion requires its verified delivery to be observed in Git. *(test: `work.test.ts`)*

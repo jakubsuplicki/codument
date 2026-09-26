@@ -5,6 +5,30 @@ All notable changes to Codument are recorded here. The format follows
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while it
 remains pre-1.0.
 
+## [0.20.1] - 2026-09-25
+
+### Fixed
+
+- Packed releases rebuild and smoke-test the CLI required by the workflow skills.
+  Executables retain their build version and refuse mismatched package actions;
+  session guidance checks actual capabilities before starting delivery.
+- Removed-path checks preserve historical scope inside embedded delivery plans
+  while continuing to enforce durable documentation pointers.
+- Feature Map validation rejects excluded tests and test patterns before
+  materialization, using the registry's source rules.
+- Review checks runner availability only for named test reproduction, and reports
+  known runner failures accurately. Vitest setup guidance includes its TAP reporter.
+- Named tests and explicit plan paths work through project-root aliases, including
+  macOS temporary directories, without weakening checkout containment.
+- Health audits compare findings with committed inputs, keeping existing debt
+  inherited after unrelated edits and detecting newly broken references.
+
+### Changed
+
+- Verified dead-code removal can use one compact approved step with targeted
+  evidence and independent implementation review, without duplicate planning or
+  progress bookkeeping. No-commit requests retain a pending commit.
+
 ## [0.20.0] - 2026-09-14
 
 This release makes docs-backed agent work easier to resume and ties approval,

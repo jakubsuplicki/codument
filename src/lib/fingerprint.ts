@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { type Acknowledgment, isFileGrainAck, isTreeGrainAck } from "./acknowledgment.js";
-import { getWorkingTreeChanges, listTrackedFiles } from "./git.js";
+import { getWorkingTreeChanges, getWorkingTreeDeletions, getWorkingTreeRenames, listTrackedFiles } from "./git.js";
 import { allSources, readRegistrySync } from "./registry.js";
 import { csharpAdapter } from "./csharp-adapter.js";
 import { goAdapter } from "./go-adapter.js";
@@ -234,6 +234,9 @@ export function warmPathsForRepo(root: string): string[] {
     const tracked = listTrackedFiles(root);
     if (tracked.ok) paths.push(...tracked.paths);
     paths.push(...getWorkingTreeChanges(root));
+    // Committed baselines still contain staged deletions and rename origins,
+    // including the last source in a language removed by this change.
+    paths.push(...getWorkingTreeDeletions(root), ...getWorkingTreeRenames(root).map(pair => pair.from));
   } catch {
     // Advisory: fall through to the registry half rather than warming nothing.
   }

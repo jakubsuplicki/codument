@@ -2,7 +2,7 @@
 title: CLI
 status: current
 type: feature
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-25
 ---
 
 # CLI
@@ -34,7 +34,7 @@ Finishing reports pending delivery and never performs a commit.
 
 The entry point is deliberately thin: a declarative table of commands mapped to handlers, with parsing delegated to a standard argument parser. Every command's behaviour lives in its own handler under [[commands]], not here, so this file stays a wiring manifest rather than a place logic accretes. That keeps each command independently testable through its own handler and keeps the surface readable as a single glance at "what can this tool do."
 
-The surface is intentionally small and stable, because the command names are a public contract: users script against them and the agent is instructed to invoke them by name. New capability is added as a new command or flag, not by overloading an existing one. The version the binary reports is sourced from the package manifest at runtime rather than restated here, so the reported version cannot drift from the published package.
+The surface is intentionally small and stable, because the command names are a public contract: users script against them and the agent is instructed to invoke them by name. New capability is added as a new command or flag, not by overloading an existing one. The executable retains its build version. Changing a linked checkout's package manifest cannot make an older executable claim newer capabilities; a mismatch refuses command execution with a rebuild or reinstall remedy.
 
 Focused review is an explicit extension of the existing command: `review --staged` selects the full
 Git index, while `review --paths` selects staged paths for diagnosis. Bare `review` remains the
@@ -74,7 +74,7 @@ One command is a signpost, not an action: `run` (aliased `autopilot`) exists onl
 - Work status distinguishes saved state from reconciled progress, and a verified step remains ready
   until its exact change is committed. *(test: `work.test.ts`)*
 
-- The version the binary reports is read from the package manifest at runtime, so it cannot diverge from the published package version. *(untested)*
+- Executables report their build identity and refuse actions when it disagrees with the installed package. Diagnostic help and version remain readable. Packaging rebuilds and smoke-tests the workflow commands required by the shipped skills. *(test: `cli.test.ts`)*
 - **A command's help text is a routing surface, and answers to the same rule as the report.** Help is where a reader who is already stuck looks first, so an option described in terms the tool no longer honours costs more than silence: they compose the command it taught them and are refused. `ack`'s help therefore leads with the fact that most changes never need it — a move the parser proves left the contract alone is reported and never blocks — and names the file grain as the ordinary route, with the per-symbol form reserved for a move on an adapter that reports no signature to compare. This was found by auditing the release rather than by a test: prose in a `.description()` string is invisible to the gate that keeps every other route honest. *(untested at this boundary — the grains themselves are pinned by `remedies.test.ts` and the refusals by `ack.test.ts`)*
 - The entry point only registers commands and dispatches; each command's behaviour is owned and tested through its own handler, never here. The command surface is exercised end-to-end by invoking the built binary in the per-command suites. *(test: `ack.test.ts` "ack loop end-to-end through the real CLI (the headline ergonomics)", which spawns the built `cli.js` and asserts dispatch + exit codes; the same pattern covers the other commands' suites)*
 - The dispatch boundary fails closed on an unrecoverable error a command did not render itself: an unreadable registry or state file, a config file carrying an invalid value, or a gate that could not run (`GateError`), surfaces one red diagnostic and exits non-zero here rather than crashing with a raw stack, so no command runs against a silently-empty registry or a gate it could not evaluate. An invalid config value is rendered rather than thrown for a reason worth naming: the commands that read project settings include the ones a user would reach for to repair the file, so the diagnostic names the offending value and the file to edit instead of ending in a stack trace. *(tests: `doctor.test.ts` "fails loud on a corrupt registry"; `git.test.ts` "git change-listing fails closed"; `update.test.ts` "an invalid project setting is rendered, not crashed")*
@@ -94,3 +94,5 @@ One command is a signpost, not an action: `run` (aliased `autopilot`) exists onl
 ## Key files
 
 - `src/cli.ts` — the entry point: declares the command surface, parses argv, and dispatches each invocation to its handler.
+
+- `tsup.config.ts` — package build and executable identity.

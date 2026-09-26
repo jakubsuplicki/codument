@@ -258,7 +258,7 @@ export class ExcludedSourceError extends Error {
 // checking every element would make an entry that already names a test file
 // impossible to extend — or to repair — and would turn the lint that reports it
 // into a dead end.
-function assertNoExcludedSource(
+export function assertNoExcludedSource(
   key: string,
   existing: RegistryEntry | undefined,
   incoming: Partial<RegistryEntry>,
@@ -292,7 +292,10 @@ function assertNoExcludedSource(
         }
         const prefix = patternPrefix(stored);
         const aimedIntoExcluded = prefix !== "" && isExcluded(`${prefix}/x`, spec);
-        if (aimedIntoExcluded || spec.globs.includes(stored)) {
+        // An embedded ** may cross directories after a test-like prefix. Only
+        // ordinary segments can prove a whole built-in file family is excluded.
+        const simpleSegments = stored.split("/").every(part => part === "**" || !part.includes("**"));
+        if (aimedIntoExcluded || (simpleSegments && isExcluded(stored, DEFAULT_EXCLUSION_SPEC)) || spec.globs.includes(stored)) {
           throw new ExcludedSourceError(key, stored, field);
         }
         continue;

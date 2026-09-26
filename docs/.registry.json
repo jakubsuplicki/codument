@@ -120,7 +120,8 @@
       "doc": "docs/features/cli.md",
       "type": "feature",
       "primary_sources": [
-        "src/cli.ts"
+        "src/cli.ts",
+        "tsup.config.ts"
       ],
       "related_sources": [],
       "docs": [

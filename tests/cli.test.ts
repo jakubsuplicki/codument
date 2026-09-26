@@ -1,12 +1,40 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, "..", "dist", "cli.js");
 const env = { ...process.env, NO_COLOR: "1" };
+
+describe("built workflow compatibility", () => {
+  it("exposes the work and verify capabilities required by the shipped skills", () => {
+    const work = execFileSync("node", [CLI, "work", "status", "--json"], {encoding: "utf8", env});
+    assert.equal(JSON.parse(work).version, 1);
+    const verify = execFileSync("node", [CLI, "verify", "--help"], {encoding: "utf8", env});
+    assert.match(verify, /--record/);
+    assert.match(verify, /--prepare-review/);
+  });
+
+  it("keeps its build identity and refuses managed updates when the package was changed without rebuilding", () => {
+    const root = mkdtempSync(join(tmpdir(), "codument-stale-build-"));
+    try {
+      cpSync(join(here, "..", "dist"), join(root, "dist"), {recursive: true});
+      symlinkSync(join(here, "..", "node_modules"), join(root, "node_modules"), process.platform === "win32" ? "junction" : "dir");
+      const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8"));
+      writeFileSync(join(root, "package.json"), JSON.stringify({...pkg, version: "999.0.0"}));
+      const cli = join(root, "dist", "cli.js");
+      assert.equal(execFileSync("node", [cli, "--version"], {encoding: "utf8", env}).trim(), pkg.version);
+      const update = spawnSync("node", [cli, "update"], {cwd: root, encoding: "utf8", env});
+      assert.equal(update.status, 1);
+      assert.match(update.stderr, /stale build/i);
+      assert.match(update.stderr, /npm run build/);
+    } finally { rmSync(root, {recursive: true, force: true}); }
+  });
+});
 
 describe("codument run (signpost)", () => {
   it("lists every registered command — the inventory is generated, never hand-maintained", () => {

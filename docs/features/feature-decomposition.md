@@ -2,7 +2,7 @@
 title: Feature decomposition in the loop
 status: current
 type: feature
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-25
 ---
 
 # Feature decomposition in the loop
@@ -24,6 +24,11 @@ The hard line is the determinism boundary: the **agent proposes** the semantic c
 The path is forward-only: make new work decompose correctly rather than auto-healing already-lumped registries (backward-compat is not a constraint). And because every project sits at a low feature count early, a file-grain blast carrier (files touched of the in-scope total) gives real resolution before any re-mapping, so the signal is useful from the first commit. Rejected: a per-subdirectory scan as the only mechanism (it produces zero features on the flat-source shape the loop emits) and auto-heal of existing lumped registries.
 
 ## Invariants & boundaries
+
+- Map validation and ownership authoring share source exclusions. Exact test paths and patterns
+  aimed wholly into excluded families are refused before materialization, with the applicable
+  project rule named. Mixed source patterns remain valid; tests belong in verification evidence.
+  *(tests: `map.test.ts`, `registry.test.ts`)*
 
 - Shape-check JSON carries both Scope and Map grounding even when no new-file routing table is needed; absence of a Map still reports its shape status separately. *(test: `plan-grounding.test.ts`)*
 
