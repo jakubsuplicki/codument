@@ -235,6 +235,21 @@ afterEach(async () => {
 });
 
 describe("review staged boundary", () => {
+  it("includes a staged Feature Map declaration in the same guidance used by context", async () => {
+    await put("docs/plans/kitchen.md", [
+      "## Delivery Plan", "Status: approved", "- [ ] Fit the kitchen",
+      "### Scope", "- `src/a.ts`", "### Feature Map", "```feature-map",
+      "src/b*.ts | beta | feature | Catalogue behavior", "```",
+    ].join("\n"));
+    await put("src/b.ts", "export const b = (value: number) => value + 1;\n");
+    git(["add", "docs/plans/kitchen.md", "src/b.ts"]);
+    const context = cli(["context", "--plan", "docs/plans/kitchen.md", "--json"]);
+    assert.equal(context.status, 0);
+    assert.ok(JSON.parse(context.stdout).entries.some((entry: { feature: string }) => entry.feature === "beta"));
+    const report = JSON.parse(review(["--staged", "--json"]).stdout);
+    assert.deepEqual(report.state.outOfPlan, []);
+    assert.ok(report.plan.scope.includes("src/b*.ts"));
+  });
   it("analyzes only staged paths and reports unrelated dirty work without blocking on it", async () => {
     await put("src/a.ts", "export const a = (value: number) => value;\n");
     git(["add", "src/a.ts"]);
@@ -427,18 +442,19 @@ describe("review staged boundary", () => {
     await put("src/a.ts", "export const a = 1;\nexport const helper = 2;\n");
     git(["add", "src/a.ts"]);
 
-    const first = review(["--staged"]);
+    const first = review(["--repo", ".", "--staged"]);
     assert.equal(first.status, 0);
     const fingerprint = /boundary: staged · ([a-f0-9]+)/.exec(first.stdout)?.[1];
     assert.ok(fingerprint);
     assert.match(
       first.stdout,
-      new RegExp(`codument ack src/a\\.ts --staged --boundary ${fingerprint}[a-f0-9]* --reason`),
+      new RegExp(`codument ack src/a\\.ts --staged --boundary ${fingerprint}[a-f0-9]* --repo \\. --root .* --reason`),
     );
 
     const recorded = cli([
       "ack",
       "src/a.ts",
+      "--repo", ".",
       "--staged",
       "--boundary",
       review(["--staged", "--json"]).stdout.match(/"fingerprint": "([a-f0-9]+)"/)?.[1] ?? "",
@@ -446,6 +462,16 @@ describe("review staged boundary", () => {
       "the documented alpha contract is unchanged",
     ]);
     assert.equal(recorded.status, 0);
+    const followup = /Re-run `([^`]+)`/.exec(recorded.stdout)?.[1];
+    assert.ok(followup);
+    assert.match(followup, /--staged --repo \. --root /);
+    // Parse the CLI's displayed quoted arguments as data, without executing a shell.
+    const tokens = [...followup.matchAll(/"(?:\\.|[^"\\])*"|[^\s]+/g)].map(match =>
+      match[0].startsWith('"') ? JSON.parse(match[0]) : match[0]);
+    assert.equal(tokens.shift(), "codument");
+    const replayed = cli([...tokens, "--json"]);
+    assert.equal(replayed.status, 0, replayed.stdout);
+    assert.equal(JSON.parse(replayed.stdout).state.staleDocs.length, 0);
     assert.equal(JSON.parse(review(["--staged", "--json"]).stdout).state.staleDocs.length, 0);
 
     const [ackFile] = await readdir(join(repo, ".codument", "acks"));

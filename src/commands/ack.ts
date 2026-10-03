@@ -50,6 +50,7 @@ import {
   getWorkingTreeRenames,
   renamedFromMap,
   resolveWorkspace,
+  withSelectedRepository,
 } from "../lib/git.js";
 import { resolveOwner, splitAnchorId } from "../lib/ownership.js";
 import {
@@ -99,6 +100,7 @@ function renamedFromFor(
 }
 
 export interface AckCliOptions {
+  repo?: string;
   reason?: string;
   base?: string;
   staged?: boolean;
@@ -289,6 +291,11 @@ export async function ackCommand(
   anchor: string | undefined,
   options: AckCliOptions,
 ): Promise<void> {
+  await withSelectedRepository(options.root ?? process.cwd(), options.repo, root =>
+    ackRepository(anchor, options.repo === undefined ? options : { ...options, root }));
+}
+
+async function ackRepository(anchor: string | undefined, options: AckCliOptions): Promise<void> {
   const root = options.root ?? process.cwd();
   // Recording and re-validating acks parses worktree content synchronously;
   // warm whatever grammar the repo's files need first.
@@ -517,16 +524,19 @@ export async function ackCommand(
   );
   console.log(`  ${pc.dim("reason:")} ${ack.reason}`);
   console.log(`  ${pc.dim(`signer: ${signer} · handle ${handleOf(ack)}`)}`);
-  const reviewArgs = boundary
-    ? boundary.mode === "staged"
-      ? " --staged"
-      : ` --paths ${boundary.changes.map((change) => shellArg(change.path)).join(" ")}`
-    : "";
   console.log(
     pc.dim(
-      `  Re-run \`codument review${reviewArgs}\` to confirm the finding cleared.`,
+      `  Re-run \`${followupReview(root, options, boundary)}\` to confirm the finding cleared.`,
     ),
   );
+}
+
+function followupReview(root: string, options: AckCliOptions, boundary?: ChangeSet): string {
+  const selection = boundary
+    ? boundary.mode === "staged" ? " --staged" : ` --paths ${boundary.changes.map(change => shellArg(change.path)).join(" ")}`
+    : options.base ? ` --base ${shellArg(options.base)}` : "";
+  const repository = options.repo === undefined ? "" : ` --repo . --root ${shellArg(root)}`;
+  return `codument review${selection}${repository}`;
 }
 
 // `codument ack <path>` — the file-grain surface. A purely-additive change (a new
@@ -687,7 +697,7 @@ function ackFile(
     );
     for (const ch of clearedExports) console.log(`      ${pc.dim(`• ${ch.name} (${ch.kind})`)}`);
   }
-  console.log(pc.dim("  Re-run `codument review` to confirm the finding cleared."));
+  console.log(pc.dim(`  Re-run \`${followupReview(root, options, boundary)}\` to confirm the finding cleared.`));
 }
 
 // `codument ack <pattern>` — the tree-grain surface. A registry entry that governs a
@@ -838,11 +848,11 @@ function ackTree(
     printStillMoved(stillMoved.slice(0, 10), registry as Registry);
     if (stillMoved.length > 10) {
       console.log(
-        `      ${pc.dim(`• +${stillMoved.length - 10} more — \`codument review\` lists them all`)}`,
+        `      ${pc.dim(`• +${stillMoved.length - 10} more — \`${followupReview(root, options, boundary)}\` lists them all`)}`,
       );
     }
   }
-  console.log(pc.dim("  Re-run `codument review` to confirm the finding cleared."));
+  console.log(pc.dim(`  Re-run \`${followupReview(root, options, boundary)}\` to confirm the finding cleared.`));
 }
 
 type Resolved = { ok: true; change: AnchorChange } | { ok: false; error: string };

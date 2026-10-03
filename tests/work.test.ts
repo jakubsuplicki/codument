@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync, execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import { installHook } from "../src/lib/git-hooks.js";
 
 const CLI = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
 const path = "docs/features/alpha.md";
@@ -50,6 +51,67 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe("work approval CLI", () => {
+  it("delivers only the selected root while preserving a separately staged nested repository", () => {
+    const member = join(root, ".fixtures/member");
+    mkdirSync(member, { recursive: true });
+    const memberGit = (...args: string[]) => execFileSync("git", args, { cwd: member, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    put(".gitignore", ".codument/\n.fixtures/\nnode_modules/\n");
+    put(".fixtures/member/pending.txt", "before\n");
+    memberGit("init", "-q");
+    memberGit("config", "user.name", "Test");
+    memberGit("config", "user.email", "test@example.com");
+    memberGit("add", "pending.txt");
+    memberGit("commit", "-qm", "member baseline");
+    put(".fixtures/member/pending.txt", "separately staged\n");
+    memberGit("add", "pending.txt");
+    const memberHead = memberGit("rev-parse", "HEAD");
+    const memberIndex = memberGit("write-tree");
+    put(path, plan.replace("- [ ] Implement", "- [ ] Implement\n- [ ] Next milestone"));
+    assert.equal(cli("work", "approve", "--plan", path, "--repo", ".").status, 0);
+    assert.equal(cli("work", "start", "--plan", path, "--repo", ".").status, 0);
+    put(path, readFileSync(join(root, path), "utf8").replace("- [ ] Implement", "- [x] Implement"));
+    put("src/alpha.ts", "export const alpha = 2;\n");
+    git("add", ".gitignore", path, "docs/.approvals.json", "src/alpha.ts");
+    const prepared = cli("verify", "--repo", ".");
+    assert.equal(prepared.status, 1, prepared.stdout + prepared.stderr);
+    assert.match(prepared.stdout, /--repo \. --root/);
+    const worksheetPath = ".codument/review-worksheet.json";
+    const worksheet = JSON.parse(readFileSync(join(root, worksheetPath), "utf8"));
+    assert.equal(worksheet.reviewContext.boundary.bases.length, 1);
+    assert.ok(worksheet.reviewContext.boundary.paths.every((file: string) => !file.startsWith(".fixtures/")));
+    worksheet.invariantsChecked = ["Root delivery preserves the separately staged member"];
+    worksheet.findings = [];
+    worksheet.signer = "fixture reviewer";
+    put(worksheetPath, JSON.stringify(worksheet));
+    const recorded = cli("verify", "--repo", ".", "--record", worksheetPath);
+    assert.equal(recorded.status, 0, recorded.stdout + recorded.stderr);
+    assert.equal(cli("verify", "--repo", ".").status, 0, "the root receipt is reusable");
+    assert.equal(cli("verify", "--json").status, 1, "aggregate verification cannot borrow a root receipt");
+    const reviewed = cli("review", "--repo", ".", "--staged", "--require-review", "--json");
+    assert.equal(reviewed.status, 0, reviewed.stdout + reviewed.stderr);
+    assert.equal(JSON.parse(reviewed.stdout).boundary.bases.length, 1);
+    assert.equal(cli("work", "finish").status, 1, "aggregate readiness cannot borrow a root receipt");
+    assert.equal(cli("work", "finish", "--repo", ".").status, 0);
+    const quote = (value: string) => `'${value.replace(/\\/g, "/").replace(/'/g, "'\\''")}'`;
+    put("node_modules/.bin/codument", `#!/bin/sh\nprintf '%s\\n' "$*" >> .codument/hook-argv.log\nexec ${quote(process.execPath)} ${quote(CLI)} "$@"\n`);
+    chmodSync(join(root, "node_modules/.bin/codument"), 0o755);
+    installHook(root);
+    git("commit", "-qm", "root delivery");
+    assert.equal(readFileSync(join(root, ".codument/hook-argv.log"), "utf8").trim(), "verify --repo .");
+    const delivered = cli("work", "finish", "--repo", ".", "--json");
+    assert.equal(delivered.status, 0, delivered.stdout + delivered.stderr);
+    assert.equal(JSON.parse(delivered.stdout).selected.step, 2);
+    assert.equal(memberGit("rev-parse", "HEAD"), memberHead);
+    assert.equal(memberGit("write-tree"), memberIndex);
+    put("tests/new.test.ts", "// New staged evidence reopens review.\n");
+    git("add", "tests/new.test.ts");
+    assert.equal(cli("verify", "--repo", ".").status, 1);
+    const deliveredHead = git("rev-parse", "HEAD");
+    assert.throws(() => git("commit", "-qm", "unreviewed evidence"));
+    assert.equal(git("rev-parse", "HEAD"), deliveredHead);
+    assert.equal(cli("verify", "--repo", "src", "--json").status, 1);
+  });
+
   it("consumes verified final approval when a direct commit skips readiness bookkeeping", () => {
     put(".codument-meta.json", '{"requireBoundApproval":true}\n');
     assert.equal(cli("work", "approve", "--plan", path).status, 0);

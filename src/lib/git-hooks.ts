@@ -49,7 +49,7 @@ export function hookBlock(): string {
     "  fi",
     '  if [ -z "$CODUMENT_BIN" ]; then',
     '    echo "codument gate: codument not found (node_modules/.bin or PATH); gate NOT run" >&2',
-    '  elif ! "$CODUMENT_BIN" verify; then',
+    '  elif ! "$CODUMENT_BIN" verify --repo .; then',
     '    echo "" >&2',
     '    echo "codument gate: commit blocked by a red verification gate (details above)." >&2',
     '    echo "  skip once: git commit --no-verify   (or CODUMENT_SKIP_GATE=1 git commit)" >&2',

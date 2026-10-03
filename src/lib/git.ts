@@ -614,6 +614,13 @@ export function withRepositoryView<T>(view: Workspace, read: () => T): T {
   return repositoryViews.run(view, read);
 }
 
+/** Keep an explicit repository selection in every nested Git read of a command. */
+export function withSelectedRepository<T>(root: string, selector: string | undefined, read: (root: string) => T): T {
+  if (selector === undefined) return read(root);
+  const view = selectRepository(root, selector);
+  return withRepositoryView(view, () => read(view.root));
+}
+
 export interface Workspace {
   /** Absolute path of the workspace root (which may not be a repository). */
   root: string;

@@ -15,6 +15,10 @@ visible without blocking that slice.
 
 ## Design approach
 
+An explicit repository selection keeps verification, worksheet follow-ups and receipts on that
+repository's index, even when nested repositories have staged work. Default workspace aggregation
+remains available. A receipt for one repository cannot authorize a different member tuple.
+
 Local verification follows explicit work selection and refuses interrupted or ended work until it is deliberately resumed or replaced. Compacted final plans use tracked approval bound to the exact final delivery; later changes require their own approval.
 
 A reusable verification receipt also binds the selected plan identity and validated approval revision. Switching the selected plan cannot reuse a pass for other work; selection is resolved before receipt reuse.
@@ -48,6 +52,10 @@ never rewrites the user's files; missing untracked or generated runner inputs ar
 unavailable. Reproduction in a dirty aggregate workspace requires selecting one repository.
 
 ## Invariants & boundaries
+
+- Explicit repository verification preserves separately staged nested repositories through review,
+  receipt reuse and delivery; changed staged evidence reopens review. Invalid selections fail closed.
+  *(test: `work.test.ts`)*
 
 - A pin resolves against existing snapshot candidates before changed-test attribution; an unchanged
   root test cannot lend its contract to a changed duplicate basename. *(test: `test-impact.test.ts`)*

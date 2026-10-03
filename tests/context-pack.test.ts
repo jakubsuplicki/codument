@@ -13,9 +13,10 @@ import {
   ownersOfFile,
   ownershipOfFile,
   selectedFromPlanRows,
+  selectPlanFeatures,
   type ContextPackInput,
 } from "../src/lib/context-pack.js";
-import { normalizeRegistry, type Registry } from "../src/lib/registry.js";
+import { normalizeRegistry, sourceNames, type Registry } from "../src/lib/registry.js";
 import { parseFeatureMap } from "../src/lib/feature-map.js";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "cli.js");
@@ -263,6 +264,64 @@ describe("selectedFromPlanRows — plan selector routes via the Feature Map", ()
     const rows = parseFeatureMap(md).rows;
     assert.deepEqual(selectedFromPlanRows(rows), ["alpha", "beta", "shared"]);
   });
+});
+
+it("Scope patterns select the owners of matching registered inputs and retain unmatched omissions", () => {
+  const registry = registryOf({
+    sink: { primary_sources: ["src/assets/sink.ts"] },
+    oven: { primary_sources: ["src/assets/oven.ts"] },
+    tree: { primary_sources: ["src/assets/**"] },
+    unrelated: { primary_sources: ["src/other.ts"], related_sources: ["src/assets/sink.ts"] },
+  });
+  assert.deepEqual(selectPlanFeatures(registry, [], ["src/assets/*.ts", "src/missing/*.ts"]), {
+    selected: ["oven", "sink", "tree"],
+    unowned: ["src/missing/*.ts"],
+  });
+  assert.deepEqual(selectPlanFeatures(registry, [], ["src/assets/"]), {
+    selected: ["oven", "sink", "tree"],
+    unowned: [],
+  });
+});
+
+it("Scope and ownership patterns select exactly when their supported path sets intersect", () => {
+  const cases: Array<[string, string, boolean]> = [
+    ["src/assets/*.ts", "src/**/sink.ts", true],
+    ["src/*/sink.ts", "src/assets/*.json", false],
+    ["src/**/sink.ts", "src/sink.ts", true],
+    ["src/*/sink.ts", "src/sink.ts", false],
+    ["src/assets/*", "src/assets/nested/*.ts", false],
+    ["src/assets/**", "src/assets/nested/*.ts", true],
+    ["src/foo*", "src/*bar", true],
+    ["src/a*b*c", "src/ac", false],
+    ["./src/assets/", "src/**/sink.ts", true],
+    ["src/file?.ts", "src/file*.ts", true],
+  ];
+  for (const [scope, source, intersects] of cases) {
+    const registry = registryOf({ owner: { primary_sources: [source] } });
+    assert.deepEqual(selectPlanFeatures(registry, [], [scope]), {
+      selected: intersects ? ["owner"] : [],
+      unowned: intersects ? [] : [scope],
+    }, `${scope} with ${source}`);
+  }
+});
+
+it("pattern overlap agrees with the source matcher across directory and wildcard combinations", () => {
+  const patterns = ["*", "**", "**/a", "a/*", "*b", "a*b", "a/**"];
+  const paths = [""];
+  let level = [""];
+  for (let depth = 0; depth < 5; depth++) {
+    level = level.flatMap(prefix => ["a", "b", "/"].map(character => prefix + character));
+    paths.push(...level);
+  }
+  for (const left of patterns) {
+    for (const right of patterns) {
+      const scope = `src/${left}`;
+      const source = `src/${right}`;
+      const intersects = paths.some(path => sourceNames(scope, `src/${path}`) && sourceNames(source, `src/${path}`));
+      const selection = selectPlanFeatures(registryOf({ owner: { primary_sources: [source] } }), [], [scope]);
+      assert.equal(selection.selected.includes("owner"), intersects, `${scope} with ${source}`);
+    }
+  }
 });
 
 it("CLI reports an unreadable doc and an unowned plan input while retaining valid grounded context", async () => {

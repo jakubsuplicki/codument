@@ -18,10 +18,11 @@ import {
 import { type AnchorChange, fileContentTransition, isPreciseFile } from "./fingerprint.js";
 import { movesOnly, type RenamePair } from "./git.js";
 import { resolveOwner, splitAnchorId } from "./ownership.js";
-import { activeStep, extractStatus, isApproved, isPlanPath, parseDeliveryPlan, parsePlanScope, readPlanDocuments, withoutDeliveryPlans } from "./plan-steps.js";
+import { activeStep, extractStatus, isApproved, isPlanPath, parseDeliveryPlan, readPlanDocuments, withoutDeliveryPlans } from "./plan-steps.js";
 import { assessPlanApproval, readApprovalStore, readApprovalPolicy, type ApprovalStore } from "./plan-approval.js";
 import { selectedPlanId, normalizePlanPath } from "./plan-steps.js";
 import { ConfigValueError } from "./state-io.js";
+import { planSourceScope } from "./feature-map.js";
 import {
   allSources,
   isSourcePattern,
@@ -956,8 +957,7 @@ export function computeChangeState(input: ChangeStateInput): ChangeState {
   let outOfPlan: string[] = [];
   const planScoped = Array.isArray(planScope);
   if (planScoped) {
-    const scope = new Set(planScope);
-    outOfPlan = changedSources.filter((f) => !scope.has(f));
+    outOfPlan = changedSources.filter((file) => !planScope.some(entry => sourceNames(entry, file)));
   }
 
   const specInvisibleAdditions = findSpecInvisibleAdditions(
@@ -1282,7 +1282,7 @@ export function detectApprovedPlanScopeFromDocuments(
     if (!isPlanPath(path) || !isApproved(extractStatus(content, id))) continue;
     const steps = parseDeliveryPlan(content, id);
     if (steps.length > 0 && !activeStep(steps)) continue;
-    const scope = parsePlanScope(content, id);
+    const scope = planSourceScope(content, id);
     if (steps.length || scope.length) {
       const approval = options ? assessPlanApproval(path, content, options.approvals, options.requireBoundApproval, id) : null;
       if (approval && !approval.allowed) throw new ConfigValueError(path, "approval", approval.reason);

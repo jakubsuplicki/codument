@@ -335,12 +335,72 @@ export function selectedFromPlanRows(rows: FeatureMapRow[]): string[] {
   return [...slugs].sort();
 }
 
+// Match the supported *, ** and **/ languages without treating a pattern's
+// spelling as a file. A product walk finds a common path, including zero-depth **/.
+function sourcePatternsOverlap(left: string, right: string): boolean {
+  type Edge = { to: number; character: string | null };
+  const graph = (input: string): { edges: Edge[][]; end: number } => {
+    const normalized = normalizeRelPath(input);
+    const pattern = normalized.endsWith("/") ? `${normalized}**` : normalized;
+    const edges: Edge[][] = [[]];
+    let state = 0;
+    for (let i = 0; i < pattern.length; i++) {
+      const next = edges.push([]) - 1;
+      if (pattern[i] !== "*") {
+        edges[state].push({ to: next, character: pattern[i] });
+      } else if (pattern[i + 1] === "*" && pattern[i + 2] === "/") {
+        const loop = edges.push([]) - 1;
+        edges[state].push({ to: next, character: null }, { to: loop, character: null });
+        edges[loop].push({ to: loop, character: "**" }, { to: next, character: "/" });
+        i += 2;
+      } else {
+        const double = pattern[i + 1] === "*";
+        edges[state].push({ to: next, character: null }, { to: state, character: double ? "**" : "*" });
+        if (double) i++;
+      }
+      state = next;
+    }
+    return { edges, end: state };
+  };
+  const a = graph(left);
+  const b = graph(right);
+  const pending: Array<[number, number]> = [[0, 0]];
+  const seen = new Set<string>();
+  while (pending.length) {
+    const [i, j] = pending.pop() as [number, number];
+    const key = `${i},${j}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (i === a.end && j === b.end) return true;
+    for (const edge of a.edges[i]) if (edge.character === null) pending.push([edge.to, j]);
+    for (const edge of b.edges[j]) if (edge.character === null) pending.push([i, edge.to]);
+    for (const x of a.edges[i]) {
+      if (x.character === null) continue;
+      for (const y of b.edges[j]) {
+        if (y.character === null) continue;
+        const common = x.character === y.character
+          || (x.character === "*" && y.character !== "/")
+          || (y.character === "*" && x.character !== "/")
+          || (x.character === "**" && !/[\r\n\u2028\u2029]/.test(y.character))
+          || (y.character === "**" && !/[\r\n\u2028\u2029]/.test(x.character));
+        if (common) pending.push([x.to, y.to]);
+      }
+    }
+  }
+  return false;
+}
+
 /** Scope names existing inputs; Map rows also name owners that do not exist yet. */
 export function selectPlanFeatures(registry: Registry, rows: FeatureMapRow[], scope: string[]): { selected: string[]; unowned: string[] } {
   const selected = new Set(selectedFromPlanRows(rows));
   const unowned: string[] = [];
   for (const file of scope) {
-    const owners = registry.features[file] ? [file] : ownersOfFile(registry, file);
+    const owners = registry.features[file] ? [file] : isSourcePattern(file)
+      ? Object.entries(registry.features)
+        .filter(([, entry]) => [...entry.primary_sources, entry.doc, ...entry.docs]
+          .some(source => isSourcePattern(source) ? sourcePatternsOverlap(file, source) : sourceNames(file, source)))
+        .map(([slug]) => slug)
+      : ownersOfFile(registry, file);
     if (!owners.length) unowned.push(file);
     for (const owner of owners) selected.add(owner);
   }

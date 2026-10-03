@@ -511,6 +511,23 @@ describe("detectApprovedPlanScope — root-level scope + multiple approved plans
     assert.deepStrictEqual(detectApprovedPlanScope(tmp)?.contenders, ["docs/plans/a.md"]);
   });
 
+  it("includes declared Feature Map paths and patterns without borrowing an owner's other files", async () => {
+    await writeFile(join(tmp, "docs/plans/a.md"), [
+      "## Delivery Plan", "Status: approved", "- [ ] Fit the kitchen",
+      "### Scope", "- `src/kitchen.ts`", "### Feature Map", "```feature-map",
+      "src/catalogue.ts | catalogue | feature | Catalogue behavior",
+      "src/assets/*.ts | assets | feature | Kitchen assets", "```",
+    ].join("\n"));
+    const plan = detectApprovedPlanScope(tmp);
+    assert.deepEqual(plan?.scope, ["src/assets/*.ts", "src/catalogue.ts", "src/kitchen.ts"]);
+    const changed = computeChangeState({ registry: { features: {} },
+      changedFiles: ["src/kitchen.ts", "src/catalogue.ts", "src/assets/sink.ts", "src/unrelated.ts"],
+      planScope: plan?.scope });
+    assert.deepEqual(changed.outOfPlan, ["src/unrelated.ts"]);
+  });
+
+
+
   it("uses local scope from the selected section in every supported directory", async () => {
     for (const directory of ["features", "concepts", "plans"]) {
       const folder = join(tmp, "docs", directory);

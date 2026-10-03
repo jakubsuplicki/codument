@@ -15,7 +15,7 @@ import {
 } from "../lib/change-set.js";
 import { atomicWriteFileSync } from "../lib/events.js";
 import { warmAdaptersForRepo } from "../lib/fingerprint.js";
-import { assertRootIsRepoToplevel, getGitPath, getHeadSha, isGateableRoot } from "../lib/git.js";
+import { assertRootIsRepoToplevel, getGitPath, getHeadSha, isGateableRoot, withSelectedRepository } from "../lib/git.js";
 import {
   findCoveringReviews,
   gatherReviewedFiles,
@@ -55,6 +55,7 @@ import {
 } from "./review.js";
 
 export interface VerifyOptions {
+  repo?: string;
   plan?: string;
   planId?: string;
   root?: string;
@@ -352,7 +353,8 @@ function invocation(options: VerifyOptions, extra: string): string {
     : "";
   const plan = options.plan ? ` --plan ${JSON.stringify(options.plan)}` : "";
   const id = options.planId ? ` --plan-id ${JSON.stringify(options.planId)}` : "";
-  return `codument verify${selected}${plan}${id} ${extra}`;
+  const repository = options.repo === undefined ? "" : ` --repo . --root ${JSON.stringify(options.root)}`;
+  return `codument verify${selected}${plan}${id}${repository} ${extra}`;
 }
 
 function printCompact(
@@ -398,6 +400,17 @@ function printCompact(
 }
 
 export async function verify(options: VerifyOptions = {}): Promise<void> {
+  try {
+    await withSelectedRepository(options.root ?? process.cwd(), options.repo, root =>
+      verifyRepository(options.repo === undefined ? options : { ...options, root, repo: "." }));
+  } catch (error) {
+    const reason = (error as Error).message;
+    console.log(options.json ? JSON.stringify({ version: 1, gate: "unavailable", reason }) : `codument verify: BLOCKED — ${reason}`);
+    process.exitCode = 1;
+  }
+}
+
+async function verifyRepository(options: VerifyOptions): Promise<void> {
   const root = options.root ?? process.cwd();
   const machineFailure = (reason: string): void => {
     if (options.json) {
@@ -521,7 +534,7 @@ export async function verify(options: VerifyOptions = {}): Promise<void> {
         ),
       );
     } else {
-      if (options.details) printHuman(report);
+      if (options.details) printHuman(report, options.repo === undefined ? undefined : root);
       printCompact(
         options,
         boundary,

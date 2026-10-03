@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { approvePlan, readApprovalStore } from "../src/lib/plan-approval.js";
+import { approvePlan, readApprovalStore, finalApprovalScope } from "../src/lib/plan-approval.js";
 import { loadPlan, parseDeliveryPlan, parsePlanScope } from "../src/lib/plan-steps.js";
 import { parseFeatureMap } from "../src/lib/feature-map.js";
 import { detectApprovedPlanScopeFromDocuments } from "../src/lib/change-state.js";
@@ -20,6 +20,11 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe("revision-bound plan approval", () => {
+  it("retains Map-only source guidance in archived approval", () => {
+    writeFileSync(join(root, path), plan + "\n## Feature Map\n```feature-map\nsrc/catalogue.ts | catalogue | feature | Catalogue\n```\n");
+    const record = approvePlan(root, path, { signer: "human" });
+    assert.deepEqual(finalApprovalScope(record).scope, ["src/alpha.ts", "src/catalogue.ts"]);
+  });
   it("binds a supported sibling Feature Map consumed outside the delivery section", () => {
     putSibling("alpha");
     approvePlan(root, path, { signer: "human" });

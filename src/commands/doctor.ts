@@ -291,7 +291,7 @@ function attribute(
         const objectFormat = execFileSync("git", ["rev-parse", "--show-object-format"], {cwd: member.root, env, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]}).trim();
         const target = join(baselineRoot, member.prefix);
         mkdirSync(target, { recursive: true });
-        const checkoutEnv = {...env, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: "1"};
+        const checkoutEnv = {...env, GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : devNull, GIT_CONFIG_NOSYSTEM: "1"};
         execFileSync("git", ["init", "--quiet", "--template=", `--object-format=${objectFormat}`, target], { env: checkoutEnv, stdio: "pipe" });
         const memberEnv = { ...env, GIT_INDEX_FILE: join(target, ".git", "index") };
         execFileSync("git", ["read-tree", head], { cwd: member.root, env: memberEnv, stdio: "pipe" });

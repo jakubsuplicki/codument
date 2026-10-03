@@ -35,6 +35,9 @@ Later work needs its own approved plan; preparing again cannot reopen the delive
 
 ## Invariants & boundaries
 
+- Final delivery retains source guidance declared in the approved Feature Map, including routes
+  outside the plan's literal Scope list. *(test: `plan-approval.test.ts`)*
+
 - Final compaction and portable review coexist even when the approved plan was never committed in
   an earlier slice. Invalid reserved evidence is never self-excluded. *(test: `review-transfer.test.ts`)*
 

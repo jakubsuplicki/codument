@@ -68,6 +68,10 @@ cost ledger and the benchmark use, and are labelled an estimate everywhere they 
 
 - Plan context retrieves existing scoped owners without a Feature Map; absolute plan paths resolve relative to the requested repository. Registered supporting instructions and direct docs use the same ownership answer. *(test: `plan-grounding.test.ts`)*
 
+- Scope patterns select owners of matching registered inputs and overlapping ownership patterns, without
+  treating related sources as ownership. Patterns with no registered match remain visible omissions.
+  *(test: `context-pack.test.ts`)*
+
 - Selected-work context preserves the saved plan identity and reports its paused state without changing it. *(test: `work.test.ts`)*
 - Final context reads the retained contract after selected-section compaction. An explicit sibling
   preview never inherits another section's saved work state. *(test: `work.test.ts`)*

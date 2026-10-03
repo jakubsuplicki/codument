@@ -13,6 +13,11 @@ This is the front door: the `codument` binary a user types into a terminal. It o
 
 ## Design approach
 
+Review, verification, acknowledgments and work commands accept an explicit repository selector.
+Selecting the root isolates its delivery from nested repositories; omission retains workspace
+aggregation. Verification follow-ups preserve that selection. [[step-verification]] and
+[[agent-work-state]] own the evidence and delivery contracts.
+
 History audit can explicitly select a workspace member or the root repository alone. JSON identifies
 that selection; invalid or unreadable selections remain unavailable. Omission preserves the existing
 single-repository behavior and workspace-range refusal. [[history-audit]] owns this boundary.

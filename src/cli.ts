@@ -227,6 +227,7 @@ program
     "--format <format>",
     "Output format for the verdict: sarif emits SARIF 2.1.0 for CI code-scanning (upload with github/codeql-action/upload-sarif or reviewdog); mutually exclusive with --json. Only changes stdout; combine with --strict for the failing check",
   )
+  .option("--root <dir>", "Project root (default: current directory)")
   .action(review);
 
 program
@@ -525,6 +526,10 @@ emit
   .action(emitReviewCommand);
 
 program.addCommand(createBenchmarkCommand());
+
+for (const command of [...program.commands.filter(command => ["verify", "review", "ack"].includes(command.name())), ...work.commands]) {
+  command.option("--repo <path>", "Select one repository inside the project; . selects only its root");
+}
 
 // Fail closed on a corrupt state file: any command that reads an unparseable
 // registry or config (settings, project metadata, a target package.json) throws

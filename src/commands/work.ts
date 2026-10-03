@@ -1,4 +1,5 @@
 import { approvePlan } from "../lib/plan-approval.js";
+import { withSelectedRepository } from "../lib/git.js";
 import {
   inspectWorkState,
   transitionWork,
@@ -7,6 +8,7 @@ import {
 } from "../lib/work-state.js";
 
 export interface WorkApproveOptions {
+  repo?: string;
   plan: string;
   planId?: string;
   signer?: string;
@@ -16,6 +18,11 @@ export interface WorkApproveOptions {
 }
 
 export function workApprove(options: WorkApproveOptions): void {
+  withSelectedRepository(options.root ?? options.dir ?? process.cwd(), options.repo, root =>
+    approveRepository(options.repo === undefined ? options : { ...options, root }));
+}
+
+function approveRepository(options: WorkApproveOptions): void {
   const record = approvePlan(options.root ?? options.dir ?? process.cwd(), options.plan, {
     planId: options.planId,
     signer: options.signer ?? "Human approval recorded by explicit CLI action (self-reported)",
@@ -28,6 +35,7 @@ export function workApprove(options: WorkApproveOptions): void {
 }
 
 export interface WorkCommandOptions {
+  repo?: string;
   prepareFinal?: boolean;
   plan?: string;
   planId?: string;
@@ -41,7 +49,8 @@ export interface WorkCommandOptions {
 
 export function workCommand(action: WorkAction | "status", options: WorkCommandOptions = {}): void {
   try {
-    renderWork(action, options);
+    withSelectedRepository(options.root ?? process.cwd(), options.repo, root =>
+      renderWork(action, options.repo === undefined ? options : { ...options, root }));
   } catch (error) {
     const message = (error as Error).message;
     console.log(

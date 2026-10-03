@@ -13,6 +13,11 @@ This is the safety check that catches a doc going stale the moment the code it d
 
 ## Design approach
 
+Review and acknowledgment can explicitly select one repository. Its refs, staged paths, ownership
+and follow-up decisions use the same Git view throughout; nested indices cannot enter that review.
+Omitting selection keeps workspace aggregation. Invalid selectors are unavailable rather than empty
+results. *(test: `work.test.ts`)*
+
 An explicit history-audit selection supplies one repository view through the shared Git seam.
 That audit cannot borrow nested-member blobs or refs, and its temporary selection cannot change
 later worktree aggregation. Unselected workspace-range refusals remain in place. [[history-audit]]
@@ -63,6 +68,10 @@ short verdict and the diagnostic `review` surface cannot silently disagree about
 **Every parser on the verdict path is bundled, never ambient.** The TypeScript engine rides the pinned TS compiler the package itself installs; languages beyond it ride tree-sitter grammars compiled to WASM, shipped inside the package and loaded through a pinned runtime, so the parse is a pure function of content bytes and package version — never of whatever toolchain the machine happens to have. The substrate is lazy (a repo that never needs a grammar never initializes WASM) and fail-loud (a missing or corrupt grammar binary raises, it never silently degrades a precise language to a coarse whole-file verdict); which files are precise, coarse, or unevaluable remains each adapter's decision.
 
 ## Invariants & boundaries
+
+- Out-of-plan reporting compares changed sources against the selected plan's Scope and consumed
+  Feature Map using shared path matching. Unlisted files remain outside scope even when they share
+  an owner with a declared file. *(tests: `change-state.test.ts`, `review-boundary.test.ts`)*
 
 - Adapter preparation includes removed paths and rename origins as well as current files, so a
   historical reader can inspect the last source of a language after its deletion is staged.

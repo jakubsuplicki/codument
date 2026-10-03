@@ -25,6 +25,10 @@ The path is forward-only: make new work decompose correctly rather than auto-hea
 
 ## Invariants & boundaries
 
+- A selected plan's explicit Scope and valid Feature Map declarations provide the same source
+  guidance to routing and scope checks. Patterns retain their declared extent; naming an owner
+  never imports its unrelated files into scope. *(tests: `change-state.test.ts`, `review-boundary.test.ts`)*
+
 - Map validation and ownership authoring share source exclusions. Exact test paths and patterns
   aimed wholly into excluded families are refused before materialization, with the applicable
   project rule named. Mixed source patterns remain valid; tests belong in verification evidence.

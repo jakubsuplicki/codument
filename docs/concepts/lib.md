@@ -15,6 +15,10 @@ individual feature docs own their behavior.
 
 ## Design approach
 
+Explicit repository selection is carried through a command's nested Git reads, including asynchronous
+work. The view is local to that invocation and does not replace shared workspace discovery or its
+cache; unselected commands retain aggregation. [[change-control-gate]] owns the delivery boundary.
+
 Deterministic analysis sits behind thin filesystem, Git and event seams. Coverage and lint remain
 separate signals. Producers retain raw token counts; estimated cost is derived when displayed, so
 rates can change without rewriting history. Language adapters supply cosmetic-stable fingerprints

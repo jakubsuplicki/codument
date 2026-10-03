@@ -1,5 +1,5 @@
 import { globToRegExp } from "./analyze.js";
-import { selectedPlanMarkdown, selectedFeatureMapLines } from "./plan-steps.js";
+import { selectedPlanMarkdown, selectedFeatureMapLines, parsePlanScope } from "./plan-steps.js";
 
 // The Feature Map is the plan-doc artifact that decides decomposition: a fenced
 // ```feature-map``` block whose rows route source paths to the feature that owns
@@ -159,6 +159,14 @@ export function parseFeatureMap(markdown: string, planId?: string): FeatureMap {
   }
 
   return { rows, errors };
+}
+
+/** Explicit source guidance from the selected Scope and its consumed Feature Map. */
+export function planSourceScope(markdown: string, planId?: string): string[] {
+  return [...new Set([
+    ...parsePlanScope(markdown, planId),
+    ...parseFeatureMap(markdown, planId).rows.map(row => row.pathOrGlob),
+  ])].sort();
 }
 
 /** Route one repo-relative file to its owning feature. Precedence: an exact-path

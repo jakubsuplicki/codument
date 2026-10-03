@@ -13,6 +13,11 @@ Hooks are where codument meets the moments a change actually happens, and the fe
 
 ## Design approach
 
+The managed pre-commit gate selects only the committing repository's index. Its verification receipt
+cannot include a separately staged nested repository or depend on committing that repository too.
+An explicit aggregate workspace check remains a separate action. *(tests: `git-hooks.test.ts`,
+`work.test.ts`)*
+
 The CI arm requires both documentation synchronization and portable review evidence for the full
 checked-out branch range. Missing or stale evidence fails in a fresh checkout. Its manifest is
 prepared from a complete branch review and committed with the delivery; local step receipts cannot
@@ -39,7 +44,9 @@ The reminder is failure-shy by construction. Every uncertain condition (no paylo
   literal POSIX backslashes, so a different file cannot borrow a registered file's owner. *(test:
   `hooks.test.ts` "preserves real filename characters instead of borrowing another file's owner")*
 
-- `hooks install` refuses a workspace root: a pre-commit hook there would run the aggregate gate on every member's commit, blocking member A's commit on member B's unrelated staleness. It fails closed naming the member repository to install into instead. Member-scoped review is its own design (ADR-016). *(test: `workspace-refusals.test.ts` "refuses a pre-commit hook install at the workspace root")*
+- `hooks install` keeps its existing workspace-root refusal and names a member repository to install
+  into instead. Installation does not implicitly choose a repository in an aggregate workspace.
+  *(test: `workspace-refusals.test.ts` "refuses a pre-commit hook install at the workspace root")*
 - The nudge governs exactly what the gate governs, project declaration included: a file inside a build tree the project declared is silent even when the registry maps it, so the live reminder and the verdict cannot disagree about what a source is. Because the nudge fires on every edit it degrades rather than errors when the declaration cannot be read or is invalid, falling back to the built-in spec — the same fail-safe stance it takes on an unreadable registry, and the reason the loud version of that complaint belongs to the commands a user runs deliberately. *(test: `hooks.test.ts` "the editor nudge honors the project's declared exclusions")*
 - A changed source file that the registry maps to one or more docs produces a reminder naming each mapped doc on Windows and POSIX alike; native filesystem separators do not change registry identity. A file mapped to several features lists them all. *(test: `hooks.test.ts` "prints all docs mapped to a changed source file")*
 - The registry is read as v2 only: a legacy, un-migrated registry yields no match rather than a guess, so it must be migrated before the hook can see its mappings. *(test: `hooks.test.ts` "does not match an un-migrated legacy registry (v2-only read)")*

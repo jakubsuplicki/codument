@@ -15,6 +15,10 @@ Ready means a verified step still awaits its commit; completed requires observed
 
 ## Design approach
 
+Explicit repository selection carries the same Git view through readiness and observed delivery.
+Aggregate work cannot borrow a receipt for the root alone, and finishing root work leaves a nested
+repository's staged changes and history intact. *(test: `work.test.ts`)*
+
 The tracked approval owns permission and Markdown owns planned scope. Ignored local state belongs
 to one worktree and records selection, interruption reasons, resume conditions and the pending gate.
 Selecting another plan requires a reason; supersession explicitly names a replacement. Reading

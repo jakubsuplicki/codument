@@ -15,7 +15,7 @@ import {
 } from "./plan-steps.js";
 import { ConfigValueError, readBoundedState, withStateLock } from "./state-io.js";
 import { resolveChangeSet, readChangeSetFile, type ChangeSet } from "./change-set.js";
-import { parsePlanScope } from "./plan-steps.js";
+import { planSourceScope } from "./feature-map.js";
 import { readBlobAtRef, EMPTY_TREE_SHA } from "./two-ref.js";
 import { getHeadSha } from "./git.js";
 import { REVIEW_MANIFEST_PATH, parseReviewTransfer } from "./review-transfer.js";
@@ -369,7 +369,7 @@ export function finalApprovalScope(record: PlanApprovalRecord): {
 } {
   return {
     plan: record.path,
-    scope: parsePlanScope(record.contract),
+    scope: planSourceScope(record.contract),
     contenders: [record.path],
     planId: record.planId,
     approvalDigest: record.digest,

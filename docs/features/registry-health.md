@@ -35,6 +35,10 @@ can be attributed even when the referring document did not change. Historical in
 in a temporary snapshot without changing user files or the index; an unavailable baseline is
 disclosed rather than described as introduced debt.
 
+Snapshot inspection uses an empty Git configuration on each supported platform, so inherited-debt
+attribution is not lost because the runtime and Git spell the null device differently.
+*(test: `doctor.test.ts`)*
+
 Bare health reporting is advisory. `--strict` gates actionable findings introduced by the working
 change; inherited debt remains visible. Explicit invariant execution asks a broader whole-repository
 question and retains its own runner limitations. Mechanical repair removes only ownership claims

@@ -65,6 +65,7 @@ import {
   renamedFromMap,
   resolveWorkspace,
   workspaceBases,
+  withSelectedRepository,
 } from "../lib/git.js";
 import {
   allSources,
@@ -140,6 +141,7 @@ import {
 import { versionSkewNotice } from "../lib/version.js";
 
 interface ReviewOptions {
+  repo?: string;
   committed?: boolean;
   pending?: boolean;
   export?: string;
@@ -824,6 +826,19 @@ export function buildReview(
 }
 
 export async function review(options: ReviewOptions = {}): Promise<void> {
+  try {
+    await withSelectedRepository(options.root ?? process.cwd(), options.repo, root =>
+      reviewRepository(options.repo === undefined ? options : { ...options, root, repo: "." }));
+  } catch (error) {
+    if (!(error instanceof GateError)) throw error;
+    if (options.format === "sarif") console.log(JSON.stringify(gateUnavailableSarif(error.message)));
+    else if (options.json || options.bundle) console.log(JSON.stringify({ version: 2, gate: "unavailable", reason: error.message }));
+    else console.log(pc.red(`  ✗ ${error.message} (gate could not run)`));
+    process.exitCode = 1;
+  }
+}
+
+async function reviewRepository(options: ReviewOptions): Promise<void> {
   const root = options.root ?? process.cwd();
   const portable = options.committed || options.pending;
   if ((portable && (!options.base || options.staged || options.paths)) || (options.committed && options.pending) || ((options.export || options.reviewFile) && !portable) || (options.export && (options.record || options.bundle || options.reviewFile)) || (options.reviewFile && (options.record || options.bundle))) {
@@ -1495,7 +1510,7 @@ export async function review(options: ReviewOptions = {}): Promise<void> {
     return;
   }
 
-  printHuman(report);
+  printHuman(report, options.repo === undefined ? undefined : root);
 
   // Advisory skew nudge — human output only (the --json contract is untouched);
   // never a finding, never an exit-code input.
@@ -2103,13 +2118,17 @@ function ownershipResolution(
   return `${head}${fixes}${indent}  ${pc.dim(close)}`;
 }
 
-export function printHuman(report: ReviewReport): void {
+export function printHuman(report: ReviewReport, repositoryRoot?: string): void {
   const { state, plan } = report;
-  const ackArgs = report.boundary
+  const boundaryArgs = report.boundary
     ? report.boundary.mode === "staged"
       ? `--staged --boundary ${report.boundary.fingerprint}`
       : `--paths ${report.boundary.changes.map((change) => shellArg(change.path)).join(" ")} --boundary ${report.boundary.fingerprint}`
     : undefined;
+
+  const ackArgs = repositoryRoot
+    ? `${boundaryArgs ?? ""} --repo . --root ${shellArg(repositoryRoot)}`.trim()
+    : boundaryArgs;
 
   console.log(pc.bold("codument review"));
   console.log();
