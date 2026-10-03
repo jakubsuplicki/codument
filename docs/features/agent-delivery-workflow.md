@@ -2,7 +2,7 @@
 title: Agent delivery workflow
 status: current
 type: concept
-last_reviewed: 2026-09-25
+last_reviewed: 2026-10-04
 ---
 
 # Agent delivery workflow
@@ -24,6 +24,14 @@ The default loop continues after approval, stopping for decisions that need the 
 keeps the same checks and waits between them. Local review covers the staged slice; branch delivery
 to CI adds a review of the complete range and a portable manifest. Neither boundary authorizes the
 other. [[step-verification]] and [[adversarial-review-gate]] own their enforcement.
+
+New plans approve outcomes and constraints, keeping file routing advisory. Existing approvals retain
+their original scope until explicitly renewed. Milestones demonstrate a representative working
+experience early, including the assets and integration it needs; infrastructure slices explain
+which milestone they unblock. Each slice remains independently reviewable and deliverable.
+Ordinary failed checks trigger diagnosis and repair within the approved contract. Human interruption
+is reserved for a genuinely unapproved decision or unavailable input, rather than the failed check
+itself. Required acceptance evidence stays open until its actual boundary has been exercised.
 
 Profiles place the same contract on each host's instruction and skill surfaces. Independent review
 uses a fresh agent when available and discloses reduced independence otherwise. Existing-project
@@ -76,9 +84,16 @@ After any reviewed commit, gated handoff can offer native compaction or a ground
   *(tests: `scaffold.test.ts`, `verify.test.ts`)*
 - Repository health is checked at plan completion and reports inherited debt rather than blocking
   each delivery step. *(behavioral instruction in the commit skill)*
-- Source implementation requires human-approved scope. After approval, stop for judgment-call
-  findings, public-interface, security, data-loss or dependency decisions, failed verification, or
-  work outside the plan. *(test: `scaffold.test.ts` for installed gates; execution is behavioral)*
+- Source implementation requires current bound human approval. Routine test, mapping, documentation
+  and review corrections proceed within that contract; changing promised behavior, evidence or
+  constraints requires renewed approval. External blockers, irreversible actions needing permission
+  and explicit user pauses preserve the pending gate. An already-approved correction does not create
+  a second decision merely because it touches a sensitive boundary.
+  *(tests: `scaffold.test.ts`, `skill-parity.test.ts`; host execution remains behavioral)*
+- New planning instructions use explicit outcome approval and require demonstrable milestones with
+  observed acceptance evidence. File discoveries repair guidance without widening the outcome;
+  legacy file-bound approvals keep their original boundary. Missing acceptance evidence cannot be
+  replaced by a green unrelated check. *(tests: `skill-parity.test.ts`, `init.test.ts`, `update.test.ts`)*
 - A spoken request can enable gated mode for the session. Only the user resolves findings in that
   mode. *(test: `scaffold.test.ts` for routing; execution is behavioral)*
 - The CLI installs, audits and gates work; it never runs the coding agent. *(architectural boundary)*
@@ -130,7 +145,7 @@ product value. Some safeguards already exist; reuse them before introducing anot
 
 - [x] Step 1: Make plan scope and Feature Map projections agree across context and verification.
 - [x] Step 2: Approve outcomes and constraints while treating implementation file lists as guidance.
-- [ ] Step 3: Plan demonstrable milestones and repair routine failures without human interruptions.
+- [x] Step 3: Plan demonstrable milestones and repair routine failures without human interruptions.
 - [ ] Step 4: Batch ownership lookup and source mapping around the staged delivery boundary.
 - [ ] Step 5: Scale review effort to risk while preserving verification of staged changes.
 - [ ] Step 6: Generate progress and handoffs from one consistent view of selected work.

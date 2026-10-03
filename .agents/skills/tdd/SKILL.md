@@ -10,7 +10,7 @@ Use this when implementing a planned step or fixing a bug. The principle is feed
 ## Workflow
 
 1. Read the approved plan step and its mapped docs.
-2. Identify the plan's promised outcome and the public interface or user-observable boundary that supplies evidence for it.
+2. Identify the plan's promised milestone and the user or integration boundary that supplies its acceptance evidence. Exercise a representative end-to-end experience early; supporting infrastructure names the milestone it unblocks.
 3. Choose the cheapest reliable feedback loop that exercises that boundary; use a small representative experiment before building expensive supporting infrastructure:
    - Unit test for pure logic
    - Integration test for module boundaries
@@ -29,6 +29,13 @@ Use this when implementing a planned step or fixing a bug. The principle is feed
 Record what was exercised, what was observed, and what remains untested. A mock, fake, or local executor supports only its exercised contract; it does not prove an external provider's behavior, downstream checks, or an end-to-end effect. Use the real integration when the approved acceptance criteria require it and it is available within the authorized scope. If it is unavailable, keep that criterion open, record the blocker, and bring any change to acceptance back to the user. A green local suite cannot silently replace required integration evidence.
 
 An expected failure during the red phase is feedback, not a final verification failure. Once the relevant checks pass, broaden them only for required checks or a concrete unresolved concern; do not build a new harness for a reversible edit that an existing check can verify.
+
+Routine test, mapping and documentation failures call for diagnosis, correction and re-verification
+within the approved contract. Keep required acceptance open while evidence is missing. Ask the
+human when repair requires an unapproved decision, unavailable external input or genuinely
+irreversible action; preserve explicit pauses, gated mode and no-commit requests. A new file in an
+outcome plan needs routing and ownership, not renewed scope approval; legacy file-bound approval
+remains strict.
 
 ## Test Quality
 

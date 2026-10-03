@@ -20,7 +20,7 @@ Do not use `plan-with-docs` yet if any meaningful decision is still open:
 - product behavior, user workflow, or success criteria
 - architecture, migration, compatibility, or data-shape tradeoffs
 - scope, non-goals, rollout, or reversibility
-- affected callers, docs, tests, or dependent features
+- affected callers or dependencies whose treatment requires an unapproved behavior or architecture choice
 - verification strategy or acceptance criteria
 - the right durable doc home for the decision
 
@@ -34,17 +34,18 @@ When those questions remain, switch to `grill-with-docs` first. Ask one sharp de
    - Cross-cutting model or pattern: `docs/concepts/{concept}.md`
    - Hard-to-reverse architecture decision: `docs/architecture/decisions/{NNN}-{title}.md`
 3. Write or update the **durable doc** in the documentation standard's layers (the `doc-audience-layers` concept): `## In plain terms`, `## Design approach`, `## Invariants & boundaries`, `## Decisions`, `## Key files`. Fill these at plan time — they are the knowledge that outlives the work, written at intent altitude (no identifiers, counts, or call order; that is mechanism and lives in code).
-4. Append a **transient `## Delivery Plan`** block — the working artifact, not durable doc content. It carries the step checklist, explicit Scope, the Feature Map (when the plan introduces source files — see below), Outcome, acceptance criteria, verification strategy, and open questions. Keep these under `###` subheadings inside the selected Delivery Plan, so a sibling or historical plan cannot supply its scope or evidence. It compacts out when the work ships (see Compaction on ship).
-5. Put `Status: awaiting approval` directly below that Delivery Plan heading. After explicit human approval, change only that plan to exact `Status: approved`, run `codument work approve --plan <path>` (with `--plan-id` for an identified section), and stage the plan with `docs/.approvals.json`. Record approval once; material changes require renewed human approval, while checkbox and Resume checkpoint updates do not. Frontmatter and another plan's approval authorize nothing.
-6. Show the delivery-plan checklist, the outcome, and the open questions inline (see Approval Summary), run the adversarial plan pass and fold its objections in, then stop and ask the user to approve or change the plan before implementation. Never make the user open the doc to see what they are approving.
+4. Append a **transient `## Delivery Plan`** block. New plans default to `Approval-Model: outcome-v1` in its header, alongside `Status: awaiting approval` and an optional `Plan-ID`. Include nonempty direct-child `### Outcome`, `### Constraints & non-goals`, `### Acceptance evidence`, and `### Verification` sections. Keep the milestone checklist in this selected block; Scope, Feature Map and implementation notes guide routing and cannot hide executable milestones. Sibling or historical plans cannot supply the contract. It compacts out when the work ships.
+5. Show the delivery-plan checklist and approval contract inline (see Approval Summary), run the adversarial plan pass and fold its objections in, then stop and ask the user to approve or change the plan before implementation. Never make the user open the doc to see what they are approving. Compact verified cleanup uses its approval exception below.
+6. After explicit human approval, change only that plan to exact `Status: approved`, run `codument work approve --plan <path>` (with `--plan-id` for an identified section), and stage the plan with `docs/.approvals.json`. Outcome approval binds promised milestones, outcome, constraints, acceptance evidence and verification; routing updates do not renew it. Existing approvals remain legacy and file-bound unless the human explicitly renews approval to adopt `outcome-v1`. Never silently add the model to an approved legacy plan. Checkbox and Resume checkpoint updates do not renew approval; frontmatter and another plan's approval authorize nothing.
 
 ## Delivery Plan Format
 
 ### Compact verified dead-code cleanup
 
-For a small removal within an existing feature, use one short Delivery Plan in its owning doc:
-one checkbox, exact Scope, evidence that the code is unused, and the relevant verification commands.
-The outcome is removal with unchanged supported behavior. Do not create a new feature doc, Feature
+For a small removal within an existing feature, use one short outcome Delivery Plan in its owning doc:
+one checkbox, the explicitly permitted removal, constraints and non-goals, unused-code acceptance
+evidence, and verification commands. The outcome is removal with unchanged supported behavior;
+name the permitted deletion in the contract, not only advisory Scope. Do not create a new feature doc, Feature
 Map, ADR, separate research phase or repeated checkpoints for that removal.
 
 Eligibility requires checking callers, exports/public entry points, framework discovery, routes,
@@ -52,7 +53,7 @@ dynamic imports and side-effect registration. No textual imports alone is not pr
 behavioral effect remains uncertain, use the normal grilling/planning path. Include associated tests
 and assets only when their removal is supported by the same evidence; retain coverage of live behavior.
 
-Retain explicit human approval of the exact scope. If the user already requested that named removal
+Retain explicit human approval of the named removal and its limits. If the user already requested that removal
 and the evidence confirms it without expanding scope, record that approval without asking again.
 Otherwise present the compact step for approval. Skip the separate plan-adversary pass only for this
 verified cleanup; the implementation still requires fresh independent review, ownership and registry
@@ -65,22 +66,30 @@ Honor a no-commit request by leaving verified work ready with its commit pending
 ## Delivery Plan
 
 Status: awaiting approval
+Approval-Model: outcome-v1
 
-- [ ] Step 1: ...
-- [ ] Step 2: ...
-- [ ] Step 3: ...
+- [ ] Step 1: Export a project report for one representative CLI input.
+- [ ] Step 2: Export the remaining supported input variants in a reviewable batch.
 
 ### Scope
 
-- `src/example.ts` — the existing boundary this plan changes.
+- `src/example.ts` — the existing report-export boundary this plan changes.
 
 ### Outcome
 
-The observable change this plan delivers and its limits.
+A CLI user can export the current project's report in the documented format.
+
+### Constraints & non-goals
+
+Preserve existing formats and local-only operation; add no remote publishing or dependency.
+
+### Acceptance evidence
+
+A real CLI invocation exports the representative report, then each supported variant; invalid input is rejected.
 
 ### Verification
 
-Evidence needed at the affected boundary, including any integration that remains untested.
+Run CLI integration checks for valid exports and invalid input, then the project's required checks.
 ```
 
 ## Feature Map (required when the plan introduces source files)
@@ -88,7 +97,7 @@ Evidence needed at the affected boundary, including any integration that remains
 Tests are evidence, not source ownership. Keep test paths in Verification and invariant citations,
 not Feature Map rows; `map check` and materialization share the same source exclusions.
 
-A plan that adds source files MUST carry a fenced `feature-map` block. This is the decomposition decision made explicit and approvable: it routes each source path to the feature that owns it, and `work-step` consumes it via `codument map` so files land in the right feature instead of being lumped into one umbrella feature.
+A plan that adds source files MUST carry a fenced `feature-map` block. It routes each source path to its owning feature, and `work-step` consumes it via `codument map`. In an outcome plan this is editable routing guidance, not a permission boundary. A discovered file needs correct ownership and documentation; it needs renewed approval only if the work changes the approved contract. Legacy file-bound plans retain their scope rules.
 
 ```feature-map
 src/fairness.ts | fairness    | feature | provably-fair seed/HMAC engine; isolated seam
@@ -123,7 +132,7 @@ outcome no step delivers.
 
 For a costly build, include what it unblocks, a rough effort estimate, and the cheapest useful experiment that could disprove the approach before the expensive steps. Reuse an experiment already performed during grilling; do not create another approval gate or impose this exercise on a small reversible fix.
 
-Pair each promised outcome with observable acceptance evidence in `### Verification`: the affected user or integration boundary, the relevant success and failure cases, and any untested assumption. State what a test double or local substitute establishes and which real integration remains unverified. If required evidence is unavailable, record the limitation and the condition for completion; do not silently weaken acceptance or promise an outcome that the available tests cannot establish.
+Pair each promised milestone with observable evidence in `### Acceptance evidence`; put how to obtain it in `### Verification`. Name the affected user or integration boundary, success and failure cases, and untested assumptions. State what a substitute establishes and which real integration remains unverified. If required evidence is unavailable, keep acceptance open and record the condition for completion; changing acceptance requires the human's approval.
 
 ## Approval Summary
 
@@ -133,8 +142,8 @@ The user approves from the chat, not by opening the doc — so the approval mess
 - If the CLI is unavailable, list each `- [ ]` step inline yourself.
 - Render the plan's `### Outcome` inline alongside the steps — the user approves the *end state*, not just the task list. State what completing every step achieves and, honestly, what it does not. This is required, not optional: do not make the user ask "so what does this achieve?"
 - Render the Open Questions inline too, each with its recommended default, so unresolved choices are settled at the gate rather than discovered mid-implementation.
-- Keep the message to the step list, the outcome, and the open questions, plus a one-line scope / non-goals note; link the doc for full detail, but the inline summary must never be a bare link.
-- When the plan carries a Feature Map, render it inline too (the human approves the *cut*, not just the steps) and run `codument map check --plan docs/features/<name>.md` — surface any malformed rows or a too-coarse-shape flag at the gate, before approval, where it can still be fixed.
+- Keep the message to the step list, outcome, constraints, acceptance evidence and open questions, a line each; link the doc for full detail. The inline summary must never be a bare link.
+- When the plan carries a Feature Map, run `codument map check --plan docs/features/<name>.md` and correct malformed routing before approval. Show the proposed ownership cut compactly; distinguish advisory paths from the contract the human approves. Legacy file-bound scope remains part of approval.
 - Then run the **adversarial plan pass** below and fold its objections into the Open Questions you render, so the user approves against an independent check, not just the author's confidence.
 
 ## Adversarial plan pass (the plan adversary)
@@ -151,31 +160,17 @@ The symmetric twin of the implementation adversary in [review-work](../review-wo
 - **Fold objections into the Approval Summary — never a second block.** Merge every grounded objection into the Open Questions list, one line each, ordered most-serious-first: the objection, the committed fact it cites, and the one decision it forces. Volume is bounded by materiality, not a cap — if the plan contradicts many facts, say so plainly (it likely needs rework) rather than trimming grounded findings. "No material objections" is the expected, correct result for a well-grilled plan: surface it in one line and move on.
 - **The adversary never blocks and never reopens the grill on its own.** It informs the user's approve/change decision, which is the only adjudication; only the user routes work back to grilling.
 
-## Step sizing: a step is not a loop
+## Milestones and delivery slices
 
-A step is the unit all three gates hold — `work-step` implements it, `review-work` reviews it,
-`commit-work` commits it. A step that hides an unbounded repetition breaks all three at once:
-implementation outruns the session, a review over dozens of agents' output is not a review, and
-the commit is a monolith. This happened in the field to "generate twelve locales" as one step:
-about thirty-five agents, a session limit hit mid-flight, fifteen of them killed. Nothing flagged
-it until someone was inside it — and the count had been sitting in the plan text the whole time.
+Plan a representative end-to-end user or integration experience early. Describe milestones by
+what can be demonstrated, not by internal modules completed. An infrastructure slice names the
+observable milestone it unblocks and the evidence it contributes; infrastructure alone cannot
+close that milestone's acceptance.
 
-**The tell.** A step that performs the same operation over a *list* of artifacts — locales,
-endpoints, adapters, migrations, entities, components — is a loop, not a step. A step sentence
-carrying its own count or plural ("all twelve locales", "each endpoint", "every adapter") is
-announcing a fan-out that the review gate will be asked to pay for later.
-
-**Two legal shapes.** Either is fine; pick by whether the work has a template to debug.
-
-1. **Explicit batches.** One step per batch, each stating its size, with the first batch its own
-   step. The first batch debugs the template every later one inherits — merging it into a bigger
-   sweep means discovering the template was wrong on item eleven.
-2. **Exemplar then replication.** One step builds one instance end to end; later steps replicate
-   it in batches of K. Use this when the shape is genuinely unknown until something exists.
-
-Sizing is a plan-time judgment because that is the only moment the count is visible — the plan
-says "twelve locales" before a single agent spawns. This is the missing definition of
-*commit-sized*, not a new rule beside it.
+Keep each delivery step small enough for implementation, independent review and a focused commit.
+Do not hide unbounded repetition in one step: use an end-to-end exemplar followed by explicit
+reviewable batches, or explicit batches with the first batch proving the shared approach.
+Approved milestone promises remain stable while implementation details evolve within them.
 
 ## Compaction on ship
 
@@ -184,8 +179,7 @@ The `## Delivery Plan` block is transient. When the final step passes implementa
 ## Rules
 
 - The durable doc follows the documentation standard's layers; the `## Delivery Plan` is transient and never becomes permanent doc content.
-- Keep implementation steps independently reviewable and commit-sized — see Step sizing for what
-  that means when a step repeats over a list.
+- Keep implementation steps independently reviewable and commit-sized; milestones describe observable value.
 - Do not mix unrelated features into one plan.
 - Do not begin source edits until approval is explicit.
 - Do not use planning to decide unresolved product, architecture, migration, compatibility, or verification boundaries.

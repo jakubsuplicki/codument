@@ -115,7 +115,7 @@ describe("buildManagedSection", () => {
     assert.ok(section.includes("use `work-step`"));
     assert.ok(section.includes("gets reviewed before commit"));
     assert.ok(section.includes("offer `commit-work`"));
-    assert.match(section, /continue to `commit-work`\. In gated mode, offer `commit-work`[^\n]+wait for the user to ask for it/);
+    assert.match(section, /In gated mode, offer `commit-work`[^\n]+wait for the user to ask for it/);
     assert.ok(section.includes("Assumption gate (before any source edit)"));
     assert.ok(section.includes("never on ambiguity alone"));
     assert.ok(section.includes("Step gates"));
@@ -167,7 +167,8 @@ describe("buildManagedSection", () => {
     assert.ok(section.includes("Status: approved"));
     assert.ok(section.includes("stop autopilot"));
     // the guardrails the flip must not take with it
-    assert.ok(section.includes("never start before the plan is approved"));
+    assert.ok(section.includes("never start before human approval"));
+    assert.ok(section.includes("status text alone grants no permission"));
     assert.ok(section.includes("Hard pause conditions"));
     assert.ok(section.includes("public interfaces, security, data loss or deletions, or dependency changes"));
     assert.ok(section.includes("runs exactly one step and stops, whatever the mode"));
@@ -177,6 +178,37 @@ describe("buildManagedSection", () => {
     // previously enforced.
     assert.ok(section.includes("`codument run` is only a signpost"));
     assert.ok(!section.includes("There is no `codument run` command"));
+  });
+
+  it("makes outcome approval and demonstrated milestone evidence the planning default", () => {
+    const section = buildManagedSection();
+    const planning = section.slice(
+      section.indexOf("### Planning and approval"),
+      section.indexOf("### Documentation Registry"),
+    );
+    assert.match(planning, /New plans use `Approval-Model: outcome-v1`/);
+    for (const field of ["Outcome", "Constraints & non-goals", "Acceptance evidence", "Verification"]) {
+      assert.ok(planning.includes(`\`${field}\``), `new plans must supply ${field}`);
+    }
+    assert.match(planning, /Existing legacy approvals keep their original meaning/);
+    assert.match(planning, /representative end-to-end experience early/);
+    assert.match(section, /missing evidence keeps acceptance open/);
+  });
+
+  it("repairs routine failures while keeping unapproved decisions and user pauses as boundaries", () => {
+    const section = buildManagedSection();
+    const sync = section.split("\n").find((line) => line.startsWith("- Step-sync gate:"));
+    const pause = section.split("\n").find((line) => line.startsWith("- Hard pause conditions"));
+    assert.ok(sync);
+    assert.ok(pause);
+    assert.match(sync, /test, mapping or documentation failures/);
+    assert.match(sync, /within the approved contract, restage and reverify/);
+    assert.match(sync, /never commit while the gate is red/);
+    for (const boundary of ["outcome, acceptance or constraints", "external input", "irreversible action", "explicit user pause"]) {
+      assert.ok(pause.includes(boundary), `hard pause must retain ${boundary}`);
+    }
+    assert.match(pause, /Routine failed checks require repair/);
+    assert.doesNotMatch(pause, /a verification failure|any change that falls outside the approved plan/);
   });
 
   it("commit guidance forbids an AI co-author trailer", () => {

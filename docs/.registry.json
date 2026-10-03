@@ -8,7 +8,22 @@
         "src/lib/agent-profiles.ts",
         "src/lib/scaffold.ts"
       ],
-      "docs": [],
+      "docs": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        "skills/plan-with-docs/SKILL.md",
+        "skills/work-step/SKILL.md",
+        "skills/review-work/SKILL.md",
+        "skills/commit-work/SKILL.md",
+        "skills/grill-with-docs/SKILL.md",
+        "skills/tdd/SKILL.md",
+        ".agents/skills/plan-with-docs/SKILL.md",
+        ".agents/skills/work-step/SKILL.md",
+        ".agents/skills/review-work/SKILL.md",
+        ".agents/skills/commit-work/SKILL.md",
+        ".agents/skills/grill-with-docs/SKILL.md",
+        ".agents/skills/tdd/SKILL.md"
+      ],
       "depends_on": [
         "commands",
         "lib"

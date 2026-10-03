@@ -45,6 +45,8 @@ without widening the normative contract. Existing approval models retain their o
 Installed instructions preserve one delivery discipline across hosts: stage the slice, review and
 verify it, then commit those bytes. Permission, interruption, readiness and delivered work remain
 separate. Tracked approval survives final compaction; local recovery context supplies no authority.
+Shared guidance plans for observable milestones and repairs routine failures within current approval.
+Legacy permission remains unchanged; [[agent-delivery-workflow]] owns this instruction contract.
 Control records have bounded reads, atomic writes and exclusive revision-checked transitions.
 
 Telemetry readers retain valid events alongside explicit empty, partial or unavailable input state.

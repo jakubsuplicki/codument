@@ -7,7 +7,10 @@ import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { MARKER_START, MARKER_END } from "../src/lib/markers.js";
-import { nonDirectoryAncestor } from "../src/lib/scaffold.js";
+import { buildManagedSection, nonDirectoryAncestor } from "../src/lib/scaffold.js";
+import { hashContent } from "../src/lib/codemod.js";
+import { approvePlan } from "../src/lib/plan-approval.js";
+import { loadPlan, planApprovalModel } from "../src/lib/plan-steps.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLI = join(__dirname, "..", "dist", "cli.js");
@@ -64,7 +67,7 @@ function hasCodumentHook(entry: Record<string, unknown>): boolean {
 }
 
 /** Run init first to set up a fully initialized project */
-async function setupInitializedProject(): Promise<void> {
+async function setupInitializedProject(profile = "codex"): Promise<void> {
   await writeFile(
     join(tmp, "package.json"),
     JSON.stringify({ name: "test-project", dependencies: {} }),
@@ -75,10 +78,66 @@ async function setupInitializedProject(): Promise<void> {
   // Anchor to the codex profile explicitly: these tests exercise the
   // `.agents/skills` managed-file layout (and Claude settings added on top via
   // `update --agents claude`), independent of which profile `init` defaults to.
-  runCli("init", "--agents", "codex");
+  runCli("init", "--agents", profile);
 }
 
 describe("update command", () => {
+  for (const [profile, skillsRoot] of [["codex", ".agents"], ["claude", ".claude"]]) {
+    it(`upgrades ${profile} milestone guidance while retaining authored content and legacy permission`, async () => {
+      await setupInitializedProject(profile);
+      const before = "# Authored project rules\n\n";
+      const after = "\n\n## Authored operational rules\n";
+      const instructionFiles = profile === "claude" ? ["AGENTS.md", "CLAUDE.md"] : ["AGENTS.md"];
+      for (const file of instructionFiles) {
+        await writeFile(join(tmp, file), `${before}${MARKER_START}\nPrior managed workflow.\n${MARKER_END}${after}`);
+      }
+      const names = ["plan-with-docs", "work-step", "review-work", "commit-work", "grill-with-docs", "tdd"];
+      const metaPath = join(tmp, ".codument-meta.json");
+      const meta = JSON.parse(await readFile(metaPath, "utf8"));
+      meta.fileHashes ??= {};
+      let authoredSkill = "";
+      for (const name of names) {
+        const path = `${skillsRoot}/skills/${name}/SKILL.md`;
+        const previous = `# Previous packaged ${name} guidance\n`;
+        meta.fileHashes[path] = hashContent(previous);
+        const local = name === "tdd" ? previous + "\nProject-authored local extension.\n" : previous;
+        await writeFile(join(tmp, path), local);
+        if (name === "tdd") authoredSkill = local;
+      }
+      await writeFile(metaPath, JSON.stringify(meta));
+      const planPath = "docs/features/existing.md";
+      await writeFile(join(tmp, planPath), "# Existing work\n\n## Delivery Plan\nStatus: approved\n\n- [ ] Preserve the existing report format.\n\n### Scope\n- `src/report.ts`\n");
+      approvePlan(tmp, planPath, { signer: "human" });
+      const authoredPlan = await readFile(join(tmp, planPath), "utf8");
+      const approval = await readFile(join(tmp, "docs/.approvals.json"), "utf8");
+
+      const result = runCli("update");
+
+      assert.equal(result.exitCode, 0, result.stdout);
+      for (const file of instructionFiles) {
+        const installed = await readFile(join(tmp, file), "utf8");
+        assert.ok(installed.startsWith(before));
+        assert.ok(installed.endsWith(after));
+        assert.ok(installed.includes(`${buildManagedSection()}\n${MARKER_END}`));
+        assert.ok(!installed.includes("Prior managed workflow."));
+      }
+      for (const name of names) {
+        assert.equal(
+          await readFile(join(tmp, skillsRoot, "skills", name, "SKILL.md"), "utf8"),
+          await readFile(join(__dirname, "..", "skills", name, "SKILL.md"), "utf8"),
+          `${profile} must receive the shipped ${name} contract`,
+        );
+      }
+      assert.equal(await readFile(join(tmp, skillsRoot, "skills/tdd/SKILL.md.backup"), "utf8"), authoredSkill);
+      assert.equal(await readFile(join(tmp, planPath), "utf8"), authoredPlan);
+      assert.equal(await readFile(join(tmp, "docs/.approvals.json"), "utf8"), approval);
+      assert.equal(planApprovalModel(authoredPlan), "legacy");
+      assert.equal(loadPlan(tmp, planPath)?.approved, true);
+      await writeFile(join(tmp, planPath), authoredPlan.replace("src/report.ts", "src/discovered.ts"));
+      assert.equal(loadPlan(tmp, planPath)?.approved, false, "upgrades must retain legacy file-bound permission");
+    });
+  }
+
   it("fails without .codument-meta.json", () => {
     const result = runCli("update");
     assert.equal(result.exitCode, 1);

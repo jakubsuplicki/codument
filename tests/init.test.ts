@@ -7,6 +7,9 @@ import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { MARKER_START, MARKER_END } from "../src/lib/markers.js";
+import { buildManagedSection } from "../src/lib/scaffold.js";
+import { approvePlan } from "../src/lib/plan-approval.js";
+import { loadPlan, planApprovalModel } from "../src/lib/plan-steps.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLI = join(__dirname, "..", "dist", "cli.js");
@@ -64,6 +67,44 @@ function hasCodumentHook(entry: Record<string, unknown>): boolean {
 }
 
 describe("init command", () => {
+  for (const [profile, skillsRoot] of [["codex", ".agents"], ["claude", ".claude"]]) {
+    it(`installs outcome milestone guidance for ${profile} without rewriting authored instructions or legacy approval`, async () => {
+      const before = "# Project guide\n\nKeep the authored project rules.\n\n";
+      const after = "\n\n## Project operations\n\nKeep the authored operational rules.\n";
+      const instructionFiles = profile === "claude" ? ["AGENTS.md", "CLAUDE.md"] : ["AGENTS.md"];
+      for (const file of instructionFiles) {
+        await writeFile(join(tmp, file), `${before}${MARKER_START}\nPrior managed workflow.\n${MARKER_END}${after}`);
+      }
+      const planPath = "docs/features/existing.md";
+      await mkdir(join(tmp, "docs/features"), { recursive: true });
+      await writeFile(join(tmp, planPath), "# Existing work\n\n## Delivery Plan\nStatus: approved\n\n- [ ] Preserve the existing report format.\n\n### Scope\n- `src/report.ts`\n");
+      approvePlan(tmp, planPath, { signer: "human" });
+      const authoredPlan = await readFile(join(tmp, planPath), "utf8");
+      const approval = await readFile(join(tmp, "docs/.approvals.json"), "utf8");
+
+      runInit("--agents", profile);
+
+      for (const file of instructionFiles) {
+        const installed = await readFile(join(tmp, file), "utf8");
+        assert.ok(installed.startsWith(before));
+        assert.ok(installed.endsWith(after));
+        assert.ok(installed.includes(`${buildManagedSection()}\n${MARKER_END}`));
+        assert.ok(!installed.includes("Prior managed workflow."));
+      }
+      for (const name of ["plan-with-docs", "work-step", "review-work", "commit-work", "grill-with-docs", "tdd"]) {
+        assert.equal(
+          await readFile(join(tmp, skillsRoot, "skills", name, "SKILL.md"), "utf8"),
+          await readFile(join(__dirname, "..", "skills", name, "SKILL.md"), "utf8"),
+          `${profile} must receive the shipped ${name} contract`,
+        );
+      }
+      assert.equal(await readFile(join(tmp, planPath), "utf8"), authoredPlan);
+      assert.equal(await readFile(join(tmp, "docs/.approvals.json"), "utf8"), approval);
+      assert.equal(planApprovalModel(authoredPlan), "legacy");
+      assert.equal(loadPlan(tmp, planPath)?.approved, true);
+    });
+  }
+
   it("creates docs directory structure", () => {
     runInit();
 

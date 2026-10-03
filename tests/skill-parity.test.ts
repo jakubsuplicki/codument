@@ -2,6 +2,13 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import {
+  extractStatus,
+  parseDeliveryPlan,
+  parsePlanScope,
+  planApprovalModel,
+  planContractMarkdown,
+} from "../src/lib/plan-steps.js";
 
 // `skills/` is what ships in the npm package (package.json "files"); `.agents/skills/`
 // is the git-tracked copy this repo dogfoods from. They are two hand-maintained
@@ -14,6 +21,43 @@ const SHIPPED = "skills";
 const TRACKED_MIRROR = join(".agents", "skills");
 
 describe("proportional delivery guidance", () => {
+  it("ships an executable outcome contract whose promises survive routing and progress updates", () => {
+    const skill = readFileSync(join(SHIPPED, "plan-with-docs/SKILL.md"), "utf8");
+    const examples = [...skill.matchAll(/```markdown\r?\n([\s\S]*?)\r?\n```/g)]
+      .map((match) => match[1])
+      .filter((markdown) => /^## Delivery Plan\s*$/m.test(markdown));
+    assert.equal(examples.length, 1, "ship one complete representative plan example");
+    const example = examples[0];
+    assert.equal(extractStatus(example), "awaiting approval");
+    assert.equal(planApprovalModel(example), "outcome-v1");
+    const contract = planContractMarkdown(example);
+    const milestones = parseDeliveryPlan(example);
+    assert.ok(milestones.length > 0, "the example must promise demonstrable milestones");
+    assert.ok(milestones.every((step) => !step.done));
+    assert.equal(planContractMarkdown(example.replace("- [ ]", "- [x]")), contract);
+    assert.notEqual(
+      planContractMarkdown(example.replace(milestones[0].text, `${milestones[0].text} Change the promised behavior.`)),
+      contract,
+      "editing a milestone promise must require renewed approval",
+    );
+
+    const scope = parsePlanScope(example);
+    assert.ok(scope.length > 0, "the example must distinguish advisory file routing from intent");
+    assert.equal(planContractMarkdown(example.replace(scope[0], "src/discovered.ts")), contract);
+    for (const heading of ["Outcome", "Constraints & non-goals", "Acceptance evidence", "Verification"]) {
+      assert.throws(
+        () => planContractMarkdown(example.replace(`### ${heading}`, "### Omitted contract section")),
+        /outcome contract/,
+        `${heading} must be supplied by this selected plan`,
+      );
+      assert.notEqual(
+        planContractMarkdown(example.replace(`### ${heading}`, `### ${heading}\n\nAn additional approved requirement.`)),
+        contract,
+        `${heading} must remain bound to human approval`,
+      );
+    }
+  });
+
   it("keeps verified cleanup compact without dropping approval or independent implementation review", () => {
     const plan = readFileSync(join(SHIPPED, "plan-with-docs/SKILL.md"), "utf8");
     const work = readFileSync(join(SHIPPED, "work-step/SKILL.md"), "utf8");
@@ -34,6 +78,19 @@ describe("proportional delivery guidance", () => {
     assert.match(work, /Do not substitute older commands/);
     assert.match(work, /testCommand/);
     assert.match(work, /TAP reporter/);
+  });
+
+  it("keeps repair from overriding gated mode or a pending no-commit handoff", () => {
+    const work = readFileSync(join(SHIPPED, "work-step/SKILL.md"), "utf8");
+    const review = readFileSync(join(SHIPPED, "review-work/SKILL.md"), "utf8");
+    const commit = readFileSync(join(SHIPPED, "commit-work/SKILL.md"), "utf8");
+    assert.match(work, /no-commit request leaves verified work ready and the commit gate pending/);
+    assert.match(work, /it never marks delivery completed/);
+    assert.match(review, /no-commit request takes precedence/);
+    assert.match(review, /stop without offering a commit action/);
+    assert.match(commit, /Respect an explicit no-commit request: leave the step ready and stop/);
+    assert.match(review, /gated mode still waits for the user's findings decision/);
+    assert.match(commit, /In gated mode, do not start the next delivery-plan step/);
   });
 });
 

@@ -16,7 +16,7 @@ Stay in `grill-with-docs` when any meaningful boundary is still unresolved:
 - product behavior, user workflow, or success criteria
 - architecture, migration, compatibility, or data-shape tradeoffs
 - scope, non-goals, rollout, or reversibility
-- affected callers, docs, tests, or dependent features
+- affected callers or dependencies whose treatment requires an unapproved behavior or architecture choice
 - verification strategy or acceptance criteria
 - the right durable doc home for the decision
 
@@ -43,7 +43,7 @@ If the user asks to "plan" but these decisions are still open, say so in a line.
 - Hidden interface changes: ask what callers, docs, tests, and dependents will be affected.
 - Reversibility: identify choices that would be expensive to change later.
 - Verification: ask what feedback loop will prove the change works.
-- Costly infrastructure or a broad build: name the concrete user outcome it unblocks, the effort it commits, and the cheapest useful experiment that could invalidate the approach. Prefer an existing seam or a small representative case before committing to the larger build. Use available evidence to settle this; ask only for an unresolved, load-bearing choice.
+- Costly infrastructure or a broad build: identify an early representative end-to-end user or integration experience. Name the observable milestone each infrastructure task unblocks, the effort it commits, and the cheapest useful experiment that could invalidate the approach. Reuse available evidence; ask only for an unresolved, load-bearing choice.
 - Evidence: identify the observable user or integration boundary the outcome depends on. A local stand-in can test a contract, but it cannot establish an external effect or checks beyond that stand-in.
 - Documentation fit: decide whether the decision belongs in a feature doc, concept doc, overview, ADR, or nowhere durable.
 
@@ -57,3 +57,4 @@ If the user asks to "plan" but these decisions are still open, say so in a line.
 - Prefer updating existing docs over creating new ones.
 - Keep docs compact: capture settled decisions, not the whole conversation.
 - Scale the challenge to the uncertainty and cost. A small reversible fix or an already-settled choice needs no extra questionnaire or experiment gate; retain the existing approval workflow.
+- After outcome approval, new implementation files and routine failed checks are discoveries to repair, not reasons to reopen grilling. Return here only when repair exposes an unapproved behavior or constraint decision; legacy file-bound plans retain their existing scope gate.

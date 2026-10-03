@@ -22,7 +22,7 @@ Use Codument as the durable control plane for agent-led engineering work:
 8. Commit focused work with a conventional commit, authored as the user with no AI `Co-Authored-By` trailer.
 9. Move to the next unchecked step.
 
-If a codument command's quoted argument comes back refused as several arguments — `--reason "one two three"` rejected as three — the launcher split it before codument saw argv, so no quoting fixes it. Run the CLI a different way for the rest of the session: `npx codument …`, or `node node_modules/codument/dist/cli.js …`. Seen with `bunx` on Windows.
+If a codument command's quoted argument comes back refused as several arguments — `--reason "one two three"` rejected as three — the launcher split it before codument saw argv, so no quoting fixes it. Run the CLI a different way for the rest of the session: `npx codument …`, or `node node_modules/codument/dist/cli.js …`. Seen with `bunx` on Windows. If PowerShell blocks `npx.ps1`, use `npx.cmd codument …` or the direct Node invocation; no execution-policy change is needed.
 
 ### Quality bar
 Aim for the best-effort, durable solution, not the first plausible one. Before calling a plan or a step done, zoom out and check it adversarially — where is this half-baked, what did I assume, what would break it. Resolve issues yourself; pull the user in only for a genuinely load-bearing, unconfirmed call (the assumption gate below), not for work that should just happen.
@@ -58,6 +58,8 @@ Cut sentences, never words. Do not invent abbreviations (`cfg`, `impl`, `req`, `
 Nothing is exempt. Where another instruction mandates a format — the plan approval summary, a review finding, a charter recommendation, a destructive-action confirmation, autopilot step progress, an ordered sequence the user must follow — keep every required part and apply this rule inside it: a line each, not a paragraph each. Structure is what makes those formats usable; length never was. Written docs follow the documentation altitude standard below, and code and commit messages follow their own conventions.
 
 ### Intent routing
+For a small verified dead-code removal, use the compact cleanup path in `plan-with-docs`: one short approved step in the owning doc, evidence covering dynamic and public entry points, project checks, and independent implementation review. Skip a separate plan review and duplicate progress projections; retain ownership, registry repair and staged verification. An explicit no-commit request leaves work ready with its commit pending.
+
 Use these routing rules at the start of each user request. Do not wait for the user to name a skill when their intent is clear.
 
 - Charter gate (runs before the normal grill, once per project): if no `docs/charter.md` exists AND the user's message is real-work intent — building or changing something (a feature, the app, "let's make X"), not a pure question or read-only request — run `establish-charter` first. It sets the project's seriousness (demo vs. serious) and walks the core tech/architecture choices recommendation-first, then writes `docs/charter.md` and proceeds with the original request. On a project that already has working code it does not interview at all: the stack is derived from the code and confirmed in one message, because asking a shipping app to re-choose its datastore is either ceremony or an accidental migration. A pure question or read-only request on an uncharted project does not trip it; a project that already has a charter skips it. Do not ask the user's experience level.
@@ -65,7 +67,7 @@ Use these routing rules at the start of each user request. Do not wait for the u
 - Settled scope with enough answers for implementation design: use `plan-with-docs`. Write or update the durable feature/concept plan, mark it awaiting approval, show its delivery-plan checklist inline in the chat (the steps themselves, never just a doc link), and stop for explicit user approval.
 - Approved plan or user says to continue an approved plan: use `work-step`. Implement only the first unchecked step.
 - Any source edit, in or out of the delivery-plan loop, gets reviewed before commit — review is owed to the edit, not to a plan step. Scale it: a trivial edit (rename, comment, typo, pure-config) gets a one-pass self-review of the diff; a behavior change — public interface, data shape, deletion, or anything that tripped the assumption gate — gets the full `review-work` / `code-reviewer` pass. An ad-hoc bug fix is a behavior change: review it even though no plan step produced it.
-- Clean review, or review findings explicitly fixed/deferred by the user: offer `commit-work` as the next gated action and wait for the user to ask for it.
+- Clean review, or safe findings corrected within the approved contract: continue to `commit-work`. Deferral requires the user's decision. In gated mode, offer `commit-work` as the next action and wait for the user to ask for it.
 - Domain skills are advisory, not loop gates: when a step's work clearly fits a domain, consult the matching skill for craft depth. Backend/API/DB/auth -> `senior-backend`; system or architecture decisions -> `senior-architect`; UI components, state, or performance -> `senior-frontend`; visual or aesthetic polish -> `frontend-design`; animation, gesture, or motion -> `motion-craft`; reviewing a diff -> `code-reviewer`. They inform the implementation and review; they never replace `work-step` or `review-work`.
 
 ### Assumption gate (before any source edit)
@@ -103,16 +105,23 @@ Once a plan is approved, work it end to end without stopping for routine confirm
 
 The user turns it off by saying so — "step by step", "stop at the gates", "one step at a time", "pause", or "stop autopilot" — and **gated mode then holds for the rest of the session** until they lift it ("keep going", "run the plan"). Never assume gated mode from a previous session; never quietly resume automatic running after the user has asked for the gates.
 
-- Precondition: never start before the plan is approved. Confirm the active plan shows `Status: approved` (not draft or awaiting approval). If you cannot confirm approval, do not start; say so and ask the user to approve the plan.
+- Precondition: never start before human approval. Confirm `Status: approved` and its current bound approval with `codument steps --plan <path> --json`; status text alone grants no permission. If binding is missing or stale, return to approval. Do not silently convert a legacy approval to outcome approval.
 - For each remaining delivery-plan step run `work-step` -> `review-work` -> `commit-work` without stopping for routine confirmations. Each gate still runs; you simply do not wait for the user to say continue. Commit per step with a focused conventional commit, attributed to the user only.
-- Step-sync gate: `work-step` stages only the exact step, then `review-work` runs `codument verify` until that boundary passes documentation sync and required review. A persistently red gate is a hard-pause condition; never commit while it is red.
-- During `review-work`, auto-apply only safe, obvious fixes, then proceed to `commit-work`. Always pause for any finding that needs a judgment call or that touches public interfaces, security, data loss or deletions, or dependency changes.
-- Hard pause conditions (stop the run, report a compact summary, wait for the user): a judgment-call review finding, a verification failure, or any change that falls outside the approved plan.
+- Step-sync gate: `work-step` stages only the exact step, then `review-work` runs `codument verify` until that boundary passes documentation sync and required review. Diagnose routine test, mapping or documentation failures, correct them within the approved contract, restage and reverify; never commit while the gate is red.
+- During `review-work`, auto-apply only safe, obvious fixes within the approved contract, then proceed to `commit-work`. Findings touching public interfaces, security, data loss or deletions, or dependency changes require careful review; an already-approved correction does not itself require another human interruption. Pause for an unapproved judgment call, never silently defer it. Gated mode still waits for the user's decision.
+- Hard pause conditions (stop the run, preserve the pending gate and report the decision needed): an unapproved change to outcome, acceptance or constraints, missing external input, a genuinely irreversible action needing authorization, or an explicit user pause. Routine failed checks require repair, not an automatic human interruption. Outcome-plan file discoveries update routing and ownership within the approved contract; legacy file-bound scope retains its approval boundary.
 - An explicit single-step request is always honored: `/work-step` or "work the next step" runs exactly one step and stops, whatever the mode.
 - Show progress at every step boundary: before starting each step, post a short checklist inline in the chat — the step just completed, the step now starting, and what remains. Running without waiting suppresses the approval and option prompts and the waiting between steps, not the progress reporting; never advance from one step to the next silently.
 - On any pause or on plan completion, report a compact summary of steps done, commits made, and why it stopped.
 
 The Codument CLI does not run your coding agent. `codument run` is only a signpost that says so; autopilot lives entirely in these instructions, which your agent follows.
+
+### Pausing and resuming
+Use `codument work status --json` as the session handoff. Start a human-approved plan with `work start --plan <path>`; switching requires a reason and preserves prior work. Pause with `work pause --reason <text> --gate <gate>`, or block with `work block --reason <text> --resume-when <condition> --gate <gate>`. Approval is independent of execution state.
+
+Resume explicitly when authorized and the resume condition is satisfied. Finish the saved review or commit gate before implementing another step. Status, steps and context are read-only projections; they cannot restart paused work or grant approval. Use a short Resume checkpoint only for context the state does not carry.
+
+Before final compaction, save the completed approved plan at `.codument/pending-plans/<repo-relative-plan-path>`. Compact and stage the durable document, run `codument work finish --prepare-final`, and stage `docs/.approvals.json`. The tracked contract and exact final-delivery binding preserve approval in a fresh checkout; the ignored copy supplies recovery context only. Reprepare after correcting the staged boundary. After verification, `work finish` records readiness; after the successful commit, it reconciles actual completion. A no-commit request leaves work ready with its commit pending. Remove only that recovery copy after final delivery succeeds.
 
 ### Definition of Done
 A task is NOT complete until:
@@ -124,9 +133,12 @@ A task is NOT complete until:
 6. Dependent features are flagged if an interface changed
 7. Review findings are resolved or explicitly deferred
 8. `codument verify` passes for the exact staged step — no new source left unmapped, no mapped doc stale, and required review recorded
+9. The promised milestone has its required evidence at the actual user or integration boundary; a substitute proves only the boundary exercised, and missing evidence keeps acceptance open
 
 ### Planning and approval
-Do not move from a rough idea into source edits automatically. First use the docs-backed grilling and planning workflow to resolve scope, non-goals, acceptance criteria, verification strategy, and implementation steps. Begin implementation only after the user approves the plan. Surface the plan's checklist inline in the chat at the approval gate, so the user approves the steps they can see rather than a link they must open.
+Do not move from a rough idea into source edits automatically. First use the docs-backed grilling and planning workflow. New plans use `Approval-Model: outcome-v1` in the selected Delivery Plan header and nonempty `Outcome`, `Constraints & non-goals`, `Acceptance evidence` and `Verification` sections. Human approval binds promised behavior, milestone deliverables, evidence and architecture, compatibility, privacy, security and spending constraints. Scope, Feature Maps and implementation notes guide file routing; they do not widen or narrow outcome permission. Existing legacy approvals keep their original meaning unless the user explicitly approves adoption.
+
+Plan around a representative end-to-end experience early. Include assets, integration and rendering needed to demonstrate it; infrastructure slices name the milestone they unblock. Keep slices reviewable and commit each separately. Define observable acceptance evidence for each milestone, such as an inspected image or working scene for rendering. Begin implementation only after the user approves the plan, and surface its checklist inline at approval.
 
 ### Documentation Registry
 The file `docs/.registry.json` maps source files to their documentation. It is the whole project's map, so query it rather than read it: `codument context --file <path> --owner` answers which doc owns one file in a line, and `codument context --feature <slug>` / `--plan <path>` project the grounded working set. Read the file itself when you are editing the map — registering a new source, re-pointing an entry — or when the CLI is unavailable.

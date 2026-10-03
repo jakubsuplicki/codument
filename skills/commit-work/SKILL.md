@@ -5,7 +5,8 @@ description: Commit an already verified Codument work step with a focused conven
 
 # Commit Work
 
-Use this after `review-work` is clean, or after the user has approved/deferred every review finding and all approved fixes are resolved.
+Use this after `review-work` is clean, or after safe contracted fixes and user-approved fixes are
+resolved and the user has explicitly deferred any remaining finding.
 
 ## Workflow
 
@@ -20,6 +21,8 @@ Use this after `review-work` is clean, or after the user has approved/deferred e
    - `test:`
    - `refactor:`
    - `chore:`
+
+   A routine hook failure returns to diagnosis, correction and exact staged review within the approved contract. Never bypass the hook or commit a red boundary; pause only if repair needs an unapproved decision, external input or genuinely irreversible action, or the user has requested a pause.
 6. **If that was the plan's last step, remove only this plan's recovery copy after confirming the commit succeeded, then run `codument doctor --strict` once and report what it says.** If interrupted before cleanup, reconcile the copy with the committed boundary before resuming; a leftover copy does not authorize repeating completed work. Doctor reports; it does not gate — a plan must not be blocked by an adopting repo's pre-existing debt. This is the only moment the loop looks at repo-wide health: staged `verify` answers whether this change is ready, `doctor` answers whether the knowledge base is still worth reading. Once per plan, not once per step.
 7. After the successful commit, run `codument work finish` to reconcile delivery, then read `codument steps --plan <active-plan> --json` if the Delivery Plan remains. Name the next step and continue to `work-step` unless gated or single-step mode requires stopping. Completed local state must agree with committed delivery; a missing checklist alone is not completion. In gated mode, fill the next-step gate from that readback:
 
