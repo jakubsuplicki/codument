@@ -1,5 +1,5 @@
 import { globToRegExp } from "./analyze.js";
-import { selectedPlanMarkdown, selectedFeatureMapLines, parsePlanScope } from "./plan-steps.js";
+import { selectedPlanMarkdown, selectedFeatureMapLines, parsePlanScope, planApprovalModel, type PlanApprovalModel } from "./plan-steps.js";
 
 // The Feature Map is the plan-doc artifact that decides decomposition: a fenced
 // ```feature-map``` block whose rows route source paths to the feature that owns
@@ -85,8 +85,9 @@ function literalPrefixLength(glob: string): number {
 /** Parse the first ```feature-map``` block in `markdown`. No block → no rows and
  *  no errors (a missing map is not an error; the routing rule's no-map branch
  *  handles it). Malformed rows are collected, not thrown. */
-export function parseFeatureMap(markdown: string, planId?: string): FeatureMap {
-  const lines = selectedFeatureMapLines(markdown, planId);
+export function parseFeatureMap(markdown: string, planId?: string, model?: PlanApprovalModel): FeatureMap {
+  const lines = selectedFeatureMapLines(markdown, planId, model);
+  const outcome = (model ?? planApprovalModel(markdown, planId)) === "outcome-v1";
   const rows: FeatureMapRow[] = [];
   const errors: FeatureMapError[] = [];
   const seenExact = new Set<string>();
@@ -101,7 +102,7 @@ export function parseFeatureMap(markdown: string, planId?: string): FeatureMap {
       if (FENCE_OPEN.test(line)) inBlock = true;
       continue;
     }
-    if (FENCE_CLOSE.test(line)) break; // one block only
+    if (FENCE_CLOSE.test(line) || (outcome && /^ {0,3}`{3,}[ \t]*$/.test(line))) break; // one block only
 
     const raw = line.trim();
     if (raw === "") continue;
@@ -162,10 +163,10 @@ export function parseFeatureMap(markdown: string, planId?: string): FeatureMap {
 }
 
 /** Explicit source guidance from the selected Scope and its consumed Feature Map. */
-export function planSourceScope(markdown: string, planId?: string): string[] {
+export function planSourceScope(markdown: string, planId?: string, model?: PlanApprovalModel): string[] {
   return [...new Set([
     ...parsePlanScope(markdown, planId),
-    ...parseFeatureMap(markdown, planId).rows.map(row => row.pathOrGlob),
+    ...parseFeatureMap(markdown, planId, model).rows.map(row => row.pathOrGlob),
   ])].sort();
 }
 

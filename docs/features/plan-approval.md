@@ -25,6 +25,19 @@ their workflow. A recorded plan cannot silently fall back to legacy approval whe
 binding disappears. Conflicting writers and invalid state require recovery rather than replacement
 with defaults. Durable knowledge outside an embedded plan remains independently maintainable.
 
+Outcome approval is an explicit opt-in on the selected plan. It binds the promised outcome,
+milestone deliverables, constraints, acceptance evidence and verification. Scope, Feature Map and
+implementation notes guide ownership and implementation; discovering another necessary file does
+not change permission. The agent and reviewer judge whether the resulting work fits the approved
+intent. The CLI checks the binding, not the semantic truth of that judgment.
+
+Outcome plans declare `Approval-Model: outcome-v1` in their plan header and provide nonempty
+Outcome, Constraints & non-goals, Acceptance evidence and Verification sections within that plan.
+Existing approvals retain their original meaning. Adopting outcome approval requires renewed
+human approval, including in projects that still allow legacy status-only plans.
+The tracked record identifies that adoption too: model-like text in an older contract cannot
+silently reinterpret its permission after an upgrade.
+
 Final preparation binds the compacted document and delivery changes to a Git base while retaining
 the approved contract. Its own binding payload and a schema-valid reserved review manifest are
 excluded from its digest so portable review can accompany the delivery without circular hashing.
@@ -35,17 +48,25 @@ Later work needs its own approved plan; preparing again cannot reopen the delive
 
 ## Invariants & boundaries
 
-- Final delivery retains source guidance declared in the approved Feature Map, including routes
+- Legacy final delivery retains source guidance declared in the approved Feature Map, including routes
   outside the plan's literal Scope list. *(test: `plan-approval.test.ts`)*
 
 - Final compaction and portable review coexist even when the approved plan was never committed in
   an earlier slice. Invalid reserved evidence is never self-excluded. *(test: `review-transfer.test.ts`)*
 
-- Approval includes the source map actually consumed by routing, including a supported sibling map outside a standalone delivery section. Scope verification and checklist discovery share the same ambiguity refusal. *(test: `plan-approval.test.ts`)*
+- Legacy approval includes the source map consumed by routing, including a supported sibling map.
+  Outcome routing remains advisory; final compaction retains the normative contract independently
+  of file guidance. *(tests: `plan-approval.test.ts`, `work.test.ts`)*
 
-- Changes to intended work, scope, outcomes, decisions or examples invalidate approval. Completion,
+- Changes to intended work, outcomes, decisions or examples invalidate approval. Legacy scope
+  changes also invalidate it; outcome Scope, Map and implementation notes can evolve. Completion,
   resume notes and line-ending conversion preserve it. Resume notes cannot supply executable steps,
   scope or source ownership. *(test: `plan-approval.test.ts`)*
+- Outcome contracts refuse missing or repeated required sections, unsupported or ambiguous model
+  declarations, and executable checkboxes in advisory sections. Examples and resume notes cannot
+  provide the required contract. *(test: `plan-approval.test.ts`)*
+- Only live routing is advisory. Normative fenced examples remain bound, and supported sibling
+  Scope guidance stays outside the selected outcome contract. *(test: `plan-approval.test.ts`)*
 - Approval never borrows another identified section's scope or map; ambiguous selection requires
   an explicit identity. Missing, inconsistent and unsupported records cannot authorize work.
   *(test: `plan-approval.test.ts`)*
@@ -68,6 +89,7 @@ Later work needs its own approved plan; preparing again cannot reopen the delive
 ## Decisions
 
 - [Approval binds the approved contract](../architecture/decisions/023-plan-approval-binds-the-approved-contract.md).
+- [Outcome permission keeps routing advisory](../architecture/decisions/024-outcome-permission-keeps-routing-advisory.md).
 
 ## Key files
 

@@ -674,7 +674,7 @@ export function buildReview(
     registry,
     changedFiles: changes,
     exclusion,
-    planScope: plan?.scope,
+    planScope: plan?.approvalModel === "outcome-v1" ? undefined : plan?.scope,
     anchorChanges: filtered,
     // The ORIGINAL (pre-ack-filter) movement set: concept umbrellas wake off
     // this, so a per-symbol ack can never clear an umbrella's file-grain flag.

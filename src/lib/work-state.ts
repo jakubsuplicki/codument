@@ -12,6 +12,7 @@ import {
   planContractMarkdown,
   extractStatus,
   type ActivePlan,
+  type PlanApprovalModel,
 } from "./plan-steps.js";
 import { ConfigValueError, readBoundedState, withStateLock } from "./state-io.js";
 import {
@@ -494,6 +495,22 @@ export function loadWorkPlan(root: string, path: string, planId?: string): Activ
   };
 }
 
+/** Retained context carries its recorded interpretation without rewriting approved text. */
+export function workPlanContext(
+  root: string,
+  path: string,
+  markdown: string,
+  planId?: string,
+): { markdown: string; approvalModel?: PlanApprovalModel } {
+  if (!planId || hasPlanSection(markdown, planId)) return { markdown };
+  const record = readApprovalStore(root).records.find(
+    (row) => row.path === path && row.planId === planId,
+  );
+  if (record && (record.finalDelivery || loadWorkPlan(root, path, planId)?.approved))
+    return { markdown: retainedPlanMarkdown(record), approvalModel: record.approvalModel ?? "legacy" };
+  return { markdown };
+}
+
 /** Retained contract context cannot create selection or grant new execution. */
 export function workPlanMarkdown(
   root: string,
@@ -501,13 +518,7 @@ export function workPlanMarkdown(
   markdown: string,
   planId?: string,
 ): string {
-  if (!planId || hasPlanSection(markdown, planId)) return markdown;
-  const record = readApprovalStore(root).records.find(
-    (row) => row.path === path && row.planId === planId,
-  );
-  if (record && (record.finalDelivery || loadWorkPlan(root, path, planId)?.approved))
-    return retainedPlanMarkdown(record);
-  return markdown;
+  return workPlanContext(root, path, markdown, planId).markdown;
 }
 
 export function prepareWorkFinalDelivery(root: string, options: WorkOptions = {}): void {

@@ -58,7 +58,7 @@ interface PlanSection {
 
 /** Examples are not instructions. Keep line positions while excluding fenced
  *  and indented code, quotes, and comments from both status and checklist reads. */
-function instructionLines(markdown: string): string[] {
+function instructionLines(markdown: string, exposeFenceOpenings = false): string[] {
   let fence: string | null = null;
   let quotedParagraph = false;
   return markdown
@@ -80,7 +80,7 @@ function instructionLines(markdown: string): string[] {
       if (marker && (marker[1][0] !== "`" || !marker[2].includes("`"))) {
         quotedParagraph = false;
         fence = marker[1];
-        return "";
+        return exposeFenceOpenings ? line : "";
       }
       if (!line.trim() || HEADING.test(line) || /^ {0,3}(?:[-+*]|1[.)])[ \t]+\S/.test(line)) {
         quotedParagraph = false;
@@ -229,15 +229,66 @@ export function identifyPlan(markdown: string, id: string, planId?: string): str
   return raw.join("\n");
 }
 
-/** Retain all selected intent, including examples, except explicit progress fields. */
+export type PlanApprovalModel = "legacy" | "outcome-v1";
+
+/** Opt-in belongs to the selected plan header, never examples or another plan. */
+export function planApprovalModel(markdown: string, planId?: string): PlanApprovalModel {
+  const { lines, selected } = planParts(markdown, planId);
+  if (!selected) return "legacy";
+  const local = lines.slice(selected.start + 1, selected.end);
+  const firstHeading = local.findIndex(line => HEADING.test(line));
+  const declarations = local.flatMap((line, index) => {
+    const match = /^ {0,3}Approval-Model:[ \t]*(.*?)[ \t]*$/i.exec(line);
+    return match ? [{ value: match[1], index }] : [];
+  });
+  if (!declarations.length) return "legacy";
+  if (declarations.length !== 1 || (firstHeading >= 0 && declarations[0].index >= firstHeading) ||
+      !["legacy", "outcome-v1"].includes(declarations[0].value)) {
+    throw new ConfigValueError("plan", "approval model", "use one supported Approval-Model in the selected plan header");
+  }
+  return declarations[0].value as PlanApprovalModel;
+}
+
+/** Bind selected intent; outcome plans explicitly separate advisory routing. */
 export function planContractMarkdown(markdown: string, planId?: string): string {
   const { lines, selected, bodyOffset, sections } = planParts(markdown, planId);
   if (!selected) throw new ConfigValueError("plan", "contract", "no delivery plan section found");
+  const outcome = planApprovalModel(markdown, planId) === "outcome-v1";
   const localStatus = statusDeclarations(lines.slice(selected.start + 1, selected.end)).length > 0;
   const raw = markdown.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").split("\n");
-  const start = localStatus || sections.length > 1 ? selected.start + bodyOffset : 0;
-  const end = localStatus || sections.length > 1 ? selected.end + bodyOffset : raw.length;
+  const start = outcome || localStatus || sections.length > 1 ? selected.start + bodyOffset : 0;
+  const end = outcome || localStatus || sections.length > 1 ? selected.end + bodyOffset : raw.length;
   const instructions = instructionLines(raw.join("\n"));
+  const checkpoints = checkpointMask(instructions);
+  const advisory = new Set<number>();
+  const map = selectedFeatureMapLines(markdown, planId);
+  if (outcome) {
+    const required = ["outcome", "constraints & non-goals", "acceptance evidence", "verification"];
+    const sections = new Map<string, number[]>();
+    let current: string | null = null;
+    let advisoryDepth: number | null = null;
+    for (let i = selected.start + bodyOffset + 1; i < selected.end + bodyOffset; i++) {
+      if (checkpoints[i]) continue;
+      const heading = HEADING.exec(instructions[i]);
+      if (heading && heading[1].length === selected.level + 1) {
+        current = heading[2].toLowerCase();
+        if (required.includes(current) && sections.has(current)) throw new ConfigValueError("plan", "outcome contract", `duplicate ${current} section`);
+        if (required.includes(current)) sections.set(current, []);
+      } else if (current && sections.has(current)) {
+        if (!/^ {0,3}(?:[*_]*status|Plan-ID|Approval-Model):/i.test(instructions[i])) sections.get(current)!.push(i);
+      }
+      if (heading && advisoryDepth !== null && heading[1].length <= advisoryDepth) advisoryDepth = null;
+      if (advisoryDepth === null && heading && (/^scope\b/i.test(heading[2]) || (heading[1].length === selected.level + 1 && /^(?:feature map|implementation notes)$/i.test(heading[2])))) advisoryDepth = heading[1].length;
+      if (advisoryDepth !== null) {
+        if (CHECKBOX.test(instructions[i])) throw new ConfigValueError("plan", "advisory routing", "put executable milestone checkboxes outside advisory sections");
+        advisory.add(i);
+      }
+    }
+    for (const name of required) {
+      if (!sections.get(name)?.some(index => !advisory.has(index) && instructions[index].trim() && !HEADING.test(instructions[index]))) throw new ConfigValueError("plan", "outcome contract", `provide one nonempty ### ${name} section inside the selected plan`);
+    }
+    map.forEach((line, index) => { if (line.length) advisory.add(index); });
+  }
   const result: string[] = [];
   let checkpointDepth: number | null = null;
   for (let i = start; i < end; i++) {
@@ -246,27 +297,32 @@ export function planContractMarkdown(markdown: string, planId?: string): string 
     if (heading && checkpointDepth !== null && heading[1].length <= checkpointDepth) checkpointDepth = null;
     if (heading && /^resume checkpoint\s*$/i.test(heading[2])) checkpointDepth = heading[1].length;
     if (checkpointDepth !== null) continue;
+    if (advisory.has(i)) continue;
     if (/^ {0,3}(?:[*_]*status|Plan-ID):/i.test(line)) continue;
     result.push(CHECKBOX.test(line) ? raw[i].replace(/\[[ xX]\]/, "[ ]") : raw[i]);
   }
-  const map = selectedFeatureMapLines(markdown, planId);
-  if (map.some((line, index) => line.length > 0 && (index < start || index >= end))) {
+  if (!outcome && map.some((line, index) => line.length > 0 && (index < start || index >= end))) {
     result.push("", map.join("\n").replace(/^\n+|\n+$/g, ""));
   }
   return result.join("\n").replace(/^\n+|\n+$/g, "");
 }
 
 /** The exact consumed Map, keeping source positions for diagnostics and approval. */
-export function selectedFeatureMapLines(markdown: string, planId?: string): string[] {
+export function selectedFeatureMapLines(markdown: string, planId?: string, model?: PlanApprovalModel): string[] {
   const lines = selectedPlanMarkdown(markdown, planId).split(/\r?\n/);
+  // Legacy selection and approval bytes retain their historical interpretation.
+  // Outcome routing excludes examples, quotes and comments from live maps.
+  const outcome = (model ?? planApprovalModel(markdown, planId)) === "outcome-v1";
+  const openings = outcome
+    ? instructionLines(lines.join("\n"), true) : lines;
   let start = -1;
   for (let index = lines.length - 1; index >= 0; index--) {
-    if (/^\s*```feature-map\s*$/.test(lines[index])) { start = index; break; }
+    if (/^\s*```feature-map\s*$/.test(openings[index])) { start = index; break; }
   }
   if (start < 0) return lines.map(() => "");
   let end = lines.length;
   for (let index = start + 1; index < lines.length; index++) {
-    if (/^\s*```\s*$/.test(lines[index])) { end = index + 1; break; }
+    if ((outcome ? /^ {0,3}`{3,}[ \t]*$/ : /^\s*```\s*$/).test(lines[index])) { end = index + 1; break; }
   }
   return lines.map((line, index) => index >= start && index < end ? line : "");
 }

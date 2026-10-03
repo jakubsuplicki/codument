@@ -69,9 +69,12 @@ short verdict and the diagnostic `review` surface cannot silently disagree about
 
 ## Invariants & boundaries
 
-- Out-of-plan reporting compares changed sources against the selected plan's Scope and consumed
+- Legacy out-of-plan reporting compares changed sources against the selected plan's Scope and consumed
   Feature Map using shared path matching. Unlisted files remain outside scope even when they share
   an owner with a declared file. *(tests: `change-state.test.ts`, `review-boundary.test.ts`)*
+- Outcome plans preserve file guidance for context without using it as an approval boundary.
+  Newly discovered files still owe ownership, documentation and review. Staged checks use the
+  staged outcome contract; unstaged changes cannot renew it. *(test: `work.test.ts`)*
 
 - Adapter preparation includes removed paths and rename origins as well as current files, so a
   historical reader can inspect the last source of a language after its deletion is staged.

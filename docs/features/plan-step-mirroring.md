@@ -35,6 +35,10 @@ authorization nor work to perform.
 
 ## Invariants & boundaries
 
+- Outcome approval binds milestone labels while allowing advisory implementation routing to evolve.
+  Advisory sections cannot introduce executable work outside that binding. Unknown models and
+  incomplete contracts are refused. *(test: `plan-approval.test.ts`)*
+
 - Explicit plan paths through an alias of the repository root normalize to the same supported
   in-repository identity; genuinely outside paths remain refused. *(test: `work.test.ts`)*
 

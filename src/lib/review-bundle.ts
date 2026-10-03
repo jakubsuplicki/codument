@@ -289,7 +289,7 @@ export interface ReviewBundle {
   /** Changed sources outside the approved plan scope (scope creep is a finding). */
   outOfPlan: string[];
   /** The approved plan in force, when detectable. */
-  plan: { path: string; scope: string[]; planId?: string; approvalDigest?: string } | null;
+  plan: { path: string; scope: string[]; planId?: string; approvalDigest?: string; approvalModel?: "outcome-v1" } | null;
   /** Exact focused projection handed to the reviewer. Omitted from legacy bundles. */
   boundary?: ChangeSetBinding;
   /** Changed tests as evidence, including their attribution or explicit lack of one. */
@@ -579,6 +579,7 @@ export function oracleFingerprint(
         scope: plan.scope,
         planId: plan.planId ?? null,
         approvalDigest: plan.approvalDigest ?? null,
+        ...(plan.approvalModel ? { approvalModel: plan.approvalModel } : {}),
       }),
     );
   return createHash("sha256").update(parts.join("\n"), "utf8").digest("hex").slice(0, 32);
@@ -647,6 +648,7 @@ export function gatherReviewBundle(
       ? {
           path: plan.plan,
           scope: plan.scope,
+          ...(plan.approvalModel ? { approvalModel: plan.approvalModel } : {}),
           ...(plan.planId ? { planId: plan.planId, approvalDigest: plan.approvalDigest } : {}),
         }
       : null,

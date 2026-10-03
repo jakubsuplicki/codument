@@ -12,6 +12,7 @@ import {
   selectedPlanId,
   normalizePlanPath,
   hasPlanSection,
+  planApprovalModel,
 } from "./plan-steps.js";
 import { ConfigValueError, readBoundedState, withStateLock } from "./state-io.js";
 import { resolveChangeSet, readChangeSetFile, type ChangeSet } from "./change-set.js";
@@ -22,6 +23,7 @@ import { REVIEW_MANIFEST_PATH, parseReviewTransfer } from "./review-transfer.js"
 
 export const APPROVALS_PATH = "docs/.approvals.json";
 export interface PlanApprovalRecord {
+  approvalModel?: "outcome-v1";
   planId: string;
   path: string;
   revision: number;
@@ -91,6 +93,7 @@ export function parseApprovalStore(raw: string | null): ApprovalStore {
             "approvedAt",
             "signer",
             "finalDelivery",
+            "approvalModel",
           ].includes(key),
       )
     )
@@ -114,6 +117,13 @@ export function parseApprovalStore(raw: string | null): ApprovalStore {
     )
       throw invalid();
     ids.add(row.planId);
+    if (row.approvalModel !== undefined) {
+      if (row.approvalModel !== "outcome-v1") throw invalid();
+      try {
+        if (planApprovalModel(row.contract) !== "outcome-v1") throw invalid();
+        planContractMarkdown(row.contract);
+      } catch { throw invalid(); }
+    }
     if (
       row.finalDelivery !== undefined &&
       (!row.finalDelivery ||
@@ -158,16 +168,17 @@ export function assessPlanApproval(
   required = false,
   planId?: string,
 ): ApprovalAssessment {
+  const outcome = planApprovalModel(markdown, planId) === "outcome-v1";
   const id = selectedPlanId(markdown, planId);
   const record = id ? store.records.find((row) => row.planId === id) : undefined;
   const wasBound = store.records.some((row) => row.path === path);
   if (!record)
     return {
       state: "unbound",
-      allowed: !required && !id && !wasBound,
+      allowed: !outcome && !required && !id && !wasBound,
       digest: null,
       reason:
-        id || required || wasBound
+        outcome || id || required || wasBound
           ? "Approval is unbound; after human approval run codument work approve --plan <path>."
           : "Legacy unbound approval: only Markdown status is recorded; migrate with codument work approve after human approval.",
     };
@@ -180,13 +191,15 @@ export function assessPlanApproval(
       reason:
         "This approval is retained for final delivery; create a new plan identity for new work. Existing pending work may resume its saved gate.",
     };
-  if (record.path !== path || record.digest !== digest)
+  if (record.path !== path || record.digest !== digest || outcome !== (record.approvalModel === "outcome-v1"))
     return {
       state: "stale",
       allowed: false,
       digest,
       reason:
-        "Approved scope changed; show the changed plan to the human and record fresh approval before implementation.",
+        outcome
+          ? "Approved outcome contract or approval model changed; show the changed plan to the human and record fresh approval before implementation."
+          : "Approved scope changed; show the changed plan to the human and record fresh approval before implementation.",
     };
   return {
     state: "bound",
@@ -235,6 +248,7 @@ export function approvePlan(
     const identified = identifyPlan(original, id, options.planId);
     const contract = planContractMarkdown(identified, id);
     const digest = approvalDigest(rel, id, contract);
+    const model = planApprovalModel(identified, id);
     const existing = store.records.find((row) => row.planId === id);
     if (existing && existing.path !== rel)
       throw new ConfigValueError(path, "Plan-ID", "identifier already belongs to another document");
@@ -244,7 +258,7 @@ export function approvePlan(
         "Plan-ID",
         "final delivery is already bound; create a new plan identity for new work",
       );
-    if (existing?.digest === digest) return existing;
+    if (existing?.digest === digest && (existing.approvalModel === "outcome-v1") === (model === "outcome-v1")) return existing;
     const revision = store.revision + 1;
     const record: PlanApprovalRecord = {
       planId: id,
@@ -254,6 +268,7 @@ export function approvePlan(
       contract,
       approvedAt: new Date().toISOString(),
       signer: options.signer.trim(),
+      ...(model === "outcome-v1" ? { approvalModel: model } : {}),
     };
     const updated: ApprovalStore = {
       version: 1,
@@ -366,17 +381,21 @@ export function finalApprovalScope(record: PlanApprovalRecord): {
   contenders: string[];
   planId: string;
   approvalDigest: string;
+  approvalModel?: "outcome-v1";
 } {
   return {
     plan: record.path,
-    scope: planSourceScope(record.contract),
+    scope: planSourceScope(record.contract, undefined, record.approvalModel ?? "legacy"),
     contenders: [record.path],
     planId: record.planId,
     approvalDigest: record.digest,
+    ...(record.approvalModel ? { approvalModel: record.approvalModel } : {}),
   };
 }
 
 export function retainedPlanMarkdown(record: PlanApprovalRecord): string {
+  // Preserve the approved text. Routing readers carry the recorded interpretation
+  // separately; older model-like prose is not permission to reinterpret it.
   return identifyPlan(record.contract, record.planId);
 }
 

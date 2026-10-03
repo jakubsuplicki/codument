@@ -9,7 +9,7 @@ import {
   type FeatureMapRow,
 } from "../lib/feature-map.js";
 import { resolveActivePlan, parsePlanScope } from "../lib/plan-steps.js";
-import { workPlanSelection, workPlanMarkdown } from "../lib/work-state.js";
+import { workPlanSelection, workPlanContext } from "../lib/work-state.js";
 import {
   ExcludedSourceError,
   assertNoExcludedSource,
@@ -70,8 +70,9 @@ function resolveMap(root: string, planOpt?: string, planId?: string): ResolvedMa
   } catch {
     return { error: `could not read plan doc: ${planOpt ?? planPath}` };
   }
-  markdown = workPlanMarkdown(root, toRepoRel(root, planPath), markdown, planId);
-  return { planPath, planId, markdown, map: parseFeatureMap(markdown, planId) };
+  const retained = workPlanContext(root, toRepoRel(root, planPath), markdown, planId);
+  markdown = retained.markdown;
+  return { planPath, planId, markdown, map: parseFeatureMap(markdown, planId, retained.approvalModel) };
 }
 
 // ── Materialization (the testable writer core) ──────────────────────────────

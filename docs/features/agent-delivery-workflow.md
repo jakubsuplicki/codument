@@ -95,6 +95,10 @@ After any reviewed commit, gated handoff can offer native compaction or a ground
 
 ## Decisions
 
+- Explicit outcome approval binds promised milestones and constraints while source routing remains
+  advisory. Existing approvals require renewed human approval to adopt it; see
+  [ADR 024](../architecture/decisions/024-outcome-permission-keeps-routing-advisory.md).
+
 - [[plan-approval]] binds permission to one selected contract; [[plan-step-mirroring]] and
   [[change-control-gate]] use the same scope selection. Malformed approval cannot become permission.
 - [[agent-work-state]] preserves interruptions and pending delivery without an autonomous runner
@@ -125,7 +129,7 @@ disagreement between scope projections, repeated administration and progress wit
 product value. Some safeguards already exist; reuse them before introducing another command or record.
 
 - [x] Step 1: Make plan scope and Feature Map projections agree across context and verification.
-- [ ] Step 2: Approve outcomes and constraints while treating implementation file lists as guidance.
+- [x] Step 2: Approve outcomes and constraints while treating implementation file lists as guidance.
 - [ ] Step 3: Plan demonstrable milestones and repair routine failures without human interruptions.
 - [ ] Step 4: Batch ownership lookup and source mapping around the staged delivery boundary.
 - [ ] Step 5: Scale review effort to risk while preserving verification of staged changes.

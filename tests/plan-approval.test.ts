@@ -20,6 +20,149 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe("revision-bound plan approval", () => {
+  const outcome = plan.replace("Status: approved", "Status: approved\nApproval-Model: outcome-v1") +
+    "\n### Constraints & non-goals\nKeep compatibility, privacy and spending unchanged.\n" +
+    "\n### Acceptance evidence\nInspect valid and invalid records.\n" +
+    "\n### Verification\nRun the reader checks.\n";
+
+  it("preserves outcome permission through advisory file and routing discoveries", () => {
+    writeFileSync(join(root, path), outcome);
+    const record = approvePlan(root, path, { signer: "human" });
+    const identified = readFileSync(join(root, path), "utf8");
+    writeFileSync(join(root, path), identified.replace("src/alpha.ts", "src/discovered.ts") +
+      "\n### Feature Map\n```feature-map\nsrc/discovered.ts | alpha | feature | reader\n```\n" +
+      "\n### Implementation notes\nUse the shared parser.\n");
+    assert.equal(loadPlan(root, path)?.approved, true);
+    assert.equal(loadPlan(root, path)?.approval?.digest, record.digest);
+    const projection = detectApprovedPlanScopeFromDocuments([{ path, content: readFileSync(join(root, path), "utf8") }], { approvals: readApprovalStore(root), requireBoundApproval: true });
+    assert.equal(projection?.approvalModel, "outcome-v1");
+    assert.deepEqual(projection?.scope, ["src/discovered.ts"]);
+    assert.equal(finalApprovalScope(record).approvalModel, "outcome-v1");
+  });
+
+  it("binds outcome, milestones, constraints, acceptance, verification and other intent", () => {
+    writeFileSync(join(root, path), outcome);
+    approvePlan(root, path, { signer: "human" });
+    const approved = readFileSync(join(root, path), "utf8");
+    for (const changed of [
+      approved.replace("Read valid records", "Accept every record"),
+      approved.replace("Build the reader", "Build the writer"),
+      approved.replace("Keep compatibility", "Break compatibility"),
+      approved.replace("Inspect valid", "Skip valid"),
+      approved.replace("Run the reader checks", "Skip the reader checks"),
+      approved + "\n### Decisions\nUpload records.\n",
+      approved.replace("outcome-v1", "legacy"),
+    ]) {
+      writeFileSync(join(root, path), changed);
+      assert.equal(loadPlan(root, path)?.approved, false);
+    }
+  });
+
+  it("requires explicit renewed approval to adopt outcome permission", () => {
+    writeFileSync(join(root, path), outcome);
+    assert.equal(loadPlan(root, path)?.approved, false, "outcome status alone never grants permission");
+    writeFileSync(join(root, path), plan);
+    approvePlan(root, path, { signer: "human" });
+    writeFileSync(join(root, path), readFileSync(join(root, path), "utf8").replace("Status: approved", "Status: approved\nApproval-Model: outcome-v1") +
+      outcome.slice(outcome.indexOf("### Constraints")));
+    assert.equal(loadPlan(root, path)?.approved, false);
+    approvePlan(root, path, { signer: "human after renewed approval" });
+    assert.equal(loadPlan(root, path)?.approved, true);
+  });
+
+  it("refuses unsupported or incomplete outcome contracts and advisory executable work", () => {
+    for (const invalid of [
+      outcome.replace("outcome-v1", "outcome-v2"),
+      outcome.replace("Approval-Model: outcome-v1", "Approval-Model: outcome-v1\nApproval-Model: outcome-v1"),
+      outcome.replace("### Verification\nRun the reader checks.", ""),
+      outcome + "\n### Outcome\nAnother outcome.\n",
+      outcome.replace("- `src/alpha.ts`", "- [ ] Execute unapproved extra work"),
+      outcome.replace("### Outcome\nRead valid records and diagnose invalid inputs.", "### Outcome\n<!-- later -->"),
+      outcome.replace("Read valid records and diagnose invalid inputs.", "Plan-ID: example"),
+      outcome.replace("Read valid records and diagnose invalid inputs.", "#### Resume checkpoint\nRead later."),
+    ]) {
+      writeFileSync(join(root, path), invalid);
+      assert.throws(() => approvePlan(root, path, { signer: "human" }), /approval model|outcome contract|advisory/i);
+    }
+  });
+
+  it("retains an outcome plan identity without any file guidance", () => {
+    writeFileSync(join(root, path), outcome.replace("### Scope\n- `src/alpha.ts`\n", ""));
+    approvePlan(root, path, { signer: "human" });
+    const projection = detectApprovedPlanScopeFromDocuments([{ path, content: readFileSync(join(root, path), "utf8") }], { approvals: readApprovalStore(root), requireBoundApproval: true });
+    assert.ok(projection?.approvalDigest);
+    assert.deepEqual(projection?.scope, []);
+  });
+
+  it("never reinterprets an older record that already contained the model declaration", () => {
+    writeFileSync(join(root, path), outcome.replace("### Scope\n- `src/alpha.ts`\n", ""));
+    approvePlan(root, path, { signer: "human" });
+    const stored = readApprovalStore(root);
+    delete stored.records[0].approvalModel;
+    writeFileSync(join(root, "docs/.approvals.json"), JSON.stringify(stored));
+    assert.equal(loadPlan(root, path)?.approved, false);
+    assert.equal(finalApprovalScope(stored.records[0]).approvalModel, undefined);
+    const renewed = approvePlan(root, path, { signer: "human after model approval" });
+    assert.equal(renewed.revision, stored.revision + 1);
+    assert.equal(renewed.approvalModel, "outcome-v1");
+    assert.equal(loadPlan(root, path)?.approved, true);
+  });
+
+  it("keeps normative map examples bound while excluding only live outcome routing", () => {
+    const example = "\n### Decisions\n````markdown\n```feature-map\nsrc/private.ts | private | feature | keep-private\n```\n````\n";
+    writeFileSync(join(root, path), outcome + example);
+    approvePlan(root, path, { signer: "human" });
+    const approved = readFileSync(join(root, path), "utf8");
+    assert.equal(parseFeatureMap(approved).rows.length, 0);
+    writeFileSync(join(root, path), approved.replace("keep-private", "upload-all-data"));
+    assert.equal(loadPlan(root, path)?.approved, false);
+  });
+
+  it("keeps supported sibling Scope advisory for a standalone outcome plan", () => {
+    const standalone = "# Alpha\nStatus: approved\n\n## Scope\n- `src/alpha.ts`\n\n" +
+      outcome.replace("Status: approved\n", "").replace("### Scope\n- `src/alpha.ts`\n", "");
+    writeFileSync(join(root, path), standalone);
+    approvePlan(root, path, { signer: "human" });
+    const approved = readFileSync(join(root, path), "utf8");
+    assert.deepEqual(parsePlanScope(approved), ["src/alpha.ts"]);
+    writeFileSync(join(root, path), approved.replace("src/alpha.ts", "src/beta.ts"));
+    assert.equal(loadPlan(root, path)?.approved, true);
+  });
+
+  it("keeps consumed Scope heading variants advisory without hiding executable work", () => {
+    for (const heading of ["### Scope (implementation guidance)", "#### Scope details"]) {
+      writeFileSync(join(root, path), outcome.replace("### Scope", heading));
+      approvePlan(root, path, { signer: "human" });
+      const approved = readFileSync(join(root, path), "utf8");
+      assert.deepEqual(parsePlanScope(approved), ["src/alpha.ts"]);
+      writeFileSync(join(root, path), approved.replace("src/alpha.ts", "src/discovered.ts"));
+      assert.equal(loadPlan(root, path)?.approved, true);
+      writeFileSync(join(root, path), approved.replace("- `src/alpha.ts`", "- [ ] Extra work"));
+      assert.throws(() => approvePlan(root, path, { signer: "human" }), /advisory/i);
+    }
+  });
+
+  it("retains outer Scope boundaries through nested routing headings", () => {
+    const nested = outcome.replace("- `src/alpha.ts`", "#### Scope details\n- `src/alpha.ts`\n#### Further guidance\n- `src/beta.ts`");
+    writeFileSync(join(root, path), nested);
+    approvePlan(root, path, { signer: "human" });
+    const approved = readFileSync(join(root, path), "utf8");
+    assert.deepEqual(parsePlanScope(approved), ["src/alpha.ts", "src/beta.ts"]);
+    writeFileSync(join(root, path), approved.replace("src/beta.ts", "src/discovered.ts"));
+    assert.equal(loadPlan(root, path)?.approved, true);
+  });
+
+  it("binds normative decisions following a valid longer Map fence closer", () => {
+    const mapped = outcome + "\n```feature-map\nsrc/alpha.ts | alpha | feature | reader\n````\n### Decisions\nKeep every read private.\n";
+    writeFileSync(join(root, path), mapped);
+    approvePlan(root, path, { signer: "human" });
+    const approved = readFileSync(join(root, path), "utf8");
+    assert.equal(parseFeatureMap(approved).errors.length, 0);
+    assert.equal(parseFeatureMap(approved).rows.length, 1);
+    writeFileSync(join(root, path), approved.replace("Keep every read private.", "Upload every read."));
+    assert.equal(loadPlan(root, path)?.approved, false);
+  });
+
   it("retains Map-only source guidance in archived approval", () => {
     writeFileSync(join(root, path), plan + "\n## Feature Map\n```feature-map\nsrc/catalogue.ts | catalogue | feature | Catalogue\n```\n");
     const record = approvePlan(root, path, { signer: "human" });

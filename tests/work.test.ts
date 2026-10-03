@@ -11,6 +11,9 @@ const CLI = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
 const path = "docs/features/alpha.md";
 const plan =
   "## Delivery Plan\nStatus: approved\n\n- [ ] Implement\n\n### Scope\n- `src/alpha.ts`\n\n### Outcome\nReturn the value.\n";
+const outcomePlan = plan.replace("Status: approved", "Status: approved\nApproval-Model: outcome-v1") +
+  "\n### Constraints & non-goals\nKeep behavior, architecture, compatibility, privacy, security and spending unchanged.\n" +
+  "\n### Acceptance evidence\nInspect the updated return value.\n\n### Verification\nRun the value checks.\n";
 let root: string;
 const put = (file: string, content: string) => {
   mkdirSync(dirname(join(root, file)), { recursive: true });
@@ -51,6 +54,31 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe("work approval CLI", () => {
+  it("reviews a discovered implementation file under the staged outcome contract", () => {
+    put(path, outcomePlan);
+    assert.equal(cli("work", "approve", "--plan", path).status, 0);
+    const approved = readFileSync(join(root, path), "utf8");
+    const registry = JSON.parse(readFileSync(join(root, "docs/.registry.json"), "utf8"));
+    registry.features.alpha.primary_sources.push("src/discovered.ts");
+    put("docs/.registry.json", JSON.stringify(registry));
+    put("src/discovered.ts", "export const discovered = 2;\n");
+    put(path, approved + "\n### Implementation notes\nA shared helper provides the value.\n");
+    git("add", path, "docs/.registry.json", "docs/.approvals.json", "src/discovered.ts");
+    const reviewed = cli("review", "--repo", ".", "--staged", "--json");
+    assert.equal(reviewed.status, 0, reviewed.stdout + reviewed.stderr);
+    const report = JSON.parse(reviewed.stdout);
+    assert.equal(report.plan.approvalModel, "outcome-v1");
+    assert.deepEqual(report.state.outOfPlan, []);
+    assert.ok(report.state.changedSources.includes("src/discovered.ts"));
+    // Index/worktree overlap remains a refusal, never a mixed contract.
+    put(path, readFileSync(join(root, path), "utf8").replace("Return the value.", "Upload the value."));
+    assert.equal(JSON.parse(cli("review", "--repo", ".", "--staged", "--json").stdout).kind, "worktree-overlap");
+    assert.equal(cli("steps", "--plan", path, "--json").status, 0);
+    assert.equal(JSON.parse(cli("steps", "--plan", path, "--json").stdout).approved, false);
+    git("add", path);
+    assert.equal(cli("review", "--repo", ".", "--staged", "--json").status, 1);
+  });
+
   it("delivers only the selected root while preserving a separately staged nested repository", () => {
     const member = join(root, ".fixtures/member");
     mkdirSync(member, { recursive: true });
@@ -284,10 +312,10 @@ describe("work approval CLI", () => {
     assert.match(cli("verify").stdout, /interrupted/);
   });
 
-  it("binds compacted final delivery and verifies it without local recovery state", () => {
+  for (const approvalModel of ["legacy", "outcome-v1"]) it(`binds compacted ${approvalModel} final delivery and verifies it without local recovery state`, () => {
     put(
       path,
-      plan +
+      (approvalModel === "legacy" ? plan : outcomePlan) +
         "\n### Feature Map\n```feature-map\nsrc/alpha.ts | alpha | feature | return a value\n```\n",
     );
     put(".codument-meta.json", '{"requireBoundApproval":true}\n');

@@ -3,12 +3,12 @@ import { join, isAbsolute } from "node:path";
 import pc from "picocolors";
 import { readRegistrySync } from "../lib/registry.js";
 import { parseFeatureMap } from "../lib/feature-map.js";
-import { parsePlanScope, normalizePlanPath } from "../lib/plan-steps.js";
+import { parsePlanScope, normalizePlanPath, planApprovalModel } from "../lib/plan-steps.js";
 import { isSourcePattern } from "../lib/registry.js";
 import {
   inspectWorkState,
   workPlanSelection,
-  workPlanMarkdown,
+  workPlanContext,
   type WorkRecord,
 } from "../lib/work-state.js";
 import {
@@ -135,14 +135,17 @@ function resolve(
     return null;
   }
   options.plan = normalizePlanPath(root, options.plan!);
-  raw = workPlanMarkdown(root, options.plan!, raw, options.planId);
-  const map = parseFeatureMap(raw, options.planId);
+  const retained = workPlanContext(root, options.plan!, raw, options.planId);
+  raw = retained.markdown;
+  const map = parseFeatureMap(raw, options.planId, retained.approvalModel);
   const scope = parsePlanScope(raw, options.planId);
-  if (map.rows.length === 0 && scope.length === 0) {
+  const noGuidance = map.rows.length === 0 && scope.length === 0;
+  if (noGuidance && (retained.approvalModel ?? planApprovalModel(raw, options.planId)) !== "outcome-v1") {
     fail(`no Feature Map rows or explicit Scope in ${options.plan} — nothing to route`);
     return null;
   }
   const { selected, unowned } = selectPlanFeatures(registry, map.rows, scope);
+  if (noGuidance) selected.push(...Object.keys(registry.features).filter(slug => registry.features[slug].doc === options.plan));
   return {
     kind: "plan",
     input: options.plan!,

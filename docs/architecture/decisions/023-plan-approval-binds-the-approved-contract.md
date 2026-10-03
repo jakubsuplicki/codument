@@ -7,6 +7,10 @@ last_reviewed: 2026-09-10
 
 # Approval binds the approved contract
 
+[ADR 024](024-outcome-permission-keeps-routing-advisory.md) supersedes the inclusion of file routing
+for explicitly adopted outcome plans. Existing approval meanings and this decision's remaining
+binding, attribution and recovery boundaries continue.
+
 An editable approval status cannot distinguish approved work from scope changed after approval.
 Codument therefore records a stable plan identity and the approved contract in tracked repository
 data. The approval check compares that contract with the selected plan in the same Git snapshot.

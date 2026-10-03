@@ -25,6 +25,10 @@ The path is forward-only: make new work decompose correctly rather than auto-hea
 
 ## Invariants & boundaries
 
+- Outcome routing consumes only live Map fences, with valid longer closers ending the routing
+  block. Examples cannot hide normative decisions; archived legacy routing uses its recorded
+  interpretation. *(tests: `plan-approval.test.ts`, `approval-archive-compat.test.ts`)*
+
 - A selected plan's explicit Scope and valid Feature Map declarations provide the same source
   guidance to routing and scope checks. Patterns retain their declared extent; naming an owner
   never imports its unrelated files into scope. *(tests: `change-state.test.ts`, `review-boundary.test.ts`)*

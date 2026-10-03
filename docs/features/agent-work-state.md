@@ -39,6 +39,10 @@ evidence; missing or mismatched evidence requires recovery and cannot reopen per
 
 ## Invariants & boundaries
 
+- Archived context preserves approved text and uses its recorded approval interpretation.
+  Model-like prose in an older record cannot change routing or grant outcome permission.
+  *(test: `approval-archive-compat.test.ts`)*
+
 - The approval command requires an explicitly approved plan and reports self-reported attribution.
   A stale plan remains readable but cannot emit a start event. *(test: `work.test.ts`)*
 - Plan identity is shared with checklist selection, preserving the intended section when a document

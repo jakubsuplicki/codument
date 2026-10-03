@@ -39,6 +39,8 @@ Snapshot consumers use selected source, policy and documentation throughout. Sta
 complete branch review through the index retain distinct boundaries. Portable review and final
 approval share a strictly validated manifest exclusion but remain separate authorities; see
 [[adversarial-review-gate]] and [[plan-approval]].
+Outcome permission is distinct from file routing; new advisory inputs can expand grounded context
+without widening the normative contract. Existing approval models retain their original meaning.
 
 Installed instructions preserve one delivery discipline across hosts: stage the slice, review and
 verify it, then commit those bytes. Permission, interruption, readiness and delivered work remain

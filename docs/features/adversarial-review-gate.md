@@ -52,6 +52,10 @@ reruns those tests under the existing finding policy. Attribution is self-report
 
 ## Invariants & boundaries
 
+- Review context distinguishes outcome permission from advisory source guidance. The selected
+  approval model is bound into the review oracle; routing discoveries retain affected ownership
+  and constraints without a false scope finding. *(tests: `work.test.ts`, `review-bundle.test.ts`)*
+
 - Named-test execution treats a linked project root and its canonical path as the same checkout,
   while preserving containment checks against escaping test references. *(test: `review-confirm.test.ts`)*
 

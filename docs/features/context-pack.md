@@ -62,6 +62,14 @@ cost ledger and the benchmark use, and are labelled an estimate everywhere they 
 
 ## Invariants & boundaries
 
+- Archived plan context uses the recorded approval model for routing. Older model-like text
+  remains readable under its original interpretation without altering the approved contract.
+  *(test: `approval-archive-compat.test.ts`)*
+
+- Outcome plans can omit advisory file guidance. Their context retains the plan's documented
+  feature and saved handoff without treating a compacted routing list as permission or requiring
+  it to be restored. Legacy empty routing remains visibly unavailable. *(test: `work.test.ts`)*
+
 - Omission records name unowned inputs, unknown dependencies and unreadable docs with recovery
   guidance. They survive budget trimming while selected contracts and their test references remain
   intact; human output also diagnoses a partially usable pack. *(test: `context-pack.test.ts`)*
