@@ -11,7 +11,7 @@ import {
   type RiskTouch,
   type StaleDoc,
 } from "./change-state.js";
-import { parseRegistryOrThrow, type Registry } from "./registry.js";
+import { parseRegistryOrThrow, sourceNames, type Registry } from "./registry.js";
 import { ownersOfFile, selectPlanFeatures } from "./context-pack.js";
 import {
   getWorkingTreeChanges,
@@ -19,6 +19,7 @@ import {
   getHeadSha,
   resolveWorkspace,
   repoFor,
+  getTreeEntryAtRef,
 } from "./git.js";
 import { readBlobAtRef, EMPTY_TREE_SHA } from "./two-ref.js";
 import { isSourceFile } from "./exclusion-spec.js";
@@ -72,6 +73,10 @@ export interface ReviewGrounding {
   unowned: string[];
   previousRegistry: Registry;
   previousDocs: Map<string, string>;
+  /** Positively established ordinary documentation with unchanged protected content. */
+  housekeepingDocs?: string[];
+  /** Documentation whose inputs, file kind or source role cannot establish housekeeping. */
+  unverifiedDocs?: string[];
 }
 
 const CONTRACT_LAYERS = [
@@ -102,26 +107,39 @@ export function protectedDocContract(text: string): string {
   return [...layers, keyFiles].join("\n");
 }
 
-export function buildContractChanges(input: {
+interface ContractChangeInput {
   paths: string[];
   registry: Registry;
   previousRegistry: Registry;
   before: Map<string, string>;
   after: Map<string, string>;
   ignoredPaths?: string[];
-}): ContractChange[] {
+  addedPaths?: string[];
+  regularDocPaths?: string[];
+}
+
+export function buildContractChanges(input: ContractChangeInput): ContractChange[] {
+  return analyzeContractChanges(input).changes;
+}
+
+function analyzeContractChanges(input: ContractChangeInput): {
+  changes: ContractChange[];
+  housekeepingDocs: string[];
+  unverifiedDocs: string[];
+} {
   const docPaths = new Set(
     [
       ...Object.values(input.registry.features),
       ...Object.values(input.previousRegistry.features),
     ].map((entry) => entry.doc),
   );
-  const isDoc = (path: string): boolean => docPaths.has(path) || /^docs\/.*\.md$/i.test(path);
   const isInstruction = (path: string): boolean =>
-    !isDoc(path) &&
-    (ownersOfFile(input.registry, path).length > 0 ||
+    /(?:^|\/)(?:AGENTS|CLAUDE|SKILL)\.md$/i.test(path) ||
+    ((ownersOfFile(input.registry, path).length > 0 ||
       ownersOfFile(input.previousRegistry, path).length > 0) &&
-    /(?:^|\/)(?:AGENTS|CLAUDE|SKILL)\.md$|(?:^|\/)(?:agents|rules|skills)\/.*\.md$/i.test(path);
+      /(?:^|\/)(?:agents|rules|skills)\/.*\.md$/i.test(path));
+  const isDoc = (path: string): boolean =>
+    !isInstruction(path) && (docPaths.has(path) || /^docs\/.*\.md$/i.test(path));
   const unchangedInstruction = (path: string): boolean =>
     isInstruction(path) &&
     input.before.has(path) &&
@@ -132,6 +150,10 @@ export function buildContractChanges(input: {
     (path) => isDoc(path) || unchangedInstruction(path) || ignored.has(path),
   );
   const out: ContractChange[] = [];
+  const housekeepingDocs: string[] = [];
+  const unverifiedDocs: string[] = [];
+  const added = new Set(input.addedPaths ?? []);
+  const regular = new Set(input.regularDocPaths ?? []);
   for (const path of sortStrings(input.paths)) {
     const owners = sortStrings([
       ...ownersOfFile(input.registry, path),
@@ -145,6 +167,14 @@ export function buildContractChanges(input: {
     const before = doc && was !== null ? protectedDocContract(was) : was;
     const after = doc && now !== null ? protectedDocContract(now) : now;
     const material = normalizedProse(before ?? "") !== normalizedProse(after ?? "");
+    if (doc || instruction) {
+      const sourceRole = doc && [input.previousRegistry, input.registry].some((snapshot) =>
+        Object.values(snapshot.features).some((entry) =>
+          [...entry.primary_sources, ...entry.related_sources].some((source) => sourceNames(source, path))));
+      const knownInputs = input.after.has(path) && (input.before.has(path) || added.has(path));
+      if (!knownInputs || !regular.has(path) || sourceRole) unverifiedDocs.push(path);
+      else if (doc && !material) housekeepingDocs.push(path);
+    }
     const invariantChanged =
       normalizedProse(extractDocSection(was ?? "", "Invariants & boundaries")) !==
       normalizedProse(extractDocSection(now ?? "", "Invariants & boundaries"));
@@ -159,7 +189,7 @@ export function buildContractChanges(input: {
       requiresReview: material && (instruction || invariantChanged || docsOnly),
     });
   }
-  return out;
+  return { changes: out, housekeepingDocs, unverifiedDocs };
 }
 
 export function gatherReviewGrounding(
@@ -228,19 +258,23 @@ export function gatherReviewGrounding(
       !ownersOfFile(registry, path).length &&
       !ownersOfFile(previousRegistry, path).length,
   );
+  const regularDocPaths = (boundary?.changes ?? []).filter((change) => {
+    if (change.contentMode !== "100644" || !/\.md$/i.test(change.path)) return false;
+    if (change.status === "added") return true;
+    const owner = repoFor(workspace, change.path);
+    const selectedBase = boundary?.bases.find((entry) => entry.prefix === owner?.member.prefix)?.sha;
+    return !!selectedBase && getTreeEntryAtRef(root, selectedBase, change.path, workspace)?.contentMode === "100644";
+  }).map((change) => change.path);
+  const contracts = analyzeContractChanges({
+    paths, registry, previousRegistry, before: previousDocs, after, ignoredPaths,
+    addedPaths: boundary?.additions, regularDocPaths,
+  });
   return {
     selected,
     unowned,
     previousRegistry,
     previousDocs,
-    changes: buildContractChanges({
-      paths,
-      registry,
-      previousRegistry,
-      before: previousDocs,
-      after,
-      ignoredPaths,
-    }),
+    ...contracts,
   };
 }
 

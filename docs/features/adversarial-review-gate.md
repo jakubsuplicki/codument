@@ -15,6 +15,10 @@ self-review. Public contracts, declared risks, deletions, dependencies and uncer
 the stronger adversarial pass. Formatting without a contract change needs only a diff self-review.
 Every required review answers the same exact boundary, invariants and acceptance evidence.
 
+Ordinary documentation additions with no protected contract change need only diff self-review.
+This requires readable snapshot evidence and an ordinary documentation role; instructions,
+executable files, registered sources, unknown inputs and declared risks retain stronger review.
+
 On a host currently providing independent agents the adversary is a **fresh subagent** with its own context window, so it never inherits the author's reasoning — independence is a property of the host, not something we engineer. On a host currently lacking independent agents it degrades to a **same-agent adversarial pass** against the identical bundle: weaker independence, but the deterministic confirm and the diff-bound artifact still bite. The enforcement is identical on both; only the spawn differs.
 
 A finding only **blocks** when it ships a failing test Codument can run. Findings that cannot be reduced to a test (a design concern, an untestable invariant weakening) are recorded and routed to the existing review decision point, never auto-blocked. The artifact is bound to the diff fingerprint, so editing after review auto-reopens the gate.
@@ -55,6 +59,14 @@ reruns those tests under the existing finding policy. Attribution is self-report
 **Proportionality is mandatory, not optional.** Two extra agent passes on every one-line edit is how a good gate gets disabled. Bundle depth is gated on blast radius, which Codument already computes: a trivial single-symbol edit touching no documented invariant skips the heavy pass; a risk-tagged, invariant-touching, or multi-file diff gets the full adversary.
 
 ## Invariants & boundaries
+
+- A harmless documentation addition passes the managed hook without a required review artifact.
+  Positive snapshot evidence distinguishes prose from protected contracts, instructions, executable
+  files and registered sources. Missing evidence cannot grant the exception, and a covering
+  reproduced failure still blocks. *(tests: `hooks-command.test.ts`, `review-bundle.test.ts`, `review-gate.test.ts`)*
+- Changed structural review policy invalidates older local pass receipts even when package version
+  and staged content match. Ordinary and portable artifact formats remain readable. *(tests:
+  `verify.test.ts`, `review-artifact.test.ts`)*
 
 - Review context distinguishes outcome permission from advisory source guidance. The selected
   approval model is bound into the review oracle; routing discoveries retain affected ownership
@@ -183,3 +195,159 @@ Status: approved (2026-06-30). Implementing manually, one gated step at a time. 
 ### Open questions
 
 - The feature's registry entry was added in step 1 alongside its first source file (a registered feature with empty `primary_sources` would read as undocumented).
+
+## Delivery Plan — proportionate review and 0.21.0
+
+Plan-ID: proportionate-review-0-21-0
+Status: approved
+Approval-Model: outcome-v1
+
+- [x] Step 1: Remove unnecessary review for harmless documentation additions and restore the portable test baseline.
+- [ ] Step 2: Use focused review for well-grounded changes within one feature, preserving risks and attribution from both snapshots.
+- [ ] Step 3: Compare real agent delivery against 0.20.1 and retain working-output and administration evidence.
+- [ ] Step 4: Finish the verified 0.21.0 release with a local commit and tag.
+
+### Outcome
+
+Routine work spends less effort satisfying Codument without losing its working deliverables.
+Harmless documentation additions need diff self-review rather than a recorded adversarial pass.
+Precise, contract-neutral edits to existing files within one stable feature, and attributable
+changes to that feature's tests, can use recorded focused self-review. Real risks, protected
+contracts and meaningful uncertainty retain stronger review. The release includes observed agent
+output and administration evidence, then leaves npm publishing to the user.
+
+### Constraints & non-goals
+
+- Positive snapshot evidence determines the structural floor. A filename, missing contract record,
+  file count or informal low-risk label alone does not establish safety. The host still raises
+  effort for substantial behavior or semantic uncertainty.
+- Documentation housekeeping must be positively established from readable selected and base inputs
+  where present. Material protected layers, instructions, declared risks, deletions and renames
+  retain stronger review. New durable contracts and executable or instruction inputs cannot pass
+  as harmless prose merely because their extension is Markdown.
+- Existing-source focused candidates have precise unchanged signatures, one stable owner and
+  attributable test evidence. New production sources, new or removed exports, changed signatures,
+  residual or unknown analysis, changed ownership, cross-feature behavior, configuration and
+  dependency changes retain stronger review.
+- Test-only focused candidates retain stable attribution to one nonrisk feature. Existing evidence
+  is checked against both base and selected snapshots; new tests require selected attribution.
+  Lost, changed, unknown or cross-feature attribution and removed or renamed tests retain the
+  stronger pass. Removing an import, invariant pin or risk declaration cannot erase the old oracle.
+- Preserve staged isolation, documentation synchronization, source mapping, approval boundaries,
+  reproduced-red findings, exact artifact/receipt binding and independent branch/portable review.
+  Policy changes invalidate incompatible cached evidence; old artifact formats remain readable.
+- Add no dependency, bypass flag, universal risk score, permanent timer or autonomous agent runner.
+  The existing explicit-root alias limitation is outside scope; normalize fixture paths without
+  changing runtime containment rules. Preserve explicit pauses and gated mode.
+- Keep release actions local. No npm publication, push or remote release. The old test-only release
+  proposal is replaced on approval; its prepared metadata is retained for the final release slice.
+
+### Acceptance evidence
+
+1. A real managed hook accepts a harmless new documentation note without a required review artifact.
+   The same staged gate still requires stronger review for a new protected contract or instruction,
+   declared risk, unreadable analysis and control-plane/configuration changes. Existing covering
+   reproduced failures still block even when the structural minimum is none.
+2. Representative body-only edits across two existing files owned by one feature, and stable
+   attributable test-only changes, receive focused review. Unknown or changed attribution, old or
+   selected risk, cross-feature changes, source additions, signatures, deletions and renames receive
+   adversarial review. Changing a staged snapshot or covering evidence reopens the verdict.
+3. Four fresh agent attempts form two matched pairs on the same small working-CLI repair. Released
+   0.20.1 and the frozen candidate get identical code, documented behavior, approved task scope,
+   host/model settings and no-commit endpoint. Every attempt retains its status and evidence,
+   including failure or timeout. Candidate attempts must deliver the promised valid/invalid CLI
+   behavior and verified staged readiness with fewer unnecessary adversarial-review handoffs than
+   their matched controls and no unnecessary human approval stops. Missing output or no reduction
+   leaves acceptance open. Operator-observed reviewer starts establish the handoff count; common
+   CLI observations and elapsed time are reported separately rather than assumed to fall.
+   Protected-case regression checks remain green. Measured elapsed time is reported as observed,
+   including noise; unavailable token usage is explicit. A bounded fixture does not establish
+   universal speed, token savings or higher output across all projects.
+4. Package and scaffold versions agree on 0.21.0. The full suite, typecheck, build, lint, strict
+   documentation health, exact staged verification and npm packing lifecycle pass before the local
+   release commit and tag. The package contains its CLI, library and managed workflow assets.
+
+### Verification
+
+Run red/green cases in review policy, bundle, test-impact, boundary, verifier and managed-hook suites.
+Exercise source-count independence, both-snapshot attribution/risk, instruction and configuration
+controls, missing inputs, artifact invalidation and covering reproduced failures through the CLI.
+Normalize the two work fixtures that currently mix macOS temporary-directory spellings; keep their
+containment and delivery assertions intact. Run the project checks for each source slice and record
+independent staged review before its focused commit.
+
+For agent evidence, derive a small dependency-free CLI fixture from the existing milestone example,
+using precisely analyzed TypeScript sources under one owner, broken behavior and unchanged
+documented contracts. Use the same already-installed compiler in both conditions and exercise its
+emitted CLI; no dependency installation is needed. Preflight the exact representative staged change
+as adversarial on the baseline and focused on the candidate before spending the live-attempt budget.
+The identical task requires repairs within existing function bodies and regression-test changes
+attributable to that owner; it preserves exported signatures and module-level initialization.
+Freeze the same legacy scoped approval in both conditions to avoid an approval-model confound.
+An immutable external grader exercises actual output, tests and staged blobs, checks authorized
+changes, and requires verified readiness for the first milestone of the same two-step plan.
+The future milestone stays untouched. Both conditions prohibit commits and edits to locked task
+inputs. Final-plan compaction is outside this step-level comparison: it would add approval-state
+configuration changes and measure a different review boundary. This trial establishes real working
+output and staged step readiness, not complete plan finalization.
+Use a common external invocation record for both versions; candidate-only timing cannot serve as
+a matched baseline. Record actual observed CLI actions, reviewer starts and attempt elapsed time rather than infer time
+from ledger gaps. Give both versions the same delegation capability; required adversarial review
+uses a fresh reviewer, and its work is included in the attempt's observed administration. Focused
+self-review remains available only where the policy and understood behavior permit it. Run the
+attempts serially, in two pairs with order reversed, each attempt capped at ten minutes. Keep all
+four observations and provenance outside agent-controlled result claims. Stop at the cap, retain
+failures, and leave missing evidence open rather than silently substitute a scripted replay.
+No public benchmark API or permanent runner is needed; retain compact reproducible fixture and
+observation artifacts under the existing benchmark area, with scope and limitations in its docs.
+
+Finish with the complete suite and package lifecycle, review the exact final release boundary,
+compact this plan through the tracked final-delivery binding and commit/tag locally.
+
+### Scope
+
+Routing guidance; outcome permission does not depend on this initial file list:
+
+- `src/lib/review-gate.ts`, `src/lib/review-bundle.ts` — proportional structural review and positive contract grounding.
+- `src/commands/review.ts`, `src/lib/test-impact.ts` — selected/base evidence and risk retained consistently.
+- `src/commands/verify.ts` — existing worksheet and exact receipt path if compatibility needs adjustment.
+- `tests/review-gate.test.ts`, `tests/review-bundle.test.ts`, `tests/test-impact.test.ts`,
+  `tests/review-boundary.test.ts`, `tests/verify.test.ts`, `tests/hooks-command.test.ts`,
+  `tests/work.test.ts` — policy, boundary and portable fixture evidence.
+- `docs/features/adversarial-review-gate.md`, `docs/features/change-control-gate.md`,
+  `docs/features/step-verification.md`, `docs/features/proof-benchmarks.md`, `docs/concepts/lib.md`
+  — mapped intent, compatibility and evidence limits.
+- `fixtures/benchmarks/` — small matched-delivery fixture and recorded observations, without a new runtime benchmark command.
+- `package.json`, `package-lock.json`, `.codument-meta.json`, `CHANGELOG.md`, `README.md`,
+  `docs/guides/releasing.md`, `docs/.approvals.json` — final local release preparation and approval evidence.
+
+No new runtime source files are required. Tests and benchmark fixture files are evidence rather
+than runtime source ownership; materialize genuine new source discoveries if routing changes.
+
+### Effort & cheapest useful experiment
+
+Two source slices, four ten-minute-capped agent attempts and final release checks. The harmless-note
+hook failure already supplies the cheapest counterexample to the current policy; first prove its
+lighter treatment together with protected counterexamples before broadening focused candidates.
+
+### Resume checkpoint
+
+Step 1 implementation and CLI protection checks pass; the full regression baseline is green.
+Independent review and its exact staged receipt are pending before the first commit. Prepared
+0.21.0 release metadata remains outside this source slice and is reserved for Step 4. The active
+selection is this identified plan; the earlier release-only selection is superseded.
+
+### Grounding limitations
+
+Tests, release metadata and benchmark fixtures are outside runtime source ownership and require
+direct inspection. The existing owner docs cover the runtime policy, staged boundary and evidence
+contracts. A missing Feature Map is expected because this plan adds no runtime source. Existing
+session fixtures have a different locked endpoint; the small comparison fixture defines equal
+milestone readiness inputs and cannot weaken those existing controls.
+
+### Open questions
+
+No product boundary is left open in this proposal. The recommended choice is the three bounded
+routine exceptions above, unchanged stronger checks, and a matched output/administration trial
+before local release. Independent plan review checked the grounded contracts and evidence
+feasibility; no material objections were found.

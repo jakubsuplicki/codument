@@ -5,6 +5,7 @@ import {
   evaluateReviewGate,
   countResolvedMovedSymbols,
   classifyReviewPolicy,
+  REVIEW_POLICY_VERSION,
   type ReviewPolicyFacts,
   type ReviewGateInput,
 } from "../src/lib/review-gate.js";
@@ -35,7 +36,7 @@ describe("classifyReviewPolicy — exact structural minimum", () => {
   it("permits focused review for attributable body-only changes rather than counting symbols or test files", () => {
     const policy = classifyReviewPolicy(policyFacts());
     assert.equal(policy.minimum, "focused");
-    assert.equal(policy.version, 1);
+    assert.equal(policy.version, REVIEW_POLICY_VERSION);
     assert.match(policy.factsFingerprint, /^[a-f0-9]{64}$/);
     assert.equal(evaluateReviewGate(input({ reviewPolicy: policy }), null).passed, false);
     assert.equal(evaluateReviewGate(input({ reviewPolicy: policy }), []).passed, true);
@@ -59,6 +60,28 @@ describe("classifyReviewPolicy — exact structural minimum", () => {
   it("allows new attributable tests without treating them as new production code", () => {
     assert.equal(classifyReviewPolicy(policyFacts({ addedPaths: ["tests/a.test.ts"] })).minimum, "focused");
     assert.equal(classifyReviewPolicy(policyFacts({ addedPaths: ["src/new.ts"] })).minimum, "adversarial");
+  });
+
+  it("requires positive documentation evidence and preserves every stronger control", () => {
+    const facts = policyFacts({ sourcePaths: [], existingSourcePaths: [], anchorChanges: {},
+      testImpact: undefined, addedPaths: ["docs/note.md"], housekeepingDocs: ["docs/note.md"] });
+    const plain = classifyReviewPolicy(facts);
+    assert.equal(plain.minimum, "none");
+    assert.equal(classifyReviewPolicy({ ...facts, housekeepingDocs: [] }).minimum, "adversarial");
+    for (const stronger of [
+      { unverifiedDocs: ["docs/note.md"] },
+      { riskTouches: [{ feature: "alpha", risk: ["security"], files: ["docs/note.md"] }] },
+      { complete: false }, { deletedPaths: ["docs/old.md"] }, { renamedPaths: ["docs/note.md"] },
+      { otherChangedPaths: ["package.json"] },
+      { contractChanges: [{ path: "docs/note.md", owners: [], kind: "documentation" as const,
+        before: null, after: "A new promise", testPointers: [], requiresReview: true }] },
+    ]) {
+      assert.equal(classifyReviewPolicy({ ...facts, ...stronger }).minimum, "adversarial");
+    }
+    assert.notEqual(plain.factsFingerprint, classifyReviewPolicy({ ...facts, housekeepingDocs: [] }).factsFingerprint);
+    assert.equal(evaluateReviewGate(input({ reviewPolicy: plain }), [
+      { ...finding("confirmed", "proof.test.ts"), testOutcome: "failed" },
+    ]).passed, false);
   });
 
   it("enforces each static floor independently of source or symbol counts", () => {

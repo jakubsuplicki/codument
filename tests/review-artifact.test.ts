@@ -1,3 +1,4 @@
+import { REVIEW_POLICY_VERSION, type ReviewPolicy } from "../src/lib/review-gate.js";
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -50,17 +51,17 @@ function artifact(partial: Partial<ReviewArtifact> = {}): ReviewArtifact {
 describe("local receipt review evidence", () => {
   it("retains literal POSIX path characters in local evidence", () => {
     for (const path of ["src/user:role.ts", "src/literal\\name.ts"]) {
-      const evidence = { policyVersion: 1, input: { base: "base", paths: [path], oracle: "a".repeat(32) }, digest: "b".repeat(64) };
+      const evidence = { policyVersion: REVIEW_POLICY_VERSION, input: { base: "base", paths: [path], oracle: "a".repeat(32) }, digest: "b".repeat(64) };
       assert.deepEqual(parseReviewReceiptEvidence(evidence), evidence);
     }
   });
   const boundary: ChangeSetBinding = { version: 1, mode: "staged", bases: [{ prefix: "", sha: "base" }], head: "INDEX", paths: ["a.ts"], fingerprint: "a".repeat(64) };
-  const evidence = (partial: Partial<ReviewReceiptEvidence> = {}): ReviewReceiptEvidence => ({ policyVersion: 1, input: { base: "base", paths: ["a.ts"], oracle: "b".repeat(32) }, digest: coveringReviewEvidenceDigest([]), ...partial });
+  const evidence = (partial: Partial<ReviewReceiptEvidence> = {}): ReviewReceiptEvidence => ({ policyVersion: REVIEW_POLICY_VERSION, input: { base: "base", paths: ["a.ts"], oracle: "b".repeat(32) }, digest: coveringReviewEvidenceDigest([]), ...partial });
 
   it("rejects stale policy and malformed cached inputs rather than granting reuse", () => {
     assert.deepEqual(parseReviewReceiptEvidence(evidence()), evidence());
     for (const malformed of [
-      null, {}, { ...evidence(), policyVersion: 0 }, { ...evidence(), digest: "bad" },
+      null, {}, { ...evidence(), policyVersion: 0 }, { ...evidence(), policyVersion: 1 }, { ...evidence(), digest: "bad" },
       { ...evidence(), input: { ...evidence().input, oracle: "bad" } },
       { ...evidence(), input: { ...evidence().input, base: " " } },
       ...["../a.ts", "/a.ts", "a//b.ts"].map((path) => ({ ...evidence(), input: { ...evidence().input, paths: [path] } })),
@@ -112,7 +113,7 @@ describe("local receipt review evidence", () => {
     try {
       writeFileSync(join(root, "a.ts"), "source");
       const resolve = makeResolver(root);
-      const policy = { version: 1 as const, minimum: "focused" as const, reasons: [], factsFingerprint: "a".repeat(64) };
+      const policy: ReviewPolicy = { version: REVIEW_POLICY_VERSION, minimum: "focused" as const, reasons: [], factsFingerprint: "a".repeat(64) };
       const focusedOracle = oracleFingerprint([], null, undefined, undefined, policy);
       const strongOracle = oracleFingerprint([], null, undefined, undefined, { ...policy, minimum: "adversarial", reasons: ["uncertain"] });
       writeReview(root, artifact({ base: "base", boundary,

@@ -9,7 +9,7 @@ import type { RiskTouch } from "./change-state.js";
 import type { ContractChange } from "./review-bundle.js";
 import type { TestImpact } from "./test-impact.js";
 
-export const REVIEW_POLICY_VERSION = 1;
+export const REVIEW_POLICY_VERSION = 2;
 
 export interface ReviewPolicy {
   version: typeof REVIEW_POLICY_VERSION;
@@ -31,6 +31,8 @@ export interface ReviewPolicyFacts {
   deletedPaths: readonly string[];
   renamedPaths: readonly string[];
   contractChanges: readonly ContractChange[];
+  housekeepingDocs?: readonly string[];
+  unverifiedDocs?: readonly string[];
   beforeRegistry: Registry;
   registry: Registry;
   /** Union of impacted risks at the base and selected snapshot. */
@@ -57,7 +59,9 @@ export function classifyReviewPolicy(facts: ReviewPolicyFacts): ReviewPolicy {
   addReason(facts.otherChangedPaths.some((path) => !instructionHousekeeping.has(path)), "configuration or other non-source change");
   const addedTestEvidence = new Set((facts.testImpact?.changedTests ?? []).filter((test) =>
     facts.testImpact!.attributed.some((item) => item.test === test)));
-  addReason(facts.addedPaths.some((path) => !addedTestEvidence.has(path)), "added path");
+  const housekeepingDocs = new Set(facts.housekeepingDocs ?? []);
+  addReason(facts.addedPaths.some((path) => !addedTestEvidence.has(path) && !housekeepingDocs.has(path)), "added path");
+  addReason((facts.unverifiedDocs?.length ?? 0) > 0, "unverified documentation inputs or source role");
   addReason(facts.deletedPaths.length > 0, "deleted path");
   addReason(facts.renamedPaths.length > 0, "renamed path");
   addReason(facts.contractChanges.some((change) =>
@@ -119,6 +123,7 @@ export function classifyReviewPolicy(facts: ReviewPolicyFacts): ReviewPolicy {
     mode: facts.mode, complete: facts.complete, sources: sourceEvidence,
     unevaluablePaths: sortedUnique(facts.unevaluablePaths), otherChangedPaths: sortedUnique(facts.otherChangedPaths),
     addedPaths: sortedUnique(facts.addedPaths), deletedPaths: sortedUnique(facts.deletedPaths), renamedPaths: sortedUnique(facts.renamedPaths),
+    housekeepingDocs: sortedUnique(facts.housekeepingDocs ?? []), unverifiedDocs: sortedUnique(facts.unverifiedDocs ?? []),
     contracts: [...facts.contractChanges].sort((a, b) => a.path.localeCompare(b.path))
       .map((change) => [change.path, change.kind, sortedUnique(change.owners), normalizedProse(change.before), normalizedProse(change.after), change.requiresReview]),
     risks: facts.riskTouches.map((touch) => [touch.feature, sortedUnique(touch.risk), sortedUnique(touch.files)]).sort(),

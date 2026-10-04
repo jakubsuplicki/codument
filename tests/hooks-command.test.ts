@@ -100,12 +100,56 @@ describe("hooks command: end-to-end enforcement", { skip: process.platform === "
     assert.equal(noVerify.ok, true);
   });
 
-  it("a green gate lets the commit through with the hook active", () => {
+  it("a harmless new document passes without a required review artifact", () => {
     seedRepo(tmp);
     writeFileSync(join(tmp, "docs", "note.md"), "# changed prose\n");
     run(tmp, "git", ["add", "-A"]);
+    const verified = JSON.parse(run(tmp, "node", [CLI, "verify", "--json"]));
+    assert.equal(verified.review.reviewPolicy.minimum, "none");
+    assert.equal(verified.review.required, false);
     const committed = tryCommit(tmp, ["-m", "docs-only change"]);
     assert.equal(committed.ok, true);
+  });
+
+  for (const [path, content] of [
+    ["docs/contract.md", "# Contract\n\n## In plain terms\n\nA new public promise.\n"],
+    ["docs/AGENTS.md", "Follow these instructions when editing documentation.\n"],
+    ["config.json", '{"permissions":"public"}\n'],
+  ]) {
+    it(`keeps required review for ${path}`, () => {
+      seedRepo(tmp);
+      writeFileSync(join(tmp, path), content);
+      run(tmp, "git", ["add", "-A"]);
+      const verified = spawnSync(process.execPath, [CLI, "verify", "--json"], {
+        cwd: tmp, encoding: "utf8", env: { ...process.env, NO_COLOR: "1" },
+      });
+      assert.equal(verified.status, 1, verified.stdout + verified.stderr);
+      assert.equal(JSON.parse(verified.stdout).review.reviewPolicy.minimum, "adversarial");
+      assert.equal(tryCommit(tmp, ["-m", "unreviewed protected change"]).ok, false);
+    });
+  }
+
+  it("does not treat executable Markdown as harmless documentation", () => {
+    seedRepo(tmp);
+    const path = join(tmp, "docs", "script.md");
+    writeFileSync(path, "#!/bin/sh\necho executable\n");
+    chmodSync(path, 0o755);
+    run(tmp, "git", ["add", "-A"]);
+    assert.equal(tryCommit(tmp, ["-m", "unreviewed executable"]).ok, false);
+  });
+
+  it("does not clear an instruction mode change as unchanged prose", () => {
+    mkdirSync(join(tmp, "docs"), { recursive: true });
+    const path = join(tmp, "docs", "AGENTS.md");
+    writeFileSync(path, "Follow the project rules.\n");
+    chmodSync(path, 0o755);
+    seedRepo(tmp);
+    chmodSync(path, 0o644);
+    run(tmp, "git", ["add", "-A"]);
+    const verified = spawnSync(process.execPath, [CLI, "verify", "--json"], { cwd: tmp, encoding: "utf8" });
+    assert.equal(verified.status, 1, verified.stdout + verified.stderr);
+    assert.equal(JSON.parse(verified.stdout).review.reviewPolicy.minimum, "adversarial");
+    assert.equal(tryCommit(tmp, ["-m", "unreviewed mode change"]).ok, false);
   });
 
   it("a missing binary warns loudly and lets the commit pass", () => {

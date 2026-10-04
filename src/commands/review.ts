@@ -765,6 +765,8 @@ export function buildReview(
       deletedPaths: deletions.filter((path) => selected.has(path)),
       renamedPaths: renames.filter((rename) => selected.has(rename.to) || selected.has(rename.from)).map((rename) => rename.to),
       contractChanges,
+      housekeepingDocs: grounding.housekeepingDocs,
+      unverifiedDocs: grounding.unverifiedDocs,
       beforeRegistry: grounding.previousRegistry,
       registry,
       riskTouches: [...risks.values()].sort((left, right) => left.feature < right.feature ? -1 : left.feature > right.feature ? 1 : 0),

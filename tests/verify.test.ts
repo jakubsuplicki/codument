@@ -4,6 +4,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import { coveringReviewEvidenceDigest } from "../src/lib/review-artifact.js";
+import { version } from "../src/lib/version.js";
+import { REVIEW_POLICY_VERSION } from "../src/lib/review-gate.js";
 
 const CLI = resolve(process.cwd(), "dist", "cli.js");
 
@@ -108,6 +111,26 @@ describe("codument verify", () => {
     await rm(repo, { recursive: true, force: true, maxRetries: 60, retryDelay: 300 });
   });
 
+  it("rejects a prior-policy no-review receipt before rechecking protected instructions", async () => {
+    await put("docs/AGENTS.md", "Previous documentation instructions.\n");
+    git(["add", "docs/AGENTS.md"]); git(["commit", "-qm", "existing instruction input"]);
+    await put("docs/AGENTS.md", "Changed documentation instructions.\n");
+    git(["add", "docs/AGENTS.md"]);
+    assert.equal(verify(["--json"]).status, 1);
+    const worksheet = JSON.parse(await readFile(join(repo, ".codument/review-worksheet.json"), "utf8"));
+    const boundary = worksheet.reviewContext.boundary;
+    // The earlier policy treated this existing unregistered document as no-review prose.
+    // Its cache can still match package version, staged bytes and the empty attestation set.
+    const previous = { version: 1, codumentVersion: version, boundary, planApproval: null,
+      reviewEvidence: { policyVersion: 1, input: { base: boundary.bases[0].sha, paths: [],
+        oracle: "a".repeat(32) }, digest: coveringReviewEvidenceDigest([]) } };
+    await mkdir(dirname(receiptPath()), { recursive: true });
+    await writeFile(receiptPath(), JSON.stringify(previous));
+    const checked = verify();
+    assert.equal(checked.status, 1, checked.stdout + checked.stderr);
+    assert.match(checked.stdout, /REVIEW REQUIRED/);
+  });
+
   it("keeps named-test evidence and execution in the index despite unrelated dirty inputs", async () => {
     await put(".codument-meta.json", JSON.stringify({ testCommand: "node --test {file}" }));
     await put("tests/proof.test.cjs", 'const {test}=require("node:test"); const assert=require("node:assert/strict"); test("proof",()=>assert.equal(require("./value.cjs"),1));\n');
@@ -187,7 +210,7 @@ describe("codument verify", () => {
     const receipt = JSON.parse(await readFile(receiptPath(), "utf8"));
     assert.equal(receipt.version, 1);
     assert.equal(receipt.boundary.mode, "staged");
-    assert.equal(receipt.reviewEvidence.policyVersion, 1);
+    assert.equal(receipt.reviewEvidence.policyVersion, REVIEW_POLICY_VERSION);
     assert.equal(verify().status, 0);
 
     const one = verify(["--json"]);
@@ -342,7 +365,7 @@ describe("codument verify", () => {
     delete receipt.reviewEvidence;
     await writeFile(receiptPath(), JSON.stringify(receipt));
     assert.equal(verify().status, 0, "a historical cache receives fresh checks");
-    assert.equal(JSON.parse(await readFile(receiptPath(), "utf8")).reviewEvidence.policyVersion, 1);
+    assert.equal(JSON.parse(await readFile(receiptPath(), "utf8")).reviewEvidence.policyVersion, REVIEW_POLICY_VERSION);
     assert.equal(await readFile(join(repo, unrelatedPath), "utf8"), JSON.stringify({ version: 1, unrelated: true }));
   });
 

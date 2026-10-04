@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync, execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,7 +26,7 @@ const git = (...args: string[]) =>
 const cli = (...args: string[]) =>
   spawnSync(process.execPath, [CLI, ...args], { cwd: root, encoding: "utf8" });
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "codument-work-"));
+  root = realpathSync.native(mkdtempSync(join(tmpdir(), "codument-work-")));
   put(".gitignore", ".codument/\n");
   put(path, plan);
   put("src/alpha.ts", "export const alpha = 1;\n");

@@ -43,6 +43,9 @@ Snapshot consumers use selected source, policy and documentation throughout. Sta
 complete branch review through the index retain distinct boundaries. Portable review and final
 approval share a strictly validated manifest exclusion but remain separate authorities; see
 [[adversarial-review-gate]] and [[plan-approval]].
+Documentation housekeeping is established from readable snapshots and an ordinary file role,
+rather than inferred from missing contract records. Instructions, executable or registered source
+inputs and unknown evidence remain subject to stronger review.
 Outcome permission is distinct from file routing; new advisory inputs can expand grounded context
 without widening the normative contract. Existing approval models retain their original meaning.
 

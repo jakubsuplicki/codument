@@ -8,7 +8,7 @@ import { resolveChangeSet } from "../src/lib/change-set.js";
 import { forgetWorkspace } from "../src/lib/git.js";
 import type { ChangeState } from "../src/lib/change-state.js";
 import type { Registry, RegistryEntry } from "../src/lib/registry.js";
-import type { ReviewPolicy } from "../src/lib/review-gate.js";
+import { REVIEW_POLICY_VERSION, type ReviewPolicy } from "../src/lib/review-gate.js";
 import {
   buildReviewBundle,
   buildContractChanges,
@@ -69,6 +69,34 @@ B coordinates things.
 `;
 
 describe("contract-only review grounding", () => {
+  it("proves added prose from staged inputs and retains unreadable or source documentation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codument-prose-grounding-"));
+    const git = (...args: string[]) => execFileSync("git", args, { cwd: root, stdio: "pipe" });
+    try {
+      await mkdir(join(root, "docs"));
+      await writeFile(join(root, "README.md"), "baseline\n");
+      git("init", "-q"); git("config", "user.name", "Test"); git("config", "user.email", "test@example.com");
+      git("add", "."); git("commit", "-qm", "baseline");
+      await writeFile(join(root, "docs/note.md"), "# Ordinary note\n");
+      git("add", "docs/note.md");
+      const boundary = resolveChangeSet(root, { mode: "staged" });
+      const empty = { features: {} };
+      const ground = (registry: Registry, read: () => string | null) =>
+        gatherReviewGrounding(root, "HEAD", registry, ["docs/note.md"], read, [], [], boundary);
+      const prose = ground(empty, () => "# Ordinary note\n");
+      assert.deepEqual(prose.housekeepingDocs, ["docs/note.md"]);
+      assert.deepEqual(prose.unverifiedDocs, []);
+      assert.deepEqual(ground(empty, () => null).housekeepingDocs, []);
+      assert.deepEqual(ground(empty, () => null).unverifiedDocs, ["docs/note.md"]);
+      const source = { features: { runtime: entry({ primary_sources: ["docs/note.md"] }) } };
+      assert.deepEqual(ground(source, () => "# Ordinary note\n").housekeepingDocs, []);
+      assert.deepEqual(ground(source, () => "# Ordinary note\n").unverifiedDocs, ["docs/note.md"]);
+    } finally {
+      forgetWorkspace();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("reads previous workspace contracts from each member and its selected base", async () => {
     const root = await mkdtemp(join(tmpdir(), "codument-grounding-workspace-"));
     const member = join(root, "api");
@@ -216,7 +244,7 @@ function cs(partial: Partial<ChangeState>): ChangeState {
 }
 
 describe("review policy binding", () => {
-  const policy: ReviewPolicy = { version: 1, minimum: "focused", reasons: [], factsFingerprint: "a".repeat(64) };
+  const policy: ReviewPolicy = { version: REVIEW_POLICY_VERSION, minimum: "focused", reasons: [], factsFingerprint: "a".repeat(64) };
   const bundleInput = { base: "base", changeState: cs({}), registry: { features: {} }, docContents: new Map<string, string>(), plan: null };
 
   it("keeps legacy bundle bytes and oracle unchanged when policy is absent", () => {

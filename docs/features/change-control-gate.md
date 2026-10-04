@@ -83,6 +83,11 @@ floor. The host still judges whether behavior is substantial, understood and rev
 
 ## Invariants & boundaries
 
+- Staged review carries positive documentation-housekeeping evidence into its effort decision.
+  A harmless new note does not collect an adversarial artifact; protected contracts, instructions,
+  unknown inputs and declared risks remain visible to the stronger pass. *(tests:
+  `hooks-command.test.ts`, `review-bundle.test.ts`, `review-gate.test.ts`)*
+
 - Legacy out-of-plan reporting compares changed sources against the selected plan's Scope and consumed
   Feature Map using shared path matching. Unlisted files remain outside scope even when they share
   an owner with a declared file. *(tests: `change-state.test.ts`, `review-boundary.test.ts`)*
