@@ -1,7 +1,7 @@
 import { basename, dirname, join, resolve } from "node:path";
 import { writeFileSync, realpathSync } from "node:fs";
 import pc from "picocolors";
-import { readEventLog } from "../lib/events.js";
+import { readEventLog, parseWorkflowCommandTiming, type EventLogRead } from "../lib/events.js";
 import { inspectAgentCapture, renderCapture } from "../lib/agent-feed.js";
 import { loadRates } from "../lib/token-cost.js";
 import { summarizeTokens, summarizeUsageRuns, type TokenRollup, type TokenSummary } from "../lib/token-report.js";
@@ -18,6 +18,105 @@ interface CostOptions {
   dir?: string;
   json?: boolean;
   export?: string;
+  timing?: boolean;
+}
+
+export interface WorkflowTimingRollup {
+  command: string;
+  count: number;
+  durationMs: number;
+  succeeded: number;
+  failed: number;
+}
+
+export interface WorkflowTimingSummary {
+  version: 1;
+  observation: "opt-in";
+  boundary: "command-action";
+  state: EventLogRead["state"];
+  observedCount: number;
+  totalDurationMs: number;
+  byCommand: WorkflowTimingRollup[];
+  ledger: Pick<EventLogRead, "state" | "skipped">;
+  invalidTimingEvents: number;
+  overflowTimingEvents: number;
+  implementationDurationMs: null;
+  limitations: string[];
+}
+
+/** Timing facts never infer implementation, waiting, or complete session duration. */
+export function summarizeWorkflowTiming(ledger: EventLogRead): WorkflowTimingSummary {
+  const groups = new Map<string, WorkflowTimingRollup>();
+  let observedCount = 0;
+  let totalDurationMs = 0;
+  let invalidTimingEvents = 0;
+  let overflowTimingEvents = 0;
+  for (const event of ledger.events) {
+    if (event?.type !== "workflow-command") continue;
+    const timing = parseWorkflowCommandTiming(event);
+    if (!timing) {
+      invalidTimingEvents++;
+      continue;
+    }
+    const previous = groups.get(timing.command);
+    const total = totalDurationMs + timing.durationMs;
+    const duration = (previous?.durationMs ?? 0) + timing.durationMs;
+    if (!Number.isFinite(total) || !Number.isFinite(duration)) {
+      overflowTimingEvents++;
+      continue;
+    }
+    observedCount++;
+    totalDurationMs = total;
+    groups.set(timing.command, {
+      command: timing.command,
+      count: (previous?.count ?? 0) + 1,
+      durationMs: duration,
+      succeeded: (previous?.succeeded ?? 0) + (timing.exitCode === 0 ? 1 : 0),
+      failed: (previous?.failed ?? 0) + (timing.exitCode === 0 ? 0 : 1),
+    });
+  }
+  const incomplete = ledger.state === "partial" || ledger.skipped > 0 ||
+    invalidTimingEvents > 0 || overflowTimingEvents > 0;
+  return {
+    version: 1,
+    observation: "opt-in",
+    boundary: "command-action",
+    state: ledger.state === "unavailable" ? "unavailable" :
+      incomplete ? "partial" : observedCount ? "available" : "empty",
+    observedCount,
+    totalDurationMs,
+    byCommand: [...groups.values()].sort((a, b) => a.command < b.command ? -1 : a.command > b.command ? 1 : 0),
+    ledger: { state: ledger.state, skipped: ledger.skipped },
+    invalidTimingEvents,
+    overflowTimingEvents,
+    implementationDurationMs: null,
+    limitations: [
+      "Observation is opt-in and incomplete; absent events do not prove absent work.",
+      "Durations cover CLI command actions and exclude process startup, host thinking, unobserved implementation and user waits.",
+      "Summed durations may overlap and are not session wall time.",
+      "Malformed and overflowing timing records are excluded; valid retained facts remain visible.",
+      "Implementation duration is unknown; timestamps and token usage supply no estimate.",
+    ],
+  };
+}
+
+/** Render observed workflow time separately from token spending. */
+export function renderWorkflowTiming(summary: WorkflowTimingSummary, label: string): string {
+  const lines = [
+    pc.bold("codument cost --timing") + pc.dim(`  ·  ${label}`),
+    "",
+    `  ${plural(summary.observedCount, "observed command action")} · ${summary.totalDurationMs.toFixed(2)} ms summed`,
+    `  Timing evidence: ${summary.state}; ledger: ${summary.ledger.state}.`,
+  ];
+  for (const row of summary.byCommand) {
+    lines.push(`  ${row.command}: ${row.count} observed · ${row.durationMs.toFixed(2)} ms · ${row.succeeded} succeeded · ${row.failed} failed`);
+  }
+  if (summary.ledger.skipped || summary.invalidTimingEvents || summary.overflowTimingEvents) {
+    lines.push(`  Excluded records: ${summary.ledger.skipped} malformed ledger · ${summary.invalidTimingEvents} invalid timing · ${summary.overflowTimingEvents} overflowing timing.`);
+  }
+  lines.push("", "  Implementation duration: unknown.");
+  lines.push(...summary.limitations.map((limitation) => pc.dim(`  ${limitation}`)));
+  return lines.join("\n");
 }
 
 function plural(n: number, one: string, many = one + "s"): string {
@@ -146,6 +245,18 @@ export function renderCost(summary: TokenSummary, label: string): string {
 export function cost(options: CostOptions = {}): void {
   const root = options.root ?? options.dir ?? process.cwd();
   const ledger = readEventLog(root);
+  if (options.timing) {
+    if (options.export) {
+      const message = "Timing inspection cannot be combined with a usage export. Run cost --export separately.";
+      if (options.json) console.log(JSON.stringify({ error: message }));
+      else console.error(message);
+      process.exitCode = 1;
+      return;
+    }
+    const timing = summarizeWorkflowTiming(ledger);
+    console.log(options.json ? JSON.stringify(timing, null, 2) : renderWorkflowTiming(timing, basename(root)));
+    return;
+  }
   const events = ledger.events;
   const summary = summarizeTokens(events, loadRates(root));
   const capture = inspectAgentCapture(root, undefined, ledger);

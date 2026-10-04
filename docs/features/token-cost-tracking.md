@@ -2,7 +2,7 @@
 title: Token cost tracking
 status: current
 type: feature
-last_reviewed: 2026-09-14
+last_reviewed: 2026-10-04
 ---
 
 # Token cost tracking
@@ -14,6 +14,14 @@ This is the answer to "how much is the agent spending, and on what." It attribut
 The load-bearing design choice: codument never calls an LLM, so it can never meter tokens itself. It records the **raw counts the agent reports**, and the dollar figure is **derived at render time** from a rate table. Cost is never persisted. That has two payoffs that the whole feature is built around: re-pricing when rates change is free (just re-render), and no log can ever carry a stale dollar amount, because no log carries a dollar amount at all.
 
 ## Design approach
+
+An explicit timing view reports observed workflow action durations from the same local ledger,
+independently of token pricing and host capture. Observation is optional; missing records do not
+prove absent work. Action timing excludes process startup, host thinking, unobserved implementation
+and user waits. Summed actions can overlap, so they cannot establish session wall time or a complete
+overhead percentage. Implementation duration remains unknown without separate evidence.
+The invoking project owns the ledger even when a command selects another Git repository for analysis.
+Invalid timing facts and unreadable input remain visible limitations while valid facts survive.
 
 Capture availability is separate from the cost of captured counts. Status names each host as
 available, empty, partial, unavailable or unsupported; an empty ledger alone proves no absence of
@@ -56,6 +64,13 @@ reported; missing model/rate data remains unpriced. No transcript text or derive
 **Two views, same captured log.** `watch` leads with a verdict and a cost headline (the all-sessions total plus a since-this-run delta and a where-it-went breakdown) and is a live consumer that auto-runs the feed. `cost` prints the complete ledger that the watch top-N omits, sorted by spend, as a pure read that never tails or mutates the log. Its share-percent column uses largest-remainder rounding so it sums to exactly 100 rather than drifting, and a real-but-tiny row reads under one percent rather than a misleading zero.
 
 ## Invariants & boundaries
+
+- Timing inspection is read-only and separate from ordinary token output and usage export. It
+  rejects malformed or overflowing facts rather than inferring missing durations from timestamps
+  or tokens. A timing request cannot write a usage export. *(test: `cost.test.ts`)*
+- Optional action observation records only normalized command names and raw duration/status facts;
+  failed telemetry cannot change command output, exit status or gate readiness.
+  *(test: `workflow-timing.test.ts`)*
 
 - Rebuilt activity does not replace captured token evidence when that turn's usage is missing or
   invalid. Reset preserves the valid counts and partial-capture diagnostics without duplication;

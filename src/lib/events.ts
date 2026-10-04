@@ -28,6 +28,33 @@ export interface CodumentEvent {
   data?: Record<string, unknown>;
 }
 
+export const WORKFLOW_TIMING_COMMANDS = [
+  "context", "steps", "review", "verify", "ack", "doctor",
+  "work approve", "work status", "work start", "work pause", "work block", "work resume", "work supersede", "work finish",
+  "map route", "map check", "map materialize",
+] as const;
+
+export interface WorkflowCommandTiming {
+  version: 1;
+  command: string;
+  durationMs: number;
+  exitCode: number;
+}
+
+/** Timing is opt-in action evidence, separate from deterministic gate inputs. */
+export function parseWorkflowCommandTiming(event: unknown): WorkflowCommandTiming | null {
+  if (!event || typeof event !== "object" || Array.isArray(event)) return null;
+  const candidate = event as Record<string, unknown>;
+  if (candidate.type !== "workflow-command" || !candidate.data || typeof candidate.data !== "object" || Array.isArray(candidate.data)) return null;
+  const data = candidate.data as Record<string, unknown>;
+  if (Object.keys(data).sort().join(",") !== "command,durationMs,exitCode,version"
+    || data.version !== 1 || typeof data.command !== "string"
+    || !WORKFLOW_TIMING_COMMANDS.some((command) => command === data.command)
+    || typeof data.durationMs !== "number" || !Number.isFinite(data.durationMs) || data.durationMs < 0
+    || typeof data.exitCode !== "number" || !Number.isSafeInteger(data.exitCode) || data.exitCode < 0) return null;
+  return { version: 1, command: data.command, durationMs: data.durationMs, exitCode: data.exitCode };
+}
+
 function eventsPath(root: string): string {
   return join(root, ".codument", "events.jsonl");
 }

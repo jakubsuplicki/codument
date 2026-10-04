@@ -37,6 +37,13 @@ Ordinary failed checks trigger diagnosis and repair within the approved contract
 is reserved for a genuinely unapproved decision or unavailable input, rather than the failed check
 itself. Required acceptance evidence stays open until its actual boundary has been exercised.
 
+The representative delivery replay reaches an actual local command after discovering shared helpers,
+repairing a failing integration test and passing mapped, staged review before commit. Its scripted
+approval and review establish CLI evidence binding; they do not establish autonomous host behavior
+or authenticated independence. Administration comparisons use equivalent fixtures and the same
+current executable, isolating ownership grounding and registration from the rest of delivery.
+[[token-cost-tracking]] reports optional action timing without claiming complete session savings.
+
 Profiles place the same contract on each host's instruction and skill surfaces. Independent review
 uses a fresh agent when available and discloses reduced independence otherwise. Existing-project
 adoption preserves authored knowledge, creates only needed scaffolds and marks uncertainty.
@@ -72,6 +79,10 @@ After any reviewed commit, gated handoff can offer native compaction or a ground
 - Outcome claims stop at the observed user or integration boundary. Substitutes prove only what
   they exercised; missing required evidence keeps acceptance open unless the user changes it.
   *(untested host behavior; installed guidance: `skill-parity.test.ts`)*
+- A discovered implementation helper can be mapped and delivered without renewing outcome approval
+  when the promised milestone and constraints remain unchanged. Routine repair retains acceptance
+  evidence and exact staged review. The administration replay measures only grounding and source
+  registration; implementation duration remains unknown. *(test: `workflow-milestone.test.ts`)*
 - Costly work identifies its outcome, effort and cheapest useful experiment before implementation.
   Existing evidence is reused; small reversible fixes gain no extra interview or approval gate.
   *(untested host behavior; planning and TDD instruction contract)*
@@ -144,197 +155,3 @@ After any reviewed commit, gated handoff can offer native compaction or a ground
 - `src/lib/agent-profiles.ts` — host placement and capabilities; [[lib]] owns implementation.
 - `src/lib/scaffold.ts` — managed installation surfaces; [[project-charter-gate]] and [[lib]] own machinery.
 - `skills/` — instructions that agents execute during delivery.
-
-## Delivery Plan
-
-Status: approved
-Plan-ID: outcome-milestone-delivery
-
-Make the delivery workflow lighter while retaining project memory, ownership and review of the
-exact changes being delivered. The field feedback identifies permission tied to predicted files,
-disagreement between scope projections, repeated administration and progress without demonstrated
-product value. Some safeguards already exist; reuse them before introducing another command or record.
-
-- [x] Step 1: Make plan scope and Feature Map projections agree across context and verification.
-- [x] Step 2: Approve outcomes and constraints while treating implementation file lists as guidance.
-- [x] Step 3: Plan demonstrable milestones and repair routine failures without human interruptions.
-- [x] Step 4: Batch ownership lookup and source mapping around the staged delivery boundary.
-- [x] Step 5: Scale review effort to risk while preserving verification of staged changes.
-- [x] Step 6: Generate progress and handoffs from one consistent view of selected work.
-- [ ] Step 7: Demonstrate the lighter workflow and report measured overhead separately from implementation.
-
-### Outcome
-
-An approved milestone can reach a working user or integration boundary even when implementation
-reveals additional files. Agents can repair tests, mappings and documentation within the agreed
-outcome without asking the human to restart the workflow. Progress names what can actually be
-demonstrated, and completion requires the promised evidence.
-
-Durable decisions, source ownership, resumable interruptions and exact staged review remain useful
-across sessions. Routine administration is batched, review effort follows risk, and reported overhead
-distinguishes observed workflow activity from implementation and uncaptured time.
-
-### Constraints & non-goals
-
-- Keep the Git-native, local, deterministic CLI and its existing agent profiles. Add no dependency,
-  service, autonomous agent runner or renderer.
-- Preserve existing approval meanings. An upgrade must not reinterpret an old approval as wider
-  permission; adopting the new contract requires an explicit human approval.
-- New approval binds the promised outcome, milestone deliverables, acceptance evidence and explicit
-  constraints on behavior, architecture, compatibility, privacy, security and spending. File Scope,
-  Feature Maps and implementation notes guide routing rather than granting or withholding permission.
-- Approved milestone descriptions remain stable. Implementation details may evolve within them;
-  changing promised behavior, acceptance, non-goals or constraints requires renewed approval.
-- The agent and reviewer judge whether work fits an outcome. The CLI validates explicit contract
-  bindings and evidence; it must not claim to infer intent or authenticate human approval.
-- Verification still covers exactly the staged change, including approval and mapped contracts.
-  Changed reviewed bytes reopen review. Neither workflow simplification nor a green test licenses
-  unrelated work, stale documentation, unmapped source or a commit through a failing gate.
-- Routine failure is a repair obligation. Ask the human when a repair needs an unapproved decision,
-  external input or genuinely irreversible action; preserve an explicit user pause or gated mode.
-- Keep a focused review and commit for each delivery slice. Visible milestones guide slice selection
-  and acceptance; do not replace reviewable changes with one large end-of-project commit.
-- No additional persistent work ledger, mandatory manual timers, universal risk score or invented
-  claims about complete session timing. Existing timing evidence may be incomplete.
-
-### Design & migration
-
-Introduce an explicitly distinguishable outcome approval alongside the existing contract model.
-Legacy records keep their current validation, archived-delivery and recovery semantics. Newly
-approved outcome plans exclude advisory implementation-file routing from their approval identity.
-Contract fields, selected milestone deliverables and acceptance evidence remain bound; unsupported,
-missing or ambiguous contracts fail visibly rather than falling back to permissive approval.
-
-Scope projections share the selected plan and its routing inputs. For legacy file-bound plans,
-supported Feature Map declarations participate consistently in guidance and scope diagnostics.
-For outcome plans, a newly discovered file outside the initial guidance is an implementation
-discovery, not proof of unapproved work. Its ownership, impact and documentation obligations still
-appear in the staged boundary check. Reclassifying a plan never silently renews old permission.
-
-Use the plan as the authored milestone record and derive agent-facing progress and handoffs from
-the existing selected-work inspection. Approval owns permission, local state owns interruption and
-pending gates, and Git owns delivered evidence. These answer different questions; unify their
-projection rather than copying them into another editable record. A pending review or commit must
-survive refresh, compaction and an implementation discovery.
-
-Review remains proportional and accountable. Focused self-review is suitable only when the change
-is understood, local and reversible, with no substantial behavior or contract change. Public
-interfaces, documented invariants, security/privacy, migrations, deletions, dependencies, substantial
-behavior and uncertain analysis require the stronger review path. Static escalation reasons cannot
-be waived by labelling work low risk. The reviewer still compares acceptance with observed evidence;
-a screenshot or local stand-in establishes only the boundary actually inspected.
-
-### Scope
-
-Existing source files; their owning docs must be updated when their contracts change:
-
-- `src/lib/plan-steps.ts` — selected plans, approved milestone declarations and scope interpretation.
-- `src/lib/plan-approval.ts` — explicit contract models, migration and final-delivery bindings.
-- `src/lib/change-state.ts` — scope diagnostics and affected ownership.
-- `src/lib/feature-map.ts` — shared routing interpretation.
-- `src/commands/doctor.ts` — bounded Windows compatibility repair for historical health inspection.
-- `src/lib/git.ts`, `src/lib/git-hooks.ts` and `src/commands/ack.ts` — explicit repository selection across delivery checks and commit hooks.
-- `src/lib/plan-grounding.ts` — the contracts supplied to plan review.
-- `src/lib/context-pack.ts` and `src/commands/context.ts` — batched grounded ownership.
-- `src/commands/map.ts` — batched registration using existing routing and writers.
-- `src/lib/review-gate.ts` — review escalation based on risk and analysis confidence.
-- `src/lib/review-bundle.ts` and `src/lib/review-artifact.ts` — bounded review context and evidence.
-- `src/commands/review.ts` and `src/commands/verify.ts` — one staged verification entry point.
-- `src/lib/work-state.ts` and `src/commands/work.ts` — authoritative selected-work projection.
-- `src/commands/steps.ts` and `src/commands/watch.ts` — generated milestone progress and handoffs.
-- `src/lib/events.ts` and `src/commands/cost.ts` — observed workflow timing alongside existing activity.
-- `src/lib/scaffold.ts`, `src/lib/agent-profiles.ts` and `src/cli.ts` — installed guidance and CLI surfaces.
-
-Instruction and documentation surfaces:
-
-- `skills/plan-with-docs/SKILL.md`, `skills/work-step/SKILL.md`, `skills/review-work/SKILL.md`,
-  `skills/commit-work/SKILL.md`, `skills/grill-with-docs/SKILL.md` and `skills/tdd/SKILL.md`.
-- Managed workflow blocks in `AGENTS.md` and `CLAUDE.md`, and installed profile guidance.
-- The existing owner docs for approval, work state, context, decomposition, review, verification,
-  checklist projection, CLI, cost and library contracts; update this doc at each relevant boundary.
-- `docs/.registry.json` for genuinely changed ownership or supporting documentation declarations.
-- An ADR alongside the approval change to record its migration and permission boundary.
-
-No new runtime source files are required. Tests and temporary fixture projects are verification
-evidence rather than source ownership; add no Feature Map just to mirror existing file ownership.
-
-### Milestone acceptance & verification
-
-1. Scope consistency: replay a plan whose Scope names kitchen geometry and whose Feature Map names
-   a catalogue file. Context, map checking and out-of-plan reporting agree for explicit paths and
-   supported patterns, including selected sections and staged snapshots. A real legacy out-of-scope
-   change remains visible. Cover this in the existing plan, context and review-boundary suites.
-   Include the approved Windows historical-inspection repair and explicit repository selection for
-   review, verification, acknowledgments, readiness and commit checks. Default workspace aggregation
-   stays available; a root receipt cannot cover a different member tuple. Preserve separately staged
-   nested repositories, invalidate changed boundaries and test receipt reuse through delivery.
-2. Outcome approval: an additional implementation file and routing change preserve outcome-plan
-   approval; changing the outcome, milestone deliverables, constraints or acceptance invalidates it.
-   Existing approval identities, ambiguous selection, malformed contracts, staged/worktree isolation,
-   consumed final delivery and fresh-checkout recovery retain their guarantees. Exercise approval,
-   work-state, boundary and receipt tests; update ADR 023 through an explicit superseding decision.
-3. Useful milestones: installed planning guidance asks for a representative end-to-end experience
-   early and acceptance evidence at its actual boundary. Infrastructure tasks explain the milestone
-   they unblock. A routine failed check triggers diagnosis, correction and re-verification; a changed
-   outcome or unapproved privacy/compatibility decision prompts the human. Keep all instruction
-   surfaces consistent and test their installation. Host execution remains a behavioral boundary.
-4. Batched administration: add `context --paths <paths...>` and backward-compatible multi-file
-   materialization. Return every owner, omission and ambiguity through the existing resolver.
-   Validate batch routing and path safety before mutation; preserve idempotent retries and report
-   partial I/O failures accurately. Existing tree ownership and source exclusions remain authoritative.
-   Replace the per-file before/after ritual with grounded planning context plus one staged boundary
-   check. Verification reports required mapping and doc actions without automatically staging or
-   inventing documentation. Cover existing single-file compatibility and mixed-validity batches.
-5. Review proportionality: an understood small reversible change receives focused checks and
-   self-review; substantial behavior and each escalation reason require the stronger pass. File count
-   alone is neither permission to skip review nor proof of risk. Risk classification and relevant
-   evidence belong to the exact reviewed boundary, with conservative escalation when uncertain.
-   Preserve finding reproduction, stale-artifact invalidation and reusable exact receipts. Exercise
-   risk/contract/deletion/uncertainty cases and re-review after source, oracle or approval changes.
-6. Reliable handoff: status, checklist, context and watch agree on the selected milestone, committed
-   progress, pending gate and interruption reason. Native panels are generated mirrors, never a
-   second authored checklist. Recovery copies are snapshots, never an alternate current work record.
-   A paused session remains paused; a reviewed uncommitted slice remains pending commit. Cover
-   dirty-worktree isolation, supersession, final compaction and fresh-session recovery. An explicit
-   preview of a new identified plan on a page with an archived approval shows the new plan rather
-   than substituting the archived checklist.
-7. Evidence and overhead: replay a representative implementation discovery through approval,
-   mapping, correction, staged review and delivery. It reaches the promised observable milestone
-   without a scope-amendment interruption. Compare required workflow commands and observed elapsed
-   command time with the existing flow. Reuse local events for recorded workflow durations and show
-   implementation duration only when separately observed; otherwise report it as unknown. Do not
-   infer either from timestamp gaps, token counts or time spent awaiting the user. Keep timing outside
-   deterministic gate outputs; an explicit timing view on the existing cost command leaves its normal
-   ledger contract intact. Make observation failure incapable of changing a gate verdict.
-
-Run focused tests for each slice, then the project typecheck, build and tests. Each implemented slice
-receives independent review when its risk requires it, mapped documentation updates and exact staged
-`codument verify` before its focused commit. At final delivery, inspect the CLI experience as well as
-the tests. An instruction-parity test proves installed guidance, not autonomous agent behavior.
-
-### Effort & cheapest useful experiment
-
-This is a multi-slice change across approval, guidance and delivery surfaces. Approval migration and
-review calibration carry the most risk; expect several agent sessions rather than a small patch.
-Do not start with a rewrite or a new orchestration layer.
-The scope-disagreement case has already been reproduced using the current parser and detector.
-Extend that representative fixture first, then use it to prove the outcome contract before changing
-the rest of the workflow. Command-count comparison is the first overhead measurement; observed
-timing supports it without pretending to measure a complete coding session.
-
-### Grounding limitations
-
-Scope grounding covers the existing source owners without a new-source Feature Map. The generated
-report names `AGENTS.md`, `CLAUDE.md` and `docs/.registry.json` as unowned inputs. These were inspected:
-the first two are managed workflow instruction surfaces, and the third is the ownership control
-plane, rather than an undocumented runtime source. Their contracts are supplied by the delivery,
-profile, library and registry docs. Supporting instruction declarations should be repaired where
-appropriate during the guidance change; do not pretend the omissions are clean ownership coverage.
-
-### Open questions
-
-No product decision is left open in this proposal. The recommended defaults are outcome approval
-for newly approved plans, unchanged meanings for existing approvals, conservative escalation of
-uncertain risk, and explicit unknowns when timing or experience evidence is unavailable. Independent
-plan review checked approval, recovery, staged verification, review, ownership and installed guidance;
-no material objections were found. The disclosed grounding omissions were inspected.

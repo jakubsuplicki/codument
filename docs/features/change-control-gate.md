@@ -26,6 +26,10 @@ owns the selection and informational-result contract.
 Event-log availability is independent of deterministic change readiness. Capture-aware readers retain
 valid events and disclose malformed or unreadable input; existing event-only readers keep their
 compatibility behavior. Missing telemetry never becomes evidence that a change passed its gate.
+Optional workflow observation uses that existing writer boundary. It records action duration and
+status without arguments or source paths; failed capture changes no verdict. Timing readers reject
+unsupported or malformed facts and never feed durations into deterministic review or coverage.
+[[token-cost-tracking]] owns the timing view and its limits. *(test: `workflow-timing.test.ts`)*
 
 The monitor captures local Claude and Codex usage by default and displays capture availability
 separately from change readiness. Disabling capture leaves the view read-only with respect to usage.

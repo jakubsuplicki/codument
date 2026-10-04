@@ -59,6 +59,9 @@ Telemetry readers retain valid events alongside explicit empty, partial or unava
 Existing event-only consumers keep their compatibility view; capture-aware consumers can disclose
 what that view could not read. [[token-cost-tracking]] owns availability and summary privacy.
 Rebuilding activity does not erase captured usage that incomplete source data cannot reconstruct.
+Optional workflow durations reuse the local event writer and a validated, bounded command vocabulary.
+Timing remains observational: failed capture cannot affect readiness, and uncaptured implementation
+or session duration cannot be inferred from activity gaps.
 
 ## Invariants & boundaries
 

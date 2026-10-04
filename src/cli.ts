@@ -25,8 +25,24 @@ import { ExcludedSourceError, RegistryError } from "./lib/registry.js";
 import { ConfigValueError, StateFileError } from "./lib/state-io.js";
 import { GateError } from "./lib/two-ref.js";
 import { buildVersionMismatch, version } from "./lib/version.js";
+import { appendEvent, WORKFLOW_TIMING_COMMANDS, type WorkflowCommandTiming } from "./lib/events.js";
 
 const program = new Command();
+let timing: { command: string; root: string; started: number } | null = null;
+function finishWorkflowTiming(exitCode = Number(process.exitCode ?? 0)): void {
+  const observation = timing;
+  timing = null;
+  if (!observation) return;
+  try {
+    const data: WorkflowCommandTiming = {
+      version: 1, command: observation.command,
+      durationMs: performance.now() - observation.started, exitCode,
+    };
+    appendEvent(observation.root, { type: "workflow-command", data: { ...data } });
+  } catch {
+    // Observation cannot change the command's output, exit status or verdict.
+  }
+}
 program.hook("preAction", () => {
   const mismatch = buildVersionMismatch();
   if (mismatch) {
@@ -34,6 +50,18 @@ program.hook("preAction", () => {
     process.exit(1);
   }
 });
+program.option("--observe-timing", "Record optional workflow action duration in the local event log");
+program.hook("preAction", (_command, action) => {
+  if (!action.optsWithGlobals().observeTiming) return;
+  const names: string[] = [];
+  for (let command: Command | null = action; command && command !== program; command = command.parent)
+    names.unshift(command.name());
+  const command = names.join(" ");
+  if (!WORKFLOW_TIMING_COMMANDS.some((supported) => supported === command)) return;
+  const options = action.optsWithGlobals();
+  timing = { command, root: options.root ?? options.dir ?? process.cwd(), started: performance.now() };
+});
+program.hook("postAction", () => finishWorkflowTiming());
 
 const work = program.command("work").description("Record approved work and manage its delivery state");
 work.command("approve")
@@ -382,6 +410,7 @@ program
   .option("--root <dir>", "Project root (default: current directory)")
   .option("--json", "Emit the machine-readable token summary instead of the ledger")
   .option("--export <file>", "Explicitly write a new portable usage summary without transcripts or stored costs")
+  .option("--timing", "Show observed workflow command durations separately from token estimates")
   .action(cost);
 
 program
@@ -538,6 +567,7 @@ for (const command of [...program.commands.filter(command => ["verify", "review"
 // Render it red and exit non-zero here, at the one boundary every command
 // dispatches through.
 program.parseAsync().catch((err) => {
+  finishWorkflowTiming(1);
   if (err instanceof RegistryError || err instanceof StateFileError) {
     console.log(pc.red(`  ✗ ${err.message}`));
     console.log(

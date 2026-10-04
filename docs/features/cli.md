@@ -13,6 +13,12 @@ This is the front door: the `codument` binary a user types into a terminal. It o
 
 ## Design approach
 
+Workflow timing is opt-in with `--observe-timing`. It records a supported command's action duration
+and exit status in the invoking project's existing local event log, using a normalized command name
+without arguments or source paths. Project-root options choose that ledger; repository selection
+chooses Git analysis and does not relocate telemetry. `cost --timing` reads observed durations
+separately from token estimates. [[token-cost-tracking]] owns the limits of this evidence.
+
 Context accepts a batch of paths and materialization accepts several files through the existing
 commands. Single-file calls retain their meaning; batch failures remain explicit. [[context-pack]]
 and [[feature-decomposition]] own the resolution and mutation contracts.

@@ -1,11 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { summarizeTokens } from "../src/lib/token-report.js";
-import { cost, renderCost, sharePercents } from "../src/commands/cost.js";
-import type { CodumentEvent } from "../src/lib/events.js";
+import { cost, renderCost, renderWorkflowTiming, sharePercents, summarizeWorkflowTiming } from "../src/commands/cost.js";
+import type { CodumentEvent, EventLogRead } from "../src/lib/events.js";
 
 function tok(
   model: string,
@@ -39,6 +39,99 @@ function capture(fn: () => void): string {
   }
   return lines.join("\n");
 }
+
+function timing(data: Record<string, unknown> = {}): CodumentEvent {
+  return {
+    type: "workflow-command",
+    ts: "2026-10-04T00:00:00.000Z",
+    data: { version: 1, command: "context", durationMs: 125, exitCode: 0, ...data },
+  };
+}
+
+function ledger(events: CodumentEvent[], state: EventLogRead["state"] = "available", skipped = 0): EventLogRead {
+  return { events, state, skipped };
+}
+
+describe("workflow timing evidence", () => {
+  it("groups only valid observed actions with sorted commands and actual outcomes", () => {
+    const summary = summarizeWorkflowTiming(ledger([
+      timing({ command: "verify", durationMs: 250 }),
+      timing(),
+      timing({ durationMs: 0, exitCode: 1 }),
+      tok("opus-4.8", { input: 1_000_000 }),
+    ]));
+    assert.equal(summary.state, "available");
+    assert.equal(summary.observedCount, 3);
+    assert.equal(summary.totalDurationMs, 375);
+    assert.deepEqual(summary.byCommand, [
+      { command: "context", count: 2, durationMs: 125, succeeded: 1, failed: 1 },
+      { command: "verify", count: 1, durationMs: 250, succeeded: 1, failed: 0 },
+    ]);
+    assert.equal(summary.implementationDurationMs, null);
+    assert.equal(summary.invalidTimingEvents, 0);
+  });
+
+  it("names invalid timing facts without dropping valid evidence", () => {
+    const invalid = [
+      timing({ version: 2 }), timing({ version: "1" }),
+      timing({ durationMs: -1 }), timing({ durationMs: NaN }),
+      timing({ durationMs: Infinity }), timing({ durationMs: "125" }),
+      timing({ command: "unknown" }), timing({ command: "context --paths private.ts" }),
+      timing({ exitCode: -1 }), timing({ exitCode: 0.5 }),
+      timing({ exitCode: "0" }), timing({ path: "private.ts" }),
+      { type: "workflow-command", ts: "now", data: null } as unknown as CodumentEvent,
+    ];
+    const summary = summarizeWorkflowTiming(ledger([timing(), ...invalid]));
+    assert.equal(summary.state, "partial");
+    assert.equal(summary.invalidTimingEvents, invalid.length);
+    assert.equal(summary.observedCount, 1);
+    assert.equal(summary.totalDurationMs, 125);
+    assert.deepEqual(summary.ledger, { state: "available", skipped: 0 });
+  });
+
+  it("excludes overflowing aggregates, retains other facts and reports the loss", () => {
+    const summary = summarizeWorkflowTiming(ledger([
+      timing({ durationMs: Number.MAX_VALUE }),
+      timing({ durationMs: Number.MAX_VALUE }),
+      timing({ command: "verify", durationMs: 0 }),
+    ]));
+    assert.equal(summary.state, "partial");
+    assert.equal(summary.observedCount, 2);
+    assert.equal(summary.overflowTimingEvents, 1);
+    assert.equal(summary.totalDurationMs, Number.MAX_VALUE);
+    assert.equal(JSON.parse(JSON.stringify(summary)).totalDurationMs, Number.MAX_VALUE);
+    assert.equal(summary.byCommand[1].count, 1, "later usable evidence survives overflow");
+  });
+
+  it("distinguishes missing observations from partial or unavailable ledger evidence", () => {
+    const empty = summarizeWorkflowTiming(ledger([], "empty"));
+    assert.equal(empty.state, "empty");
+    assert.equal(empty.implementationDurationMs, null);
+    assert.equal(summarizeWorkflowTiming(ledger([tok("opus-4.8", {})])).state, "empty");
+
+    const partial = summarizeWorkflowTiming(ledger([timing()], "partial", 2));
+    assert.equal(partial.state, "partial");
+    assert.equal(partial.observedCount, 1);
+    assert.deepEqual(partial.ledger, { state: "partial", skipped: 2 });
+
+    const unavailable = summarizeWorkflowTiming(ledger([], "unavailable"));
+    assert.equal(unavailable.state, "unavailable");
+    assert.equal(unavailable.observedCount, 0);
+    assert.equal(unavailable.implementationDurationMs, null);
+  });
+
+  it("renders the action boundary and uncertainty without a session-time estimate", () => {
+    const out = renderWorkflowTiming(summarizeWorkflowTiming(ledger([timing()], "partial", 1)), "proj");
+    assert.match(out, /codument cost --timing.*proj/s);
+    assert.match(out, /1 observed command action.*125\.00 ms summed/);
+    assert.match(out, /Timing evidence: partial; ledger: partial/);
+    assert.match(out, /1 malformed ledger/);
+    assert.match(out, /Implementation duration: unknown/);
+    assert.match(out, /opt-in and incomplete/);
+    assert.match(out, /exclude process startup, host thinking, unobserved implementation and user waits/);
+    assert.match(out, /may overlap and are not session wall time/);
+  });
+});
 
 describe("renderCost — the full ledger", () => {
   it("lists every feature sorted by cost, with a model breakdown", () => {
@@ -130,6 +223,88 @@ describe("sharePercents — largest-remainder rounding", () => {
 });
 
 describe("cost command", () => {
+  it("reports observed command actions separately from unknown implementation time", () => {
+    const dir = mkdtempSync(join(tmpdir(), "codument-timing-"));
+    mkdirSync(join(dir, ".codument"));
+    writeFileSync(join(dir, ".codument", "events.jsonl"), JSON.stringify({
+      type: "workflow-command", ts: "2026-10-04T00:00:00.000Z",
+      data: { version: 1, command: "context", durationMs: 125, exitCode: 0 },
+    }) + "\n");
+
+    const parsed = JSON.parse(capture(() => cost({ root: dir, json: true, timing: true })));
+    assert.equal(parsed.observedCount, 1);
+    assert.equal(parsed.totalDurationMs, 125);
+    assert.equal(parsed.implementationDurationMs, null);
+    assert.equal(parsed.observation, "opt-in");
+    assert.equal(parsed.boundary, "command-action");
+    assert.equal(parsed.totals, undefined, "timing is an explicit separate view");
+  });
+
+  it("reads timing evidence without modifying an existing log or creating an empty ledger", () => {
+    const emptyDir = mkdtempSync(join(tmpdir(), "codument-timing-empty-"));
+    const empty = JSON.parse(capture(() => cost({ root: emptyDir, json: true, timing: true })));
+    assert.equal(empty.state, "empty");
+    assert.deepEqual(readdirSync(emptyDir), []);
+
+    const dir = mkdtempSync(join(tmpdir(), "codument-timing-read-"));
+    mkdirSync(join(dir, ".codument"));
+    const path = join(dir, ".codument", "events.jsonl");
+    const contents = JSON.stringify(timing()) + "\nmalformed\n";
+    writeFileSync(path, contents);
+    const before = statSync(path).mtimeMs;
+    const parsed = JSON.parse(capture(() => cost({ root: dir, json: true, timing: true })));
+    assert.equal(parsed.state, "partial");
+    assert.equal(parsed.observedCount, 1);
+    assert.equal(parsed.ledger.skipped, 1);
+    assert.equal(readFileSync(path, "utf8"), contents);
+    assert.equal(statSync(path).mtimeMs, before);
+    assert.deepEqual(readdirSync(join(dir, ".codument")), ["events.jsonl"]);
+  });
+
+  it("keeps unavailable timing evidence explicit", () => {
+    const dir = mkdtempSync(join(tmpdir(), "codument-timing-unavailable-"));
+    mkdirSync(join(dir, ".codument", "events.jsonl"), { recursive: true });
+    const parsed = JSON.parse(capture(() => cost({ root: dir, json: true, timing: true })));
+    assert.equal(parsed.state, "unavailable");
+    assert.equal(parsed.ledger.state, "unavailable");
+    assert.equal(parsed.implementationDurationMs, null);
+  });
+
+  it("leaves ordinary token JSON and usage exports unchanged when timing events are present", () => {
+    const dir = mkdtempSync(join(tmpdir(), "codument-cost-timing-compat-"));
+    mkdirSync(join(dir, ".codument"));
+    const path = join(dir, ".codument", "events.jsonl");
+    const tokens = tok("opus-4.8", { input: 1_000_000 }, { feature: "alpha" });
+    writeFileSync(path, JSON.stringify(tokens) + "\n");
+    const original = JSON.parse(capture(() => cost({ root: dir, json: true })));
+    const firstExport = join(dir, "first.json");
+    capture(() => cost({ root: dir, json: true, export: firstExport }));
+
+    appendFileSync(path, JSON.stringify(timing()) + "\n");
+    const withTiming = JSON.parse(capture(() => cost({ root: dir, json: true })));
+    const secondExport = join(dir, "second.json");
+    capture(() => cost({ root: dir, json: true, export: secondExport }));
+    assert.deepEqual(withTiming, original);
+    assert.deepEqual(JSON.parse(readFileSync(secondExport, "utf8")), JSON.parse(readFileSync(firstExport, "utf8")));
+    assert.equal(withTiming.totalDurationMs, undefined);
+    assert.deepEqual(summarizeTokens([tokens, timing()]), summarizeTokens([tokens]));
+  });
+
+  it("refuses timing plus usage export without writing an output file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "codument-timing-export-"));
+    const target = join(dir, "usage.json");
+    const priorExit = process.exitCode;
+    try {
+      const parsed = JSON.parse(capture(() => cost({ root: dir, timing: true, json: true, export: target })));
+      assert.match(parsed.error, /Timing inspection cannot be combined with a usage export/);
+      assert.equal(process.exitCode, 1);
+      assert.equal(existsSync(target), false);
+      assert.deepEqual(readdirSync(dir), []);
+    } finally {
+      process.exitCode = priorExit;
+    }
+  });
+
   it("reports nothing-captured for an empty project", () => {
     const dir = mkdtempSync(join(tmpdir(), "codument-cost-"));
     const out = capture(() => cost({ root: dir }));
