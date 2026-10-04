@@ -27,7 +27,8 @@ function policyFacts(partial: Partial<ReviewPolicyFacts> = {}): ReviewPolicyFact
     ] },
     unevaluablePaths: [], otherChangedPaths: [], addedPaths: [], deletedPaths: [], renamedPaths: [],
     contractChanges: [], beforeRegistry: registry, registry, riskTouches: [],
-    testImpact: { changedTests: ["tests/a.test.ts"], attributed: [{ test: "tests/a.test.ts", feature: "alpha", via: "direct-import" }], unattributed: [], dependents: [], dependentsSummary: [] },
+    testImpact: { changedTests: ["tests/a.test.ts"], attributed: [{ test: "tests/a.test.ts", feature: "alpha", via: "direct-import" }], unattributed: [], dependents: [], dependentsSummary: [],
+      before: { attributed: [{ test: "tests/a.test.ts", feature: "alpha", via: "direct-import" }], unattributed: [] } },
     ...partial,
   };
 }
@@ -40,6 +41,36 @@ describe("classifyReviewPolicy — exact structural minimum", () => {
     assert.match(policy.factsFingerprint, /^[a-f0-9]{64}$/);
     assert.equal(evaluateReviewGate(input({ reviewPolicy: policy }), null).passed, false);
     assert.equal(evaluateReviewGate(input({ reviewPolicy: policy }), []).passed, true);
+  });
+
+  it("permits precise body changes across existing sources of one stable owner", () => {
+    const facts = policyFacts();
+    const registry = { features: { alpha: { ...facts.registry.features.alpha,
+      primary_sources: ["src/a.ts", "src/b.ts"] } } };
+    const policy = classifyReviewPolicy({ ...facts, registry, beforeRegistry: registry,
+      sourcePaths: ["src/a.ts", "src/b.ts"], existingSourcePaths: ["src/a.ts", "src/b.ts"],
+      anchorChanges: { ...facts.anchorChanges, "src/b.ts": [{ ...facts.anchorChanges["src/a.ts"][0], id: "src/b.ts::other()" }] } });
+    assert.equal(policy.minimum, "focused");
+  });
+
+  it("permits stable and new attributable test-only evidence while retaining base uncertainty and risk", () => {
+    const facts = policyFacts({ sourcePaths: [], existingSourcePaths: [], anchorChanges: {} });
+    assert.equal(classifyReviewPolicy(facts).minimum, "focused");
+    const selected = facts.testImpact!;
+    const added = { ...facts, addedPaths: selected.changedTests, testImpact: { ...selected,
+      before: { attributed: [], unattributed: selected.changedTests } } };
+    assert.equal(classifyReviewPolicy(added).minimum, "focused");
+    const risky = { features: { alpha: { ...facts.registry.features.alpha, risk: ["security"] } } };
+    for (const changed of [
+      { testImpact: { ...selected, before: undefined } },
+      { testImpact: { ...selected, before: { attributed: [], unattributed: selected.changedTests } } },
+      { testImpact: { ...selected, before: { attributed: [{ ...selected.attributed[0], feature: "other" }], unattributed: [] } } },
+      { beforeRegistry: risky }, { registry: risky },
+      { beforeRegistry: { features: {} } },
+      { deletedPaths: selected.changedTests }, { renamedPaths: selected.changedTests },
+    ]) assert.equal(classifyReviewPolicy({ ...facts, ...changed }).minimum, "adversarial");
+    assert.notEqual(classifyReviewPolicy(facts).factsFingerprint,
+      classifyReviewPolicy({ ...facts, testImpact: { ...selected, before: undefined } }).factsFingerprint);
   });
 
   it("still adjudicates covering reproduced findings when the minimum is none", () => {

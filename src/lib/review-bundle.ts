@@ -73,6 +73,8 @@ export interface ReviewGrounding {
   unowned: string[];
   previousRegistry: Registry;
   previousDocs: Map<string, string>;
+  /** Exact committed-base reader shared with test attribution. */
+  readBefore?: (path: string) => string | null;
   /** Positively established ordinary documentation with unchanged protected content. */
   housekeepingDocs?: string[];
   /** Documentation whose inputs, file kind or source role cannot establish housekeeping. */
@@ -201,6 +203,7 @@ export function gatherReviewGrounding(
   scope: string[] = [],
   ignoredPaths: string[] = [],
   boundary?: ChangeSet,
+  evidenceFeatures: readonly string[] = [],
 ): ReviewGrounding {
   const workspace = resolveWorkspace(root);
   const readBefore = (path: string): string | null => {
@@ -225,6 +228,7 @@ export function gatherReviewGrounding(
   const previousDocs = new Map<string, string>();
   const after = new Map<string, string>();
   const selected = sortStrings([
+    ...evidenceFeatures,
     ...selectPlanFeatures(registry, [], [...paths, ...scope]).selected,
     ...selectPlanFeatures(previousRegistry, [], [...paths, ...scope]).selected,
   ]);
@@ -274,6 +278,7 @@ export function gatherReviewGrounding(
     unowned,
     previousRegistry,
     previousDocs,
+    readBefore,
     ...contracts,
   };
 }
@@ -460,18 +465,29 @@ function scopeTestImpact(
   testImpact: TestImpact,
   registry: Registry,
   delta?: ReviewBundleDelta | null,
+  previousRegistry?: Registry,
 ): TestImpact {
   if (!delta) return testImpact;
   const selected = new Set(delta.paths);
   const attributed = testImpact.attributed.filter((attribution) => selected.has(attribution.test));
+  const before = testImpact.before ? {
+    attributed: testImpact.before.attributed.filter((attribution) => selected.has(attribution.test)),
+    unattributed: testImpact.before.unattributed.filter((test) => selected.has(test)),
+  } : undefined;
+  const current = computeDependentImpact(registry, attributed.map((item) => item.feature));
+  const previous = computeDependentImpact(previousRegistry ?? { features: {} },
+    before?.attributed.map((item) => item.feature) ?? []);
+  const edges = [...new Map([...current.dependents, ...previous.dependents]
+    .map((edge) => [`${edge.feature}\0${edge.dependsOn}`, edge] as const)).values()]
+    .sort((a, b) => `${a.feature}\0${a.dependsOn}` < `${b.feature}\0${b.dependsOn}` ? -1 :
+      `${a.feature}\0${a.dependsOn}` > `${b.feature}\0${b.dependsOn}` ? 1 : 0);
   return {
     changedTests: testImpact.changedTests.filter((test) => selected.has(test)),
     attributed,
     unattributed: testImpact.unattributed.filter((test) => selected.has(test)),
-    ...computeDependentImpact(
-      registry,
-      attributed.map((item) => item.feature),
-    ),
+    ...(before ? { before } : {}),
+    dependents: edges,
+    dependentsSummary: mergeDependentSummaries(current.dependentsSummary, previous.dependentsSummary),
   };
 }
 
@@ -485,6 +501,7 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
   const featureNames = sortStrings([
     ...sourceGroups.keys(),
     ...(testImpact?.attributed.map((attribution) => attribution.feature) ?? []),
+    ...(testImpact?.before?.attributed.map((attribution) => attribution.feature) ?? []),
     ...(input.grounding?.changes.flatMap((change) => change.owners) ?? []),
     ...(input.grounding?.selected ?? []),
     ...selectPlanFeatures(registry, [], plan?.scope ?? []).selected,
@@ -533,6 +550,19 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
     });
   }
 
+  const riskTouches = new Map(changeState.riskTouches.map((touch) => [touch.feature, touch]));
+  if (input.reviewPolicy) for (const feature of features) {
+    const risk = sortStrings([...feature.risk, ...(feature.before?.risk ?? [])]);
+    const files = sortStrings([...feature.changedSources,
+      ...[...(testImpact?.attributed ?? []), ...(testImpact?.before?.attributed ?? [])]
+        .filter((item) => item.feature === feature.feature).map((item) => item.test)]);
+    if (!risk.length || !files.length) continue;
+    const previous = riskTouches.get(feature.feature);
+    riskTouches.set(feature.feature, { feature: feature.feature,
+      risk: sortStrings([...(previous?.risk ?? []), ...risk]),
+      files: sortStrings([...(previous?.files ?? []), ...files]) });
+  }
+
   const body = {
     base,
     scope: (delta ? "delta" : "full") as "full" | "delta",
@@ -550,7 +580,8 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
     ...(input.grounding?.changes.length ? { contractChanges: input.grounding.changes } : {}),
     ...(omissions.length ? { omissions } : {}),
     staleDocs: changeState.staleDocs,
-    riskTouches: changeState.riskTouches,
+    riskTouches: input.reviewPolicy ? [...riskTouches.values()].sort((a, b) => a.feature < b.feature ? -1 : a.feature > b.feature ? 1 : 0)
+      : changeState.riskTouches,
     dependents: mergeDependentSummaries(
       changeState.dependentsSummary,
       testImpact?.dependentsSummary ?? [],
@@ -558,7 +589,7 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
     outOfPlan: changeState.outOfPlan,
     plan,
     ...(boundary ? { boundary } : {}),
-    ...(testImpact ? { testImpact: scopeTestImpact(testImpact, registry, delta) } : {}),
+    ...(testImpact ? { testImpact: scopeTestImpact(testImpact, registry, delta, input.grounding?.previousRegistry) } : {}),
     ...(input.reviewPolicy ? { reviewPolicy: input.reviewPolicy } : {}),
   };
   // Over the body, never over itself. JSON.stringify walks the literal above in
@@ -656,11 +687,13 @@ export function gatherReviewBundle(
     plan?.scope,
     ignoredPaths ?? changeState.excludedChanged,
     boundary,
+    [...(testImpact?.attributed ?? []), ...(testImpact?.before?.attributed ?? [])].map((item) => item.feature),
   );
   const docContents = new Map<string, string>();
   const featureNames = sortStrings([
     ...changeState.byFeature.map((group) => group.feature),
     ...(testImpact?.attributed.map((attribution) => attribution.feature) ?? []),
+    ...(testImpact?.before?.attributed.map((attribution) => attribution.feature) ?? []),
     ...grounding.changes.flatMap((change) => change.owners),
     ...grounding.selected,
     ...selectPlanFeatures(registry, [], plan?.scope ?? []).selected,

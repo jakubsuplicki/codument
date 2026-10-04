@@ -50,6 +50,8 @@ Tests are evidence rather than documentation subjects. Explicit invariant pins a
 supported direct imports are a fallback signal; an unattributed test is named rather than guessed.
 Test changes participate in impact and review invalidation but never wake a doc or require registry
 ownership.
+Attribution and dependency impact retain both committed-base and selected snapshots. Removing or
+changing a test's import or invariant pin cannot erase the prior feature, oracle or declared risk.
 
 Named finding tests and runner configuration follow the selected snapshot too. When working inputs
 differ, reproduction uses a temporary indexed checkout with installed dependencies available. It
@@ -57,6 +59,11 @@ never rewrites the user's files; missing untracked or generated runner inputs ar
 unavailable. Reproduction in a dirty aggregate workspace requires selecting one repository.
 
 ## Invariants & boundaries
+
+- Test-only review retains the prior feature's contract, risk and dependency evidence when its
+  attribution changes, disappears or is renamed. The selected attribution view stays compatible;
+  delta review narrows evidence while preserving the complete oracle. *(tests:
+  `test-impact.test.ts`, `review-boundary.test.ts`, `review-bundle.test.ts`)*
 
 - Explicit repository verification preserves separately staged nested repositories through review,
   receipt reuse and delivery; changed staged evidence reopens review. Invalid selections fail closed.

@@ -56,6 +56,8 @@ Shared guidance plans for observable milestones and repairs routine failures wit
 Legacy permission remains unchanged; [[agent-delivery-workflow]] owns this instruction contract.
 Ownership context can ground a working set together; the staged boundary replaces repeated
 before-and-after file queries without relaxing missing-owner or documentation checks.
+Test evidence shares the same exact base and selected snapshot boundaries. Prior attribution,
+risks and dependency impact survive changes to the current evidence and remain part of review.
 Control records have bounded reads, atomic writes and exclusive revision-checked transitions.
 
 Telemetry readers retain valid events alongside explicit empty, partial or unavailable input state.

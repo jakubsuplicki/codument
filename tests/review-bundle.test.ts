@@ -247,6 +247,31 @@ describe("review policy binding", () => {
   const policy: ReviewPolicy = { version: REVIEW_POLICY_VERSION, minimum: "focused", reasons: [], factsFingerprint: "a".repeat(64) };
   const bundleInput = { base: "base", changeState: cs({}), registry: { features: {} }, docContents: new Map<string, string>(), plan: null };
 
+  it("keeps the complete prior oracle while delta-scoping both test snapshots and their dependents", () => {
+    const registry = { features: {
+      alpha: entry({ doc: "docs/a.md", primary_sources: ["src/a.ts"] }),
+      beta: entry({ doc: "docs/b.md", primary_sources: ["src/b.ts"] }),
+      consumer: entry({ doc: "docs/consumer.md", depends_on: ["beta"] }),
+    } };
+    const previous = { features: { ...registry.features,
+      beta: { ...registry.features.beta, risk: ["security"] } } };
+    const first = { test: "tests/one.test.ts", feature: "alpha", via: "direct-import" as const };
+    const second = { test: "tests/two.test.ts", feature: "alpha", via: "direct-import" as const };
+    const bundle = buildReviewBundle({ ...bundleInput, registry, reviewPolicy: policy,
+      docContents: new Map([["docs/a.md", DOC_A], ["docs/b.md", DOC_B]]),
+      grounding: { changes: [], selected: [], unowned: [], previousRegistry: previous,
+        previousDocs: new Map([["docs/a.md", DOC_A], ["docs/b.md", DOC_B]]) },
+      testImpact: { changedTests: [first.test, second.test], attributed: [first, second], unattributed: [],
+        before: { attributed: [{ ...first, feature: "beta" }, second], unattributed: [] },
+        dependents: [], dependentsSummary: [] },
+      delta: { paths: [first.test], alreadyReviewed: [second.test], priorFindings: [] },
+    });
+    assert.deepEqual(bundle.testImpact?.before?.attributed, [{ ...first, feature: "beta" }]);
+    assert.deepEqual(bundle.testImpact?.dependents, [{ feature: "consumer", dependsOn: "beta" }]);
+    assert.match(bundle.features.find((feature) => feature.feature === "beta")!.before!.invariants, /B never blocks/);
+    assert.deepEqual(bundle.riskTouches.find((touch) => touch.feature === "beta")?.risk, ["security"]);
+  });
+
   it("keeps legacy bundle bytes and oracle unchanged when policy is absent", () => {
     const legacy = buildReviewBundle(bundleInput);
     assert.equal("reviewPolicy" in legacy, false);

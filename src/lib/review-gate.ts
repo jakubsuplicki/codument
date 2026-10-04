@@ -9,7 +9,7 @@ import type { RiskTouch } from "./change-state.js";
 import type { ContractChange } from "./review-bundle.js";
 import type { TestImpact } from "./test-impact.js";
 
-export const REVIEW_POLICY_VERSION = 2;
+export const REVIEW_POLICY_VERSION = 4;
 
 export interface ReviewPolicy {
   version: typeof REVIEW_POLICY_VERSION;
@@ -106,17 +106,36 @@ export function classifyReviewPolicy(facts: ReviewPolicyFacts): ReviewPolicy {
     };
   });
 
+  const tests = facts.testImpact;
+  const added = new Set(facts.addedPaths);
+  const testEvidence = sortedUnique(tests?.changedTests ?? []).map((test) => {
+    const after = sortedUnique((tests?.attributed ?? []).filter((item) => item.test === test).map((item) => item.feature));
+    const before = sortedUnique((tests?.before?.attributed ?? []).filter((item) => item.test === test).map((item) => item.feature));
+    addReason(after.length !== 1 || !!tests?.unattributed.includes(test), "unresolved test attribution");
+    if (!added.has(test)) addReason(before.length !== 1 || !!tests?.before?.unattributed.includes(test)
+      || before[0] !== after[0], "test attribution changed or is unknown at the base");
+    const features = sortedUnique([...before, ...after]).map((feature) => {
+      const previous = facts.beforeRegistry.features[feature];
+      const selected = facts.registry.features[feature];
+      const beforeRisk = sortedUnique(previous?.risk ?? []);
+      const afterRisk = sortedUnique(selected?.risk ?? []);
+      addReason(!previous || !selected, "test feature is unavailable before or after");
+      addReason(beforeRisk.length > 0 || afterRisk.length > 0, "risk-tagged feature touched before or after");
+      return { feature, before: !!previous, after: !!selected, beforeRisk, afterRisk };
+    });
+    for (const feature of after) owners.add(feature);
+    return { test, before, after, features };
+  });
+
   if (movedCount > 0) {
-    addReason(sources.length !== 1, "behavior spans multiple sources");
-    addReason(owners.size !== 1, "behavior spans multiple feature owners");
-    const tests = facts.testImpact;
+    addReason(owners.size > 1, "behavior spans multiple feature owners");
     addReason(!tests || tests.changedTests.length === 0, "no attributable test evidence");
     addReason(!!tests && (tests.unattributed.length > 0 || tests.changedTests.some((test) => {
       const attributed = tests.attributed.filter((item) => item.test === test);
       return attributed.length === 0 || attributed.some((item) => !owners.has(item.feature));
     })), "test evidence is unowned or spans other features");
   } else {
-    addReason((facts.testImpact?.changedTests.length ?? 0) > 0, "test change without attributable source behavior");
+    addReason(testEvidence.length > 0 && owners.size > 1, "test evidence spans multiple feature owners");
   }
 
   const evidence = {
@@ -127,14 +146,19 @@ export function classifyReviewPolicy(facts: ReviewPolicyFacts): ReviewPolicy {
     contracts: [...facts.contractChanges].sort((a, b) => a.path.localeCompare(b.path))
       .map((change) => [change.path, change.kind, sortedUnique(change.owners), normalizedProse(change.before), normalizedProse(change.after), change.requiresReview]),
     risks: facts.riskTouches.map((touch) => [touch.feature, sortedUnique(touch.risk), sortedUnique(touch.files)]).sort(),
+    testEvidence,
     tests: facts.testImpact ? {
       changed: sortedUnique(facts.testImpact.changedTests), unattributed: sortedUnique(facts.testImpact.unattributed),
       attributed: facts.testImpact.attributed.map((item) => [item.test, item.feature, item.via]).sort(),
+      before: facts.testImpact.before ? {
+        unattributed: sortedUnique(facts.testImpact.before.unattributed),
+        attributed: facts.testImpact.before.attributed.map((item) => [item.test, item.feature, item.via]).sort(),
+      } : null,
     } : null,
   };
   return {
     version: REVIEW_POLICY_VERSION,
-    minimum: reasons.size > 0 ? "adversarial" : movedCount > 0 ? "focused" : "none",
+    minimum: reasons.size > 0 ? "adversarial" : movedCount > 0 || testEvidence.length > 0 ? "focused" : "none",
     reasons: [...reasons].sort(),
     factsFingerprint: createHash("sha256").update(JSON.stringify(evidence), "utf8").digest("hex"),
   };

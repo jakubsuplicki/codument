@@ -61,7 +61,7 @@ describe("local receipt review evidence", () => {
   it("rejects stale policy and malformed cached inputs rather than granting reuse", () => {
     assert.deepEqual(parseReviewReceiptEvidence(evidence()), evidence());
     for (const malformed of [
-      null, {}, { ...evidence(), policyVersion: 0 }, { ...evidence(), policyVersion: 1 }, { ...evidence(), digest: "bad" },
+      null, {}, { ...evidence(), policyVersion: 0 }, { ...evidence(), policyVersion: 1 }, { ...evidence(), policyVersion: 2 }, { ...evidence(), policyVersion: 3 }, { ...evidence(), digest: "bad" },
       { ...evidence(), input: { ...evidence().input, oracle: "bad" } },
       { ...evidence(), input: { ...evidence().input, base: " " } },
       ...["../a.ts", "/a.ts", "a//b.ts"].map((path) => ({ ...evidence(), input: { ...evidence().input, paths: [path] } })),

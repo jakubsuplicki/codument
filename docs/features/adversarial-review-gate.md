@@ -14,6 +14,9 @@ reversible behavior change with precise ownership and attributable tests can use
 self-review. Public contracts, declared risks, deletions, dependencies and uncertain analysis require
 the stronger adversarial pass. Formatting without a contract change needs only a diff self-review.
 Every required review answers the same exact boundary, invariants and acceptance evidence.
+Local behavior can span existing files of one stable feature without becoming riskier merely
+because of file count. Test-only work can also receive focused review when attribution stays with
+that nonrisk feature; prior attribution, risk and oracle evidence remain visible.
 
 Ordinary documentation additions with no protected contract change need only diff self-review.
 This requires readable snapshot evidence and an ordinary documentation role; instructions,
@@ -59,6 +62,11 @@ reruns those tests under the existing finding policy. Attribution is self-report
 **Proportionality is mandatory, not optional.** Two extra agent passes on every one-line edit is how a good gate gets disabled. Bundle depth is gated on blast radius, which Codument already computes: a trivial single-symbol edit touching no documented invariant skips the heavy pass; a risk-tagged, invariant-touching, or multi-file diff gets the full adversary.
 
 ## Invariants & boundaries
+
+- Precise contract-neutral behavior within one stable feature can receive focused review across
+  existing files. Stable attributable test-only changes qualify too; unknown or changed attribution,
+  prior or selected risk, public changes, deletions and renames keep the stronger floor. *(tests:
+  `review-gate.test.ts`, `review-boundary.test.ts`)*
 
 - A harmless documentation addition passes the managed hook without a required review artifact.
   Positive snapshot evidence distinguishes prose from protected contracts, instructions, executable
@@ -203,7 +211,7 @@ Status: approved
 Approval-Model: outcome-v1
 
 - [x] Step 1: Remove unnecessary review for harmless documentation additions and restore the portable test baseline.
-- [ ] Step 2: Use focused review for well-grounded changes within one feature, preserving risks and attribution from both snapshots.
+- [x] Step 2: Use focused review for well-grounded changes within one feature, preserving risks and attribution from both snapshots.
 - [ ] Step 3: Compare real agent delivery against 0.20.1 and retain working-output and administration evidence.
 - [ ] Step 4: Finish the verified 0.21.0 release with a local commit and tag.
 
@@ -332,10 +340,10 @@ lighter treatment together with protected counterexamples before broadening focu
 
 ### Resume checkpoint
 
-Step 1 implementation and CLI protection checks pass; the full regression baseline is green.
-Independent review and its exact staged receipt are pending before the first commit. Prepared
-0.21.0 release metadata remains outside this source slice and is reserved for Step 4. The active
-selection is this identified plan; the earlier release-only selection is superseded.
+Step 1 is committed. Step 2 implementation and CLI protection checks pass. The full suite's two
+subprocess timeouts passed isolated rechecks without source changes; all remaining cases passed.
+Independent staged review is pending before the second commit. Prepared 0.21.0 release metadata
+remains outside the source slices and is reserved for Step 4.
 
 ### Grounding limitations
 

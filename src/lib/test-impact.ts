@@ -1,5 +1,6 @@
 import {
   computeDependentImpact,
+  mergeDependentSummaries,
   type DependentFeature,
   type DependentSummary,
 } from "./change-state.js";
@@ -24,6 +25,8 @@ export interface TestImpact {
   attributed: TestAttribution[];
   /** Tests for which neither authoritative signal produced a feature. */
   unattributed: string[];
+  /** The same changed tests' evidence in the exact base snapshot, when supplied. */
+  before?: Pick<TestImpact, "attributed" | "unattributed">;
   /** Downstream contracts reached from the attributed features. */
   dependents: DependentFeature[];
   /** Ranked, human-facing form of `dependents`. */
@@ -35,6 +38,8 @@ export interface TestImpactInput {
   registry: Registry;
   /** Reads from the same snapshot as `changedPaths`; null also represents deletion. */
   readText: (path: string) => string | null;
+  /** Paired registry and content reads from the exact base snapshot. */
+  before?: Pick<TestImpactInput, "registry" | "readText"> & { changedPaths?: readonly string[] };
 }
 
 const sortStrings = (values: Iterable<string>): string[] =>
@@ -78,13 +83,14 @@ function primaryFeaturesForSource(registry: Registry, source: string): string[] 
  */
 export function computeTestImpact(input: TestImpactInput): TestImpact {
   const changedTests = sortStrings(input.changedPaths.filter(isTestPath));
-  if (changedTests.length === 0) {
+  if (changedTests.length === 0 && !input.before?.changedPaths?.some(isTestPath)) {
     return {
       changedTests: [],
       attributed: [],
       unattributed: [],
       dependents: [],
       dependentsSummary: [],
+      ...(input.before ? { before: { attributed: [], unattributed: [] } } : {}),
     };
   }
   const changedSet = new Set(changedTests);
@@ -140,5 +146,22 @@ export function computeTestImpact(input: TestImpactInput): TestImpact {
     input.registry,
     attributed.map((item) => item.feature),
   );
-  return { changedTests, attributed, unattributed, ...dependencyImpact };
+  if (!input.before) return { changedTests, attributed, unattributed, ...dependencyImpact };
+
+  const before = computeTestImpact({ changedPaths: input.before.changedPaths ?? changedTests,
+    registry: input.before.registry, readText: input.before.readText });
+  const edges = new Map<string, DependentFeature>();
+  for (const edge of [...before.dependents, ...dependencyImpact.dependents]) {
+    edges.set(`${edge.feature}\0${edge.dependsOn}`, edge);
+  }
+  return {
+    changedTests,
+    attributed,
+    unattributed,
+    before: { attributed: before.attributed, unattributed: before.unattributed },
+    dependents: [...edges.values()].sort((a, b) =>
+      a.feature < b.feature ? -1 : a.feature > b.feature ? 1 :
+        a.dependsOn < b.dependsOn ? -1 : a.dependsOn > b.dependsOn ? 1 : 0),
+    dependentsSummary: mergeDependentSummaries(before.dependentsSummary, dependencyImpact.dependentsSummary),
+  };
 }

@@ -83,6 +83,10 @@ floor. The host still judges whether behavior is substantial, understood and rev
 
 ## Invariants & boundaries
 
+- Review retains test attribution and declared risk from both selected and committed-base inputs.
+  Current test imports cannot erase the old attack surface, and unrelated working-tree prose cannot
+  rewrite its oracle. *(tests: `review-boundary.test.ts`, `test-impact.test.ts`)*
+
 - Staged review carries positive documentation-housekeeping evidence into its effort decision.
   A harmless new note does not collect an adversarial artifact; protected contracts, instructions,
   unknown inputs and declared risks remain visible to the stronger pass. *(tests:

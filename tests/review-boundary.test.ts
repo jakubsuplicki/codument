@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { forgetWorkspace } from "../src/lib/git.js";
+import { REVIEW_POLICY_VERSION } from "../src/lib/review-gate.js";
 
 process.env.NO_COLOR = "1";
 
@@ -235,6 +236,97 @@ afterEach(async () => {
 });
 
 describe("review staged boundary", () => {
+  it("requires strong review when a prior test moves into an excluded non-test destination", async () => {
+    const registry = JSON.parse(await readFile(join(repo, "docs/.registry.json"), "utf8"));
+    registry.features.alpha.risk = ["security"];
+    await put("docs/.registry.json", JSON.stringify(registry));
+    await put("docs/features/alpha.md", "# Alpha\n\n## Invariants & boundaries\n- Preserve security coverage. *(untested)*\n");
+    await put("tests/old.test.ts", 'import { a } from "../src/a.js";\nvoid a;\n');
+    git(["add", "."]); git(["commit", "-qm", "prior test coverage"]);
+    await mkdir(join(repo, "build"));
+    git(["mv", "tests/old.test.ts", "build/old.ts"]);
+    assert.match(git(["diff", "--cached", "--name-status"]), /^R100/);
+    const result = JSON.parse(review(["--staged", "--json"]).stdout);
+    assert.equal(result.reviewPolicy.minimum, "adversarial");
+    assert.equal(result.testImpact.before.attributed[0].feature, "alpha");
+    const bundle = JSON.parse(review(["--staged", "--bundle"]).stdout);
+    assert.match(bundle.features[0].before.invariants, /Preserve security coverage/);
+    assert.deepEqual(bundle.riskTouches[0].risk, ["security"]);
+    assert.equal(cli(["verify"]).status, 1);
+  });
+  it("focuses two existing body changes owned by the same feature", async () => {
+    const registry = JSON.parse(await readFile(join(repo, "docs/.registry.json"), "utf8"));
+    registry.features.alpha.primary_sources.push("src/b.ts");
+    delete registry.features.beta;
+    await put("docs/.registry.json", JSON.stringify(registry));
+    await put("src/a.ts", "export function a(value: number): number { return value; }\n");
+    await put("src/b.ts", "export function b(value: number): number { return value; }\n");
+    await put("tests/owned.test.ts", 'import { a } from "../src/a.js";\nimport { b } from "../src/b.js";\n');
+    git(["add", "."]); git(["commit", "-qm", "stable one-feature baseline"]);
+    await put("src/a.ts", "export function a(value: number): number { return value + 1; }\n");
+    await put("src/b.ts", "export function b(value: number): number { return value + 2; }\n");
+    await put("tests/owned.test.ts", 'import { a } from "../src/a.js";\nimport { b } from "../src/b.js";\na(0); b(0);\n');
+    git(["add", "src/a.ts", "src/b.ts", "tests/owned.test.ts"]);
+    const result = JSON.parse(review(["--staged", "--json"]).stdout);
+    assert.equal(result.reviewPolicy.minimum, "focused");
+    assert.equal(result.state.staleDocs.length, 0);
+  });
+
+  it("focuses stable test-only evidence and keeps exact review required", async () => {
+    await put("tests/proof.test.ts", 'import { a } from "../src/a.js";\nvoid a;\n');
+    git(["add", "tests/proof.test.ts"]); git(["commit", "-qm", "attributable test baseline"]);
+    await put("tests/proof.test.ts", 'import { a } from "../src/a.js";\nvoid [a];\n');
+    git(["add", "tests/proof.test.ts"]);
+    const result = JSON.parse(review(["--staged", "--json"]).stdout);
+    assert.equal(result.reviewPolicy.minimum, "focused");
+    assert.equal(result.testImpact.before.attributed[0].feature, "alpha");
+    const bundle = JSON.parse(review(["--staged", "--bundle"]).stdout);
+    assert.ok(bundle.features.find((feature: { feature: string }) => feature.feature === "alpha").before);
+    assert.equal(cli(["verify"]).status, 1, "focused review still needs its exact worksheet");
+  });
+
+  it("retains the prior test feature, oracle and risk after its import and risk declaration change", async () => {
+    const registry = JSON.parse(await readFile(join(repo, "docs/.registry.json"), "utf8"));
+    registry.features.beta.risk = ["security"];
+    await put("docs/.registry.json", JSON.stringify(registry));
+    await put("docs/features/beta.md", "# Beta\n\n## Invariants & boundaries\n- Preserve beta safeguards. *(untested)*\n");
+    await put("tests/proof.test.ts", 'import { b } from "../src/b.js";\nvoid b;\n');
+    git(["add", "."]); git(["commit", "-qm", "prior risk and attribution"]);
+    registry.features.beta.risk = [];
+    await put("docs/.registry.json", JSON.stringify(registry));
+    await put("tests/proof.test.ts", 'import { a } from "../src/a.js";\nvoid a;\n');
+    git(["add", "docs/.registry.json", "tests/proof.test.ts"]);
+    await put("docs/features/beta.md", "Unrelated working-tree prose must not replace the base oracle.\n");
+    const result = JSON.parse(review(["--staged", "--json"]).stdout);
+    assert.equal(result.reviewPolicy.minimum, "adversarial");
+    assert.equal(result.testImpact.attributed[0].feature, "alpha");
+    assert.equal(result.testImpact.before.attributed[0].feature, "beta");
+    assert.ok(result.reviewPolicy.reasons.some((reason: string) => reason.includes("risk-tagged")));
+    const bundle = JSON.parse(review(["--staged", "--bundle"]).stdout);
+    const beta = bundle.features.find((feature: { feature: string }) => feature.feature === "beta");
+    assert.match(beta.before.invariants, /Preserve beta safeguards/);
+    assert.deepEqual(beta.before.risk, ["security"]);
+    assert.deepEqual(bundle.riskTouches.find((touch: { feature: string }) => touch.feature === "beta").risk, ["security"]);
+  });
+
+  it("retains prior test attribution across a rename", async () => {
+    const registry = JSON.parse(await readFile(join(repo, "docs/.registry.json"), "utf8"));
+    registry.features.beta.risk = ["security"];
+    await put("docs/.registry.json", JSON.stringify(registry));
+    const body = 'import { test } from "node:test";\nimport assert from "node:assert/strict";\ntest("value", () => {\n  assert.equal(b, 1);\n  assert.equal(typeof b, "number");\n  assert.ok(b >= 0);\n});\n';
+    await put("tests/old.test.ts", 'import { b } from "../src/b.js";\n' + body);
+    git(["add", "."]); git(["commit", "-qm", "test before rename"]);
+    git(["mv", "tests/old.test.ts", "tests/new.test.ts"]);
+    await put("tests/new.test.ts", 'import { a as b } from "../src/a.js";\n' + body);
+    git(["add", "tests/new.test.ts"]);
+    const result = JSON.parse(review(["--staged", "--json"]).stdout);
+    assert.equal(result.reviewPolicy.minimum, "adversarial");
+    assert.ok(result.testImpact.before.attributed.some((item: { test: string; feature: string }) =>
+      item.test === "tests/old.test.ts" && item.feature === "beta"));
+    const bundle = JSON.parse(review(["--staged", "--bundle"]).stdout);
+    assert.ok(bundle.features.some((feature: { feature: string }) => feature.feature === "beta"));
+  });
+
   it("offers focused review for one owned body change with attributable test evidence", async () => {
     await put("src/a.ts", "export function a(value: number): number { return value; }\n");
     git(["add", "src/a.ts"]);
@@ -244,7 +336,7 @@ describe("review staged boundary", () => {
     git(["add", "src/a.ts", "tests/a.test.ts"]);
 
     const report = JSON.parse(review(["--staged", "--json"]).stdout);
-    assert.equal(report.reviewPolicy.version, 1);
+    assert.equal(report.reviewPolicy.version, REVIEW_POLICY_VERSION);
     assert.equal(report.reviewPolicy.minimum, "focused");
     const bundle = JSON.parse(review(["--staged", "--bundle"]).stdout);
     assert.deepEqual(bundle.reviewPolicy, report.reviewPolicy);
@@ -666,6 +758,7 @@ describe("review staged boundary", () => {
       changedTests: ["tests/a.test.ts", "tests/mystery.test.ts"],
       attributed: [{ test: "tests/a.test.ts", feature: "alpha", via: "direct-import" }],
       unattributed: ["tests/mystery.test.ts"],
+      before: { attributed: [], unattributed: ["tests/a.test.ts", "tests/mystery.test.ts"] },
       dependents: [],
       dependentsSummary: [],
     });

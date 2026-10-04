@@ -725,11 +725,14 @@ export function buildReview(
         changedPaths: opts.boundary.changes.map((change) => change.path),
         registry,
         readText: readSelected as (path: string) => string | null,
+        before: { registry: grounding.previousRegistry, readText: grounding.readBefore ?? (() => null),
+          changedPaths: [...opts.boundary.changes.map((change) => change.path), ...opts.boundary.renames.map((rename) => rename.from)] },
       })
     : undefined;
   let reviewPolicy: ReviewPolicy | undefined;
   if (opts.boundary) {
-    const testPaths = new Set(testImpact?.changedTests ?? []);
+    const testPaths = new Set([...(testImpact?.changedTests ?? []),
+      ...(testImpact?.before?.attributed.map((item) => item.test) ?? []), ...(testImpact?.before?.unattributed ?? [])]);
     const selectedPaths = [...new Set([...changes, ...deletions, ...renames.map((rename) => rename.from)])]
       .filter((path) => !isExcluded(path, exclusion) || testPaths.has(path));
     // Risk removal cannot turn a previously protected change into a focused one.
@@ -740,7 +743,8 @@ export function buildReview(
         if (!entry.risk.length) continue;
         const files = selectedPaths.filter((path) =>
           [...allSources(entry), entry.doc, ...entry.docs].some((source) => sourceNames(source, path)) ||
-          testImpact?.attributed.some((evidence) => evidence.test === path && evidence.feature === feature));
+          (snapshot === grounding.previousRegistry ? testImpact?.before?.attributed : testImpact?.attributed)
+            ?.some((evidence) => evidence.test === path && evidence.feature === feature));
         if (!files.length) continue;
         const previous = risks.get(feature);
         risks.set(feature, {
