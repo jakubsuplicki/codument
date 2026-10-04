@@ -21,6 +21,14 @@ const SHIPPED = "skills";
 const TRACKED_MIRROR = join(".agents", "skills");
 
 describe("proportional delivery guidance", () => {
+  it("batches working-set context and registration while retaining the staged boundary", () => {
+    const work = readFileSync(join(SHIPPED, "work-step/SKILL.md"), "utf8");
+    assert.ok(work.includes("codument context --paths <paths...>"));
+    assert.ok(work.includes("codument map materialize <files...>"));
+    assert.ok(work.includes("codument verify"));
+    assert.doesNotMatch(work, /before and after each affected source file|materialize <file>` for each/);
+  });
+
   it("ships an executable outcome contract whose promises survive routing and progress updates", () => {
     const skill = readFileSync(join(SHIPPED, "plan-with-docs/SKILL.md"), "utf8");
     const examples = [...skill.matchAll(/```markdown\r?\n([\s\S]*?)\r?\n```/g)]
@@ -181,7 +189,7 @@ describe("the guidance routes an ownership question through the cheap door", () 
 
   it("and the command that answers it is actually named in the guidance", () => {
     const named = GUIDANCE.filter(
-      (f) => existsSync(f) && readFileSync(f, "utf-8").includes("--file <path> --owner"),
+      (f) => existsSync(f) && /--(?:file <path>|paths <paths\.\.\.>) --owner/.test(readFileSync(f, "utf-8")),
     );
     assert.ok(
       named.length >= 5,

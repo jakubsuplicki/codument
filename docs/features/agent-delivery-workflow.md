@@ -74,8 +74,10 @@ After any reviewed commit, gated handoff can offer native compaction or a ground
   completion never erases review or commit obligations. *(instruction contract; `work.test.ts` covers state)*
 - Plans retrieve ownership from Scope and the Feature Map. A missing Map does not require reading
   the whole registry; soft budgets retain selected contracts. *(test: `context-pack.test.ts`)*
-- One-file ownership questions use `context --file --owner`, sharing the gate's resolver. Read the
-  full registry when editing or inspecting the map itself. *(test: `skill-parity.test.ts`)*
+- Working-set ownership is grounded once with batched context and refreshed when routing changes.
+  The exact staged boundary checks affected mapping, documentation and review readiness together;
+  one-file ownership questions retain their lean interface. Read the full registry when editing or
+  inspecting the map itself. *(tests: `context-pack.test.ts`, `skill-parity.test.ts`, `verify.test.ts`)*
 - Every step passes implementation, review and commit in that order before another step starts.
   Continuous execution removes routine waits, never gates. *(test: `scaffold.test.ts`)*
 - Local work stages only its own slice and uses the compact verifier as its normal gate. Required
@@ -146,7 +148,7 @@ product value. Some safeguards already exist; reuse them before introducing anot
 - [x] Step 1: Make plan scope and Feature Map projections agree across context and verification.
 - [x] Step 2: Approve outcomes and constraints while treating implementation file lists as guidance.
 - [x] Step 3: Plan demonstrable milestones and repair routine failures without human interruptions.
-- [ ] Step 4: Batch ownership lookup and source mapping around the staged delivery boundary.
+- [x] Step 4: Batch ownership lookup and source mapping around the staged delivery boundary.
 - [ ] Step 5: Scale review effort to risk while preserving verification of staged changes.
 - [ ] Step 6: Generate progress and handoffs from one consistent view of selected work.
 - [ ] Step 7: Demonstrate the lighter workflow and report measured overhead separately from implementation.

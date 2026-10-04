@@ -2,28 +2,47 @@
 title: Feature decomposition in the loop
 status: current
 type: feature
-last_reviewed: 2026-09-25
+last_reviewed: 2026-10-04
 ---
 
 # Feature decomposition in the loop
 
 ## In plain terms
 
-A greenfield project built through the loop tends to collapse into one umbrella feature that owns all the source. At one feature every per-feature signal degrades to a single bit — blast radius is always "1 of 1", coverage is one doc — so attribution, blast, and drift cannot resolve. This feature makes the loop decompose *new* work correctly: the plan declares an approvable Feature Map, and a deterministic consumer routes each file to its owning feature as it is written, so files land decomposed instead of lumped into the umbrella.
+The plan records which feature owns new source rather than placing unrelated work under one
+umbrella. A deterministic consumer turns that routing map into registry entries and useful doc
+scaffolds, individually or as a batch. Ownership remains an explicit design decision.
 
 ## Design approach
+
+Materialization can register a prevalidated batch through one selected routing map. Invalid routing,
+excluded source or an unsafe path prevents mutation of the batch. Once writing begins, an I/O
+failure may leave earlier or partial writes; the result names that boundary and unattempted files
+instead of claiming rollback. Retry preserves existing docs and repairs missing scaffolds.
+Outcome plans treat file routing as editable implementation guidance; the approved behavior and
+constraints remain authoritative. Legacy file-bound plans retain their original scope gate.
 
 Map commands share the explicit work selection, preserving the selected section across a session handoff.
 
 An explicit plan identity selects the same section for ownership routing as for approval and execution. Resume checkpoints do not contribute ownership declarations.
 
-The decomposition the plan already articulates in prose becomes a first-class, approvable, machine-readable artifact — and, crucially, gets a deterministic consumer the loop is **required** to run. This mirrors why step-mirroring works: a deterministic hook the skill must call, not a prose request the agent can skip. The earlier failure was exactly the prose-only path — a rule asking the agent to name a feature from a file's purpose lumped everything into the umbrella already present.
+The agent proposes a semantic ownership cut; the CLI routes its map and reports suspicious shape.
+It never invents a decomposition. Shape signals are advisory; unmapped source remains a delivery
+failure. The map keeps ownership discoverable as implementation expands within its approved outcome.
 
-The hard line is the determinism boundary: the **agent proposes** the semantic cut (human-gated at plan approval), and the **CLI only routes** the approved Map and **flags suspicious shape**, never asserting or performing a cut. Shape signals are advisory (info), never blocking; the one blocking backstop is the existing unmapped-file finding, which catches a landed file that matches no Map row — the deterministic guard against silent lumping.
 
 The path is forward-only: make new work decompose correctly rather than auto-healing already-lumped registries (backward-compat is not a constraint). And because every project sits at a low feature count early, a file-grain blast carrier (files touched of the in-scope total) gives real resolution before any re-mapping, so the signal is useful from the first commit. Rejected: a per-subdirectory scan as the only mechanism (it produces zero features on the flat-source shape the loop emits) and auto-heal of existing lumped registries.
 
 ## Invariants & boundaries
+
+- A batch validates every routing decision, source exclusion and source/registry/document destination
+  before writing. Paths remain within the selected project, including symlink ancestry and planned
+  files that do not exist yet. Mixed validity leaves no materialization writes.
+  *(test: `map.test.ts`)*
+- Batch progress reports completed files, the failed file's possible partial writes and unattempted
+  files. Idempotent retry repairs an absent scaffold without overwriting existing documentation.
+  Single-file interfaces, declared trees and explicit-owner refusal remain compatible.
+  *(test: `map.test.ts`)*
 
 - Outcome routing consumes only live Map fences, with valid longer closers ending the routing
   block. Examples cannot hide normative decisions; archived legacy routing uses its recorded

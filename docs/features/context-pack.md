@@ -2,7 +2,7 @@
 title: Context pack
 status: current
 type: feature
-last_reviewed: 2026-09-10
+last_reviewed: 2026-10-04
 ---
 
 # Context pack
@@ -10,7 +10,7 @@ last_reviewed: 2026-09-10
 ## In plain terms
 
 `codument context` hands an agent (or a person) the minimal grounded working set for a task, in one
-deterministic command. Point it at a feature, a source file, or a plan and it projects that slice's
+deterministic command. Point it at a feature, one or more paths, or a plan and it projects that slice's
 owning doc — its plain-terms orientation and its invariant lines with their test pointers — plus the
 primary sources to read and the one-hop dependencies to be aware of. It is the mirror image of the
 gate: the gate is a cost the registry imposes when a change lands, and this is the value the same
@@ -23,6 +23,11 @@ structured omissions with recovery guidance. Valid context remains available, an
 does not remove these diagnostics. A missing contract is visibly absent rather than indistinguishable
 from an intentionally empty section.
 
+Batch context resolves each path through the existing ownership rules and gathers the union of its
+owners once. Every path retains all candidate owners or an explicit missing-owner answer, even
+under a budget. Lean ownership output gives one answer per path; the single-file interface keeps
+its existing shape. This replaces repeated file queries without selecting an owner by guesswork.
+
 A selector-free context request uses saved work when available. Plan context carries interruption and pending-gate information so retrieved knowledge does not imply permission to resume.
 
 When a page contains identified plans, an explicit identity selects the same ownership map used by the approval and checklist surfaces.
@@ -34,7 +39,7 @@ gather that does the disk reads. It adds no source of truth and no ranking — e
 verbatim from `docs/.registry.json` and the committed feature docs, so the pack is a map of what to
 read, never a summarized or re-scored payload.
 
-The three selectors resolve to the same shape by different routes. A feature names itself; a file
+The selectors resolve to the same grounded contracts by different routes. A feature names itself; a file
 resolves through *primary* ownership only (the same rule the staleness gate uses — related sources
 are impact, never ownership), which naturally includes any concept umbrellas that own it; a plan
 combines its explicit Scope and Feature Map exactly as `map check` does. Direct feature docs and registered supporting documents select their declaring owners too. A file's ownership runs through the one
@@ -61,6 +66,11 @@ never a silent truncation. Token counts are the same dependency-free `ceil(chars
 cost ledger and the benchmark use, and are labelled an estimate everywhere they surface.
 
 ## Invariants & boundaries
+
+- Batch paths preserve every ownership answer and unowned input, including shared files, supporting
+  instructions and declared trees. Related sources remain impact only; budgets cannot hide missing
+  routing. Single-file output remains compatible, and selectors cannot be combined.
+  *(test: `context-pack.test.ts`)*
 
 - Archived plan context uses the recorded approval model for routing. Older model-like text
   remains readable under its original interpretation without altering the approved contract.

@@ -251,15 +251,16 @@ program
 program
   .command("context")
   .description(
-    "Project the minimal grounded working set for a feature, file, or plan (owning doc + invariants with test pointers, primary sources, one-hop deps) — a deterministic pull-based context pack over the registry",
+    "Project the minimal grounded working set for a feature, one or more paths, or a plan (owning doc + invariants with test pointers, primary sources, one-hop deps) — a deterministic pull-based context pack over the registry",
   )
   .option("--feature <slug>", "pack the named feature")
   .option("--file <path>", "pack the feature(s) that own a source file")
+  .option("--paths <paths...>", "pack the owners of a batch of paths, retaining each ownership answer")
   .option("--plan <path>", "pack every feature a plan's Feature Map routes to")
   .option("--plan-id <id>", "Select an identified plan section")
   .option(
     "--owner",
-    "with --file: answer ownership in one line (which doc owns this file) instead of packing it",
+    "with --file or --paths: answer every path's ownership in one line instead of packing it",
   )
   .option(
     "--budget <tokens>",
@@ -448,8 +449,8 @@ map
   .action((options) => mapCheck(options));
 
 map
-  .command("materialize <file>")
-  .description("Create/extend the owning feature's registry entry + doc for <file>")
+  .command("materialize <files...>")
+  .description("Create/extend owning registry entries and docs for a prevalidated file batch")
   .option("--plan <path>", "Plan doc to read (default: the single approved plan)")
   .option("--plan-id <id>", "Select an identified plan section")
   .option(
@@ -457,7 +458,7 @@ map
     "Name the owning feature directly (must already exist) — the route once a plan has shipped and its Feature Map is compacted away",
   )
   .option("--root <dir>", "Project root (default: current directory)")
-  .action((file, options) => mapMaterialize({ file, ...options }));
+  .action((files, options) => mapMaterialize({ files, ...options }));
 
 program
   .command("adopt")

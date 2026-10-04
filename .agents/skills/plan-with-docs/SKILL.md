@@ -28,7 +28,7 @@ When those questions remain, switch to `grill-with-docs` first. Ask one sharp de
 
 ## Workflow
 
-1. Read `docs/overview.md` and the relevant docs and ADRs. For known scoped files or features, use `codument context --file <path> --owner` for ownership and `context --file <path>` / `--feature <slug>` for the grounded working set. Read `docs/.registry.json` when editing or assessing the whole map, or when the CLI is unavailable. `--budget <tokens>` is a soft target: optional context can be trimmed, but selected contracts may exceed it and must not be silently discarded.
+1. Read `docs/overview.md` and the relevant docs and ADRs. Ground known paths together with one `codument context --paths <paths...>` query; use `--feature <slug>` when the feature is known instead. Reuse this planning context during implementation and refresh the affected working set when discoveries or routing changes make it stale. Single-file queries remain useful for ad-hoc ownership questions. Read `docs/.registry.json` when editing or assessing the whole map, or when the CLI is unavailable. `--budget <tokens>` is a soft target: optional context can be trimmed, but selected contracts may exceed it and must not be silently discarded.
 2. Choose the narrowest doc home:
    - Feature behavior: `docs/features/{feature}.md`
    - Cross-cutting model or pattern: `docs/concepts/{concept}.md`

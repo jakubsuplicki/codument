@@ -13,6 +13,10 @@ This is the front door: the `codument` binary a user types into a terminal. It o
 
 ## Design approach
 
+Context accepts a batch of paths and materialization accepts several files through the existing
+commands. Single-file calls retain their meaning; batch failures remain explicit. [[context-pack]]
+and [[feature-decomposition]] own the resolution and mutation contracts.
+
 Review, verification, acknowledgments and work commands accept an explicit repository selector.
 Selecting the root isolates its delivery from nested repositories; omission retains workspace
 aggregation. Verification follow-ups preserve that selection. [[step-verification]] and

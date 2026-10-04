@@ -27,7 +27,7 @@ If the user asks to "plan" but these decisions are still open, say so in a line.
 1. Load the smallest relevant context:
    - `AGENTS.md` or the active agent instruction file
    - `docs/overview.md`
-   - `codument context --file <path> --owner` for one file's ownership; `context --file <path>` or `--feature <slug>` for known scoped work and its relevant feature/concept docs
+   - one `codument context --paths <paths...>` query for known scoped paths, or `--feature <slug>` for the relevant feature/concept docs; reuse it through planning and refresh only when discoveries or routing changes require it
    - `docs/.registry.json` when editing or assessing the whole map, or when the CLI is unavailable
    - relevant ADRs under `docs/architecture/decisions/`
 2. Inspect code when docs can answer only part of the question.

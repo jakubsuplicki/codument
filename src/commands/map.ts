@@ -1,12 +1,13 @@
 import pc from "picocolors";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, dirname, isAbsolute, relative } from "node:path";
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { join, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import {
   parseFeatureMap,
   routeFile,
   hasFeatureMapHeading,
   type FeatureMap,
   type FeatureMapRow,
+  type RouteResult,
 } from "../lib/feature-map.js";
 import { resolveActivePlan, parsePlanScope } from "../lib/plan-steps.js";
 import { workPlanSelection, workPlanContext } from "../lib/work-state.js";
@@ -15,8 +16,10 @@ import {
   assertNoExcludedSource,
   isSourcePattern,
   readRegistrySync,
+  normalizeRegistry,
   sourceNames,
   updateRegistryEntry,
+  type Registry,
 } from "../lib/registry.js";
 import { resolveScopeSync, declaredRuleFor } from "../lib/analyze.js";
 import { gatherPlanGrounding } from "../lib/plan-grounding.js";
@@ -28,12 +31,13 @@ import { ensureDir } from "../lib/scaffold.js";
 // "plinko" collapse). Three capabilities:
 //   route <file>      → which feature owns this path (read-only)
 //   check             → is the Map well-formed, and does its shape look too coarse
-//   materialize <file>→ create/extend the owning feature's registry entry + doc
+//   materialize <files...> → create/extend the owners' registry entries + docs
 // work-step (Step 5) runs `materialize` before recording each landed source, so
 // files land in the right feature as they are written — never lumped.
 
 interface MapCliOptions {
   file?: string;
+  files?: string[];
   plan?: string;
   planId?: string;
   json?: boolean;
@@ -111,8 +115,7 @@ export interface MaterializeResult {
  * is what makes the per-file line unnecessary; materializing it anyway would grow
  * back the 380 lines the pattern exists to replace, one accidental call at a time.
  */
-function governingTree(root: string, file: string): { feature: string; pattern: string } | null {
-  const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+function governingTree(registry: Registry, file: string): { feature: string; pattern: string } | null {
   for (const key of Object.keys(registry.features).sort()) {
     for (const source of registry.features[key].primary_sources) {
       if (isSourcePattern(source) && sourceNames(source, file)) {
@@ -137,6 +140,60 @@ function unclaimedSharedOwners(root: string, file: string): string[] {
     (key) => (registry.features[key].owned_symbols?.[file] ?? []).length > 0,
   );
   return claimed ? [] : owners;
+}
+
+/** Missing sources and scaffold parents are valid; their nearest existing
+ * ancestor still has to resolve within the project. A dangling link is an
+ * unreadable ancestor, not an ordinary missing directory. */
+function assertContainedPath(root: string, path: string, role: string, requireFile = false): void {
+  const rootPath = resolve(root);
+  const target = resolve(rootPath, path);
+  const outside = (base: string, candidate: string): boolean => {
+    const rel = relative(base, candidate);
+    return rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  };
+  if (outside(rootPath, target)) throw new Error(`${role} path leaves project root: ${path}`);
+  const rootReal = realpathSync(rootPath);
+  let ancestor = target;
+  while (true) {
+    try {
+      lstatSync(ancestor);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+      const parent = dirname(ancestor);
+      if (parent === ancestor) throw error;
+      ancestor = parent;
+      continue;
+    }
+    let canonical: string;
+    try { canonical = realpathSync(ancestor); }
+    catch { throw new Error(`${role} path has an unreadable or dangling link: ${path}`); }
+    if (outside(rootReal, canonical)) throw new Error(`${role} path resolves outside project root: ${path}`);
+    if (requireFile && ancestor === target && !statSync(target).isFile()) {
+      throw new Error(`${role} path must resolve to a regular file: ${path}`);
+    }
+    return;
+  }
+}
+
+function nameExclusion(error: unknown, scope: ReturnType<typeof resolveScopeSync>): unknown {
+  if (error instanceof ExcludedSourceError && !error.rule) {
+    const rule = declaredRuleFor(error.path, scope.configured);
+    if (rule) return new ExcludedSourceError(error.key, error.path, error.field, rule);
+  }
+  return error;
+}
+
+function registerSource(
+  root: string,
+  key: string,
+  patch: Parameters<typeof updateRegistryEntry>[2],
+  scope: ReturnType<typeof resolveScopeSync>,
+): void {
+  assertContainedPath(root, "docs/.registry.json", "registry", true);
+  try { updateRegistryEntry(join(root, "docs", ".registry.json"), key, patch, scope.spec); }
+  catch (error) { throw nameExclusion(error, scope); }
 }
 
 function scaffoldDoc(key: string, row: FeatureMapRow, file: string, date: string): string {
@@ -192,31 +249,30 @@ export function materializeFileTo(
   file: string,
   featureKey: string,
 ): MaterializeResult {
-  const registryPath = join(root, "docs", ".registry.json");
-  const existing = readRegistrySync(registryPath).features[featureKey];
-  if (!existing) return { file, feature: null, status: "unknown-feature", secondaryUpdated: [] };
-  if (existing.primary_sources.includes(file))
-    return { file, feature: featureKey, status: "noop", docPath: existing.doc, secondaryUpdated: [] };
-  const tree = governingTree(root, file);
-  if (tree) return { file, feature: tree.feature, status: "governed", governedBy: tree, secondaryUpdated: [] };
+  return materializeDirectFile(root, file, featureKey);
+}
 
-  const scope = resolveScopeSync(root);
-  try {
-    updateRegistryEntry(
-      registryPath,
-      featureKey,
-      { primary_sources: [...existing.primary_sources, file] },
-      scope.spec,
-    );
-  } catch (err) {
-    // Same rule-naming courtesy the Map path gives: a project's own declaration
-    // and a built-in heuristic call for different responses.
-    if (err instanceof ExcludedSourceError && !err.rule) {
-      const rule = declaredRuleFor(err.path, scope.configured);
-      if (rule) throw new ExcludedSourceError(err.key, err.path, err.field, rule);
-    }
-    throw err;
+function materializeDirectFile(
+  root: string,
+  file: string,
+  featureKey: string,
+  scope?: ReturnType<typeof resolveScopeSync>,
+): MaterializeResult {
+  const registryPath = join(root, "docs", ".registry.json");
+  assertContainedPath(root, "docs/.registry.json", "registry", true);
+  const registry = readRegistrySync(registryPath);
+  const existing = registry.features[featureKey];
+  if (!existing) return { file, feature: null, status: "unknown-feature", secondaryUpdated: [] };
+  assertContainedPath(root, file, "source", !isSourcePattern(file));
+  if (existing.primary_sources.includes(file)) {
+    assertContainedPath(root, existing.doc, "doc", true);
+    return { file, feature: featureKey, status: "noop", docPath: existing.doc, secondaryUpdated: [] };
   }
+  const tree = governingTree(registry, file);
+  if (tree) return { file, feature: tree.feature, status: "governed", governedBy: tree, secondaryUpdated: [] };
+  assertContainedPath(root, existing.doc, "doc", true);
+
+  registerSource(root, featureKey, { primary_sources: [...existing.primary_sources, file] }, scope ?? resolveScopeSync(root));
   return {
     file,
     feature: featureKey,
@@ -236,7 +292,16 @@ export function materializeFileTo(
  * or ambiguous file is NOT written — the caller surfaces the flag.
  */
 export function materializeFile(root: string, rows: FeatureMapRow[], file: string): MaterializeResult {
-  const route = routeFile(rows, file);
+  return materializeRoutedFile(root, routeFile(rows, file), file);
+}
+
+function materializeRoutedFile(
+  root: string,
+  route: RouteResult,
+  file: string,
+  withSecondaries = true,
+  scope?: ReturnType<typeof resolveScopeSync>,
+): MaterializeResult {
   if (route.ambiguous) return { file, feature: null, status: "ambiguous", secondaryUpdated: [] };
   if (!route.feature || !route.row)
     return { file, feature: null, status: "unmapped", secondaryUpdated: [] };
@@ -244,36 +309,29 @@ export function materializeFile(root: string, rows: FeatureMapRow[], file: strin
   // routes it to that same entry (the line would be a restatement) or another one (a
   // second claim, which is a decision to make by hand, not a side effect of a routing
   // call). Checked before any write, so the refusal never half-lands.
-  const tree = governingTree(root, file);
+  assertContainedPath(root, "docs/.registry.json", "registry", true);
+  assertContainedPath(root, file, "source", !isSourcePattern(file));
+  const registryPath = join(root, "docs", ".registry.json");
+  const registry = readRegistrySync(registryPath);
+  const tree = governingTree(registry, file);
   if (tree) return { file, feature: tree.feature, status: "governed", governedBy: tree, secondaryUpdated: [] };
 
-  const registryPath = join(root, "docs", ".registry.json");
   const today = new Date().toISOString().split("T")[0];
   const key = route.feature;
   const row = route.row;
   const docDir = row.type === "feature" ? "features" : "concepts";
-  const docPath = `docs/${docDir}/${key}.md`;
+  const existing = registry.features[key];
+  const docPath = existing?.doc ?? `docs/${docDir}/${key}.md`;
+  assertContainedPath(root, docPath, "doc", true);
 
   // Resolve the project's scope ONCE for this materialize. Without it the
   // authoring guard would see only the built-in defaults, leaving a path the
   // project itself declared out of scope quietly authorable through routing.
-  const scope = resolveScopeSync(root);
+  const materialScope = scope ?? resolveScopeSync(root);
   const register = (entryKey: string, patch: Parameters<typeof updateRegistryEntry>[2]): void => {
-    try {
-      updateRegistryEntry(registryPath, entryKey, patch, scope.spec);
-    } catch (err) {
-      // Name which rule fired. The guard cannot: it is handed a resolved spec
-      // and never sees whether a default or the project's own declaration put
-      // the path there — and the two call for different responses.
-      if (err instanceof ExcludedSourceError && !err.rule) {
-        const rule = declaredRuleFor(err.path, scope.configured);
-        if (rule) throw new ExcludedSourceError(err.key, err.path, err.field, rule);
-      }
-      throw err;
-    }
+    registerSource(root, entryKey, patch, materialScope);
   };
 
-  const existing = readRegistrySync(registryPath).features[key];
   let status: MaterializeStatus;
   if (!existing) {
     // Register BEFORE scaffolding. The entry write validates the source against
@@ -286,11 +344,6 @@ export function materializeFile(root: string, rows: FeatureMapRow[], file: strin
       primary_sources: [file],
       status: "needs-review",
     });
-    const absDoc = join(root, docPath);
-    if (!existsSync(absDoc)) {
-      ensureDir(dirname(absDoc));
-      writeFileSync(absDoc, scaffoldDoc(key, row, file, today));
-    }
     status = "created";
   } else if (existing.primary_sources.includes(file)) {
     status = "noop";
@@ -301,20 +354,16 @@ export function materializeFile(root: string, rows: FeatureMapRow[], file: strin
     status = "updated";
   }
 
-  const secondaryUpdated: string[] = [];
-  for (const sec of row.secondary) {
-    const secEntry = readRegistrySync(registryPath).features[sec];
-    if (
-      secEntry &&
-      !secEntry.related_sources.includes(file) &&
-      !secEntry.primary_sources.includes(file)
-    ) {
-      register(sec, {
-        related_sources: [...secEntry.related_sources, file],
-      });
-      secondaryUpdated.push(sec);
-    }
+  // Registration can succeed while scaffolding fails. A retry repairs the
+  // missing registered document even when the source itself is already owned.
+  const absDoc = join(root, docPath);
+  if (!existsSync(absDoc)) {
+    assertContainedPath(root, docPath, "doc", true);
+    ensureDir(dirname(absDoc));
+    writeFileSync(absDoc, scaffoldDoc(key, { ...row, type: existing?.type ?? row.type }, file, today), { flag: "wx" });
   }
+
+  const secondaryUpdated = withSecondaries ? materializeSecondaries(root, row, file, materialScope) : [];
 
   return {
     file,
@@ -324,6 +373,23 @@ export function materializeFile(root: string, rows: FeatureMapRow[], file: strin
     secondaryUpdated,
     sharedPrimary: unclaimedSharedOwners(root, file),
   };
+}
+
+function materializeSecondaries(
+  root: string,
+  row: FeatureMapRow,
+  file: string,
+  scope: ReturnType<typeof resolveScopeSync>,
+): string[] {
+  const updated: string[] = [];
+  for (const key of row.secondary) {
+    const entry = readRegistrySync(join(root, "docs", ".registry.json")).features[key];
+    if (!entry || entry.related_sources.includes(file) || entry.primary_sources.includes(file)) continue;
+    assertContainedPath(root, entry.doc, "doc", true);
+    registerSource(root, key, { related_sources: [...entry.related_sources, file] }, scope);
+    updated.push(key);
+  }
+  return updated;
 }
 
 // ── Suspicious-shape check (deterministic, info-level) ──────────────────────
@@ -469,79 +535,166 @@ export function mapCheck(options: MapCliOptions = {}): void {
   if (errors.length > 0) process.exitCode = 1; // malformed Map is a real, blocking problem
 }
 
+interface MaterializeItem {
+  file: string;
+  route?: RouteResult;
+  governed?: MaterializeResult;
+}
+
+/** Authoring validation is batch-wide. Project all primary owners before
+ * checking secondary claims so a later owner in this batch is already known. */
+function prepareMaterialization(
+  root: string,
+  files: string[],
+  rows: FeatureMapRow[],
+  feature?: string,
+): { items: MaterializeItem[]; errors: string[]; scope: ReturnType<typeof resolveScopeSync> } {
+  assertContainedPath(root, "docs/.registry.json", "registry", true);
+  const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+  const proposed = normalizeRegistry(registry);
+  const scope = resolveScopeSync(root);
+  const items: MaterializeItem[] = [];
+  const errors: string[] = [];
+  for (const file of files) {
+    try {
+      if (!file || file === ".") throw new Error("source path must name a file");
+      assertContainedPath(root, file, "source", !isSourcePattern(file));
+      const route = feature ? undefined : routeFile(rows, file);
+      if (route?.ambiguous) throw new Error(`${file} matches two glob rows ambiguously — tighten the Map`);
+      if (route && (!route.feature || !route.row)) throw new Error(`${file} is not in the Feature Map — add a row or fix the path (not lumped)`);
+      const key = feature ?? route!.feature!;
+      const literalNoop = feature && registry.features[key]?.primary_sources.includes(file);
+      const tree = literalNoop ? null : governingTree(registry, file);
+      if (tree) {
+        items.push({ file, governed: { file, feature: tree.feature, status: "governed", governedBy: tree, secondaryUpdated: [] } });
+        continue;
+      }
+      const existing = proposed.features[key];
+      const doc = existing?.doc ?? `docs/${route!.row!.type === "feature" ? "features" : "concepts"}/${key}.md`;
+      assertContainedPath(root, doc, "doc", true);
+      const patch = existing
+        ? { primary_sources: [...existing.primary_sources, file] }
+        : { doc, type: route!.row!.type, primary_sources: [file], status: "needs-review" };
+      assertNoExcludedSource(key, existing, patch, scope.spec);
+      proposed.features[key] = normalizeRegistry({ features: { [key]: { ...existing, ...patch } } }).features[key];
+      items.push({ file, route });
+    } catch (error) {
+      errors.push(`${file}: ${(nameExclusion(error, scope) as Error).message}`);
+    }
+  }
+  for (const { file, route, governed } of items) {
+    if (governed || !route?.row) continue;
+    for (const key of route.row.secondary) {
+      const existing = proposed.features[key];
+      if (!existing || existing.primary_sources.includes(file) || existing.related_sources.includes(file)) continue;
+      try {
+        assertContainedPath(root, existing.doc, "secondary doc", true);
+        const patch = { related_sources: [...existing.related_sources, file] };
+        assertNoExcludedSource(key, existing, patch, scope.spec);
+        proposed.features[key] = normalizeRegistry({ features: { [key]: { ...existing, ...patch } } }).features[key];
+      } catch (error) {
+        errors.push(`${file}: ${(nameExclusion(error, scope) as Error).message}`);
+      }
+    }
+  }
+  return { items, errors, scope };
+}
+
+function printMaterialized(result: MaterializeResult): void {
+  if (printGoverned(result)) return;
+  const verb = result.status === "created" ? "created" : result.status === "updated" ? "added to" : "already in";
+  console.log(`  ✓ ${result.file} ${verb} ${pc.bold(result.feature!)}${result.secondaryUpdated.length ? pc.dim(` (+secondary ${result.secondaryUpdated.join(", ")})`) : ""}`);
+  printSharedPrimaryWarning(result);
+}
+
+function printMaterializeFailure(
+  file: string,
+  error: unknown,
+  completed: string[],
+  pending: string[],
+  phase: "primary" | "secondary",
+): void {
+  console.log(pc.red(`  ✗ ${file}: ${(error as Error).message}`));
+  if (completed.length) console.log(`  Completed ${phase === "primary" ? "primary registration" : "materialization"}: ${completed.join(", ")}`);
+  console.log(pc.yellow(`  ${file} failed during ${phase} materialization; registry or scaffold writes may already remain. No rollback was performed.`));
+  if (phase === "secondary") console.log("  Primary registration finished for the batch; remaining secondary work is pending.");
+  if (pending.length) console.log(`  Unattempted ${phase} materialization: ${pending.join(", ")}`);
+  console.log(pc.dim("  Correct the I/O failure and retry the same batch; existing ownership and documents are preserved."));
+  process.exitCode = 1;
+}
+
 export function mapMaterialize(options: MapCliOptions = {}): void {
   const root = options.root ?? options.dir ?? process.cwd();
-  if (!options.file) {
+  const requested = [...(options.files ?? []), ...(options.file ? [options.file] : [])];
+  if (!requested.length) {
     console.log(pc.yellow("codument map materialize: missing <file>"));
     process.exitCode = 1;
     return;
   }
-  const file = toRepoRel(root, options.file);
-
-  // The explicit route: name the owning feature outright. This is what a plan's
-  // Feature Map row records, made inline for a repo whose plans have all shipped
-  // (and whose Maps are therefore compacted away).
-  if (options.feature) {
-    const direct = materializeFileTo(root, file, options.feature);
-    if (direct.status === "unknown-feature") {
-      const known = Object.keys(
-        readRegistrySync(join(root, "docs", ".registry.json")).features,
-      ).sort();
-      console.log(
-        pc.yellow(`codument map materialize: no registry entry named "${options.feature}"`),
-      );
-      console.log(
-        pc.dim(
-          known.length > 0
-            ? `  known features: ${known.join(", ")}`
-            : "  the registry has no entries yet — run `codument scan` or plan the feature first",
-        ),
-      );
-      console.log(
-        pc.dim(
-          "  A NEW feature needs a responsibility line to seed its doc, which a plan's Feature Map row carries — plan it rather than naming it here.",
-        ),
-      );
+  let rows: FeatureMapRow[] = [];
+  if (!options.feature) {
+    const resolved = resolveMap(root, options.plan, options.planId);
+    if ("error" in resolved) {
+      console.log(pc.yellow("codument map materialize: " + resolved.error));
+      console.log(pc.dim("  Working past a shipped plan? Name the owner directly: `codument map materialize <file> --feature <slug>`"));
       process.exitCode = 1;
       return;
     }
-    if (printGoverned(direct)) return;
-    console.log(
-      `  ✓ ${file} ${direct.status === "updated" ? "added to" : "already in"} ${pc.bold(direct.feature!)}`,
-    );
-    printSharedPrimaryWarning(direct);
+    if (resolved.map.errors.length) {
+      for (const error of resolved.map.errors) console.log(pc.red(`  ✗ line ${error.line}: ${error.message}`));
+      process.exitCode = 1;
+      return;
+    }
+    rows = resolved.map.rows;
+  }
+  let prepared: ReturnType<typeof prepareMaterialization>;
+  try {
+    assertContainedPath(root, "docs/.registry.json", "registry", true);
+    if (options.feature) {
+      const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+      if (!registry.features[options.feature]) {
+        const known = Object.keys(registry.features).sort();
+        console.log(pc.yellow(`codument map materialize: no registry entry named "${options.feature}"`));
+        console.log(pc.dim(known.length ? `  known features: ${known.join(", ")}` : "  the registry has no entries yet — run `codument scan` or plan the feature first"));
+        console.log(pc.dim("  A NEW feature needs a responsibility line to seed its doc, which a plan's Feature Map row carries — plan it rather than naming it here."));
+        process.exitCode = 1;
+        return;
+      }
+    }
+    const files = [...new Set(requested.map(file => file.trim() ? toRepoRel(root, file) : ""))];
+    prepared = prepareMaterialization(root, files, rows, options.feature);
+  } catch (error) {
+    console.log(pc.red(`  ✗ ${(error as Error).message}`));
+    process.exitCode = 1;
+    return;
+  }
+  if (prepared.errors.length) {
+    for (const error of prepared.errors) console.log(pc.red(`  ✗ ${error}`));
+    console.log(pc.dim("  Batch validation failed; no files were materialized."));
+    process.exitCode = 1;
     return;
   }
 
-  const resolved = resolveMap(root, options.plan, options.planId);
-  if ("error" in resolved) {
-    console.log(pc.yellow("codument map materialize: " + resolved.error));
-    // The refusal is a signpost, not a dead end: a shipped plan has had its Map
-    // compacted out, so pointing at it cannot work and the explicit route is the
-    // one that does.
-    console.log(
-      pc.dim(
-        "  Working past a shipped plan? Name the owner directly: `codument map materialize <file> --feature <slug>`",
-      ),
-    );
-    process.exitCode = 1;
-    return;
+  const results: MaterializeResult[] = [];
+  for (const [index, item] of prepared.items.entries()) {
+    try {
+      results.push(item.governed ?? (options.feature
+        ? materializeDirectFile(root, item.file, options.feature, prepared.scope)
+        : materializeRoutedFile(root, item.route!, item.file, false, prepared.scope)));
+    } catch (error) {
+      printMaterializeFailure(item.file, error, results.map(result => result.file), prepared.items.slice(index + 1).map(next => next.file), "primary");
+      return;
+    }
   }
-  const result = materializeFile(root, resolved.map.rows, file);
-  if (result.status === "unmapped") {
-    console.log(pc.yellow(`  ⚠ ${file} is not in the Feature Map — add a row or fix the path (not lumped)`));
-    process.exitCode = 1;
-    return;
+  for (const [index, item] of prepared.items.entries()) {
+    try {
+      if (results[index].status !== "governed" && item.route?.row) results[index].secondaryUpdated = materializeSecondaries(root, item.route.row, item.file, prepared.scope);
+    } catch (error) {
+      printMaterializeFailure(item.file, error, results.slice(0, index).map(result => result.file), prepared.items.slice(index + 1).map(next => next.file), "secondary");
+      return;
+    }
   }
-  if (result.status === "ambiguous") {
-    console.log(pc.yellow(`  ⚠ ${file} matches two glob rows ambiguously — tighten the Map`));
-    process.exitCode = 1;
-    return;
-  }
-  if (printGoverned(result)) return;
-  const verb = result.status === "created" ? "created" : result.status === "updated" ? "added to" : "already in";
-  console.log(`  ✓ ${file} ${verb} ${pc.bold(result.feature!)}${result.secondaryUpdated.length ? pc.dim(` (+secondary ${result.secondaryUpdated.join(", ")})`) : ""}`);
-  printSharedPrimaryWarning(result);
+  for (const result of results) printMaterialized(result);
 }
 
 /**

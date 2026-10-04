@@ -1,11 +1,13 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, readFile, symlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseFeatureMap } from "../src/lib/feature-map.js";
-import { mapCheck, materializeFile, materializeFileTo, shapeWarnings } from "../src/commands/map.js";
+import { mapCheck, mapMaterialize, materializeFile, materializeFileTo, shapeWarnings } from "../src/commands/map.js";
 import { readRegistrySync, ExcludedSourceError } from "../src/lib/registry.js";
 
 const MAP_MD = `
@@ -17,6 +19,270 @@ src/main.ts     | app-shell | feature | DOM wiring  [secondary: board]
 `;
 
 const rows = parseFeatureMap(MAP_MD).rows;
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "cli.js");
+
+function captureMaterialize(options: Parameters<typeof mapMaterialize>[0]): { output: string; code: number | undefined } {
+  const lines: string[] = [];
+  const original = console.log;
+  const exitCode = process.exitCode;
+  try {
+    process.exitCode = undefined;
+    console.log = (line: string) => lines.push(line);
+    mapMaterialize(options);
+    return { output: lines.join("\n"), code: process.exitCode };
+  } finally {
+    console.log = original;
+    process.exitCode = exitCode;
+  }
+}
+
+describe("batched map materialization", () => {
+  let root: string;
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-map-batch-"));
+    await mkdir(join(root, "docs", "features"), { recursive: true });
+    await writeFile(join(root, "docs", ".registry.json"), JSON.stringify({ features: {} }, null, 2));
+    await writeFile(join(root, "plan.md"), MAP_MD);
+  });
+  afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+
+  it("materializes every normalized unique input and makes repeated batches idempotent", async () => {
+    const options = { root, plan: "plan.md", files: ["./src/fairness.ts", join(root, "src", "board.ts"), "src/fairness.ts"] };
+    const first = captureMaterialize(options);
+    assert.equal(first.code, undefined, first.output);
+    assert.equal(first.output.split("\n").filter(line => line.includes("created")).length, 2);
+    const registry = await readFile(join(root, "docs", ".registry.json"), "utf8");
+    assert.deepEqual(Object.keys(JSON.parse(registry).features).sort(), ["board", "fairness"]);
+    assert.equal(existsSync(join(root, "docs", "features", "board.md")), true);
+    const again = captureMaterialize(options);
+    assert.equal(again.code, undefined, again.output);
+    assert.equal(await readFile(join(root, "docs", ".registry.json"), "utf8"), registry);
+    assert.doesNotMatch(again.output, /created|added to/);
+  });
+
+  for (const invalid of ["src/unknown.ts", "src/widget.test.ts"]) {
+    it(`refuses an entire mixed batch before writing when ${invalid} cannot be materialized`, async () => {
+      if (invalid.endsWith(".test.ts")) await writeFile(join(root, "plan.md"), "```feature-map\nsrc/fairness.ts | fairness | feature | engine\nsrc/widget.test.ts | widget | feature | widget\n```\n");
+      const before = await readFile(join(root, "docs", ".registry.json"), "utf8");
+      const result = captureMaterialize({ root, plan: "plan.md", files: ["src/fairness.ts", invalid] });
+      assert.equal(result.code, 1);
+      assert.match(result.output, invalid.endsWith(".test.ts") ? /built-in exclusion/ : /not in the Feature Map/);
+      assert.match(result.output, /no files were materialized/);
+      assert.equal(await readFile(join(root, "docs", ".registry.json"), "utf8"), before);
+      assert.equal(existsSync(join(root, "docs", "features", "fairness.md")), false);
+    });
+  }
+
+  it("refuses tied routes and malformed map rows before any otherwise valid source is written", async () => {
+    const before = await readFile(join(root, "docs", ".registry.json"), "utf8");
+    await writeFile(join(root, "plan.md"), "```feature-map\nsrc/fairness.ts | fairness | feature | engine\nsrc/*.ts | one | feature | one\nsrc/*.ts | two | feature | two\n```\n");
+    const tied = captureMaterialize({ root, plan: "plan.md", files: ["src/fairness.ts", "src/tied.ts"] });
+    assert.equal(tied.code, 1);
+    assert.match(tied.output, /ambiguously/);
+    await writeFile(join(root, "plan.md"), "```feature-map\nsrc/fairness.ts | fairness | feature | engine\nsrc/bad.ts | Bad_Slug | feature | bad\n```\n");
+    const malformed = captureMaterialize({ root, plan: "plan.md", files: ["src/fairness.ts"] });
+    assert.equal(malformed.code, 1);
+    assert.match(malformed.output, /kebab-case slug/);
+    assert.equal(await readFile(join(root, "docs", ".registry.json"), "utf8"), before);
+    assert.equal(existsSync(join(root, "docs", "features", "fairness.md")), false);
+  });
+
+  it("registers secondaries whose primary owner occurs later in the batch without inventing unknown owners", async () => {
+    await writeFile(join(root, "plan.md"), "```feature-map\nsrc/main.ts | app-shell | feature | DOM wiring [secondary: board, missing]\nsrc/board.ts | board | feature | canvas render\n```\n");
+    const result = captureMaterialize({ root, plan: "plan.md", files: ["src/main.ts", "src/board.ts"] });
+    assert.equal(result.code, undefined, result.output);
+    const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+    assert.deepEqual(registry.features.board.related_sources, ["src/main.ts"]);
+    assert.equal(registry.features.missing, undefined);
+    assert.match(result.output, /secondary board/);
+  });
+
+  it("validates secondary source exclusions before any primary mutation", async () => {
+    await writeFile(join(root, "docs", ".registry.json"), JSON.stringify({ features: {
+      legacy: { doc: "docs/features/legacy.md", primary_sources: ["src/legacy.test.ts"] },
+    } }));
+    await writeFile(join(root, "plan.md"), "```feature-map\nsrc/board.ts | board | feature | canvas render\nsrc/legacy.test.ts | legacy | feature | legacy [secondary: board]\n```\n");
+    const before = await readFile(join(root, "docs", ".registry.json"), "utf8");
+    const result = captureMaterialize({ root, plan: "plan.md", files: ["src/board.ts", "src/legacy.test.ts"] });
+    assert.equal(result.code, 1);
+    assert.match(result.output, /related_sources/);
+    assert.equal(await readFile(join(root, "docs", ".registry.json"), "utf8"), before);
+    assert.equal(existsSync(join(root, "docs", "features", "board.md")), false);
+  });
+
+  it("preserves options.file and batches the named existing-feature route", async () => {
+    const single = captureMaterialize({ root, plan: "plan.md", file: "src/fairness.ts" });
+    assert.equal(single.code, undefined, single.output);
+    const batch = captureMaterialize({ root, feature: "fairness", files: ["src/extra.ts", "src/extra.ts", "src/last.ts"] });
+    assert.equal(batch.code, undefined, batch.output);
+    assert.deepEqual(readRegistrySync(join(root, "docs", ".registry.json")).features.fairness.primary_sources, ["src/extra.ts", "src/fairness.ts", "src/last.ts"]);
+    const before = await readFile(join(root, "docs", ".registry.json"), "utf8");
+    const unknown = captureMaterialize({ root, feature: "unknown", files: ["src/a.ts", "src/b.ts"] });
+    assert.equal(unknown.code, 1);
+    assert.match(unknown.output, /no registry entry named "unknown"/);
+    assert.equal(await readFile(join(root, "docs", ".registry.json"), "utf8"), before);
+  });
+
+  it("reports partial I/O progress and retries the missing scaffold without duplicating ownership or replacing docs", async () => {
+    await writeFile(join(root, "plan.md"), "```feature-map\nsrc/fairness.ts | fairness | feature | engine\nsrc/blocked.ts | blocked | concept | blocked contract\nsrc/board.ts | board | feature | board\n```\n");
+    await writeFile(join(root, "docs", "concepts"), "directory blocker");
+    const options = { root, plan: "plan.md", files: ["src/fairness.ts", "src/blocked.ts", "src/board.ts"] };
+    const failure = captureMaterialize(options);
+    assert.equal(failure.code, 1);
+    assert.match(failure.output, /Completed primary registration: src\/fairness.ts/);
+    assert.match(failure.output, /src\/blocked.ts failed during primary materialization/);
+    assert.match(failure.output, /writes may already remain/);
+    assert.match(failure.output, /Unattempted primary materialization: src\/board.ts/);
+    assert.doesNotMatch(failure.output, /src\/blocked.ts created/);
+    assert.deepEqual(Object.keys(readRegistrySync(join(root, "docs", ".registry.json")).features).sort(), ["blocked", "fairness"]);
+    const durableDoc = "Existing content must survive a retry.\n";
+    await writeFile(join(root, "docs", "features", "fairness.md"), durableDoc);
+    await rm(join(root, "docs", "concepts"));
+    const retry = captureMaterialize(options);
+    assert.equal(retry.code, undefined, retry.output);
+    assert.equal(await readFile(join(root, "docs", "features", "fairness.md"), "utf8"), durableDoc);
+    assert.match(await readFile(join(root, "docs", "concepts", "blocked.md"), "utf8"), /blocked contract/);
+    assert.deepEqual(readRegistrySync(join(root, "docs", ".registry.json")).features.blocked.primary_sources, ["src/blocked.ts"]);
+  });
+
+  it("refuses traversal, absolute outside sources and empty paths before any batch mutation", async () => {
+    const before = await readFile(join(root, "docs", ".registry.json"), "utf8");
+    for (const invalid of ["../outside.ts", join(dirname(root), "outside.ts"), " "]) {
+      const result = captureMaterialize({ root, plan: "plan.md", files: ["src/fairness.ts", invalid] });
+      assert.equal(result.code, 1, invalid);
+      assert.match(result.output, /leaves project root|must name a file/);
+      assert.equal(await readFile(join(root, "docs", ".registry.json"), "utf8"), before);
+      assert.equal(existsSync(join(root, "docs", "features", "fairness.md")), false);
+    }
+  });
+
+  it("refuses a registered doc that leaves the project on both writer routes", async () => {
+    await writeFile(join(root, "docs", ".registry.json"), JSON.stringify({ features: {
+      fairness: { doc: "docs/../../outside.md", primary_sources: [] },
+    } }));
+    const before = await readFile(join(root, "docs", ".registry.json"), "utf8");
+    for (const options of [{ root, feature: "fairness", files: ["src/a.ts"] }, { root, plan: "plan.md", files: ["src/fairness.ts", "src/board.ts"] }]) {
+      const result = captureMaterialize(options);
+      assert.equal(result.code, 1);
+      assert.match(result.output, /doc path leaves project root/);
+      assert.equal(await readFile(join(root, "docs", ".registry.json"), "utf8"), before);
+    }
+    assert.throws(() => materializeFile(root, rows, "src/fairness.ts"), /doc path leaves project root/);
+    assert.throws(() => materializeFileTo(root, "src/a.ts", "fairness"), /doc path leaves project root/);
+  });
+
+  it("refuses existing and prospective sources through an outside link and detects a dangling ancestor", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "codument-map-outside-"));
+    const before = await readFile(join(root, "docs", ".registry.json"), "utf8");
+    try {
+      await writeFile(join(outside, "existing.ts"), "outside source\n");
+      await symlink(outside, join(root, "linked"), process.platform === "win32" ? "junction" : "dir");
+      for (const invalid of ["linked/existing.ts", "linked/missing/child.ts"]) {
+        const result = captureMaterialize({ root, plan: "plan.md", files: ["src/fairness.ts", invalid] });
+        assert.equal(result.code, 1);
+        assert.match(result.output, /source path resolves outside project root/);
+        assert.equal(await readFile(join(root, "docs", ".registry.json"), "utf8"), before);
+      }
+      await rm(outside, { recursive: true, force: true });
+      const dangling = captureMaterialize({ root, plan: "plan.md", files: ["src/fairness.ts", "linked/new.ts"] });
+      assert.equal(dangling.code, 1);
+      assert.match(dangling.output, /dangling link/);
+      assert.equal(await readFile(join(root, "docs", ".registry.json"), "utf8"), before);
+    } finally { await rm(outside, { recursive: true, force: true }); }
+  });
+
+  it("refuses scaffold destinations and registry ancestors that resolve outside the project", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "codument-map-outside-docs-"));
+    const before = await readFile(join(root, "docs", ".registry.json"), "utf8");
+    try {
+      await rm(join(root, "docs", "features"), { recursive: true });
+      await symlink(outside, join(root, "docs", "features"), process.platform === "win32" ? "junction" : "dir");
+      const doc = captureMaterialize({ root, plan: "plan.md", files: ["src/fairness.ts", "src/board.ts"] });
+      assert.equal(doc.code, 1);
+      assert.match(doc.output, /doc path resolves outside project root/);
+      assert.equal(await readFile(join(root, "docs", ".registry.json"), "utf8"), before);
+      assert.equal(existsSync(join(outside, "fairness.md")), false);
+      await rm(join(root, "docs", "features"));
+      await rm(join(root, "docs"), { recursive: true });
+      await writeFile(join(outside, ".registry.json"), before);
+      await symlink(outside, join(root, "docs"), process.platform === "win32" ? "junction" : "dir");
+      const registry = captureMaterialize({ root, plan: "plan.md", files: ["src/fairness.ts"] });
+      assert.equal(registry.code, 1);
+      assert.match(registry.output, /registry path resolves outside project root/);
+      assert.equal(await readFile(join(outside, ".registry.json"), "utf8"), before);
+      await rm(join(root, "docs"));
+    } finally { await rm(outside, { recursive: true, force: true }); }
+  });
+
+  it("accepts contained links and missing sources while keeping governing trees authoritative", async () => {
+    await mkdir(join(root, "actual"));
+    await symlink(join(root, "actual"), join(root, "linked"), process.platform === "win32" ? "junction" : "dir");
+    await writeFile(join(root, "docs", ".registry.json"), JSON.stringify({ features: {
+      tree: { doc: "docs/concepts/tree.md", type: "concept", primary_sources: ["locales/**"] },
+    } }));
+    await writeFile(join(root, "plan.md"), "```feature-map\nlinked/new/child.ts | child | feature | child\nlocales/** | other | feature | translations\n```\n");
+    const result = captureMaterialize({ root, plan: "plan.md", files: ["linked/new/child.ts", "locales/strings.test.ts"] });
+    assert.equal(result.code, undefined, result.output);
+    assert.match(result.output, /already governed by.*tree/);
+    const registry = readRegistrySync(join(root, "docs", ".registry.json"));
+    assert.deepEqual(registry.features.tree.primary_sources, ["locales/**"]);
+    assert.equal(registry.features.other, undefined);
+    assert.deepEqual(registry.features.child.primary_sources, ["linked/new/child.ts"]);
+  });
+
+  it("repairs a missing registered scaffold at its custom destination through the legacy single-file writer", async () => {
+    await writeFile(join(root, "docs", ".registry.json"), JSON.stringify({ features: {
+      fairness: { doc: "docs/features/custom.md", primary_sources: ["src/fairness.ts"] },
+    } }));
+    const result = materializeFile(root, rows, "src/fairness.ts");
+    assert.equal(result.status, "noop");
+    assert.equal(result.docPath, "docs/features/custom.md");
+    assert.match(await readFile(join(root, "docs", "features", "custom.md"), "utf8"), /provably-fair engine/);
+    assert.equal(existsSync(join(root, "docs", "features", "fairness.md")), false);
+  });
+
+  it("rejects a doc destination directory before any batch or single-file writer mutates ownership", async () => {
+    await mkdir(join(root, "docs", "features", "board.md"));
+    const before = await readFile(join(root, "docs", ".registry.json"), "utf8");
+    const result = captureMaterialize({ root, plan: "plan.md", files: ["src/fairness.ts", "src/board.ts"] });
+    assert.equal(result.code, 1);
+    assert.match(result.output, /doc path must resolve to a regular file/);
+    assert.equal(await readFile(join(root, "docs", ".registry.json"), "utf8"), before);
+    assert.equal(existsSync(join(root, "docs", "features", "fairness.md")), false);
+    assert.throws(() => materializeFile(root, rows, "src/board.ts"), /doc path must resolve to a regular file/);
+    assert.equal(await readFile(join(root, "docs", ".registry.json"), "utf8"), before);
+  });
+
+  it("rejects an existing directory as a concrete source while accepting a planned missing file", async () => {
+    await mkdir(join(root, "src", "board.ts"), { recursive: true });
+    const before = await readFile(join(root, "docs", ".registry.json"), "utf8");
+    const result = captureMaterialize({ root, plan: "plan.md", files: ["src/fairness.ts", "src/board.ts"] });
+    assert.equal(result.code, 1);
+    assert.match(result.output, /source path must resolve to a regular file/);
+    assert.equal(await readFile(join(root, "docs", ".registry.json"), "utf8"), before);
+    assert.throws(() => materializeFile(root, rows, "src/board.ts"), /source path must resolve to a regular file/);
+    assert.equal(materializeFile(root, rows, "src/fairness.ts").status, "created");
+    assert.throws(() => materializeFileTo(root, "src/board.ts", "fairness"), /source path must resolve to a regular file/);
+  });
+
+  it("accepts variadic and single-file CLI calls and refuses a mixed invalid CLI batch without writes", async () => {
+    const run = (...files: string[]) => execFileSync(process.execPath, [CLI, "map", "materialize", ...files, "--plan", "plan.md"], {
+      cwd: root, encoding: "utf8", env: { ...process.env, NO_COLOR: "1" },
+    });
+    const batch = run("src/main.ts", "src/board.ts");
+    assert.match(batch, /src\/main.ts created/);
+    assert.match(batch, /src\/board.ts created/);
+    assert.deepEqual(readRegistrySync(join(root, "docs", ".registry.json")).features.board.related_sources, ["src/main.ts"]);
+    assert.match(run("src/main.ts"), /already in/);
+    const before = await readFile(join(root, "docs", ".registry.json"), "utf8");
+    assert.throws(() => run("src/fairness.ts", "src/unknown.ts"), (error: unknown) => {
+      const result = error as { status?: number; stdout?: string };
+      return result.status === 1 && /not in the Feature Map/.test(result.stdout ?? "");
+    });
+    assert.equal(await readFile(join(root, "docs", ".registry.json"), "utf8"), before);
+    assert.equal(existsSync(join(root, "docs", "features", "fairness.md")), false);
+  });
+});
 
 describe("map check source exclusions", () => {
   let root: string;

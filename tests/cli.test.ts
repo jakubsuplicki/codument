@@ -11,6 +11,15 @@ const CLI = join(here, "..", "dist", "cli.js");
 const env = { ...process.env, NO_COLOR: "1" };
 
 describe("built workflow compatibility", () => {
+  it("accepts batch context and materialization without removing single-file selectors", () => {
+    const context = execFileSync("node", [CLI, "context", "--help"], { encoding: "utf8", env });
+    assert.match(context, /--paths <paths\.\.\.>/);
+    assert.match(context, /--file <path>/);
+    const materialize = execFileSync("node", [CLI, "map", "materialize", "--help"], { encoding: "utf8", env });
+    assert.match(materialize, /<files\.\.\.>/);
+    assert.match(materialize, /--feature <slug>/);
+  });
+
   it("exposes the work and verify capabilities required by the shipped skills", () => {
     const work = execFileSync("node", [CLI, "work", "status", "--json"], {encoding: "utf8", env});
     assert.equal(JSON.parse(work).version, 1);

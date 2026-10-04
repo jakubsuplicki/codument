@@ -47,6 +47,8 @@ verify it, then commit those bytes. Permission, interruption, readiness and deli
 separate. Tracked approval survives final compaction; local recovery context supplies no authority.
 Shared guidance plans for observable milestones and repairs routine failures within current approval.
 Legacy permission remains unchanged; [[agent-delivery-workflow]] owns this instruction contract.
+Ownership context can ground a working set together; the staged boundary replaces repeated
+before-and-after file queries without relaxing missing-owner or documentation checks.
 Control records have bounded reads, atomic writes and exclusive revision-checked transitions.
 
 Telemetry readers retain valid events alongside explicit empty, partial or unavailable input state.

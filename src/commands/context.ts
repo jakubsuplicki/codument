@@ -16,11 +16,13 @@ import {
   gatherContextPack,
   ownersOfFile,
   ownershipOfFile,
+  ownershipOfFiles,
   selectPlanFeatures,
   type ContextEntry,
   type ContextPack,
   type ContextResolution,
   type FileOwner,
+  type FileOwnership,
 } from "../lib/context-pack.js";
 
 // `codument context` — the pull-based context oracle. Given a feature, a file,
@@ -35,6 +37,7 @@ import {
 interface ContextCliOptions {
   feature?: string;
   file?: string;
+  paths?: string[];
   plan?: string;
   planId?: string;
   budget?: string;
@@ -51,6 +54,8 @@ interface ContextJson {
   entries: ContextEntry[];
   unknownFeatures: string[];
   unmappedFile: string | null;
+  ownership?: FileOwnership[];
+  unmappedFiles?: string[];
   planErrors: string[];
   omissions: ContextPack["omissions"];
   estimatedTokens: number;
@@ -67,6 +72,12 @@ interface OwnerJson {
   owners: FileOwner[];
 }
 
+interface BatchOwnerJson {
+  version: 1;
+  ownership: FileOwnership[];
+  unmappedFiles: string[];
+}
+
 function fail(message: string): void {
   console.log(pc.red(`  ✗ ${message}`));
   process.exitCode = 1;
@@ -79,18 +90,18 @@ function resolve(
   registry: ReturnType<typeof readRegistrySync>,
   options: ContextCliOptions,
 ): ContextResolution | null {
-  const chosen = [options.feature, options.file, options.plan].filter((v) => v !== undefined);
+  const chosen = [options.feature, options.file, options.plan, options.paths].filter((v) => v !== undefined);
   if (options.plan) Object.assign(options, workPlanSelection(root, options));
   if (chosen.length === 0) {
     Object.assign(options, workPlanSelection(root, options));
     if (options.plan) chosen.push(options.plan);
   }
   if (chosen.length === 0) {
-    fail("choose one selector: --feature <slug> | --file <path> | --plan <path>");
+    fail("choose one selector: --feature <slug> | --file <path> | --paths <paths...> | --plan <path>");
     return null;
   }
   if (chosen.length > 1) {
-    fail("--feature, --file and --plan are mutually exclusive — choose one");
+    fail("--feature, --file, --paths and --plan are mutually exclusive — choose one");
     return null;
   }
 
@@ -114,6 +125,23 @@ function resolve(
       selected: owners,
       unknownFeatures: [],
       unmappedFile: owners.length === 0 ? options.file : null,
+      planErrors: [],
+    };
+  }
+
+  if (options.paths !== undefined) {
+    if (options.paths.length === 0) {
+      fail("--paths requires at least one path");
+      return null;
+    }
+    const ownership = ownershipOfFiles(registry, options.paths);
+    return {
+      kind: "paths",
+      input: ownership.map((item) => item.file),
+      ownership,
+      selected: [...new Set(ownership.flatMap((item) => item.owners.map((owner) => owner.feature)))].sort(),
+      unknownFeatures: [],
+      unmappedFile: null,
       planErrors: [],
     };
   }
@@ -238,15 +266,32 @@ export function contextCommand(options: ContextCliOptions = {}): void {
   // thousands of tokens of orientation nobody asked for. A budget has nothing to
   // act on here — the answer IS the head, and the head is never trimmed.
   if (options.owner) {
-    if (options.file === undefined || options.feature !== undefined || options.plan !== undefined) {
-      fail("--owner answers a file's ownership — use it with --file <path> alone");
+    if ((options.file === undefined) === (options.paths === undefined)
+        || options.feature !== undefined || options.plan !== undefined) {
+      fail("--owner answers file ownership — use it with --file <path> or --paths <paths...> alone");
+      return;
+    }
+    if (options.paths !== undefined) {
+      const resolution = resolve(root, registry, options);
+      if (resolution?.kind !== "paths") return;
+      const ownership = resolution.ownership;
+      if (options.json) {
+        const payload: BatchOwnerJson = {
+          version: 1,
+          ownership,
+          unmappedFiles: ownership.filter((item) => item.owners.length === 0).map((item) => item.file),
+        };
+        console.log(JSON.stringify(payload, null, 2));
+      } else {
+        for (const item of ownership) console.log(renderOwner(item.file, item.owners));
+      }
       return;
     }
     // The path reaches the resolver exactly as the pack selector hands it over —
     // unmassaged. Normalizing it here would make the lean route match a separator
     // the pack route does not, and "the two doors cannot disagree" is the whole
     // claim. It is also echoed as typed, like every other selector.
-    const file = options.file;
+    const file = options.file!;
     const owners = ownershipOfFile(registry, file);
     if (options.json) {
       const payload: OwnerJson = { version: 1, file, owners };
@@ -284,6 +329,10 @@ export function contextCommand(options: ContextCliOptions = {}): void {
       trimmed,
       overBudget,
     };
+    if (pack.ownership) {
+      payload.ownership = pack.ownership;
+      payload.unmappedFiles = pack.unmappedFiles;
+    }
     if (options.plan) {
       const work = inspectWorkState(root);
       if (work.selected?.path === options.plan && work.selected?.planId === options.planId)
@@ -294,9 +343,14 @@ export function contextCommand(options: ContextCliOptions = {}): void {
   }
 
   console.log(
-    pc.bold("codument context") + pc.dim(`  ${pack.selector.kind}: ${pack.selector.value || "—"}`),
+    pc.bold("codument context") + pc.dim(`  ${pack.selector.kind}: ${pack.selector.kind === "paths" ? pack.selector.value.join(", ") : pack.selector.value || "—"}`),
   );
   console.log();
+
+  if (pack.ownership) {
+    for (const item of pack.ownership) console.log(renderOwner(item.file, item.owners));
+    console.log();
+  }
 
   for (const omission of pack.omissions) {
     const problem = omission.reason === "unowned" ? "no feature owns" : omission.reason === "unknown-feature" ? "unknown feature" : "unreadable mapped doc";
@@ -308,7 +362,7 @@ export function contextCommand(options: ContextCliOptions = {}): void {
   }
   if (pack.entries.length === 0) {
     console.log(pc.yellow("  No matching registry entries."));
-    return;
+    if (!pack.ownership) return;
   }
 
   for (const entry of pack.entries) {
@@ -319,6 +373,7 @@ export function contextCommand(options: ContextCliOptions = {}): void {
   console.log(
     pc.dim(
       `  ~${pack.estimatedTokens} estimated tokens across ${pack.entries.length} entr${pack.entries.length === 1 ? "y" : "ies"}` +
+        (pack.ownership ? ` and ${pack.ownership.length} ownership answers` : "") +
         (budget !== null ? ` (budget ${budget})` : ""),
     ),
   );
@@ -326,9 +381,12 @@ export function contextCommand(options: ContextCliOptions = {}): void {
     console.log(pc.yellow(`  trimmed to fit the budget: ${trimmed.join(", ")}`));
   }
   if (overBudget) {
+    const required = pack.entries.length === 0 && pack.ownership
+      ? "ownership answers"
+      : `selected orientation + invariants${pack.ownership ? " + ownership answers" : ""}`;
     console.log(
       pc.yellow(
-        "  still over budget: the selected orientation + invariants alone exceed it (never trimmed — it is what you asked for).",
+        `  still over budget: the ${required} alone exceed it (never trimmed — it is what you asked for).`,
       ),
     );
   }

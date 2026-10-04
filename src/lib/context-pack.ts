@@ -16,10 +16,9 @@ import { isSourcePattern, normalizeRelPath, sourceNames, type Registry } from ".
 // gather wrapper that does the reads.
 
 /** How a selected working set was addressed. `value` echoes the selector input. */
-export interface ContextSelector {
-  kind: "feature" | "file" | "plan";
-  value: string;
-}
+export type ContextSelector =
+  | { kind: "feature" | "file" | "plan"; value: string }
+  | { kind: "paths"; value: string[] };
 
 /** One feature in the pack. A `selected` entry carries its full orientation +
  *  invariants + sources; a `dependency` entry is a lightweight pointer (doc +
@@ -66,12 +65,15 @@ export interface ContextPack {
   unknownFeatures: string[];
   /** A `--file` path no feature's `primary_sources` owns — surfaced, never guessed. */
   unmappedFile: string | null;
+  /** Batch selectors retain every path's candidate owners, including empty answers. */
+  ownership?: FileOwnership[];
+  unmappedFiles?: string[];
   /** Plan-input diagnostics, including malformed map rows and unowned Scope paths.
    *  Preserved for existing consumers alongside structured omissions. */
   planErrors: string[];
   /** Missing inputs remain visible even when valid context is returned or trimmed. */
   omissions: ContextOmission[];
-  /** Sum of every entry's estimate — the whole pack's rough size. */
+  /** Entry estimates plus any batch ownership answers — the pack's rough size. */
   estimatedTokens: number;
 }
 
@@ -127,6 +129,7 @@ export interface ContextPackInput {
   /** Malformed Feature-Map rows for a `--plan` selector, pre-formatted. */
   planErrors: string[];
   unownedInputs?: string[];
+  ownership?: FileOwnership[];
   /** doc path -> contents for every selected feature AND its one-hop deps. The
    *  impure reads live in `gatherContextPack`, keeping this pure. A doc absent
    *  from the map yields empty sections plus an explicit omission for that feature. */
@@ -136,6 +139,10 @@ export interface ContextPackInput {
 // Pure, deterministic projection. No I/O, no clock — same inputs, same pack.
 export function buildContextPack(input: ContextPackInput): ContextPack {
   const { selector, registry, docContents } = input;
+  const ownership = selector.kind === "paths"
+    ? input.ownership ?? ownershipOfFiles(registry, selector.value)
+    : undefined;
+  const unmappedFiles = ownership?.filter((item) => item.owners.length === 0).map((item) => item.file);
   const selected = sortStrings(input.selected.filter((s) => registry.features[s]));
   const selectedSet = new Set(selected);
   const unknown = new Set([...input.unknownFeatures, ...input.selected.filter((slug) => !registry.features[slug])]);
@@ -195,7 +202,7 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
   for (const slug of [...dependency].sort()) makeDependency(slug);
 
   const omissions: ContextOmission[] = [
-    ...sortStrings([...(input.unownedInputs ?? []), ...(input.unmappedFile ? [input.unmappedFile] : [])]).map((path): ContextOmission => ({ input: path, reason: "unowned", recovery: "Register its owner in docs/.registry.json or inspect the input directly, then rerun context." })),
+    ...sortStrings([...(input.unownedInputs ?? []), ...(unmappedFiles ?? []), ...(input.unmappedFile ? [input.unmappedFile] : [])]).map((path): ContextOmission => ({ input: path, reason: "unowned", recovery: "Register its owner in docs/.registry.json or inspect the input directly, then rerun context." })),
     ...sortStrings(unknown).map((slug): ContextOmission => ({ input: slug, reason: "unknown-feature", recovery: "Check the selector and dependency names against docs/.registry.json, correct the intended name, then rerun context." })),
     ...sortStrings(entries.filter((entry) => !docContents.has(entry.doc)).map((entry) => entry.doc)).map((path): ContextOmission => ({ input: path, reason: "unreadable-doc", recovery: "Restore or make the mapped doc readable; codument doctor checks its registry entry." })),
   ];
@@ -205,11 +212,12 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
     entries,
     unknownFeatures: sortStrings(unknown),
     unmappedFile: input.unmappedFile,
+    ...(ownership ? { ownership, unmappedFiles } : {}),
     // Preserved in parse order (line-ascending, already deterministic) — not
     // sorted, so the line numbers still read top-to-bottom.
     planErrors: [...input.planErrors],
     omissions,
-    estimatedTokens: entries.reduce((sum, e) => sum + e.estimatedTokens, 0),
+    estimatedTokens: entries.reduce((sum, e) => sum + e.estimatedTokens, 0) + ownershipTokens(ownership),
   };
 }
 
@@ -247,7 +255,7 @@ function trimField(
 // the trim is legible in one "trimmed:" line rather than a silent truncation.
 export function applyBudget(pack: ContextPack, budget: number): BudgetResult {
   let entries = pack.entries.map((e) => ({ ...e }));
-  const total = () => entries.reduce((s, e) => s + e.estimatedTokens, 0);
+  const total = () => entries.reduce((s, e) => s + e.estimatedTokens, 0) + ownershipTokens(pack.ownership);
   const recompute = () => {
     for (const e of entries) e.estimatedTokens = entryTokens(e);
   };
@@ -293,6 +301,15 @@ export interface FileOwner {
   via: string;
 }
 
+export interface FileOwnership {
+  file: string;
+  owners: FileOwner[];
+}
+
+function ownershipTokens(ownership: FileOwnership[] | undefined): number {
+  return ownership ? estimateTokens(JSON.stringify(ownership)) : 0;
+}
+
 // Resolve a file path to the features that OWN it: every entry (feature or
 // concept umbrella) whose `primary_sources` NAMES the path — literally, or
 // through a pattern that governs its tree. Related-source membership is impact,
@@ -321,6 +338,11 @@ export function ownershipOfFile(registry: Registry, file: string): FileOwner[] {
 /** The owning feature slugs alone — the selector's view of the same resolution. */
 export function ownersOfFile(registry: Registry, file: string): string[] {
   return ownershipOfFile(registry, file).map((o) => o.feature);
+}
+
+/** Resolve each unique input as typed, preserving input order and all candidates. */
+export function ownershipOfFiles(registry: Registry, files: string[]): FileOwnership[] {
+  return [...new Set(files)].map((file) => ({ file, owners: ownershipOfFile(registry, file) }));
 }
 
 // The feature slugs a plan's Feature Map routes to: every row's primary owner
@@ -410,6 +432,7 @@ export function selectPlanFeatures(registry: Registry, rows: FeatureMapRow[], sc
 export type ContextResolution = (
   | { kind: "feature"; input: string; selected: string[]; unknownFeatures: string[]; unmappedFile: null; planErrors: string[] }
   | { kind: "file"; input: string; selected: string[]; unknownFeatures: string[]; unmappedFile: string | null; planErrors: string[] }
+  | { kind: "paths"; input: string[]; ownership: FileOwnership[]; selected: string[]; unknownFeatures: string[]; unmappedFile: null; planErrors: string[] }
   | { kind: "plan"; input: string; selected: string[]; unknownFeatures: string[]; unmappedFile: null; planErrors: string[] }
 ) & { unownedInputs?: string[] };
 
@@ -424,7 +447,9 @@ export function gatherContextPack(
   // The selector echoes the caller's INPUT (the feature slug, file path, or plan
   // path they typed), not what it resolved to — so `context --file src/x.ts`
   // reports the file it was asked about, not the feature that owns it.
-  const selector: ContextSelector = { kind: resolution.kind, value: resolution.input };
+  const selector: ContextSelector = resolution.kind === "paths"
+    ? { kind: "paths", value: resolution.input }
+    : { kind: resolution.kind, value: resolution.input };
 
   // Every doc we may read: selected features plus their one-hop deps.
   const slugs = new Set(resolution.selected.filter((s) => registry.features[s]));
@@ -435,12 +460,11 @@ export function gatherContextPack(
   }
 
   const docContents = new Map<string, string>();
-  for (const slug of slugs) {
-    const entry = registry.features[slug];
-    const docPath = join(root, entry.doc);
+  for (const doc of sortStrings([...slugs].map((slug) => registry.features[slug].doc))) {
+    const docPath = join(root, doc);
     if (!existsSync(docPath)) continue;
     try {
-      docContents.set(entry.doc, readFileSync(docPath, "utf8"));
+      docContents.set(doc, readFileSync(docPath, "utf8"));
     } catch {
       // The pure projection names the omitted doc while preserving other context.
     }
@@ -454,6 +478,7 @@ export function gatherContextPack(
     unmappedFile: resolution.kind === "file" ? resolution.unmappedFile : null,
     planErrors: resolution.planErrors,
     unownedInputs: resolution.unownedInputs,
+    ownership: resolution.kind === "paths" ? resolution.ownership : undefined,
     docContents,
   });
 }

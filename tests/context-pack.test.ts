@@ -23,6 +23,7 @@ const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "cli.js"
 
 interface EntryShape {
   doc?: string;
+  docs?: string[];
   type?: "feature" | "concept";
   primary_sources?: string[];
   related_sources?: string[];
@@ -38,7 +39,7 @@ function registryOf(entries: Record<string, EntryShape>): Registry {
       type: e.type ?? "feature",
       primary_sources: e.primary_sources ?? [],
       related_sources: e.related_sources ?? [],
-      docs: [],
+      docs: e.docs ?? [],
       depends_on: e.depends_on ?? [],
       risk: e.risk ?? [],
       status: "current",
@@ -251,6 +252,7 @@ describe("ownershipOfFile — ownership through the same matcher the gate uses",
   it("returns nothing for a file no entry owns", () => {
     assert.deepEqual(ownershipOfFile(registry, "src/lib/nobody.ts"), []);
   });
+
 });
 
 describe("selectedFromPlanRows — plan selector routes via the Feature Map", () => {
@@ -601,6 +603,121 @@ describe("codument context — end-to-end through the real CLI", () => {
     // EISDIR — the command must fail cleanly, not crash.
     const out = runFail(["context", "--plan", "docs/plans"]);
     assert.match(out, /could not read plan/);
+  });
+});
+
+describe("codument context --paths — batch ownership and grounded context", () => {
+  let root: string;
+  const env = { ...process.env, NO_COLOR: "1" };
+  const run = (args: string[]) => execFileSync("node", [CLI, "context", ...args], { cwd: root, encoding: "utf8", env });
+  const runFail = (args: string[]): string => {
+    try {
+      run(args);
+    } catch (err) {
+      const result = err as { status?: number; stdout?: string };
+      assert.notEqual(result.status, 0);
+      return result.stdout ?? "";
+    }
+    return assert.fail("expected a nonzero exit");
+  };
+
+  before(async () => {
+    root = await mkdtemp(join(tmpdir(), "codument-context-paths-"));
+    const registry = registryOf({
+      store: { primary_sources: ["src/shared.ts"], docs: ["skills/shared/SKILL.md"], depends_on: ["tail"] },
+      gate: { primary_sources: ["src/gate.ts", "src/shared.ts"], docs: ["skills/shared/SKILL.md"], depends_on: ["store", "missing-doc", "unknown"], risk: ["data-loss"] },
+      locales: { primary_sources: ["i18n/locales/**/*.json"] },
+      related: { related_sources: ["src/shared.ts", "src/orphan.ts", "skills/shared/SKILL.md"] },
+      "missing-doc": {},
+      tail: {},
+    });
+    await write(root, "docs/.registry.json", JSON.stringify(registry));
+    await write(root, "docs/features/gate.md", doc("The gate decides safety.", "- Preserve the gate. *(test: `gate.test.ts`)*"));
+    await write(root, "docs/features/store.md", doc("Owns shared state.", "- Preserve shared state. *(test: `store.test.ts`)*"));
+    await write(root, "docs/features/locales.md", doc("Owns localized strings.", "- Preserve string keys. *(test: `locales.test.ts`)*"));
+    await write(root, "docs/features/tail.md", doc("One-hop dependency."));
+  });
+
+  after(async () => rm(root, { recursive: true, force: true }));
+
+  it("resolves every candidate and unowned input while gathering one sorted owner union", () => {
+    const paths = ["src/shared.ts", "skills/shared/SKILL.md", "i18n/locales/en/common.json", "src/orphan.ts", "src/shared.ts", "docs/features/gate.md", "./src/shared.ts"];
+    const output = run(["--paths", ...paths, "--json"]);
+    const parsed = JSON.parse(output);
+    const unique = [...new Set(paths)];
+    assert.deepEqual(parsed.selector, { kind: "paths", value: unique });
+    assert.deepEqual(parsed.ownership.map((item: { file: string }) => item.file), unique);
+    assert.deepEqual(parsed.ownership.map((item: { owners: Array<{ feature: string }> }) => item.owners.map((owner) => owner.feature)), [
+      ["gate", "store"], ["gate", "store"], ["locales"], [], ["gate"], ["gate", "store"],
+    ]);
+    assert.deepEqual(parsed.unmappedFiles, ["src/orphan.ts"]);
+    assert.equal(parsed.unmappedFile, null);
+    assert.deepEqual(parsed.entries.filter((entry: { relation: string }) => entry.relation === "selected").map((entry: { feature: string }) => entry.feature), ["gate", "locales", "store"]);
+    assert.deepEqual(parsed.entries.map((entry: { feature: string }) => entry.feature), ["gate", "locales", "store", "missing-doc", "tail"]);
+    assert.equal(output, run(["--paths", ...paths, "--json"]));
+  });
+
+  it("retains ownership, omissions and every selected contract under a tiny soft budget", () => {
+    const paths = ["src/shared.ts", "i18n/locales/en/common.json", "src/orphan.ts"];
+    const full = JSON.parse(run(["--paths", ...paths, "--json"]));
+    const trimmed = JSON.parse(run(["--paths", ...paths, "--budget", "1", "--json"]));
+    assert.deepEqual(trimmed.ownership, full.ownership);
+    assert.deepEqual(trimmed.unmappedFiles, full.unmappedFiles);
+    assert.deepEqual(trimmed.omissions, full.omissions);
+    assert.deepEqual(full.omissions.map(({ input, reason }: { input: string; reason: string }) => ({ input, reason })), [
+      { input: "src/orphan.ts", reason: "unowned" },
+      { input: "unknown", reason: "unknown-feature" },
+      { input: "docs/features/missing-doc.md", reason: "unreadable-doc" },
+    ]);
+    assert.ok(trimmed.overBudget);
+    assert.deepEqual(
+      trimmed.entries.map(({ feature, summary, invariants, testPointers }: { feature: string; summary: string; invariants: string; testPointers: string[] }) => ({ feature, summary, invariants, testPointers })),
+      full.entries.filter((entry: { relation: string }) => entry.relation === "selected").map(({ feature, summary, invariants, testPointers }: { feature: string; summary: string; invariants: string; testPointers: string[] }) => ({ feature, summary, invariants, testPointers })),
+    );
+    const unowned = JSON.parse(run(["--paths", "src/orphan.ts", "src/other-orphan.ts", "--budget", "1", "--json"]));
+    assert.deepEqual(unowned.unmappedFiles, ["src/orphan.ts", "src/other-orphan.ts"]);
+    assert.equal(unowned.ownership.length, 2);
+    assert.deepEqual(unowned.entries, []);
+    assert.equal(unowned.overBudget, true, "mandatory ownership answers count toward the soft budget");
+    assert.match(run(["--paths", ...paths, "--budget", "1"]), /no feature owns src\/orphan\.ts/);
+  });
+
+  it("prints the existing owner line once per unique input and exposes a distinct batch JSON answer", () => {
+    const paths = ["src/shared.ts", "i18n/locales/en/common.json", "src/orphan.ts", "src/shared.ts"];
+    const unique = [...new Set(paths)];
+    assert.equal(
+      run(["--paths", ...paths, "--owner"]),
+      unique.map((file) => run(["--file", file, "--owner"])).join(""),
+    );
+    const batch = JSON.parse(run(["--paths", ...paths, "--owner", "--json", "--budget", "1"]));
+    assert.deepEqual(Object.keys(batch), ["version", "ownership", "unmappedFiles"]);
+    assert.deepEqual(batch.ownership.map((item: { file: string }) => item.file), unique);
+    assert.deepEqual(batch.unmappedFiles, ["src/orphan.ts"]);
+    assert.equal(batch.ownership[1].owners[0].via, "i18n/locales/**/*.json");
+    assert.deepEqual(JSON.parse(run(["--file", "src/shared.ts", "--owner", "--json"])), {
+      version: 1, file: "src/shared.ts", owners: batch.ownership[0].owners,
+    });
+    const single = JSON.parse(run(["--file", "src/shared.ts", "--json"]));
+    assert.deepEqual(Object.keys(single), ["version", "selector", "entries", "unknownFeatures", "unmappedFile", "planErrors", "omissions", "estimatedTokens", "budget", "trimmed", "overBudget"]);
+  });
+
+  it("reports mandatory ownership costs for an all-unowned human batch over its budget", () => {
+    const output = run(["--paths", "src/orphan.ts", "src/other-orphan.ts", "--budget", "1"]);
+    assert.match(output, /no feature owns src\/orphan\.ts/);
+    assert.match(output, /no feature owns src\/other-orphan\.ts/);
+    assert.match(output, /estimated tokens across 0 entries and 2 ownership answers \(budget 1\)/);
+    assert.match(output, /still over budget/);
+    assert.match(output, /ownership answers/);
+    assert.doesNotMatch(run(["--file", "src/orphan.ts", "--budget", "1"]), /estimated tokens|still over budget/);
+  });
+
+  it("rejects every selector conflict and validates budgets on the lean batch route", () => {
+    for (const selector of [["--file", "src/gate.ts"], ["--feature", "gate"], ["--plan", "missing.md"]]) {
+      assert.match(runFail(["--paths", "src/gate.ts", ...selector]), /mutually exclusive/);
+      assert.match(runFail(["--paths", "src/gate.ts", "--owner", ...selector]), /use it with --file/);
+    }
+    assert.match(runFail(["--paths", "src/gate.ts", "--owner", "--budget", "0"]), /whole number of tokens/);
+    assert.throws(() => run(["--paths"]), /argument missing/);
   });
 });
 

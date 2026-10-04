@@ -211,6 +211,16 @@ describe("buildManagedSection", () => {
     assert.doesNotMatch(pause, /a verification failure|any change that falls outside the approved plan/);
   });
 
+  it("grounds ownership once and checks the exact staged boundary instead of each file twice", () => {
+    const section = buildManagedSection();
+    assert.ok(section.includes("codument context --paths <paths...>"));
+    assert.ok(section.includes("codument map materialize <files...>"));
+    assert.ok(section.includes("refresh if implementation discoveries change routing"));
+    assert.ok(section.includes("checks mapping, documentation and review readiness together"));
+    assert.ok(section.includes("correct the cause and retry without assuming rollback"));
+    assert.doesNotMatch(section, /Ask which doc owns a file[^\n]*before and after/);
+  });
+
   it("commit guidance forbids an AI co-author trailer", () => {
     const section = buildManagedSection();
     assert.ok(section.includes("no AI `Co-Authored-By` trailer"));
