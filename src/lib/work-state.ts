@@ -27,6 +27,8 @@ import {
 import { getGitPath, getHeadSha } from "./git.js";
 import { readBlobAtRef, EMPTY_TREE_SHA } from "./two-ref.js";
 import { version } from "./version.js";
+import { parseReviewReceiptEvidence, reviewReceiptEvidenceCovers } from "./review-artifact.js";
+import { DEFAULT_TEST_SEARCH_DIRS, resolveTestPath } from "./review-confirm.js";
 import {
   readApprovalStore,
   finalApprovalForBoundary,
@@ -386,8 +388,11 @@ function verifiedDelivery(root: string, plan: ActivePlan, step: number): ChangeS
   const raw = path ? readBoundedState(path) : null;
   if (!raw) throw invalid("run codument verify for the exact staged step before marking it ready");
   let receipt: ReturnType<typeof parseVerificationReceipt>;
+  let reviewEvidence: ReturnType<typeof parseReviewReceiptEvidence>;
   try {
-    receipt = parseVerificationReceipt(JSON.parse(raw));
+    const parsed = JSON.parse(raw);
+    receipt = parseVerificationReceipt(parsed);
+    reviewEvidence = parseReviewReceiptEvidence(parsed.reviewEvidence);
   } catch {
     throw invalid("invalid verification receipt; run codument verify again");
   }
@@ -409,11 +414,15 @@ function verifiedDelivery(root: string, plan: ActivePlan, step: number): ChangeS
     planId: plan.planId ?? null,
     digest: plan.approval?.digest ?? null,
   };
+  const snapshotRead = (file: string) => readChangeSetFile(root, boundary, file);
+  const resolveTest = (reference: string) => resolveTestPath(root, reference, DEFAULT_TEST_SEARCH_DIRS, snapshotRead);
   if (
     !boundary.complete ||
     boundary.changes.length === 0 ||
     !receipt ||
-    !verificationReceiptCovers(receipt, binding, version, approval)
+    !reviewEvidence ||
+    !verificationReceiptCovers(receipt, binding, version, approval) ||
+    !reviewReceiptEvidenceCovers(root, reviewEvidence, receipt.boundary, resolveTest, snapshotRead)
   )
     throw invalid(
       "verification does not cover this staged step and approval; run codument verify again",

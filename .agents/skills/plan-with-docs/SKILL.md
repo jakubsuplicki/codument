@@ -167,7 +167,7 @@ what can be demonstrated, not by internal modules completed. An infrastructure s
 observable milestone it unblocks and the evidence it contributes; infrastructure alone cannot
 close that milestone's acceptance.
 
-Keep each delivery step small enough for implementation, independent review and a focused commit.
+Keep each delivery step small enough for implementation, its required review and a focused commit.
 Do not hide unbounded repetition in one step: use an end-to-end exemplar followed by explicit
 reviewable batches, or explicit batches with the first batch proving the shared approach.
 Approved milestone promises remain stable while implementation details evolve within them.

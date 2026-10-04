@@ -73,6 +73,7 @@ import {
   parseRegistryOrThrow,
   type Registry,
   readRegistrySync,
+  sourceNames,
   sourceMatcher,
 } from "../lib/registry.js";
 import {
@@ -120,8 +121,10 @@ import { atomicWriteFileSync } from "../lib/events.js";
 import { REVIEW_MANIFEST_PATH, parseReviewTransfer, portableReviewBoundary, transferDigest, testContentDigest, buildReviewTransfer, validateReviewTransfer, transferredReviews, type TransferBinding, type TransferTest, type ReviewTransfer } from "../lib/review-transfer.js";
 import {
   countResolvedMovedSymbols,
+  classifyReviewPolicy,
   evaluateReviewGate,
   type ReviewGateResult,
+  type ReviewPolicy,
 } from "../lib/review-gate.js";
 import { gateUnavailableSarif, reviewReportToSarif } from "../lib/sarif.js";
 import { computeTestImpact, type TestImpact } from "../lib/test-impact.js";
@@ -268,6 +271,9 @@ export interface ReviewReport {
   /** Changed tests attributed as evidence for this focused boundary. Omitted from
    * legacy working-tree/range reports so tests keep their established role there. */
   testImpact?: TestImpact;
+  /** Minimum review effort from the original staged analysis, before drift or
+   * acknowledgment filtering. Absent for legacy report callers. */
+  reviewPolicy?: ReviewPolicy;
   /** Test pins in the touched features' docs that resolve to no file (see
    *  `UnresolvedPin`). Reported, never a gate input. */
   unresolvedPins: UnresolvedPin[];
@@ -709,7 +715,8 @@ export function buildReview(
     ? parseApprovalPolicy(readChangeSetFile(root, opts.boundary, ".codument-meta.json"))
     : readApprovalPolicy(root);
   const ignoredPaths = [...state.excludedChanged, ...deletions.filter((path) => isExcluded(path, exclusion))];
-  const contractChanges = gatherReviewGrounding(root, baseRef, registry, [...changes, ...deletions], readSelected, plan?.scope, ignoredPaths, opts.boundary).changes;
+  const grounding = gatherReviewGrounding(root, baseRef, registry, [...changes, ...deletions], readSelected, plan?.scope, ignoredPaths, opts.boundary);
+  const contractChanges = grounding.changes;
   if (boundApprovalRequired && (state.changedSources.length > 0 || contractChanges.some((change) => change.requiresReview)) && !plan?.approvalDigest) {
     throw new GateError("A governed change requires a revision-bound approved plan; record human approval with codument work approve and stage the plan plus docs/.approvals.json.", "git-failed");
   }
@@ -720,6 +727,50 @@ export function buildReview(
         readText: readSelected as (path: string) => string | null,
       })
     : undefined;
+  let reviewPolicy: ReviewPolicy | undefined;
+  if (opts.boundary) {
+    const testPaths = new Set(testImpact?.changedTests ?? []);
+    const selectedPaths = [...new Set([...changes, ...deletions, ...renames.map((rename) => rename.from)])]
+      .filter((path) => !isExcluded(path, exclusion) || testPaths.has(path));
+    // Risk removal cannot turn a previously protected change into a focused one.
+    // Read both registries and retain related-source and test-evidence impact too.
+    const risks = new Map<string, { feature: string; risk: string[]; files: string[] }>();
+    for (const snapshot of [grounding.previousRegistry, registry]) {
+      for (const [feature, entry] of Object.entries(snapshot.features)) {
+        if (!entry.risk.length) continue;
+        const files = selectedPaths.filter((path) =>
+          [...allSources(entry), entry.doc, ...entry.docs].some((source) => sourceNames(source, path)) ||
+          testImpact?.attributed.some((evidence) => evidence.test === path && evidence.feature === feature));
+        if (!files.length) continue;
+        const previous = risks.get(feature);
+        risks.set(feature, {
+          feature,
+          risk: [...new Set([...(previous?.risk ?? []), ...entry.risk])].sort(),
+          files: [...new Set([...(previous?.files ?? []), ...files])].sort(),
+        });
+      }
+    }
+    const selected = new Set(selectedPaths);
+    reviewPolicy = classifyReviewPolicy({
+      mode: opts.boundary.mode === "range" ? "range" : "staged",
+      complete: opts.boundary.complete,
+      sourcePaths: state.changedSources,
+      existingSourcePaths: opts.boundary.changes
+        .filter((change) => change.status === "modified" && state.changedSources.includes(change.path))
+        .map((change) => change.path),
+      anchorChanges: Object.fromEntries(Object.entries(anchorChanges).filter(([path]) => selected.has(path))),
+      unevaluablePaths: unevaluable.filter((path) => selected.has(path)),
+      otherChangedPaths: state.otherChanged.filter((path) => !testPaths.has(path)),
+      addedPaths: additions.filter((path) => selected.has(path)),
+      deletedPaths: deletions.filter((path) => selected.has(path)),
+      renamedPaths: renames.filter((rename) => selected.has(rename.to) || selected.has(rename.from)).map((rename) => rename.to),
+      contractChanges,
+      beforeRegistry: grounding.previousRegistry,
+      registry,
+      riskTouches: [...risks.values()].sort((left, right) => left.feature < right.feature ? -1 : left.feature > right.feature ? 1 : 0),
+      testImpact,
+    });
+  }
   const unresolvedPins = findUnresolvedPins(root, registry, state, readSelected);
   // The acks adjudicating this change — the audit card both the human review and the
   // HTML report read. Computed from the FULL ack set (not `honoredAcks`), so under
@@ -822,6 +873,7 @@ export function buildReview(
       : null,
     ...(opts.boundary ? { boundary: opts.boundary } : {}),
     ...(testImpact ? { testImpact } : {}),
+    ...(reviewPolicy ? { reviewPolicy } : {}),
   };
 }
 
@@ -1079,7 +1131,7 @@ async function reviewRepository(options: ReviewOptions): Promise<void> {
   }
   const snapshotRead = report.boundary ? (path: string): string | null => readChangeSetFile(root, report.boundary!, path) : undefined;
   const focusedBinding = report.boundary ? portable ? portableReviewBoundary(report.boundary, snapshotRead!(REVIEW_MANIFEST_PATH)) : changeSetBinding(report.boundary) : undefined;
-  const oracle = portable || options.record || options.requireReview ? currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths) : "";
+  const oracle = portable || options.record || options.requireReview ? currentOracle(root, effectiveBase, report.state, report.boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths, report.reviewPolicy) : "";
   const policy = portable ? transferDigest({
     metadata: snapshotRead!(".codument-meta.json"),
     testCommand: resolveTestCommand(root, options.testCommand, snapshotRead),
@@ -1173,6 +1225,7 @@ async function reviewRepository(options: ReviewOptions): Promise<void> {
       report.testImpact,
       report.changedPaths,
       report.ignoredPaths,
+      report.reviewPolicy,
     );
     console.log(JSON.stringify(bundle, null, 2));
     return;
@@ -1244,7 +1297,7 @@ async function reviewRepository(options: ReviewOptions): Promise<void> {
       diffFingerprint: fp,
       files: gatherReviewedFiles(root, realChangeSet, snapshotRead),
     });
-    console.log(`  ${pc.green("✓")} Recorded adversarial review → ${path}`);
+    console.log(`  ${pc.green("✓")} Recorded ${report.reviewPolicy ? "review" : "adversarial review"} → ${path}`);
     // A recording used to replace whatever was there, because the filename was keyed
     // on the diff alone. It no longer does, so a reader expecting a replacement must
     // be told what actually happened — and that the reviews now standing are enforced
@@ -1442,6 +1495,7 @@ async function reviewRepository(options: ReviewOptions): Promise<void> {
     });
     reviewGate = evaluateReviewGate(
       {
+        ...(report.reviewPolicy ? { reviewPolicy: report.reviewPolicy } : {}),
         realChangeCount: realChangeSet.length,
         contractChangeCount: report.contractChanges?.filter((change) => change.requiresReview).length,
         housekeepingInstructionCount: report.contractChanges?.filter((change) => change.kind === "instruction" && !change.requiresReview && change.before !== null && change.after !== null && realChangeSet.includes(change.path)).length,
@@ -1671,7 +1725,7 @@ async function reviewRepository(options: ReviewOptions): Promise<void> {
   }
 
   if (reviewGate) {
-    printReviewGate(reviewGate, confirmUnavailable, unreviewedCount, unstampedCovering);
+    printReviewGate(reviewGate, confirmUnavailable, unreviewedCount, unstampedCovering, report.reviewPolicy);
     if (reviewGateFail) process.exitCode = 1;
   }
 
@@ -1753,7 +1807,9 @@ async function reviewRepository(options: ReviewOptions): Promise<void> {
   const also = renderAlsoTrue(alsoTrue);
 
   const blocking = strictFail ? [...gateable] : [];
-  if (reviewGateFail) blocking.push("adversarial review not covering this diff");
+  if (reviewGateFail) blocking.push(report.reviewPolicy
+    ? reviewGate?.reason ?? "required review not covering this diff"
+    : "adversarial review not covering this diff");
   if (blocking.length > 0) {
     console.log(pc.red(`codument review: BLOCKED — ${blocking.join(", ")}`) + also);
   } else if (gateable.length > 0) {
@@ -1835,6 +1891,7 @@ export function currentOracle(
   plan?: ApprovedPlan | null,
   paths?: string[],
   ignoredPaths?: string[],
+  reviewPolicy?: ReviewPolicy,
 ): string {
   const registry = boundary
     ? registryForBoundary(root, boundary)
@@ -1842,8 +1899,8 @@ export function currentOracle(
   const readText = boundary
     ? (path: string): string | null => readChangeSetFile(root, boundary, path)
     : undefined;
-  const bundle = gatherReviewBundle(root, base, state, registry, plan ?? null, null, boundary, readText, testImpact, paths, ignoredPaths);
-  return oracleFingerprint(bundle.features, bundle.plan, bundle.contractChanges, bundle.omissions);
+  const bundle = gatherReviewBundle(root, base, state, registry, plan ?? null, null, boundary, readText, testImpact, paths, ignoredPaths, reviewPolicy);
+  return oracleFingerprint(bundle.features, bundle.plan, bundle.contractChanges, bundle.omissions, reviewPolicy);
 }
 
 // The full real-change set the adversarial-review gate scopes to: changed sources +
@@ -1935,12 +1992,16 @@ function printReviewGate(
   confirmUnavailable: string | null = null,
   unreviewedCount: number | null = null,
   unstampedCovering = 0,
+  reviewPolicy?: ReviewPolicy,
 ): void {
   console.log();
   if (!gate.required) {
-    console.log(pc.dim("  Adversarial review: trivial diff — none required."));
-    return;
+    console.log(pc.dim(reviewPolicy
+      ? "  Review: no additional review required for these changes."
+      : "  Adversarial review: trivial diff — none required."));
+    if (gate.blockingFindings.length === 0 && gate.advisoryFindings.length === 0 && !confirmUnavailable) return;
   }
+  const label = reviewPolicy?.minimum === "focused" ? "Focused review" : reviewPolicy?.minimum === "none" ? "Review findings" : "Adversarial review";
   if (confirmUnavailable) {
     // Impossible to miss, right where the gate verdict lands: findings with
     // named tests will read advisory not because they were adjudicated but
@@ -1971,14 +2032,14 @@ function printReviewGate(
       // this says what, in the words the reader was going to quote.
       const total = gate.unjudged + gate.adjudicated;
       console.log(
-        `  ${pc.yellow("✓")} Adversarial review is on record for this diff — ` +
+        `  ${pc.yellow("✓")} ${label} is on record for this diff — ` +
           pc.yellow(
             `${gate.unjudged} of ${total} reproducible finding(s) unadjudicated (their tests could not be run)`,
           ) +
           advisory,
       );
     } else {
-      console.log(`  ${pc.green("✓")} Adversarial review covers this diff` + advisory);
+      console.log(`  ${pc.green("✓")} ${label} covers this diff` + advisory);
     }
   } else {
     console.log(pc.red(`  ✗ --require-review: ${gate.reason}.`));
@@ -1990,7 +2051,7 @@ function printReviewGate(
         pc.dim(
           unreviewedCount !== null
             ? `    ${unreviewedCount} file${unreviewedCount === 1 ? "" : "s"} moved since your last recorded review. \`codument review --bundle\` scopes the re-attack to just those (\`--full\` forces the whole diff); record it under .codument/reviews/, then re-run.`
-            : "    Run a fresh adversarial review of this diff and record it under .codument/reviews/, then re-run.",
+            : `    Run a fresh ${reviewPolicy?.minimum === "focused" ? "focused" : "adversarial"} review of this diff and record it under .codument/reviews/, then re-run.`,
         ),
       );
     } else {
@@ -2155,6 +2216,10 @@ export function printHuman(report: ReviewReport, repositoryRoot?: string): void 
           `    ${report.boundary.dirtyOutside.length} unrelated dirty path${report.boundary.dirtyOutside.length === 1 ? "" : "s"} reported, not analyzed`,
         ),
       );
+    }
+    if (report.reviewPolicy) {
+      const reasons = report.reviewPolicy.reasons.length ? ` — ${report.reviewPolicy.reasons.join("; ")}` : "";
+      console.log(pc.dim(`    review effort: ${report.reviewPolicy.minimum}${reasons}`));
     }
     console.log();
   }

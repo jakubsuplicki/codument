@@ -8,6 +8,7 @@ import { resolveChangeSet } from "../src/lib/change-set.js";
 import { forgetWorkspace } from "../src/lib/git.js";
 import type { ChangeState } from "../src/lib/change-state.js";
 import type { Registry, RegistryEntry } from "../src/lib/registry.js";
+import type { ReviewPolicy } from "../src/lib/review-gate.js";
 import {
   buildReviewBundle,
   buildContractChanges,
@@ -213,6 +214,51 @@ function cs(partial: Partial<ChangeState>): ChangeState {
     ...partial,
   };
 }
+
+describe("review policy binding", () => {
+  const policy: ReviewPolicy = { version: 1, minimum: "focused", reasons: [], factsFingerprint: "a".repeat(64) };
+  const bundleInput = { base: "base", changeState: cs({}), registry: { features: {} }, docContents: new Map<string, string>(), plan: null };
+
+  it("keeps legacy bundle bytes and oracle unchanged when policy is absent", () => {
+    const legacy = buildReviewBundle(bundleInput);
+    assert.equal("reviewPolicy" in legacy, false);
+    assert.equal(JSON.stringify(buildReviewBundle({ ...bundleInput, reviewPolicy: undefined })), JSON.stringify(legacy));
+    assert.equal(oracleFingerprint(legacy.features, legacy.plan, legacy.contractChanges, legacy.omissions),
+      oracleFingerprint(legacy.features, legacy.plan, legacy.contractChanges, legacy.omissions, undefined));
+  });
+
+  it("binds minimum effort and original evidence into both worksheet stamp and oracle", () => {
+    const focused = buildReviewBundle({ ...bundleInput, reviewPolicy: policy });
+    const strongPolicy: ReviewPolicy = { ...policy, minimum: "adversarial", reasons: ["symbol signature changed"] };
+    const strong = buildReviewBundle({ ...bundleInput, reviewPolicy: strongPolicy });
+    const ownershipChanged = buildReviewBundle({ ...bundleInput, reviewPolicy: { ...policy, factsFingerprint: "b".repeat(64) } });
+    assert.deepEqual(focused.reviewPolicy, policy);
+    assert.notEqual(focused.stamp, buildReviewBundle(bundleInput).stamp);
+    assert.notEqual(focused.stamp, strong.stamp);
+    assert.notEqual(focused.stamp, ownershipChanged.stamp);
+    const oracle = (reviewPolicy?: ReviewPolicy) => oracleFingerprint([], null, undefined, undefined, reviewPolicy);
+    assert.notEqual(oracle(policy), oracle());
+    assert.notEqual(oracle(policy), oracle(strongPolicy));
+    assert.notEqual(oracle(policy), oracle(ownershipChanged.reviewPolicy));
+  });
+
+  it("shows historical risk and binds current risk only for policy-aware callers", () => {
+    const current = { features: { alpha: entry({ doc: "docs/a.md", primary_sources: ["src/a.ts"] }) } };
+    const previous = { features: { alpha: entry({ ...current.features.alpha, risk: ["security"] }) } };
+    const input = { ...bundleInput, registry: current, docContents: new Map([["docs/a.md", DOC_A]]),
+      changeState: cs({ changedSources: ["src/a.ts"], byFeature: [{ feature: "alpha", files: ["src/a.ts"] }] }),
+      grounding: { changes: [], selected: ["alpha"], unowned: [], previousRegistry: previous, previousDocs: new Map([["docs/a.md", DOC_A]]) },
+    };
+    const legacy = buildReviewBundle(input);
+    const bound = buildReviewBundle({ ...input, reviewPolicy: policy });
+    assert.equal("risk" in legacy.features[0].before!, false);
+    assert.deepEqual(bound.features[0].before?.risk, ["security"]);
+    const changed = bound.features.map((feature) => ({ ...feature, risk: ["privacy"] }));
+    assert.equal(oracleFingerprint(bound.features), oracleFingerprint(changed));
+    assert.notEqual(oracleFingerprint(bound.features, null, undefined, undefined, policy),
+      oracleFingerprint(changed, null, undefined, undefined, policy));
+  });
+});
 
 describe("extractDocSection", () => {
   it("returns a section body, includes ### subheadings, stops at the next ## heading", () => {

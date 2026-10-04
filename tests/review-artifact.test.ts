@@ -19,9 +19,14 @@ import {
   writeReview,
   findCoveringReviews,
   mergeCoveringFindings,
+  coveringReviewEvidenceDigest,
+  parseReviewReceiptEvidence,
+  reviewReceiptEvidenceCovers,
+  type ReviewReceiptEvidence,
   type ReviewArtifact,
   type ReviewFinding,
 } from "../src/lib/review-artifact.js";
+import { oracleFingerprint } from "../src/lib/review-bundle.js";
 
 // A resolver mirroring the gate's: a bare ref resolves under the repo root, else null.
 function makeResolver(root: string) {
@@ -41,6 +46,83 @@ function artifact(partial: Partial<ReviewArtifact> = {}): ReviewArtifact {
     ...partial,
   };
 }
+
+describe("local receipt review evidence", () => {
+  it("retains literal POSIX path characters in local evidence", () => {
+    for (const path of ["src/user:role.ts", "src/literal\\name.ts"]) {
+      const evidence = { policyVersion: 1, input: { base: "base", paths: [path], oracle: "a".repeat(32) }, digest: "b".repeat(64) };
+      assert.deepEqual(parseReviewReceiptEvidence(evidence), evidence);
+    }
+  });
+  const boundary: ChangeSetBinding = { version: 1, mode: "staged", bases: [{ prefix: "", sha: "base" }], head: "INDEX", paths: ["a.ts"], fingerprint: "a".repeat(64) };
+  const evidence = (partial: Partial<ReviewReceiptEvidence> = {}): ReviewReceiptEvidence => ({ policyVersion: 1, input: { base: "base", paths: ["a.ts"], oracle: "b".repeat(32) }, digest: coveringReviewEvidenceDigest([]), ...partial });
+
+  it("rejects stale policy and malformed cached inputs rather than granting reuse", () => {
+    assert.deepEqual(parseReviewReceiptEvidence(evidence()), evidence());
+    for (const malformed of [
+      null, {}, { ...evidence(), policyVersion: 0 }, { ...evidence(), digest: "bad" },
+      { ...evidence(), input: { ...evidence().input, oracle: "bad" } },
+      { ...evidence(), input: { ...evidence().input, base: " " } },
+      ...["../a.ts", "/a.ts", "a//b.ts"].map((path) => ({ ...evidence(), input: { ...evidence().input, paths: [path] } })),
+      { ...evidence(), input: { ...evidence().input, paths: ["a.ts", "a.ts"] } },
+    ]) assert.equal(parseReviewReceiptEvidence(malformed), null, JSON.stringify(malformed));
+  });
+
+  it("digests every complete attestation deterministically", () => {
+    const clean = artifact({ boundary, bundleStamp: "stamp", files: [{ path: "a.ts", hash: "hash" }] });
+    const red = artifact({ signer: "reviewer", findings: [{ citation: "a.ts:1", detail: "red", failingTest: "a.test.ts", status: "confirmed" }] });
+    const digest = coveringReviewEvidenceDigest([clean, red]);
+    assert.equal(digest, coveringReviewEvidenceDigest([red, clean]));
+    assert.notEqual(digest, coveringReviewEvidenceDigest([clean]));
+    for (const changed of [
+      { ...clean, signer: "different" }, { ...clean, invariantsChecked: ["different"] },
+      { ...clean, bundleStamp: "different" }, { ...clean, findings: red.findings },
+      { ...clean, boundary: { ...boundary, mode: "range" as const } },
+      { ...clean, files: [{ path: "a.ts", hash: "different" }] },
+    ]) assert.notEqual(coveringReviewEvidenceDigest([clean]), coveringReviewEvidenceDigest([changed]));
+  });
+
+  it("invalidates an empty-evidence receipt when a new covering red review appears, but ignores stale reviews", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codument-receipt-evidence-"));
+    try {
+      writeFileSync(join(root, "a.ts"), "source");
+      writeFileSync(join(root, "a.test.ts"), "test one");
+      const resolve = makeResolver(root);
+      const cached = evidence();
+      assert.equal(reviewReceiptEvidenceCovers(root, cached, boundary, resolve), true);
+      writeReview(root, artifact({ base: "other", boundary, diffFingerprint: "stale" }));
+      assert.equal(reviewReceiptEvidenceCovers(root, cached, boundary, resolve), true);
+      const findings: ReviewFinding[] = [{ citation: "a.ts:1", detail: "red", failingTest: "a.test.ts", status: "confirmed" }];
+      const red = artifact({ base: "base", boundary, findings,
+        diffFingerprint: gatherReviewFingerprint(root, "base", ["a.ts"], findings, resolve, cached.input.oracle, boundary.fingerprint) });
+      writeReview(root, red);
+      assert.equal(reviewReceiptEvidenceCovers(root, cached, boundary, resolve), false);
+      const reviewed = evidence({ digest: coveringReviewEvidenceDigest([red]) });
+      assert.equal(reviewReceiptEvidenceCovers(root, reviewed, boundary, resolve), true);
+      assert.equal(reviewReceiptEvidenceCovers(root, reviewed, { ...boundary, mode: "range" }, resolve), false);
+      assert.equal(reviewReceiptEvidenceCovers(root, reviewed, { ...boundary, paths: [] }, resolve), false);
+      assert.equal(reviewReceiptEvidenceCovers(root, reviewed, boundary, () => { throw new Error("cannot resolve"); }), false);
+      writeFileSync(join(root, "a.test.ts"), "edited test");
+      assert.equal(reviewReceiptEvidenceCovers(root, reviewed, boundary, resolve), false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("does not transfer focused policy coverage to an adversarial or portable boundary", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codument-policy-coverage-"));
+    try {
+      writeFileSync(join(root, "a.ts"), "source");
+      const resolve = makeResolver(root);
+      const policy = { version: 1 as const, minimum: "focused" as const, reasons: [], factsFingerprint: "a".repeat(64) };
+      const focusedOracle = oracleFingerprint([], null, undefined, undefined, policy);
+      const strongOracle = oracleFingerprint([], null, undefined, undefined, { ...policy, minimum: "adversarial", reasons: ["uncertain"] });
+      writeReview(root, artifact({ base: "base", boundary,
+        diffFingerprint: gatherReviewFingerprint(root, "base", ["a.ts"], [], resolve, focusedOracle, boundary.fingerprint) }));
+      assert.equal(findCoveringReviews(root, "base", ["a.ts"], resolve, focusedOracle, boundary).length, 1);
+      assert.deepEqual(findCoveringReviews(root, "base", ["a.ts"], resolve, strongOracle, boundary), []);
+      assert.deepEqual(findCoveringReviews(root, "base", ["a.ts"], resolve, focusedOracle, { ...boundary, mode: "range" }), []);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
 
 describe("parseReviewArtifact", () => {
   it("accepts a well-formed artifact", () => {

@@ -2,7 +2,7 @@
 title: Change-control gate
 status: current
 type: feature
-last_reviewed: 2026-09-25
+last_reviewed: 2026-10-04
 ---
 
 # Change-control gate
@@ -62,6 +62,12 @@ reproduction environments remain visible. [[step-verification]] owns the executi
 Compact verification is a projection of this same engine, not a second gate. It reuses the
 boundary-scoped registry, exclusions, real-change set, review oracle, and detailed renderer, so its
 short verdict and the diagnostic `review` surface cannot silently disagree about the selected bytes.
+
+The staged and range reports expose a structural minimum for review effort. It considers original
+analysis before acknowledgments and ownership and risk on both sides, so updating documentation or
+removing a risk declaration cannot downgrade a sensitive change. Unknown analysis keeps the stronger
+floor. The host still judges whether behavior is substantial, understood and reversible;
+[[adversarial-review-gate]] owns review coverage and finding confirmation.
 
 **Symbol-grained ownership is what makes the signal trustworthy at scale.** A file-grain signal cascades: a shared file with many owners flags every owning doc on a one-line edit, and the noise trains people to ignore it. Here, a changed symbol wakes only its owning feature's doc. Ownership is derived from primary ownership with zero authoring for the common single-owner file; only a file genuinely split across several features carries a per-symbol owner map, and the gate fails loud rather than silently waking all co-owners.
 

@@ -4,10 +4,120 @@ import {
   requiresAdversarialReview,
   evaluateReviewGate,
   countResolvedMovedSymbols,
+  classifyReviewPolicy,
+  type ReviewPolicyFacts,
   type ReviewGateInput,
 } from "../src/lib/review-gate.js";
 import type { ReviewFinding, ReviewFindingStatus } from "../src/lib/review-artifact.js";
 import type { TestOutcome } from "../src/lib/review-confirm.js";
+import type { Registry } from "../src/lib/registry.js";
+
+function policyFacts(partial: Partial<ReviewPolicyFacts> = {}): ReviewPolicyFacts {
+  const registry: Registry = { features: { alpha: {
+    doc: "docs/features/alpha.md", type: "feature", status: "current",
+    primary_sources: ["src/a.ts"], related_sources: [], docs: [], depends_on: [], risk: [],
+  } } };
+  return {
+    mode: "staged", complete: true,
+    sourcePaths: ["src/a.ts"], existingSourcePaths: ["src/a.ts"],
+    anchorChanges: { "src/a.ts": [
+      { id: "src/a.ts::alpha()", name: "alpha()", kind: "changed", from: "old", to: "new", fromSig: "sig", toSig: "sig" },
+      { id: "src/a.ts::beta()", name: "beta()", kind: "changed", from: "old-b", to: "new-b", fromSig: "sig-b", toSig: "sig-b" },
+    ] },
+    unevaluablePaths: [], otherChangedPaths: [], addedPaths: [], deletedPaths: [], renamedPaths: [],
+    contractChanges: [], beforeRegistry: registry, registry, riskTouches: [],
+    testImpact: { changedTests: ["tests/a.test.ts"], attributed: [{ test: "tests/a.test.ts", feature: "alpha", via: "direct-import" }], unattributed: [], dependents: [], dependentsSummary: [] },
+    ...partial,
+  };
+}
+
+describe("classifyReviewPolicy — exact structural minimum", () => {
+  it("permits focused review for attributable body-only changes rather than counting symbols or test files", () => {
+    const policy = classifyReviewPolicy(policyFacts());
+    assert.equal(policy.minimum, "focused");
+    assert.equal(policy.version, 1);
+    assert.match(policy.factsFingerprint, /^[a-f0-9]{64}$/);
+    assert.equal(evaluateReviewGate(input({ reviewPolicy: policy }), null).passed, false);
+    assert.equal(evaluateReviewGate(input({ reviewPolicy: policy }), []).passed, true);
+  });
+
+  it("still adjudicates covering reproduced findings when the minimum is none", () => {
+    const policy = classifyReviewPolicy(policyFacts({ anchorChanges: { "src/a.ts": [] }, testImpact: undefined }));
+    assert.equal(policy.minimum, "none");
+    assert.equal(evaluateReviewGate(input({ reviewPolicy: policy }), null).passed, true);
+    const gate = evaluateReviewGate(input({ reviewPolicy: policy }), [
+      { ...finding("confirmed", "bug.test.ts"), testOutcome: "failed" },
+      { ...finding("advisory", "gap.test.ts"), testOutcome: "unrunnable" },
+    ]);
+    assert.equal(gate.required, false);
+    assert.equal(gate.passed, false);
+    assert.equal(gate.blockingFindings.length, 1);
+    assert.equal(gate.adjudicated, 1);
+    assert.equal(gate.unjudged, 1);
+  });
+
+  it("allows new attributable tests without treating them as new production code", () => {
+    assert.equal(classifyReviewPolicy(policyFacts({ addedPaths: ["tests/a.test.ts"] })).minimum, "focused");
+    assert.equal(classifyReviewPolicy(policyFacts({ addedPaths: ["src/new.ts"] })).minimum, "adversarial");
+  });
+
+  it("enforces each static floor independently of source or symbol counts", () => {
+    const defaults = policyFacts();
+    const moved = defaults.anchorChanges["src/a.ts"][0];
+    const oldRisk = { features: { alpha: { ...defaults.registry.features.alpha, risk: ["security"] } } };
+    const otherOwner = { features: { beta: { ...defaults.registry.features.alpha } } };
+    const cases: Partial<ReviewPolicyFacts>[] = [
+      { mode: "range" }, { complete: false }, { unevaluablePaths: ["src/a.ts"] },
+      { anchorChanges: {} }, { existingSourcePaths: [] },
+      { otherChangedPaths: ["package.json"] }, { deletedPaths: ["src/old.ts"] },
+      { renamedPaths: ["src/a.ts"] }, { testImpact: undefined },
+      { beforeRegistry: { features: {} } }, { registry: { features: {} } },
+      { beforeRegistry: oldRisk }, { registry: oldRisk }, { registry: otherOwner },
+      { riskTouches: [{ feature: "secondary", risk: ["privacy"], files: ["src/a.ts"] }] },
+      { anchorChanges: { "src/a.ts": [moved, { ...moved, id: "src/a.ts::<module>", name: "<module>" }] } },
+      { anchorChanges: { "src/a.ts": [{ ...moved, kind: "added" }] } },
+      { anchorChanges: { "src/a.ts": [{ ...moved, kind: "removed" }] } },
+      { anchorChanges: { "src/a.ts": [{ ...moved, toSig: undefined }] } },
+      { anchorChanges: { "src/a.ts": [{ ...moved, toSig: "different" }] } },
+      { testImpact: { ...defaults.testImpact!, unattributed: ["tests/a.test.ts"] } },
+      { testImpact: { ...defaults.testImpact!, attributed: [{ test: "tests/a.test.ts", feature: "other", via: "direct-import" }] } },
+      { contractChanges: [{ path: "docs/features/alpha.md", owners: ["alpha"], kind: "documentation", before: "old contract", after: "new contract", testPointers: [], requiresReview: false }] },
+    ];
+    for (const partial of cases) {
+      const policy = classifyReviewPolicy(policyFacts(partial));
+      assert.equal(policy.minimum, "adversarial", JSON.stringify(partial));
+      assert.ok(policy.reasons.length > 0);
+    }
+  });
+
+  it("cannot launder an unowned original co-moved symbol through a filtered owned count", () => {
+    const defaults = policyFacts();
+    const split = { features: {
+      alpha: { ...defaults.registry.features.alpha, owned_symbols: { "src/a.ts": ["alpha()"] } },
+      beta: { ...defaults.registry.features.alpha },
+    } };
+    assert.equal(classifyReviewPolicy(policyFacts({ beforeRegistry: split, registry: split })).minimum, "adversarial");
+  });
+
+  it("treats proven existing instruction formatting as housekeeping while binding the selected facts", () => {
+    const policy = classifyReviewPolicy(policyFacts({ sourcePaths: [], existingSourcePaths: [], anchorChanges: {}, testImpact: undefined,
+      otherChangedPaths: ["skills/work-step/SKILL.md"], contractChanges: [{ path: "skills/work-step/SKILL.md", owners: ["alpha"], kind: "instruction", before: "Wait for approval", after: "Wait  for approval", testPointers: [], requiresReview: false }],
+    }));
+    assert.equal(policy.minimum, "none");
+    assert.notEqual(policy.factsFingerprint, classifyReviewPolicy(policyFacts({ sourcePaths: [], existingSourcePaths: [], anchorChanges: {}, testImpact: undefined })).factsFingerprint);
+  });
+
+  it("binds original ownership, risks and attribution deterministically", () => {
+    const defaults = policyFacts();
+    const policy = classifyReviewPolicy(defaults);
+    assert.deepEqual(classifyReviewPolicy({ ...defaults, anchorChanges: { "src/a.ts": [...defaults.anchorChanges["src/a.ts"]].reverse() } }), policy);
+    const changedRisk = { features: { alpha: { ...defaults.registry.features.alpha, risk: ["security"] } } };
+    assert.notEqual(classifyReviewPolicy({ ...defaults, beforeRegistry: changedRisk }).factsFingerprint, policy.factsFingerprint);
+    assert.notEqual(classifyReviewPolicy({ ...defaults, testImpact: { ...defaults.testImpact!, attributed: [{ test: "tests/a.test.ts", feature: "alpha", via: "invariant-pin" }] } }).factsFingerprint, policy.factsFingerprint);
+    assert.equal(evaluateReviewGate(input({ reviewPolicy: policy }), []).reviewPolicy, policy);
+    assert.equal("reviewPolicy" in evaluateReviewGate(input(), []), false);
+  });
+});
 
 // Default: a single changed source resolved as exactly one moved symbol — the one
 // genuinely-trivial shape.
@@ -159,6 +269,18 @@ describe("evaluateReviewGate — verdict over re-derived findings", () => {
     const res = evaluateReviewGate(input(), null);
     assert.equal(res.required, false);
     assert.equal(res.passed, true);
+  });
+
+  it("a legacy trivial diff cannot erase covering red or advisory findings", () => {
+    const res = evaluateReviewGate(input(), [
+      { ...finding("confirmed", "bug.test.ts"), testOutcome: "failed" },
+      finding("advisory"),
+    ]);
+    assert.equal(res.required, false);
+    assert.equal(res.passed, false);
+    assert.equal(res.blockingFindings.length, 1);
+    assert.equal(res.advisoryFindings.length, 1);
+    assert.equal(res.adjudicated, 1);
   });
 
   it("a required diff with no covering artifact fails", () => {

@@ -8,6 +8,7 @@ import {
 } from "./change-set.js";
 import { atomicWriteFileSync } from "./events.js";
 import { byteNormalize } from "./two-ref.js";
+import { REVIEW_POLICY_VERSION } from "./review-gate.js";
 
 // A recorded, attributed, fingerprint-bound adversarial review of a diff — the
 // artifact the gate (step 4) requires before a behavior-change commit. Like an
@@ -87,6 +88,66 @@ export interface ReviewArtifact {
 }
 
 export const REVIEWS_DIR = ".codument/reviews";
+
+/** Local receipt evidence; ordinary and portable review artifact schemas stay unchanged. */
+export interface ReviewReceiptEvidence {
+  policyVersion: typeof REVIEW_POLICY_VERSION;
+  input: { base: string; paths: string[]; oracle: string };
+  digest: string;
+}
+
+export function parseReviewReceiptEvidence(value: unknown): ReviewReceiptEvidence | null {
+  if (typeof value !== "object" || value === null) return null;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.policyVersion !== REVIEW_POLICY_VERSION || typeof candidate.input !== "object" || candidate.input === null
+    || typeof candidate.digest !== "string" || !/^[a-f0-9]{64}$/.test(candidate.digest)) return null;
+  const input = candidate.input as Record<string, unknown>;
+  if (typeof input.base !== "string" || !input.base.trim() || typeof input.oracle !== "string"
+    || !/^[a-f0-9]{32}$/.test(input.oracle) || !Array.isArray(input.paths)
+    || input.paths.some((path) => typeof path !== "string" || !path || isAbsolute(path)
+      || path.includes("\0")
+      || path.split("/").some((part) => !part || part === "." || part === ".."))) return null;
+  const paths = input.paths as string[];
+  if (new Set(paths).size !== paths.length) return null;
+  return { policyVersion: REVIEW_POLICY_VERSION, input: { base: input.base, paths: [...paths].sort(), oracle: input.oracle }, digest: candidate.digest };
+}
+
+/** Every covering attestation contributes, independent of directory or caller ordering. */
+export function coveringReviewEvidenceDigest(covering: readonly ReviewArtifact[]): string {
+  const attestations = covering.map((review) => JSON.stringify({
+    base: review.base, diffFingerprint: review.diffFingerprint,
+    invariantsChecked: review.invariantsChecked,
+    findings: review.findings.map((finding) => [finding.citation, finding.detail, finding.failingTest, finding.status]),
+    signer: review.signer,
+    ...(review.bundleStamp !== undefined ? { bundleStamp: review.bundleStamp } : {}),
+    ...(review.boundary ? { boundary: {
+      version: review.boundary.version, mode: review.boundary.mode,
+      bases: review.boundary.bases.map((base) => ({ prefix: base.prefix, sha: base.sha })),
+      head: review.boundary.head, paths: review.boundary.paths, fingerprint: review.boundary.fingerprint,
+    } } : {}),
+    ...(review.files ? { files: review.files.map((file) => [file.path, file.hash]) } : {}),
+  })).sort();
+  return createHash("sha256").update(JSON.stringify(attestations), "utf8").digest("hex");
+}
+
+/** Recheck the receipt's original boundary after its equality with today's selection is established. */
+export function reviewReceiptEvidenceCovers(
+  root: string,
+  evidence: ReviewReceiptEvidence,
+  boundary: ChangeSetBinding,
+  resolveTest: (ref: string) => string | null,
+  readText?: (path: string) => string | null,
+): boolean {
+  const parsed = parseReviewReceiptEvidence(evidence);
+  if (!parsed || !parseChangeSetBinding(boundary) || parsed.input.paths.some((path) => !boundary.paths.includes(path))) return false;
+  try {
+    return coveringReviewEvidenceDigest(findCoveringReviews(
+      root, parsed.input.base, parsed.input.paths, resolveTest, parsed.input.oracle, boundary, readText,
+    )) === parsed.digest;
+  } catch {
+    return false;
+  }
+}
 
 const FINDING_STATUSES: ReadonlySet<string> = new Set<ReviewFindingStatus>([
   "confirmed",

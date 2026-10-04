@@ -150,7 +150,7 @@ Use these routing rules at the start of each user request. Do not wait for the u
 - Before editing source, name the one assumption the change depends on and run the assumption gate below. If a load-bearing assumption is unconfirmed, or the request is a rough idea / concept / "before we code" discussion, use \`grill-with-docs\` first — load the smallest relevant docs and source, surface the assumption with your recommended reading, ask one sharp question at a time, and do not edit source. If every load-bearing assumption is confirmed or cheap to reverse, go straight to implementation.
 - Settled scope with enough answers for implementation design: use \`plan-with-docs\`. Write or update the durable feature/concept plan, mark it awaiting approval, show its delivery-plan checklist inline in the chat (the steps themselves, never just a doc link), and stop for explicit user approval.
 - Approved plan or user says to continue an approved plan: use \`work-step\`. Implement only the first unchecked step.
-- Any source edit, in or out of the delivery-plan loop, gets reviewed before commit — review is owed to the edit, not to a plan step. Scale it: a trivial edit (rename, comment, typo, pure-config) gets a one-pass self-review of the diff; a behavior change — public interface, data shape, deletion, or anything that tripped the assumption gate — gets the full \`review-work\` / \`code-reviewer\` pass. An ad-hoc bug fix is a behavior change: review it even though no plan step produced it.
+- Any source edit, in or out of the delivery-plan loop, gets reviewed before commit. Read the generated review minimum and its reasons: \`none\` gets a one-pass self-review of the diff; \`focused\` permits the ordinary recorded worksheet with self-review only when the change is understood, local and reversible; \`adversarial\` requires independent review where the host supports it. Public contracts, declared risks, deletions, dependencies, uncertain analysis and substantial behavior changes require the stronger pass. Semantic uncertainty can raise the minimum; a file count or low-risk label cannot lower it. An ad-hoc bug fix owes the same review.
 - Clean review, or safe findings corrected within the approved contract: continue to \`commit-work\`. Deferral requires the user's decision. In gated mode, offer \`commit-work\` as the next action and wait for the user to ask for it.
 - Domain skills are advisory, not loop gates: when a step's work clearly fits a domain, consult the matching skill for craft depth. Backend/API/DB/auth -> \`senior-backend\`; system or architecture decisions -> \`senior-architect\`; UI components, state, or performance -> \`senior-frontend\`; visual or aesthetic polish -> \`frontend-design\`; animation, gesture, or motion -> \`motion-craft\`; reviewing a diff -> \`code-reviewer\`. They inform the implementation and review; they never replace \`work-step\` or \`review-work\`.
 
@@ -175,7 +175,7 @@ When unsure between 2 and 3, the test is reversibility, not difficulty: reversib
 Every implementation step passes the same three gates in this order:
 
 1. \`work-step\` implements and verifies one step, then hands it to \`review-work\`.
-2. \`review-work\` reviews that step: auto-apply only safe, obvious fixes, then hand it to \`commit-work\`. Pause for any judgment-call finding.
+2. \`review-work\` reviews that step at the required effort: auto-apply only safe, obvious fixes within the approved contract, then hand it to \`commit-work\`. Pause for an unapproved judgment call.
 3. \`commit-work\` commits that reviewed step, then starts the next unchecked step.
 
 Never move from one implementation step directly into the next without review and commit in between. That rule is absolute and holds in both modes; what the mode changes is only whether you *wait* for the user between the gates. By default you do not wait — **gated mode**, where you do, is what the user turns on by asking for it (see Autopilot below).
@@ -216,7 +216,7 @@ A task is NOT complete until:
 5. Corresponding feature docs are created or updated at intent altitude (contract/why, never a symbol mirror); a move that changed no contract owes nothing, and is never papered over with mirror prose
 6. Dependent features are flagged if an interface changed
 7. Review findings are resolved or explicitly deferred
-8. \`codument verify\` passes for the exact staged step — no new source left unmapped, no mapped doc stale, and required review recorded
+8. \`codument verify\` passes for the exact staged step — no new source left unmapped, no mapped doc stale, and required review recorded under the current policy; changed covering review evidence reopens the verdict
 9. The promised milestone has its required evidence at the actual user or integration boundary; a substitute proves only the boundary exercised, and missing evidence keeps acceptance open
 
 ### Planning and approval

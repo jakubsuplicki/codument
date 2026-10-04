@@ -24,6 +24,7 @@ import { readBlobAtRef, EMPTY_TREE_SHA } from "./two-ref.js";
 import { isSourceFile } from "./exclusion-spec.js";
 import type { ReviewFinding } from "./review-artifact.js";
 import type { TestImpact } from "./test-impact.js";
+import type { ReviewPolicy } from "./review-gate.js";
 
 // The contract an adversarial reviewer attacks against. The whole point of the
 // bundle is to give the reviewer an ORACLE instead of an open-ended hunt: for
@@ -52,7 +53,7 @@ export interface ReviewBundleFeature {
   risk: string[];
   /** The changed source files that put this feature in scope. */
   changedSources: string[];
-  before?: { doc: string; contract: string; invariants: string; testPointers: string[] };
+  before?: { doc: string; contract: string; invariants: string; testPointers: string[]; risk?: string[] };
 }
 
 export interface ContractChange {
@@ -294,6 +295,8 @@ export interface ReviewBundle {
   boundary?: ChangeSetBinding;
   /** Changed tests as evidence, including their attribution or explicit lack of one. */
   testImpact?: TestImpact;
+  /** Minimum effort and the original facts bound into this staged review. */
+  reviewPolicy?: ReviewPolicy;
   /** A digest of everything above — what this bundle handed over, as one token a
    *  reviewer copies into its findings so the recorded attestation says what it was
    *  grounded in. Without it an artifact records only a verdict: which invariants
@@ -407,6 +410,7 @@ export interface ReviewBundleInput {
   boundary?: ChangeSetBinding;
   testImpact?: TestImpact;
   grounding?: ReviewGrounding;
+  reviewPolicy?: ReviewPolicy;
 }
 
 export interface ReviewBundleDelta {
@@ -488,6 +492,7 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
               testPointers: extractTestPointers(
                 extractDocSection(previousText, "Invariants & boundaries"),
               ),
+              ...(input.reviewPolicy ? { risk: sortStrings(previousEntry.risk) } : {}),
             },
           }
         : {}),
@@ -520,6 +525,7 @@ export function buildReviewBundle(input: ReviewBundleInput): ReviewBundle {
     plan,
     ...(boundary ? { boundary } : {}),
     ...(testImpact ? { testImpact: scopeTestImpact(testImpact, registry, delta) } : {}),
+    ...(input.reviewPolicy ? { reviewPolicy: input.reviewPolicy } : {}),
   };
   // Over the body, never over itself. JSON.stringify walks the literal above in
   // declaration order, which is fixed here rather than inherited from any caller —
@@ -560,6 +566,7 @@ export function oracleFingerprint(
   plan?: ReviewBundle["plan"],
   changes?: ContractChange[],
   omissions?: ReviewBundle["omissions"],
+  reviewPolicy?: ReviewPolicy,
 ): string {
   const parts = [...features]
     .sort((a, b) => (a.feature < b.feature ? -1 : a.feature > b.feature ? 1 : 0))
@@ -568,7 +575,7 @@ export function oracleFingerprint(
     // character that cannot appear in the feature name or the path beside it.
     .map(
       (f) =>
-        `${f.feature}\0${f.doc}\0${f.contract}\0${f.invariants}${f.before ? `\0${JSON.stringify(f.before)}` : ""}`,
+        `${f.feature}\0${f.doc}\0${f.contract}\0${f.invariants}${f.before ? `\0${JSON.stringify(f.before)}` : ""}${reviewPolicy ? `\0${JSON.stringify(sortStrings(f.risk))}` : ""}`,
     );
   if (changes?.length) parts.push(JSON.stringify(changes));
   if (omissions?.length) parts.push(JSON.stringify(omissions));
@@ -582,6 +589,7 @@ export function oracleFingerprint(
         ...(plan.approvalModel ? { approvalModel: plan.approvalModel } : {}),
       }),
     );
+  if (reviewPolicy) parts.push(JSON.stringify(reviewPolicy));
   return createHash("sha256").update(parts.join("\n"), "utf8").digest("hex").slice(0, 32);
 }
 
@@ -600,6 +608,7 @@ export function gatherReviewBundle(
   testImpact?: TestImpact,
   paths?: string[],
   ignoredPaths?: string[],
+  reviewPolicy?: ReviewPolicy,
 ): ReviewBundle {
   const grounding = gatherReviewGrounding(
     root,
@@ -655,5 +664,6 @@ export function gatherReviewBundle(
     delta,
     ...(boundary ? { boundary: changeSetBinding(boundary) } : {}),
     ...(testImpact ? { testImpact } : {}),
+    ...(reviewPolicy ? { reviewPolicy } : {}),
   });
 }

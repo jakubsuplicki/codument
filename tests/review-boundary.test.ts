@@ -235,6 +235,93 @@ afterEach(async () => {
 });
 
 describe("review staged boundary", () => {
+  it("offers focused review for one owned body change with attributable test evidence", async () => {
+    await put("src/a.ts", "export function a(value: number): number { return value; }\n");
+    git(["add", "src/a.ts"]);
+    git(["commit", "-qm", "function baseline"]);
+    await put("src/a.ts", "export function a(value: number): number { return value + 1; }\n");
+    await put("tests/a.test.ts", 'import { a } from "../src/a.js";\n');
+    git(["add", "src/a.ts", "tests/a.test.ts"]);
+
+    const report = JSON.parse(review(["--staged", "--json"]).stdout);
+    assert.equal(report.reviewPolicy.version, 1);
+    assert.equal(report.reviewPolicy.minimum, "focused");
+    const bundle = JSON.parse(review(["--staged", "--bundle"]).stdout);
+    assert.deepEqual(bundle.reviewPolicy, report.reviewPolicy);
+    const gate = JSON.parse(review(["--staged", "--require-review", "--json"]).stdout);
+    assert.equal(gate.reviewGate.required, true, "focused review still needs exact recorded evidence");
+
+    const legacy = JSON.parse(review(["--json"]).stdout);
+    assert.equal("reviewPolicy" in legacy, false, "legacy report callers retain their prior shape");
+  });
+
+  it("keeps public surface review strong after a mapped document is updated", async () => {
+    await put("src/a.ts", "export const a = (value: number) => value;\n");
+    await put("tests/a.test.ts", 'import { a } from "../src/a.js";\n');
+    await put("docs/features/alpha.md", "# alpha\n\nReviewed for this delivery.\n");
+    git(["add", "src/a.ts", "tests/a.test.ts", "docs/features/alpha.md"]);
+
+    const report = JSON.parse(review(["--staged", "--json"]).stdout);
+    assert.equal(report.state.staleDocs.length, 0);
+    assert.equal(report.reviewPolicy.minimum, "adversarial");
+  });
+
+  it("preserves historical declared risk when the staged registry removes it", async () => {
+    const registry = JSON.parse(await readFile(join(repo, "docs/.registry.json"), "utf8"));
+    registry.features.alpha.risk = ["security"];
+    await put("docs/.registry.json", JSON.stringify(registry));
+    git(["add", "docs/.registry.json"]);
+    git(["commit", "-qm", "declared risk"]);
+    registry.features.alpha.risk = [];
+    await put("docs/.registry.json", JSON.stringify(registry));
+    await put("src/a.ts", "export const a = 2;\n");
+    await put("tests/a.test.ts", 'import { a } from "../src/a.js";\n');
+    git(["add", "docs/.registry.json", "src/a.ts", "tests/a.test.ts"]);
+
+    const report = JSON.parse(review(["--staged", "--json"]).stdout);
+    assert.equal(report.state.riskTouches.length, 0, "the current-only drift projection has no risk");
+    assert.equal(report.reviewPolicy.minimum, "adversarial");
+    assert.ok(report.reviewPolicy.reasons.some((reason: string) => /risk.*before or after/.test(reason)));
+    const bundle = JSON.parse(review(["--staged", "--bundle"]).stdout);
+    const alpha = bundle.features.find((feature: { feature: string }) => feature.feature === "alpha");
+    assert.deepEqual(alpha.risk, []);
+    assert.deepEqual(alpha.before.risk, ["security"]);
+  });
+
+  it("escalates uncertain body analysis and missing attributable evidence", async () => {
+    await put("src/a.ts", "export const a = 2;\n");
+    git(["add", "src/a.ts"]);
+    assert.equal(JSON.parse(review(["--staged", "--json"]).stdout).reviewPolicy.minimum, "adversarial");
+    await put("tests/a.test.ts", 'import { a } from "../src/a.js";\n');
+    await put("src/a.ts", "export const a = 2;\nconsole.log(a);\n");
+    git(["add", "src/a.ts", "tests/a.test.ts"]);
+    assert.equal(JSON.parse(review(["--staged", "--json"]).stdout).reviewPolicy.minimum, "adversarial");
+  });
+
+  it("surfaces reproduced findings even when housekeeping needs no new review", async () => {
+    await put("tests/red.test.mjs", 'import { test } from "node:test";\ntest("red", () => { throw new Error("reproduced defect"); });\n');
+    git(["add", "tests/red.test.mjs"]);
+    git(["commit", "-qm", "reproduction baseline"]);
+    await put("docs/features/alpha.md", "# alpha\n\nFormatting housekeeping.\n");
+    git(["add", "docs/features/alpha.md"]);
+    const bundle = JSON.parse(review(["--staged", "--bundle"]).stdout);
+    assert.equal(bundle.reviewPolicy.minimum, "none");
+    await put("findings.json", JSON.stringify({
+      invariantsChecked: ["the staged housekeeping preserves alpha"],
+      findings: [{ citation: "src/a.ts:1", detail: "the existing defect reproduces", status: "confirmed", failingTest: "tests/red.test.mjs" }],
+      signer: "test-reviewer",
+      bundleStamp: bundle.stamp,
+    }));
+    assert.equal(review(["--staged", "--record", "findings.json"]).status, 0);
+    const human = review(["--staged", "--require-review", "--test-command", "node --test --test-reporter=tap {file}"]);
+    assert.equal(human.status, 1);
+    assert.match(human.stdout, /the existing defect reproduces/);
+    assert.match(human.stdout, /confirmed finding/);
+    const machine = JSON.parse(review(["--staged", "--require-review", "--test-command", "node --test --test-reporter=tap {file}", "--json"]).stdout);
+    assert.equal(machine.reviewGate.required, false);
+    assert.equal(machine.reviewGate.blockingFindings.length, 1);
+  });
+
   it("includes a staged Feature Map declaration in the same guidance used by context", async () => {
     await put("docs/plans/kitchen.md", [
       "## Delivery Plan", "Status: approved", "- [ ] Fit the kitchen",

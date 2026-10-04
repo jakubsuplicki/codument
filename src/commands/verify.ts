@@ -18,10 +18,14 @@ import { warmAdaptersForRepo } from "../lib/fingerprint.js";
 import { assertRootIsRepoToplevel, getGitPath, getHeadSha, isGateableRoot, withSelectedRepository } from "../lib/git.js";
 import {
   findCoveringReviews,
+  coveringReviewEvidenceDigest,
   gatherReviewedFiles,
   gatherReviewFingerprint,
   mergeCoveringFindings,
   parseReviewArtifact,
+  parseReviewReceiptEvidence,
+  reviewReceiptEvidenceCovers,
+  type ReviewReceiptEvidence,
   writeReview,
 } from "../lib/review-artifact.js";
 import { gatherReviewBundle, type ReviewBundle } from "../lib/review-bundle.js";
@@ -39,6 +43,7 @@ import {
   countResolvedMovedSymbols,
   evaluateReviewGate,
   type ReviewGateResult,
+  REVIEW_POLICY_VERSION,
 } from "../lib/review-gate.js";
 import { MODULE_ANCHOR_NAME } from "../lib/ts-adapter.js";
 import { EMPTY_TREE_SHA } from "../lib/two-ref.js";
@@ -81,6 +86,7 @@ interface VerificationFailures {
 interface ReviewAssessment {
   gate: ReviewGateResult;
   confirmUnavailable: string | null;
+  evidence: ReviewReceiptEvidence;
 }
 
 const WORKSHEET_PATH = ".codument/review-worksheet.json";
@@ -127,6 +133,7 @@ function bundleFor(
     report.testImpact,
     report.changedPaths,
     report.ignoredPaths,
+    report.reviewPolicy,
   );
 }
 
@@ -196,7 +203,7 @@ function recordReview(
     realChangeSet,
     provisional.findings,
     resolveTest,
-    currentOracle(root, base, report.state, boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths),
+    currentOracle(root, base, report.state, boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths, report.reviewPolicy),
     binding.fingerprint,
     snapshotRead,
   );
@@ -220,12 +227,13 @@ function assessReview(
   const snapshotRead = (path: string) => readChangeSetFile(root, boundary, path);
   const resolveTest = (reference: string) =>
     resolveTestPath(root, reference, DEFAULT_TEST_SEARCH_DIRS, snapshotRead);
+  const oracle = currentOracle(root, base, report.state, boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths, report.reviewPolicy);
   const covering = findCoveringReviews(
     root,
     base,
     realChangeSet,
     resolveTest,
-    currentOracle(root, base, report.state, boundary, report.testImpact, report.plan, report.changedPaths, report.ignoredPaths),
+    oracle,
     binding,
     snapshotRead,
   );
@@ -278,10 +286,19 @@ function assessReview(
       ownershipLintCount: report.state.ownershipLints.length,
       moduleResidualMoved: report.drift.some((item) => item.symbol === MODULE_ANCHOR_NAME),
       movedSymbolCount: countResolvedMovedSymbols(report.drift.map((item) => item.symbol)),
+      reviewPolicy: report.reviewPolicy,
     },
     confirmed,
   );
-  return { gate, confirmUnavailable };
+  return {
+    gate,
+    confirmUnavailable,
+    evidence: {
+      policyVersion: REVIEW_POLICY_VERSION,
+      input: { base, paths: [...realChangeSet].sort(), oracle },
+      digest: coveringReviewEvidenceDigest(covering),
+    },
+  };
 }
 
 function writeWorksheet(root: string, bundle: ReviewBundle, force = false): void {
@@ -312,22 +329,27 @@ function writeWorksheet(root: string, bundle: ReviewBundle, force = false): void
   atomicWriteFileSync(path, `${JSON.stringify(worksheet, null, 2)}\n`);
 }
 
-function writeReceipt(root: string, boundary: ChangeSetBinding, planApproval: VerificationReceipt["planApproval"]): void {
+function writeReceipt(root: string, boundary: ChangeSetBinding, planApproval: VerificationReceipt["planApproval"], reviewEvidence: ReviewReceiptEvidence): void {
   const path = getGitPath(root, RECEIPT_GIT_PATH);
   if (!path) throw new Error("could not resolve Git-owned verification receipt path");
   mkdirSync(dirname(path), { recursive: true });
-  const receipt: VerificationReceipt = { version: 1, codumentVersion: version, boundary, planApproval };
+  const receipt: VerificationReceipt & { reviewEvidence: ReviewReceiptEvidence } = { version: 1, codumentVersion: version, boundary, planApproval, reviewEvidence };
   const encoded = `${JSON.stringify(receipt, null, 2)}\n`;
   if (existsSync(path) && readFileSync(path, "utf8") === encoded) return;
   atomicWriteFileSync(path, encoded);
 }
 
-function reusableReceiptCovers(root: string, boundary: ChangeSetBinding, planApproval: VerificationReceipt["planApproval"]): boolean {
+function reusableReceiptCovers(root: string, boundary: ChangeSet, planApproval: VerificationReceipt["planApproval"]): boolean {
   const path = getGitPath(root, RECEIPT_GIT_PATH);
   if (!path || !existsSync(path)) return false;
   try {
-    const receipt = parseVerificationReceipt(JSON.parse(readFileSync(path, "utf8")));
-    return receipt ? verificationReceiptCovers(receipt, boundary, version, planApproval) : false;
+    const raw = JSON.parse(readFileSync(path, "utf8"));
+    const receipt = parseVerificationReceipt(raw);
+    const evidence = parseReviewReceiptEvidence(raw.reviewEvidence);
+    if (!receipt || !evidence || !verificationReceiptCovers(receipt, changeSetBinding(boundary), version, planApproval)) return false;
+    const snapshotRead = (file: string) => readChangeSetFile(root, boundary, file);
+    const resolveTest = (reference: string) => resolveTestPath(root, reference, DEFAULT_TEST_SEARCH_DIRS, snapshotRead);
+    return reviewReceiptEvidenceCovers(root, evidence, receipt.boundary, resolveTest, snapshotRead);
   } catch {
     return false;
   }
@@ -385,6 +407,10 @@ function printCompact(
   }
   if (review && !review.covered && worksheetWritten) {
     console.log(`codument verify: ${pc.yellow("REVIEW REQUIRED")}`);
+    if (review.reviewPolicy) {
+      console.log(`  effort → ${review.reviewPolicy.minimum === "focused" ? "focused self-review" : "independent adversarial review"}`);
+      if (review.reviewPolicy.reasons.length) console.log(`  reason → ${review.reviewPolicy.reasons.join("; ")}`);
+    }
     console.log(`  worksheet → ${WORKSHEET_PATH}`);
     console.log(`  next → ${invocation(options, `--record ${WORKSHEET_PATH}`)}`);
     return;
@@ -444,7 +470,7 @@ async function verifyRepository(options: VerifyOptions): Promise<void> {
     const binding = changeSetBinding(boundary);
     const selectedPlan = planForBoundary(root, boundary, options);
     const planApproval = selectedPlan ? { path: selectedPlan.plan, planId: selectedPlan.planId ?? null, digest: selectedPlan.approvalDigest ?? null } : null;
-    if (canReuseReceipt(options, boundary) && reusableReceiptCovers(root, binding, planApproval)) {
+    if (canReuseReceipt(options, boundary) && reusableReceiptCovers(root, boundary, planApproval)) {
       console.log(
         `codument verify: ${pc.green("PASS")} — staged · ${boundary.fingerprint.slice(0, 12)}`,
       );
@@ -497,7 +523,7 @@ async function verifyRepository(options: VerifyOptions): Promise<void> {
       bundle ??= bundleFor(root, base, boundary, report);
       writeWorksheet(root, bundle, options.prepareReview === true);
     }
-    if (passed && boundary.complete) writeReceipt(root, binding, planApproval);
+    if (passed && boundary.complete && assessment) writeReceipt(root, binding, planApproval, assessment.evidence);
 
     if (options.json) {
       console.log(

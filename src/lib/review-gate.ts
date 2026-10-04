@@ -1,6 +1,139 @@
 import type { ReviewFinding } from "./review-artifact.js";
 import type { TestOutcome } from "./review-confirm.js";
 import { MODULE_ANCHOR_NAME } from "./ts-adapter.js";
+import { createHash } from "node:crypto";
+import type { AnchorChange } from "./fingerprint.js";
+import type { Registry } from "./registry.js";
+import { resolveOwner } from "./ownership.js";
+import type { RiskTouch } from "./change-state.js";
+import type { ContractChange } from "./review-bundle.js";
+import type { TestImpact } from "./test-impact.js";
+
+export const REVIEW_POLICY_VERSION = 1;
+
+export interface ReviewPolicy {
+  version: typeof REVIEW_POLICY_VERSION;
+  minimum: "none" | "focused" | "adversarial";
+  reasons: string[];
+  /** Binds the original evidence, including both ownership and risk views. */
+  factsFingerprint: string;
+}
+
+export interface ReviewPolicyFacts {
+  mode: "staged" | "range";
+  complete: boolean;
+  sourcePaths: readonly string[];
+  existingSourcePaths: readonly string[];
+  anchorChanges: Readonly<Record<string, readonly AnchorChange[]>>;
+  unevaluablePaths: readonly string[];
+  otherChangedPaths: readonly string[];
+  addedPaths: readonly string[];
+  deletedPaths: readonly string[];
+  renamedPaths: readonly string[];
+  contractChanges: readonly ContractChange[];
+  beforeRegistry: Registry;
+  registry: Registry;
+  /** Union of impacted risks at the base and selected snapshot. */
+  riskTouches: readonly RiskTouch[];
+  testImpact?: TestImpact;
+}
+
+const sortedUnique = (values: readonly string[]): string[] => [...new Set(values)].sort();
+const normalizedProse = (text: string | null): string | null =>
+  text === null ? null : text.replace(/^\uFEFF/, "").replace(/\s+/g, " ").trim();
+
+/** Structural minimum only. Understanding, locality and reversibility remain host judgment. */
+export function classifyReviewPolicy(facts: ReviewPolicyFacts): ReviewPolicy {
+  const reasons = new Set<string>();
+  const sources = sortedUnique(facts.sourcePaths);
+  const existing = new Set(facts.existingSourcePaths);
+  const addReason = (condition: boolean, reason: string) => { if (condition) reasons.add(reason); };
+  addReason(facts.mode !== "staged", "branch or range review");
+  addReason(!facts.complete, "incomplete boundary analysis");
+  addReason(facts.unevaluablePaths.length > 0, "unevaluable source analysis");
+  const instructionHousekeeping = new Set(facts.contractChanges.filter((change) =>
+    change.kind === "instruction" && !change.requiresReview && change.before !== null && change.after !== null
+      && normalizedProse(change.before) === normalizedProse(change.after)).map((change) => change.path));
+  addReason(facts.otherChangedPaths.some((path) => !instructionHousekeeping.has(path)), "configuration or other non-source change");
+  const addedTestEvidence = new Set((facts.testImpact?.changedTests ?? []).filter((test) =>
+    facts.testImpact!.attributed.some((item) => item.test === test)));
+  addReason(facts.addedPaths.some((path) => !addedTestEvidence.has(path)), "added path");
+  addReason(facts.deletedPaths.length > 0, "deleted path");
+  addReason(facts.renamedPaths.length > 0, "renamed path");
+  addReason(facts.contractChanges.some((change) =>
+    change.requiresReview || normalizedProse(change.before) !== normalizedProse(change.after)),
+  "protected documentation or instruction contract changed");
+  addReason(facts.riskTouches.some((touch) => touch.risk.length > 0), "risk-tagged feature touched before or after");
+
+  const owners = new Set<string>();
+  let movedCount = 0;
+  const sourceEvidence = sources.map((path) => {
+    const changes = facts.anchorChanges[path];
+    addReason(!existing.has(path), "source did not exist at the base");
+    addReason(changes === undefined, "coarse or unknown source analysis");
+    // Even an empty precise diff needs known ownership; absence is not proof that
+    // an ungoverned source is suitable for a lighter review.
+    const ids = changes?.length ? changes.map((change) => change.id) : [path];
+    const ownership = [...new Set(ids)].sort().map((id) => {
+      const before = resolveOwner(facts.beforeRegistry, id);
+      const after = resolveOwner(facts.registry, id);
+      addReason(before.kind !== "owned" || after.kind !== "owned", "unresolved source ownership before or after");
+      addReason(before.kind === "owned" && after.kind === "owned" && before.feature !== after.feature,
+        "source ownership changed");
+      const beforeRisk = before.kind === "owned" ? sortedUnique(facts.beforeRegistry.features[before.feature].risk) : [];
+      const afterRisk = after.kind === "owned" ? sortedUnique(facts.registry.features[after.feature].risk) : [];
+      addReason(beforeRisk.length > 0 || afterRisk.length > 0, "risk-tagged feature touched before or after");
+      if (after.kind === "owned") owners.add(after.feature);
+      return { id, before, after, beforeRisk, afterRisk };
+    });
+    for (const change of changes ?? []) {
+      movedCount++;
+      addReason(change.name === MODULE_ANCHOR_NAME, "module residual changed");
+      addReason(change.kind !== "changed", "added or removed symbol");
+      addReason(!change.fromSig || !change.toSig, "unknown symbol signature");
+      addReason(change.fromSig !== undefined && change.toSig !== undefined && change.fromSig !== change.toSig,
+        "symbol signature changed");
+    }
+    return {
+      path, existing: existing.has(path), ownership,
+      changes: changes === undefined ? null : [...changes]
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .map((change) => [change.id, change.name, change.kind, change.from ?? null, change.to ?? null, change.fromSig ?? null, change.toSig ?? null]),
+    };
+  });
+
+  if (movedCount > 0) {
+    addReason(sources.length !== 1, "behavior spans multiple sources");
+    addReason(owners.size !== 1, "behavior spans multiple feature owners");
+    const tests = facts.testImpact;
+    addReason(!tests || tests.changedTests.length === 0, "no attributable test evidence");
+    addReason(!!tests && (tests.unattributed.length > 0 || tests.changedTests.some((test) => {
+      const attributed = tests.attributed.filter((item) => item.test === test);
+      return attributed.length === 0 || attributed.some((item) => !owners.has(item.feature));
+    })), "test evidence is unowned or spans other features");
+  } else {
+    addReason((facts.testImpact?.changedTests.length ?? 0) > 0, "test change without attributable source behavior");
+  }
+
+  const evidence = {
+    mode: facts.mode, complete: facts.complete, sources: sourceEvidence,
+    unevaluablePaths: sortedUnique(facts.unevaluablePaths), otherChangedPaths: sortedUnique(facts.otherChangedPaths),
+    addedPaths: sortedUnique(facts.addedPaths), deletedPaths: sortedUnique(facts.deletedPaths), renamedPaths: sortedUnique(facts.renamedPaths),
+    contracts: [...facts.contractChanges].sort((a, b) => a.path.localeCompare(b.path))
+      .map((change) => [change.path, change.kind, sortedUnique(change.owners), normalizedProse(change.before), normalizedProse(change.after), change.requiresReview]),
+    risks: facts.riskTouches.map((touch) => [touch.feature, sortedUnique(touch.risk), sortedUnique(touch.files)]).sort(),
+    tests: facts.testImpact ? {
+      changed: sortedUnique(facts.testImpact.changedTests), unattributed: sortedUnique(facts.testImpact.unattributed),
+      attributed: facts.testImpact.attributed.map((item) => [item.test, item.feature, item.via]).sort(),
+    } : null,
+  };
+  return {
+    version: REVIEW_POLICY_VERSION,
+    minimum: reasons.size > 0 ? "adversarial" : movedCount > 0 ? "focused" : "none",
+    reasons: [...reasons].sort(),
+    factsFingerprint: createHash("sha256").update(JSON.stringify(evidence), "utf8").digest("hex"),
+  };
+}
 
 // The adversarial-review gate decision, kept pure and separate from the `review`
 // command so it is unit-testable. Two parts: a PROPORTIONALITY predicate (does
@@ -19,6 +152,7 @@ import { MODULE_ANCHOR_NAME } from "./ts-adapter.js";
 // as the change-control gate's inability to verify an ack's semantic truth.
 
 export interface ReviewGateInput {
+  reviewPolicy?: ReviewPolicy;
   /** Durable documentation/invariant or declared workflow instruction changed. */
   contractChangeCount?: number;
   /** Registered non-source instructions proven to differ only in formatting. */
@@ -74,6 +208,7 @@ export function countResolvedMovedSymbols(movedSymbols: readonly string[]): numb
 // checks above are what keep an unowned or module-level co-moved change from reading
 // trivial.
 export function requiresAdversarialReview(input: ReviewGateInput): boolean {
+  if (input.reviewPolicy) return input.reviewPolicy.version !== REVIEW_POLICY_VERSION || input.reviewPolicy.minimum !== "none";
   if ((input.contractChangeCount ?? 0) > 0) return true;
   const realChangeCount = input.realChangeCount - (input.housekeepingInstructionCount ?? 0);
   if (realChangeCount === 0) return false;
@@ -91,6 +226,7 @@ export function requiresAdversarialReview(input: ReviewGateInput): boolean {
 }
 
 export interface ReviewGateResult {
+  reviewPolicy?: ReviewPolicy;
   /** Did proportionality require an adversarial review for this diff? */
   required: boolean;
   /** Is there an artifact whose fingerprint covers the current diff? */
@@ -135,26 +271,19 @@ export function evaluateReviewGate(
   input: ReviewGateInput,
   findings: readonly JudgedFinding[] | null,
 ): ReviewGateResult {
-  if (!requiresAdversarialReview(input)) {
-    return {
-      required: false,
-      covered: findings !== null,
-      blockingFindings: [],
-      advisoryFindings: [],
-      passed: true,
-      reason: null,
-      adjudicated: 0,
-      unjudged: 0,
-    };
-  }
+  const required = requiresAdversarialReview(input);
+  const policy = input.reviewPolicy ? { reviewPolicy: input.reviewPolicy } : {};
   if (findings === null) {
     return {
-      required: true,
+      ...policy,
+      required,
       covered: false,
       blockingFindings: [],
       advisoryFindings: [],
-      passed: false,
-      reason: "no current adversarial review covers this diff",
+      passed: !required,
+      reason: required ? input.reviewPolicy
+        ? `no current ${input.reviewPolicy.minimum} review covers this diff`
+        : "no current adversarial review covers this diff" : null,
       adjudicated: 0,
       unjudged: 0,
     };
@@ -167,7 +296,8 @@ export function evaluateReviewGate(
   const advisoryFindings = findings.filter((f) => f.status === "advisory");
   if (blockingFindings.length > 0) {
     return {
-      required: true,
+      ...policy,
+      required,
       covered: true,
       blockingFindings,
       advisoryFindings,
@@ -178,7 +308,8 @@ export function evaluateReviewGate(
     };
   }
   return {
-    required: true,
+    ...policy,
+    required,
     covered: true,
     blockingFindings: [],
     advisoryFindings,

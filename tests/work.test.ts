@@ -119,6 +119,12 @@ describe("work approval CLI", () => {
     assert.equal(reviewed.status, 0, reviewed.stdout + reviewed.stderr);
     assert.equal(JSON.parse(reviewed.stdout).boundary.bases.length, 1);
     assert.equal(cli("work", "finish").status, 1, "aggregate readiness cannot borrow a root receipt");
+    const receiptPath = join(root, ".git/codument/verify-receipt.json");
+    const priorReceipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+    delete priorReceipt.reviewEvidence;
+    writeFileSync(receiptPath, JSON.stringify(priorReceipt));
+    assert.equal(cli("work", "finish", "--repo", ".").status, 1, "readiness requires current review evidence");
+    assert.equal(cli("verify", "--repo", ".").status, 0, "fresh verification renews the old cache");
     assert.equal(cli("work", "finish", "--repo", ".").status, 0);
     const quote = (value: string) => `'${value.replace(/\\/g, "/").replace(/'/g, "'\\''")}'`;
     put("node_modules/.bin/codument", `#!/bin/sh\nprintf '%s\\n' "$*" >> .codument/hook-argv.log\nexec ${quote(process.execPath)} ${quote(CLI)} "$@"\n`);

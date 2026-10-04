@@ -2,7 +2,7 @@
 title: Focused step verification
 status: current
 type: feature
-last_reviewed: 2026-09-14
+last_reviewed: 2026-10-04
 ---
 
 # Focused step verification
@@ -35,11 +35,16 @@ snapshot, so an unrelated worktree edit cannot alter the verdict indirectly thro
 state.
 
 The compact verification surface is the normal step gate. It combines documentation synchronization
-and required adversarial-review coverage, prints actionable failures by default, and keeps full
+and required focused or adversarial review coverage, prints actionable failures by default, and keeps full
 diagnostics and a deterministic machine contract available on demand. When a clean non-trivial
 boundary lacks review coverage, that invocation writes a deterministic ready-to-fill worksheet;
 record-and-verify consumes the same shape, so the workflow never depends on a user reverse-engineering
 loose JSON or running a separate preparation command.
+
+Local receipt reuse requires the current review policy and the same complete set of covering
+attestations. Added, removed or changed covering evidence reopens the gate; unrelated or stale review
+records remain untouched. Historical caches without this evidence receive fresh checks. Ordinary
+and portable review artifacts retain their existing format and boundary rules.
 
 Tests are evidence rather than documentation subjects. Explicit invariant pins are authoritative;
 supported direct imports are a fallback signal; an unattributed test is named rather than guessed.
@@ -73,6 +78,9 @@ unavailable. Reproduction in a dirty aggregate workspace requires selecting one 
 - Paused work cannot pass execution verification. Exact final approval remains usable without local recovery data and becomes unavailable when delivery changes. *(test: `work.test.ts`)*
 
 - Receipt reuse requires the same selected approval identity and digest as well as the complete staged boundary and tool version. *(test: `change-set.test.ts`)*
+- A previously passing compact gate cannot hide another covering review's reproduced failure.
+  Removed evidence or an older receipt requires fresh verification; unrelated records survive.
+  *(test: `verify.test.ts`)*
 
 - The local authoritative verdict covers exactly the complete staged set; an explicit subset is
   diagnostic until it equals that set and cannot satisfy a strict gate. *(tests:

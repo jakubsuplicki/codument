@@ -14,7 +14,7 @@ resolved and the user has explicitly deferred any remaining finding.
 2. Check that `review-work` is clean, or that every finding was fixed or explicitly deferred by the user.
 3. Check `git status --short` and `git diff --cached`.
 4. Confirm `codument work status --json` shows the reviewed step ready and the already-staged, verified boundary unchanged; do not stage here. If it changed, return to review and verification. Respect an explicit no-commit request: leave the step ready and stop.
-5. Commit that boundary with a conventional commit prefix. The managed pre-commit hook runs `codument verify`; when the staged bytes and Codument version are unchanged, it reuses the exact receipt instead of repeating the review:
+5. Commit that boundary with a conventional commit prefix. The managed pre-commit hook runs `codument verify`; when the staged boundary, approval, review policy and review evidence remain current, it reuses the exact receipt instead of repeating the review:
    - `feat:`
    - `fix:`
    - `docs:`

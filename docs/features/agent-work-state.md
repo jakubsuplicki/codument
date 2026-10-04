@@ -2,7 +2,7 @@
 title: Agent work state
 status: current
 type: feature
-last_reviewed: 2026-09-11
+last_reviewed: 2026-10-04
 ---
 
 # Agent work state
@@ -29,6 +29,9 @@ boundary advances progress using that commit's checklist, so unfinished delivery
 behind newer working-tree edits or later unrelated commits. Recovery searches bounded reachable
 history and reports when its window is exhausted. Conflicting writers and invalid or moved state
 fail with a remedy.
+New readiness also checks the current review policy and covering attestations; changed review
+evidence cannot inherit an earlier pass. Recovery of an already committed final delivery retains its
+original proof rather than retroactively granting or revoking permission.
 Checklist, context, mapping and verification commands share selected work; an explicit preview of
 another plan grants no execution. The live monitor displays saved interruption and pending gates.
 Final compaction retains approval in tracked data and binds it to the exact final delivery. Recovery

@@ -42,6 +42,7 @@ describe("codument verify", () => {
     git(["init", "-q"]);
     git(["config", "user.name", "Test User"]);
     git(["config", "user.email", "test@example.com"]);
+    await put(".gitignore", ".codument/\n");
     await put(
       "docs/.registry.json",
       JSON.stringify(
@@ -167,17 +168,27 @@ describe("codument verify", () => {
     assert.match(result.review.confirmUnavailable,/unjudged|advisory|could not|unavailable/i);
   });
 
-  it("passes a trivial staged step in one compact command and writes an exact receipt", async () => {
+  it("records focused self-review and reuses its exact receipt", async () => {
     await put("src/a.ts", "export function a(): number { return 2; }\n");
-    git(["add", "src/a.ts"]);
+    await put("tests/alpha.test.ts", 'import { a } from "../src/a.js";\nif (a() !== 2) throw new Error("numeric contract");\n');
+    git(["add", "src/a.ts", "tests/alpha.test.ts"]);
     await put("scratch.txt", "unrelated dirty work\n");
 
-    const first = verify();
+    const uncovered = verify();
+    assert.equal(uncovered.status, 1);
+    const worksheet = JSON.parse(await readFile(join(repo, ".codument/review-worksheet.json"), "utf8"));
+    assert.equal(worksheet.reviewContext.reviewPolicy.minimum, "focused");
+    worksheet.invariantsChecked = ["The local numeric change and its direct test"];
+    worksheet.signer = "author self-review";
+    await put(".codument/review-worksheet.json", JSON.stringify(worksheet));
+    const first = verify(["--record", ".codument/review-worksheet.json"]);
     assert.equal(first.status, 0, first.stderr || first.stdout);
     assert.match(first.stdout, /^codument verify: PASS — staged · [a-f0-9]{12}\r?\n$/);
     const receipt = JSON.parse(await readFile(receiptPath(), "utf8"));
     assert.equal(receipt.version, 1);
     assert.equal(receipt.boundary.mode, "staged");
+    assert.equal(receipt.reviewEvidence.policyVersion, 1);
+    assert.equal(verify().status, 0);
 
     const one = verify(["--json"]);
     const two = verify(["--json"]);
@@ -243,8 +254,8 @@ describe("codument verify", () => {
 
     await rm(join(repo, ".codument", "reviews"), { recursive: true, force: true });
     const cached = verify();
-    assert.equal(cached.status, 0, cached.stderr || cached.stdout);
-    assert.match(cached.stdout, /^codument verify: PASS — staged · [a-f0-9]{12}\r?\n$/);
+    assert.equal(cached.status, 1, "removing covering evidence reopens the compact gate");
+    assert.match(cached.stdout, /REVIEW REQUIRED/);
     const forced = verify(["--details"]);
     assert.equal(forced.status, 1, "details deliberately recomputes instead of trusting the cache");
     assert.match(forced.stdout, /REVIEW REQUIRED/);
@@ -285,6 +296,54 @@ describe("codument verify", () => {
     const recorded = run(["--record", ".codument/review-worksheet.json"]);
     assert.equal(recorded.status, 0, recorded.stderr || recorded.stdout);
     assert.equal(invocations, 2, "worksheet generation and record-and-verify are the whole loop");
+  });
+
+  it("rechecks a cached pass when another covering review reproduces a failure", async () => {
+    await put(".codument-meta.json", JSON.stringify({ testCommand: "node --test {file}" }));
+    await put("tests/regression.test.cjs", 'require("node:test").test("regression", () => { throw new Error("reproduced bug"); });\n');
+    git(["add", "."]);
+    git(["commit", "-qm", "named regression runner"]);
+    await put("src/a.ts", "export function a(): number { return 2; }\n");
+    git(["add", "src/a.ts"]);
+    assert.equal(verify().status, 1);
+    const worksheet = JSON.parse(await readFile(join(repo, ".codument/review-worksheet.json"), "utf8"));
+    worksheet.invariantsChecked = ["Numeric contract checked"];
+    worksheet.signer = "first reviewer";
+    await put(".codument/review-worksheet.json", JSON.stringify(worksheet));
+    assert.equal(verify(["--record", ".codument/review-worksheet.json"]).status, 0);
+    assert.equal(verify().status, 0);
+    const passedReceipt = await readFile(receiptPath(), "utf8");
+
+    worksheet.signer = "second reviewer";
+    worksheet.findings = [{ citation: "src/a.ts:1", detail: "Additional reproduced finding", failingTest: "tests/regression.test.cjs", status: "advisory" }];
+    await put(".codument/review-worksheet.json", JSON.stringify(worksheet));
+    assert.equal(verify(["--record", ".codument/review-worksheet.json"]).status, 1);
+    assert.equal(await readFile(receiptPath(), "utf8"), passedReceipt, "failed verification cannot replace the prior receipt");
+    const reopened = verify();
+    assert.equal(reopened.status, 1, reopened.stdout + reopened.stderr);
+    assert.match(reopened.stdout, /Additional reproduced finding/);
+    assert.doesNotMatch(reopened.stdout, /^codument verify: PASS/);
+  });
+
+  it("preserves unrelated reviews and refreshes receipts missing current review evidence", async () => {
+    await put("src/a.ts", "export function a(): number { return 2; }\n");
+    git(["add", "src/a.ts"]);
+    assert.equal(verify().status, 1);
+    const worksheet = JSON.parse(await readFile(join(repo, ".codument/review-worksheet.json"), "utf8"));
+    worksheet.invariantsChecked = ["Numeric contract checked"];
+    worksheet.signer = "fixture reviewer";
+    await put(".codument/review-worksheet.json", JSON.stringify(worksheet));
+    assert.equal(verify(["--record", ".codument/review-worksheet.json"]).status, 0);
+    const receipt = JSON.parse(await readFile(receiptPath(), "utf8"));
+    const unrelatedPath = ".codument/reviews/unrelated.json";
+    await put(unrelatedPath, JSON.stringify({ version: 1, unrelated: true }));
+    assert.equal(verify().status, 0);
+    assert.equal(JSON.parse(await readFile(receiptPath(), "utf8")).reviewEvidence.digest, receipt.reviewEvidence.digest);
+    delete receipt.reviewEvidence;
+    await writeFile(receiptPath(), JSON.stringify(receipt));
+    assert.equal(verify().status, 0, "a historical cache receives fresh checks");
+    assert.equal(JSON.parse(await readFile(receiptPath(), "utf8")).reviewEvidence.policyVersion, 1);
+    assert.equal(await readFile(join(repo, unrelatedPath), "utf8"), JSON.stringify({ version: 1, unrelated: true }));
   });
 
   it("prints only actionable failures by default and keeps the full report on demand", async () => {

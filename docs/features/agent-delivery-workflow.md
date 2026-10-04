@@ -37,6 +37,12 @@ Profiles place the same contract on each host's instruction and skill surfaces. 
 uses a fresh agent when available and discloses reduced independence otherwise. Existing-project
 adoption preserves authored knowledge, creates only needed scaffolds and marks uncertainty.
 
+Generated review effort is a structural floor. Focused self-review is available only for understood,
+local and reversible behavior with precise ownership and attributable test evidence. Sensitive
+contracts, declared risks and uncertain analysis require the adversarial pass; semantic uncertainty
+can raise that floor. Both efforts use the same worksheet and exact staged evidence, and neither
+can discard a reproduced finding. [[adversarial-review-gate]] owns calibration.
+
 Verified dead-code removal can use a compact approved step in the owning doc. Evidence must cover
 public and dynamic entry points as well as ordinary callers; absence of textual imports is not
 enough. This path removes duplicate planning and progress bookkeeping while retaining ownership,
@@ -149,7 +155,7 @@ product value. Some safeguards already exist; reuse them before introducing anot
 - [x] Step 2: Approve outcomes and constraints while treating implementation file lists as guidance.
 - [x] Step 3: Plan demonstrable milestones and repair routine failures without human interruptions.
 - [x] Step 4: Batch ownership lookup and source mapping around the staged delivery boundary.
-- [ ] Step 5: Scale review effort to risk while preserving verification of staged changes.
+- [x] Step 5: Scale review effort to risk while preserving verification of staged changes.
 - [ ] Step 6: Generate progress and handoffs from one consistent view of selected work.
 - [ ] Step 7: Demonstrate the lighter workflow and report measured overhead separately from implementation.
 

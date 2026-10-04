@@ -2,7 +2,7 @@
 title: Core library
 status: current
 type: concept
-last_reviewed: 2026-09-25
+last_reviewed: 2026-10-04
 ---
 
 # Core library
@@ -12,6 +12,10 @@ last_reviewed: 2026-09-25
 The shared foundation keeps commands and hooks consistent: ownership, analysis, installation,
 change control and token accounting reuse the same rules. This page owns the layer's boundaries;
 individual feature docs own their behavior.
+
+Managed agent guidance follows generated review floors while leaving semantic judgment to the
+host. Focused self-review and independent adversarial review share exact boundary verification;
+neither a file count nor an informal risk label grants an exemption.
 
 ## Design approach
 
