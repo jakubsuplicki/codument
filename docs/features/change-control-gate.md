@@ -34,6 +34,10 @@ be overwritten as though it were an empty ledger. [[token-cost-tracking]] owns c
 
 The monitor and report show current work state and pending gates ahead of historical step events. Final-plan approval can be recovered from tracked delivery evidence in a clean history review; working-tree review keeps its existing semantics.
 
+The monitor consumes the same generated milestone progress as work status, checklist and context.
+It distinguishes implementation from delivery and retains saved interruptions even when delivery
+has been observed. Historical activity cannot select another milestone or authorize execution.
+
 Projects may require approval bound to the selected plan's recorded contract. The gate reads both approval and scope from its selected snapshot, so a working-tree recording cannot authorize a staged change. A governed change without an eligible bound plan is unavailable under that policy; legacy projects retain an explicit migration path.
 
 The gate is split into two parts that must not be confused: a **deterministic enforcer** and an **optional LLM/agent assist** layered on top.

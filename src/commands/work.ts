@@ -95,11 +95,13 @@ function renderWork(action: WorkAction | "status", options: WorkCommandOptions):
     );
   else {
     const record = inspection.selected;
+    const progress = inspection.progress;
+    const milestone = progress?.steps.find((step) => step.n === progress.step);
     console.log(
-      `${record.status}: ${record.path}${record.step === null ? "" : ` — step ${record.step}`}`,
+      `${progress?.status ?? record.status}: ${record.path}${record.step === null ? "" : ` — step ${record.step}`}${milestone ? `: ${milestone.text}` : ""}`,
     );
     if (record.status !== "completed" && record.status !== "superseded")
-      console.log(`Next gate: ${record.nextGate}`);
+      console.log(`Next gate: ${progress?.nextGate ?? record.nextGate}`);
     if (record.reason) console.log(record.reason);
     if (record.resumeCondition) console.log(`Resume when: ${record.resumeCondition}`);
     for (const issue of inspection.issues) console.log(`Needs attention: ${issue}`);

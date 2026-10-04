@@ -18,6 +18,8 @@ Ready means a verified step still awaits its commit; completed requires observed
 Explicit repository selection carries the same Git view through readiness and observed delivery.
 Aggregate work cannot borrow a receipt for the root alone, and finishing root work leaves a nested
 repository's staged changes and history intact. *(test: `work.test.ts`)*
+Checklist, context and monitor accept that same selection, so a root-only handoff stays consistent
+through verified readiness; omission retains the aggregate view.
 
 The tracked approval owns permission and Markdown owns planned scope. Ignored local state belongs
 to one worktree and records selection, interruption reasons, resume conditions and the pending gate.
@@ -34,6 +36,10 @@ evidence cannot inherit an earlier pass. Recovery of an already committed final 
 original proof rather than retroactively granting or revoking permission.
 Checklist, context, mapping and verification commands share selected work; an explicit preview of
 another plan grants no execution. The live monitor displays saved interruption and pending gates.
+Progress is generated from those same inputs. A checked implementation retains its selected
+milestone through verification, review and commit; saved advancement supplies prior-step status
+without pretending to retain exact older delivery proof. Dirty future checkboxes cannot advance it.
+Observed delivery is exposed separately during an interruption and cannot silently resume work.
 Final compaction retains approval in tracked data and binds it to the exact final delivery. Recovery
 notes remain local context, so a fresh checkout can verify delivery without them.
 A direct commit made before readiness was saved can still reconcile final completion from matching
@@ -59,6 +65,9 @@ evidence; missing or mismatched evidence requires recovery and cannot reopen per
   *(test: `work.test.ts`)*
 - A final checkbox does not prevent explicit resume while review or delivery remains pending.
   *(test: `work-state.test.ts`)*
+- Status, checklist, context and monitor share the current milestone, gate and interruption.
+  Checking implementation cannot hide unfinished delivery or emit another start event.
+  *(tests: `steps.test.ts`, `watch.test.ts`, `work.test.ts`)*
 - Paused work cannot emit execution or pass the execution gate. Final compaction survives a fresh
   checkout; later changes cannot reuse its archived approval. *(test: `work.test.ts`)*
 - Final preparation checks the selected identity and expected state revision under its writer lock.

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, isAbsolute } from "node:path";
 import pc from "picocolors";
+import { withSelectedRepository } from "../lib/git.js";
 import { readRegistrySync } from "../lib/registry.js";
 import { parseFeatureMap } from "../lib/feature-map.js";
 import { parsePlanScope, normalizePlanPath, planApprovalModel } from "../lib/plan-steps.js";
@@ -10,6 +11,7 @@ import {
   workPlanSelection,
   workPlanContext,
   type WorkRecord,
+  type WorkProgress,
 } from "../lib/work-state.js";
 import {
   applyBudget,
@@ -29,12 +31,12 @@ import {
 // or a plan, it projects the minimal grounded working set from the registry and
 // the committed docs (orientation + invariants with test pointers, primary
 // sources, one-hop deps) so an agent can pull its relevant slice on any turn.
-// Informational and pure (registry + docs, no git, no model): it always "runs",
-// so the only nonzero exit is a bad invocation (no selector, or two at once) or
-// an unreadable registry (fails loud at the CLI boundary). A `--budget` trims
-// tail-first and says what it dropped — never a silent cap.
+// Informational: ownership comes from registry/docs and selected progress is a
+// read-only state/Git projection. Invalid selectors and unreadable registry data
+// fail loudly. A soft budget trims context tail-first and names omissions.
 
 interface ContextCliOptions {
+  repo?: string;
   feature?: string;
   file?: string;
   paths?: string[];
@@ -49,6 +51,7 @@ interface ContextCliOptions {
 
 interface ContextJson {
   work?: WorkRecord & { issues: string[] };
+  progress?: WorkProgress | null;
   version: 1;
   selector: ContextPack["selector"];
   entries: ContextEntry[];
@@ -243,6 +246,11 @@ function renderEntry(entry: ContextEntry): string[] {
 }
 
 export function contextCommand(options: ContextCliOptions = {}): void {
+  withSelectedRepository(options.root ?? options.dir ?? process.cwd(), options.repo, (root) =>
+    contextRepository(options.repo === undefined ? options : { ...options, root }));
+}
+
+function contextRepository(options: ContextCliOptions): void {
   const root = options.root ?? options.dir ?? process.cwd();
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
 
@@ -334,7 +342,8 @@ export function contextCommand(options: ContextCliOptions = {}): void {
       payload.unmappedFiles = pack.unmappedFiles;
     }
     if (options.plan) {
-      const work = inspectWorkState(root);
+      const work = inspectWorkState(root, { plan: options.plan, planId: options.planId });
+      payload.progress = work.progress;
       if (work.selected?.path === options.plan && work.selected?.planId === options.planId)
         payload.work = { ...work.selected, issues: work.issues };
     }
@@ -346,6 +355,14 @@ export function contextCommand(options: ContextCliOptions = {}): void {
     pc.bold("codument context") + pc.dim(`  ${pack.selector.kind}: ${pack.selector.kind === "paths" ? pack.selector.value.join(", ") : pack.selector.value || "—"}`),
   );
   console.log();
+
+  if (options.plan) {
+    const work = inspectWorkState(root, { plan: options.plan, planId: options.planId });
+    const progress = work.progress;
+    const milestone = progress?.steps.find((step) => step.n === progress.step);
+    if (milestone) console.log(`  Milestone: ${milestone.text} · ${progress?.status ?? "preview"}${progress?.nextGate ? ` · next gate: ${progress.nextGate}` : ""}`);
+    if (progress?.interruption?.reason) console.log(`  ${progress.interruption.reason}`);
+  }
 
   if (pack.ownership) {
     for (const item of pack.ownership) console.log(renderOwner(item.file, item.owners));

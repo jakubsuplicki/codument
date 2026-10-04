@@ -9,6 +9,7 @@ import {
   forgetWorkspace,
   getWorkingTreeChanges,
   isGitRepo,
+  withSelectedRepository,
 } from "../lib/git.js";
 import { readRecentEvents, type CodumentEvent } from "../lib/events.js";
 import { summarizeImpact } from "../lib/impact-ledger.js";
@@ -27,6 +28,7 @@ import {
 } from "../lib/verdict.js";
 
 interface WatchOptions {
+  repo?: string;
   root?: string;
   dir?: string;
   once?: boolean;
@@ -61,7 +63,7 @@ export interface ActivityItem {
 
 interface RenderOpts {
   capture?: CaptureReport;
-  work?: Pick<WorkInspection, "selected" | "issues">;
+  work?: Pick<WorkInspection, "selected" | "issues"> & Partial<Pick<WorkInspection, "progress">>;
   /** Animation frame counter; advanced by the fast render tick. */
   tick?: number;
   /** Touched-file activity derived from mtimes (events are merged in here). */
@@ -350,7 +352,21 @@ export function renderFrame(
   const lastStep = scoped
     .filter((e) => e.type === "step")
     .sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0))[0];
-  if (opts.work?.selected) {
+  if (opts.work?.progress) {
+    const progress = opts.work.progress;
+    const completed = progress.steps.filter((step) => step.status === "completed").length;
+    lines.push(`  ${pc.dim("work")}     ${progress.status ?? progress.selection} · ${progress.path}${progress.step === null ? "" : ` · step ${progress.step}`}${progress.nextGate === null ? "" : ` · ${progress.nextGate}`}`);
+    const current = progress.steps.find((step) => step.n === progress.step);
+    if (current) lines.push(`  ${pc.dim("milestone")} ${current.text}${current.delivered === true ? " · delivery observed" : current.implemented && current.status !== "completed" ? " · implemented, delivery pending" : ""}`);
+    lines.push(`           ${completed}/${progress.steps.length} milestones completed`);
+    if (progress.interruption) {
+      const interruption = progress.interruption;
+      if (interruption.reason) lines.push(`           ${interruption.reason}`);
+      if (interruption.resumeCondition) lines.push(`           Resume when: ${interruption.resumeCondition}`);
+      if (interruption.replacement) lines.push(`           Replaced by: ${interruption.replacement}`);
+    } else if (opts.work.selected?.reason) lines.push(`           ${opts.work.selected.reason}`);
+    for (const issue of opts.work.issues) lines.push(pc.yellow(`           ${issue}`));
+  } else if (opts.work?.selected) {
     const work = opts.work.selected;
     lines.push(`  ${pc.dim("work")}     ${work.status} · ${work.path}${work.step === null ? "" : ` · step ${work.step}`} · ${work.nextGate}`);
     if (work.reason) lines.push(`           ${work.reason}`);
@@ -519,7 +535,7 @@ function gatherActivity(
 
 interface FrameData {
   capture: CaptureReport;
-  work: Pick<WorkInspection, "selected" | "issues">;
+  work: Pick<WorkInspection, "selected" | "issues" | "progress">;
   review: ReviewReport;
   coverage: DoctorReport;
   events: CodumentEvent[];
@@ -557,8 +573,8 @@ function gatherFrameData(root: string): FrameData {
   const rates = loadRates(root);
   const registry = readRegistrySync(join(root, "docs", ".registry.json"));
   const totalFeatures = Object.keys(registry.features).length;
-  const { selected, issues } = inspectWorkState(root);
-  return { capture: inspectAgentCapture(root), review, coverage, events, activity, mood: selected?.status === "blocked" || issues.length ? "alert" : selected && selected.status !== "active" ? "idle" : mood, rates, totalFeatures, work: { selected, issues } };
+  const { selected, issues, progress } = inspectWorkState(root);
+  return { capture: inspectAgentCapture(root), review, coverage, events, activity, mood: selected?.status === "blocked" || issues.length ? "alert" : selected && selected.status !== "active" ? "idle" : mood, rates, totalFeatures, work: { selected, issues, progress } };
 }
 
 /** Builds one frame's data from the repo and renders it. Exported for the live demo. */
@@ -576,6 +592,11 @@ export function buildFrame(root: string, now: string, tick = 0): string {
 }
 
 export async function watch(options: WatchOptions = {}): Promise<void> {
+  await withSelectedRepository(options.root ?? options.dir ?? process.cwd(), options.repo, root =>
+    watchRepository({ ...options, root }));
+}
+
+async function watchRepository(options: WatchOptions): Promise<void> {
   const root = options.root ?? options.dir ?? process.cwd();
   // A subdirectory root renders a WRONG frame (everything unmapped, docs fresh),
   // including under --once — fail loud (the cli boundary renders the GateError)

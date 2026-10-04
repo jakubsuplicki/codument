@@ -6,6 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { installHook } from "../src/lib/git-hooks.js";
+import { inspectWorkState, transitionWork, workPlanSelection } from "../src/lib/work-state.js";
+import { approvePlan } from "../src/lib/plan-approval.js";
 
 const CLI = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
 const path = "docs/features/alpha.md";
@@ -126,6 +128,19 @@ describe("work approval CLI", () => {
     assert.equal(cli("work", "finish", "--repo", ".").status, 1, "readiness requires current review evidence");
     assert.equal(cli("verify", "--repo", ".").status, 0, "fresh verification renews the old cache");
     assert.equal(cli("work", "finish", "--repo", ".").status, 0);
+    const readyWork = cli("work", "status", "--repo", ".", "--json");
+    const readySteps = cli("steps", "--repo", ".", "--json");
+    const readyContext = cli("context", "--repo", ".", "--json");
+    for (const projected of [readyWork, readySteps, readyContext])
+      assert.equal(projected.status, 0, projected.stdout + projected.stderr);
+    const progress = JSON.parse(readyWork.stdout).progress;
+    assert.equal(progress.step, 1);
+    assert.equal(progress.nextGate, "commit");
+    assert.equal(progress.steps[0].status, "in_progress");
+    assert.deepEqual(JSON.parse(readySteps.stdout).progress, progress);
+    assert.deepEqual(JSON.parse(readyContext.stdout).progress, progress);
+    assert.equal(JSON.parse(readySteps.stdout).active, null);
+    assert.equal(memberGit("write-tree"), memberIndex);
     const quote = (value: string) => `'${value.replace(/\\/g, "/").replace(/'/g, "'\\''")}'`;
     put("node_modules/.bin/codument", `#!/bin/sh\nprintf '%s\\n' "$*" >> .codument/hook-argv.log\nexec ${quote(process.execPath)} ${quote(CLI)} "$@"\n`);
     chmodSync(join(root, "node_modules/.bin/codument"), 0o755);
@@ -173,7 +188,18 @@ describe("work approval CLI", () => {
     assert.equal(verified.status, 0, verified.stdout + verified.stderr);
     const localBefore = readFileSync(join(root, ".codument/work-state.json"), "utf8");
     const approvalBefore = readFileSync(join(root, "docs/.approvals.json"), "utf8");
+    const compacted = readFileSync(join(root, path), "utf8");
+    transitionWork(root, "pause", { reason: "Final review pending", gate: "review" });
+    put(path, compacted + "\n## Delivery Plan\nPlan-ID: newly-authored\nStatus: draft\n\n- [ ] New effort\n");
+    const resumed = transitionWork(root, "resume", { plan: path });
+    assert.equal(resumed.selected, JSON.parse(localBefore).selected);
+    assert.equal(inspectWorkState(root).selected?.nextGate, "review");
+    assert.equal(inspectWorkState(root).selected?.status, "active");
+    assert.deepEqual(workPlanSelection(root, { plan: path }, true), { plan: path, planId: resumed.selected });
+    put(path, compacted);
+    put(".codument/work-state.json", localBefore);
     git("commit", "-qm", "final delivery before readiness bookkeeping");
+    const finalCommit = git("rev-parse", "HEAD").trim();
     put("later.txt", "Unrelated later work\n");
     git("add", "later.txt");
     git("commit", "-qm", "later unrelated work");
@@ -186,11 +212,38 @@ describe("work approval CLI", () => {
     assert.equal(readFileSync(join(root, "docs/.approvals.json"), "utf8"), approvalBefore);
     const inspected = cli("work", "status", "--json");
     assert.equal(JSON.parse(inspected.stdout).selected.status, "completed");
+    const finalProgress = inspectWorkState(root).progress;
+    assert.equal(finalProgress?.delivery?.commit, finalCommit);
+    assert.deepEqual(finalProgress?.delivery?.completedSteps, [1]);
     assert.equal(
       readFileSync(join(root, ".codument/work-state.json"), "utf8"),
       localBefore,
       "status remains read-only",
     );
+    // A delivery observation is evidence; it does not revoke a saved pause.
+    transitionWork(root, "pause", { reason: "Await explicit resume", gate: "review" });
+    const pausedBytes = readFileSync(join(root, ".codument/work-state.json"), "utf8");
+    const pausedDelivery = inspectWorkState(root);
+    assert.equal(pausedDelivery.selected?.status, "paused");
+    assert.equal(pausedDelivery.selected?.nextGate, "review");
+    assert.equal(pausedDelivery.progress?.delivery?.commit, finalCommit);
+    assert.equal(pausedDelivery.progress?.step, 1);
+    assert.equal(pausedDelivery.progress?.steps[0].status, "pending");
+    assert.equal(pausedDelivery.progress?.canExecute, false);
+    const pausedDoc = readFileSync(join(root, path), "utf8");
+    const retained = JSON.parse(approvalBefore).records.find((record: { planId: string }) => record.planId === pausedDelivery.selected?.planId);
+    put(path, retained.contract.replace("## Delivery Plan", `## Delivery Plan\nPlan-ID: ${retained.planId}\nStatus: approved`).replace("Implement", "Unapproved different promise"));
+    const stalePromise = inspectWorkState(root);
+    assert.equal(stalePromise.progress?.delivery?.commit, finalCommit, "historical observation survives");
+    assert.equal(stalePromise.progress?.steps[0].delivered, null, "old ordinal evidence cannot deliver a different promise");
+    assert.equal(stalePromise.progress?.steps[0].status, "pending");
+    put(path, pausedDoc);
+    assert.equal(readFileSync(join(root, ".codument/work-state.json"), "utf8"), pausedBytes);
+    assert.throws(() => transitionWork(root, "finish", {}), /resume interrupted work/);
+    transitionWork(root, "resume", {});
+    assert.equal(inspectWorkState(root).selected?.status, "completed");
+    // Preserve the original fixture for the established readiness recovery checks.
+    put(".codument/work-state.json", localBefore);
     assert.equal(cli("work", "finish").status, 0);
     assert.match(git("diff", "--cached", "--name-only"), /src\/alpha.ts/);
     assert.equal(cli("work", "resume", "--plan", path).status, 1);
@@ -488,7 +541,26 @@ describe("work approval CLI", () => {
     assert.equal(JSON.parse(ready.stdout).selected.status, "ready");
     const status = cli("work", "status", "--json");
     assert.equal(JSON.parse(status.stdout).selected.status, "ready");
+    const pending = inspectWorkState(root).progress;
+    assert.equal(pending?.step, 1);
+    assert.equal(pending?.nextGate, "commit");
+    assert.equal(pending?.canExecute, false);
+    assert.equal(pending?.steps[0].status, "in_progress");
+    assert.equal(pending?.steps[0].implemented, true);
+    assert.equal(pending?.delivery, null);
+    const receiptPath = join(root, ".git/codument/verify-receipt.json");
+    const receiptBytes = readFileSync(receiptPath, "utf8");
+    const savedReady = readFileSync(join(root, ".codument/work-state.json"), "utf8");
+    rmSync(receiptPath);
+    const invalidReady = inspectWorkState(root);
+    assert.equal(invalidReady.selected?.status, "ready");
+    assert.equal(invalidReady.selected?.nextGate, "commit");
+    assert.equal(invalidReady.progress?.nextGate, "verify");
+    assert.match(invalidReady.issues.join(" "), /codument verify/);
+    assert.equal(readFileSync(join(root, ".codument/work-state.json"), "utf8"), savedReady);
+    writeFileSync(receiptPath, receiptBytes);
     git("commit", "-qm", "deliver step");
+    const deliveredCommit = git("rev-parse", "HEAD").trim();
     put("README.md", "Unrelated later work.\n");
     git("add", "README.md");
     git("commit", "-qm", "later work");
@@ -496,6 +568,45 @@ describe("work approval CLI", () => {
     const observed = cli("work", "status", "--json");
     assert.equal(JSON.parse(observed.stdout).selected.status, "active");
     assert.equal(JSON.parse(observed.stdout).selected.step, 2);
+    const progress = inspectWorkState(root).progress;
+    assert.equal(progress?.delivery?.commit, deliveredCommit);
+    assert.deepEqual(progress?.delivery?.completedSteps, [1]);
+    assert.equal(progress?.step, 2);
+    assert.equal(progress?.nextGate, "verify");
+    assert.equal(progress?.steps[0].status, "completed");
+    assert.equal(progress?.steps[1].status, "in_progress");
+    assert.equal(progress?.steps[1].delivered, false);
+    assert.equal(progress?.canExecute, false);
+    for (const action of ["pause", "block"] as const) {
+      put(".codument/work-state.json", savedReady);
+      transitionWork(root, action, { reason: "Review next session", gate: "review", resumeCondition: action === "block" ? "Reviewer available" : undefined });
+      const saved = readFileSync(join(root, ".codument/work-state.json"), "utf8");
+      const interrupted = inspectWorkState(root);
+      assert.equal(interrupted.selected?.status, action === "pause" ? "paused" : "blocked");
+      assert.equal(interrupted.progress?.step, 1);
+      assert.equal(interrupted.progress?.nextGate, "review");
+      assert.equal(interrupted.progress?.steps[0].status, "pending");
+      assert.equal(interrupted.progress?.delivery?.commit, deliveredCommit);
+      assert.equal(interrupted.progress?.interruption?.reason, "Review next session");
+      assert.equal(readFileSync(join(root, ".codument/work-state.json"), "utf8"), saved);
+      transitionWork(root, "resume", {});
+      assert.equal(inspectWorkState(root).selected?.step, 2);
+    }
+    put(".codument/work-state.json", savedReady);
+    const second = "docs/features/replacement.md";
+    put(second, plan);
+    approvePlan(root, second, { signer: "fixture human" });
+    const selectedId = JSON.parse(savedReady).selected;
+    const superseded = transitionWork(root, "supersede", { plan: second, reason: "Prioritize replacement" });
+    const supersededPreview = inspectWorkState(root, { plan: path, planId: selectedId });
+    assert.equal(supersededPreview.selected?.planId, superseded.selected);
+    assert.equal(supersededPreview.progress?.selection, "preview");
+    assert.equal(supersededPreview.progress?.status, "superseded");
+    assert.equal(supersededPreview.progress?.interruption?.reason, "Prioritize replacement");
+    assert.equal(supersededPreview.progress?.delivery?.commit, deliveredCommit);
+    assert.equal(supersededPreview.progress?.steps[0].status, "pending");
+    assert.equal(supersededPreview.progress?.canExecute, false);
+    put(".codument/work-state.json", savedReady);
     assert.equal(
       JSON.parse(observed.stdout).state.records[0].status,
       "ready",

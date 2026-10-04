@@ -528,7 +528,7 @@ emit
 
 program.addCommand(createBenchmarkCommand());
 
-for (const command of [...program.commands.filter(command => ["verify", "review", "ack"].includes(command.name())), ...work.commands]) {
+for (const command of [...program.commands.filter(command => ["verify", "review", "ack", "steps", "context", "watch"].includes(command.name())), ...work.commands]) {
   command.option("--repo <path>", "Select one repository inside the project; . selects only its root");
 }
 

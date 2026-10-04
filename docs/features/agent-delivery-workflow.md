@@ -20,6 +20,10 @@ selected contract; local state preserves interruptions and the next gate; Git pr
 Final compaction retains the approved contract and its exact delivery binding, with local recovery
 context available until the commit succeeds. See [[plan-approval]] and [[agent-work-state]].
 
+Status, checklist, context and monitor share a generated view of the selected milestone. A checked
+implementation does not hide verification, review or commit, and observed delivery never lifts a
+saved interruption. Native panels mirror this view; they are not another authored work record.
+
 The default loop continues after approval, stopping for decisions that need the human. Gated mode
 keeps the same checks and waits between them. Local review covers the staged slice; branch delivery
 to CI adds a review of the complete range and a portable manifest. Neither boundary authorizes the
@@ -156,7 +160,7 @@ product value. Some safeguards already exist; reuse them before introducing anot
 - [x] Step 3: Plan demonstrable milestones and repair routine failures without human interruptions.
 - [x] Step 4: Batch ownership lookup and source mapping around the staged delivery boundary.
 - [x] Step 5: Scale review effort to risk while preserving verification of staged changes.
-- [ ] Step 6: Generate progress and handoffs from one consistent view of selected work.
+- [x] Step 6: Generate progress and handoffs from one consistent view of selected work.
 - [ ] Step 7: Demonstrate the lighter workflow and report measured overhead separately from implementation.
 
 ### Outcome

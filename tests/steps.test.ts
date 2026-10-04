@@ -94,6 +94,57 @@ Status: draft, awaiting approval before source edits.
     assert.match(out, /Mirror these into your native to-do list/);
   });
 
+  it("shares a checked but undelivered milestone and pending gate with status and context", async () => {
+    const path = "docs/features/delivery.md";
+    const plan = "## Delivery Plan\nStatus: approved\nPlan-ID: selected-delivery\n- [ ] Demonstrate the value\n- [ ] Broaden the fixture\n\n### Scope\n- `src/value.ts`\n";
+    await mkdir(join(tmp, "src"), { recursive: true });
+    await writeFile(join(tmp, path), plan);
+    await writeFile(join(tmp, "src/value.ts"), "export const value = 1;\n");
+    await writeFile(join(tmp, ".gitignore"), ".codument/\n");
+    await writeFile(join(tmp, "docs/.registry.json"), JSON.stringify({ features: { delivery: { doc: path, type: "feature", primary_sources: ["src/value.ts"], related_sources: [], docs: [], depends_on: [], risk: [], status: "current" } } }));
+    const git = (...args: string[]) => execFileSync("git", args, { cwd: tmp, encoding: "utf8" });
+    git("init", "-q"); git("config", "user.name", "Test"); git("config", "user.email", "test@example.com");
+    git("add", "."); git("commit", "-qm", "baseline");
+    assert.equal(runCli(["work", "approve", "--plan", path], tmp).code, 0);
+    assert.equal(runCli(["work", "start", "--plan", path], tmp).code, 0);
+    await writeFile(join(tmp, path), (await readFile(join(tmp, path), "utf8")).replace("- [ ] Demonstrate", "- [x] Demonstrate"));
+    const status = JSON.parse(runCli(["work", "status", "--json"], tmp).out);
+    const steps = JSON.parse(runCli(["steps", "--json", "--emit"], tmp).out);
+    const context = JSON.parse(runCli(["context", "--json"], tmp).out);
+    assert.equal(status.progress.step, 1);
+    assert.equal(status.progress.nextGate, "verify");
+    assert.equal(status.progress.canExecute, false);
+    assert.deepEqual(steps.progress, status.progress);
+    assert.deepEqual(context.progress, status.progress);
+    assert.deepEqual(steps.steps.map((step: { status: string }) => step.status), ["in_progress", "pending"]);
+    assert.equal(steps.current.n, 1);
+    assert.equal(steps.active, null);
+    assert.equal(steps.emitted, false);
+    assert.equal(runCli(["work", "pause", "--gate", "review", "--reason", "Waiting for external evidence"], tmp).code, 0);
+    const pausedStatus = JSON.parse(runCli(["work", "status", "--json"], tmp).out);
+    const pausedSteps = JSON.parse(runCli(["steps", "--json", "--emit"], tmp).out);
+    const pausedContext = JSON.parse(runCli(["context", "--json"], tmp).out);
+    assert.deepEqual(pausedSteps.progress, pausedStatus.progress);
+    assert.deepEqual(pausedContext.progress, pausedStatus.progress);
+    assert.equal(pausedSteps.current.n, 1);
+    assert.equal(pausedSteps.progress.nextGate, "review");
+    assert.equal(pausedSteps.progress.interruption.reason, "Waiting for external evidence");
+    assert.equal(pausedSteps.emitted, false);
+    assert.ok(pausedSteps.steps.every((step: { status: string }) => step.status === "pending"));
+
+    const replacementPath = "docs/features/replacement.md";
+    await writeFile(join(tmp, replacementPath), plan.replace("selected-delivery", "replacement-delivery"));
+    assert.equal(runCli(["work", "approve", "--plan", replacementPath], tmp).code, 0);
+    assert.equal(runCli(["work", "supersede", "--plan", replacementPath, "--reason", "New priority"], tmp).code, 0);
+    assert.equal(runCli(["work", "start", "--plan", replacementPath], tmp).code, 0);
+    const preview = JSON.parse(runCli(["steps", "--plan", path, "--json", "--emit"], tmp).out);
+    assert.equal(preview.progress.selection, "preview");
+    assert.equal(preview.progress.status, "superseded");
+    assert.equal(preview.emitted, false);
+    assert.deepEqual(preview.steps.map((step: { status: string }) => step.status), preview.progress.steps.map((step: { status: string }) => step.status));
+    assert.ok(preview.steps.every((step: { status: string }) => step.status === "pending"));
+  });
+
   it("diagnoses qualified approval without granting it or changing the plan", async () => {
     const file = join(tmp, "docs/features/dated.md");
     const content = PLAN.replace("Status: approved", "Status: approved 2026-09-10");

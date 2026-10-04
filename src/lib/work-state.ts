@@ -31,6 +31,8 @@ import { parseReviewReceiptEvidence, reviewReceiptEvidenceCovers } from "./revie
 import { DEFAULT_TEST_SEARCH_DIRS, resolveTestPath } from "./review-confirm.js";
 import {
   readApprovalStore,
+  parseApprovalStore,
+  APPROVALS_PATH,
   finalApprovalForBoundary,
   prepareFinalDelivery,
   approvalDigest,
@@ -67,6 +69,32 @@ export interface WorkInspection {
   state: WorkState;
   selected: WorkRecord | null;
   issues: string[];
+  progress: WorkProgress | null;
+}
+export interface WorkProgress {
+  selection: "selected" | "preview";
+  path: string;
+  planId: string | null;
+  planName: string;
+  status: WorkStatus | null;
+  step: number | null;
+  nextGate: WorkGate | null;
+  canExecute: boolean;
+  steps: Array<{
+    n: number;
+    text: string;
+    implemented: boolean;
+    /** Null when no exact historical delivery proof is retained. */
+    delivered: boolean | null;
+    status: "completed" | "in_progress" | "pending";
+  }>;
+  delivery: { commit: string; completedSteps: number[]; nextStep: number | null } | null;
+  interruption: {
+    status: "paused" | "blocked" | "superseded";
+    reason: string | null;
+    resumeCondition: string | null;
+    replacement: string | null;
+  } | null;
 }
 export interface WorkOptions {
   plan?: string;
@@ -252,7 +280,11 @@ function committedStep(root: string, record: WorkRecord, commit: string): number
 
 /** Recover the verified readiness that a direct commit skipped persisting. The
  * final approval proves consumption; only its matching receipt proves review. */
-function reconcileInterruptedFinal(root: string, record: WorkRecord): boolean {
+function reconcileInterruptedFinal(
+  root: string,
+  record: WorkRecord,
+  observe?: (commit: string, proof: ChangeSetBinding) => void,
+): boolean {
   if (record.delivery) return false; // Existing readiness follows its established proof path.
   const approval = readApprovalStore(root).records.find(
     (row) =>
@@ -286,6 +318,7 @@ function reconcileInterruptedFinal(root: string, record: WorkRecord): boolean {
     throw invalid(
       "final approval was already delivered, but its saved verification does not match; recover the committed delivery evidence before finishing",
     );
+  observe?.(commit, receipt.boundary);
   record.status = "completed";
   record.step = null;
   record.nextGate = "implement";
@@ -295,46 +328,139 @@ function reconcileInterruptedFinal(root: string, record: WorkRecord): boolean {
   return true;
 }
 
+function observedDelivery(
+  root: string,
+  record: WorkRecord,
+  commit: string,
+  proof: ChangeSetBinding,
+): NonNullable<WorkProgress["delivery"]> {
+  const nextStep = committedStep(root, { ...record, delivery: proof }, commit);
+  const markdown = readBlobAtRef(root, commit, record.path)!;
+  const steps = hasPlanSection(markdown, record.planId)
+    ? parseDeliveryPlan(markdown, record.planId)
+    : parseDeliveryPlan(parseApprovalStore(readBlobAtRef(root, commit, APPROVALS_PATH)).records.find((row) =>
+      row.planId === record.planId && row.digest === record.approvalDigest)!.contract);
+  return { commit, completedSteps: steps.filter((step) => nextStep === null || step.done).map((step) => step.n), nextStep };
+}
+
+function projectWorkProgress(
+  plan: ActivePlan,
+  record: WorkRecord | null,
+  selection: WorkProgress["selection"],
+  delivery: WorkProgress["delivery"],
+  issues: string[],
+): WorkProgress {
+  const interrupted = record && ["paused", "blocked", "superseded"].includes(record.status);
+  const step = record ? record.step : plan.active?.n ?? null;
+  const implemented = plan.steps.find((item) => item.n === step)?.done ?? false;
+  const nextGate = record?.status === "ready" ? (issues.length > 0 ? "verify" : "commit")
+    : record?.nextGate === "implement" && implemented && !interrupted ? "verify"
+    : record?.nextGate ?? null;
+  const contractMatches = record !== null && plan.approval?.state === "bound"
+    && plan.approval.digest === record.approvalDigest;
+  const checkpoint = contractMatches ? (record?.status === "completed" ? Infinity : step) : null;
+  return {
+    selection, path: plan.path, planId: plan.planId ?? null, planName: plan.planName,
+    status: record?.status ?? null, step, nextGate,
+    canExecute: selection === "selected" && record?.status === "active" && nextGate === "implement"
+      && !implemented && step !== null && plan.steps.some((item) => item.n === step)
+      && plan.approved && plan.approval?.digest === record.approvalDigest && issues.length === 0,
+    steps: plan.steps.map((item) => ({
+      n: item.n, text: item.text, implemented: item.done,
+      delivered: delivery && contractMatches ? delivery.completedSteps.includes(item.n) : null,
+      // Saved advancement is a useful checkpoint even after its exact proof has
+      // been reconciled away. Current/future checkboxes cannot advance it.
+      status: (checkpoint !== null && item.n < checkpoint) ? "completed"
+        : contractMatches && item.n === step && record && !interrupted && ["active", "ready"].includes(record.status) ? "in_progress" : "pending",
+    })),
+    delivery,
+    interruption: interrupted ? {
+      status: record.status as "paused" | "blocked" | "superseded",
+      reason: record.reason, resumeCondition: record.resumeCondition, replacement: record.replacement,
+    } : null,
+  };
+}
+
 /** Reconcile observations in the returned projection without rewriting local state. */
-export function inspectWorkState(root: string): WorkInspection {
+export function inspectWorkState(
+  root: string,
+  selection: { plan?: string; planId?: string } = {},
+): WorkInspection {
   const state = readWorkState(root);
   const selected = state.records.find((row) => row.planId === state.selected);
-  if (!selected) return { state, selected: null, issues: [] };
-  const current = structuredClone(selected);
+  const current = selected ? structuredClone(selected) : null;
   const issues: string[] = [];
-  if (current.status !== "superseded" && current.status !== "completed") {
+  let delivery: WorkProgress["delivery"] = null;
+  if (current && current.status !== "completed") {
     try {
-      if (reconcileInterruptedFinal(root, current)) return { state, selected: current, issues };
+      const interrupted = ["paused", "blocked", "superseded"].includes(current.status);
+      const candidate = interrupted ? structuredClone(current) : current;
+      const final = reconcileInterruptedFinal(root, candidate, (commit, proof) => {
+        delivery = observedDelivery(root, current, commit, proof);
+      });
       const plan = loadWorkPlan(root, current.path, current.planId);
-      if (!plan?.approved || plan.approval?.digest !== current.approvalDigest)
+      if (!final && current.status !== "superseded" && (!plan?.approved || plan.approval?.digest !== current.approvalDigest))
         issues.push(
           "Selected approval is missing or stale; inspect the plan and record any required human approval before resuming.",
         );
-      if (current.status === "ready" && current.delivery) {
+      if (!final && current.delivery) {
         const commit = delivered(root, current.delivery);
         if (commit) {
-          current.step = committedStep(root, current, commit);
-          current.status = current.step === null ? "completed" : "active";
-          current.nextGate = "implement";
-          current.reason = null;
-          current.resumeCondition = null;
-          current.delivery = null;
-        } else if (
-          resolveChangeSet(root, { mode: "staged" }).fingerprint !== current.delivery.fingerprint
-        ) {
-          issues.push(
-            "Pending delivery no longer matches the staged change; verify and review it again before committing.",
-          );
+          delivery = observedDelivery(root, current, commit, current.delivery);
+          if (!interrupted) {
+            current.step = delivery.nextStep;
+            current.status = current.step === null ? "completed" : "active";
+            current.nextGate = "implement";
+            current.reason = null;
+            current.resumeCondition = null;
+            current.delivery = null;
+          }
+        } else if (current.status === "ready") {
+          if (resolveChangeSet(root, { mode: "staged" }).fingerprint !== current.delivery.fingerprint) {
+            issues.push(
+              "Pending delivery no longer matches the staged change; verify and review it again before committing.",
+            );
+          } else if (plan && current.step !== null) {
+            // Readiness is revocable while uncommitted: a new covering review
+            // must not inherit the earlier receipt even when source bytes match.
+            verifiedDelivery(root, plan, current.step);
+          }
         }
       }
     } catch (error) {
       issues.push((error as Error).message);
     }
   }
-  return { state, selected: current, issues };
+  let progress: WorkProgress | null = null;
+  try {
+    const resolved = workPlanSelection(root, selection);
+    const path = resolved.plan ?? current?.path;
+    if (path) {
+      const plan = loadWorkPlan(root, path, resolved.planId);
+      if (plan) {
+        const isSelected = current?.path === plan.path && current.planId === plan.planId;
+        const record = isSelected ? current : state.records.find((row) => row.planId === plan.planId && row.path === plan.path) ?? null;
+        if (record?.status === "completed" && (plan.approval?.state !== "bound" || plan.approval.digest !== record.approvalDigest))
+          issues.push("Completed approval is missing or stale; keep unapproved milestones pending and create an approved new plan identity for further work.");
+        let previewDelivery: WorkProgress["delivery"] = null;
+        if (!isSelected && record?.delivery) {
+          const commit = delivered(root, record.delivery);
+          if (commit) previewDelivery = observedDelivery(root, record, commit, record.delivery);
+        }
+        if (current || record)
+          progress = projectWorkProgress(plan, record, isSelected ? "selected" : "preview", isSelected ? delivery : previewDelivery, issues);
+      }
+    }
+  } catch (error) {
+    if (!issues.includes((error as Error).message)) issues.push((error as Error).message);
+  }
+  return { state, selected: current, issues, progress };
 }
 
 function approvedSelection(root: string, options: WorkOptions, fallback?: WorkRecord): ActivePlan {
+  if (fallback && !options.planId && !["completed", "superseded"].includes(fallback.status)
+    && (!options.plan || normalizePlanPath(root, options.plan) === fallback.path))
+    options = { ...options, plan: fallback.path, planId: fallback.planId };
   options = { ...options, ...workPlanSelection(root, options) };
   let plan: ActivePlan | null;
   if (options.plan || fallback)
@@ -439,6 +565,15 @@ export function workPlanSelection(
   const state = readWorkState(root);
   const current = state.records.find((record) => record.planId === state.selected);
   if (!current) return selection;
+  if (!execute && selection.plan && !selection.planId && normalizePlanPath(root, selection.plan) === current.path) {
+    const archived = current.status === "completed" || readApprovalStore(root).records.some((row) =>
+      row.planId === current.planId && row.finalDelivery);
+    if (archived) {
+      const live = loadPlan(root, selection.plan);
+      if (live?.steps.length && live.planId && live.planId !== current.planId)
+        selection = { plan: selection.plan, planId: live.planId };
+    }
+  }
   const same =
     (!selection.plan || normalizePlanPath(root, selection.plan) === current.path) &&
     (!selection.planId || selection.planId === current.planId);
@@ -566,7 +701,7 @@ export function transitionWork(root: string, action: WorkAction, options: WorkOp
     let current = state.records.find((row) => row.planId === state.selected);
     const now = new Date().toISOString();
     if (action === "start" || action === "supersede" || (action === "resume" && options.plan)) {
-      const plan = approvedSelection(root, options, action === "start" ? current : undefined);
+      const plan = approvedSelection(root, options, action === "supersede" ? undefined : current);
       let target = state.records.find((row) => row.planId === plan.planId);
       if (!plan.active && (action === "start" || !target))
         throw invalid(
@@ -643,9 +778,9 @@ export function transitionWork(root: string, action: WorkAction, options: WorkOp
           throw invalid("the plan has already been delivered");
         resumeRecord(root, current, plan);
       } else if (action === "finish") {
+        if (current.status !== "active" && current.status !== "ready")
+          throw invalid("resume interrupted work before marking it ready");
         if (!reconcileInterruptedFinal(root, current)) {
-          if (current.status !== "active" && current.status !== "ready")
-            throw invalid("resume interrupted work before marking it ready");
           const plan = approvedSelection(root, options, current);
           if (current.approvalDigest !== plan.approval!.digest)
             throw invalid(

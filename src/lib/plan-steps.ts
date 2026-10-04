@@ -549,6 +549,7 @@ export function emitActiveStep(root: string, plan: ActivePlan): StepEmitResult {
     if (e.type !== "step") continue;
     const data = (e.data ?? {}) as Record<string, unknown>;
     if (data.plan !== plan.path) continue;
+    if (plan.planId && data.planId !== plan.planId) continue;
     if (data.n === step.n) return { emitted: false, step }; // already the latest
     break; // a different step is latest → this is a real transition
   }
@@ -556,7 +557,7 @@ export function emitActiveStep(root: string, plan: ActivePlan): StepEmitResult {
   appendEvent(root, {
     type: "step",
     message: `▶ ${step.text}`,
-    data: { plan: plan.path, n: step.n, total: plan.steps.length },
+    data: { plan: plan.path, ...(plan.planId ? { planId: plan.planId } : {}), n: step.n, total: plan.steps.length },
   });
   return { emitted: true, step };
 }

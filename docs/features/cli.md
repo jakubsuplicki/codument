@@ -2,7 +2,7 @@
 title: CLI
 status: current
 type: feature
-last_reviewed: 2026-09-25
+last_reviewed: 2026-10-04
 ---
 
 # CLI
@@ -17,10 +17,11 @@ Context accepts a batch of paths and materialization accepts several files throu
 commands. Single-file calls retain their meaning; batch failures remain explicit. [[context-pack]]
 and [[feature-decomposition]] own the resolution and mutation contracts.
 
-Review, verification, acknowledgments and work commands accept an explicit repository selector.
+Review, verification, acknowledgments, work, checklist, context and monitor accept an explicit repository selector.
 Selecting the root isolates its delivery from nested repositories; omission retains workspace
 aggregation. Verification follow-ups preserve that selection. [[step-verification]] and
 [[agent-work-state]] own the evidence and delivery contracts.
+Generated progress shares the selected milestone and pending gate across those read surfaces.
 
 History audit can explicitly select a workspace member or the root repository alone. JSON identifies
 that selection; invalid or unreadable selections remain unavailable. Omission preserves the existing

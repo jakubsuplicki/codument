@@ -368,6 +368,23 @@ describe("findActivePlans / loadPlan (fs discovery)", () => {
 });
 
 describe("emitActiveStep (idempotent step events)", () => {
+  it("does not let an earlier identified plan suppress the same ordinal on the page", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codument-step-identity-"));
+    try {
+      await mkdir(join(root, "docs/features"), { recursive: true });
+      const path = "docs/features/delivery.md";
+      await writeFile(join(root, path), "## Delivery Plan\nStatus: approved\nPlan-ID: first\n- [ ] Deliver\n");
+      const first = loadPlan(root, path)!;
+      assert.equal(emitActiveStep(root, first).emitted, true);
+      assert.equal(emitActiveStep(root, first).emitted, false);
+      await writeFile(join(root, path), "## Delivery Plan\nStatus: approved\nPlan-ID: second\n- [ ] Deliver\n");
+      const second = loadPlan(root, path)!;
+      assert.equal(emitActiveStep(root, second).emitted, true);
+      assert.equal(emitActiveStep(root, second).emitted, false);
+      const events = readRecentEvents(root).filter((event) => event.type === "step");
+      assert.deepEqual(events.map((event) => event.data?.planId), ["first", "second"]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
   let tmp: string;
   beforeEach(async () => {
     tmp = await mkdtemp(join(tmpdir(), "codument-step-"));

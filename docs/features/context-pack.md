@@ -30,6 +30,11 @@ its existing shape. This replaces repeated file queries without selecting an own
 
 A selector-free context request uses saved work when available. Plan context carries interruption and pending-gate information so retrieved knowledge does not imply permission to resume.
 
+Plan context includes the shared generated milestone progress used by status, checklist and monitor.
+Implemented but undelivered work stays current. An explicit new identified live plan on a page with
+an archived selection previews that new plan; the default handoff keeps the saved work. Neither
+preview nor a progress read resumes an interruption or grants approval.
+
 When a page contains identified plans, an explicit identity selects the same ownership map used by the approval and checklist surfaces.
 
 This is the third projection over the registry, and it deliberately looks like the other two

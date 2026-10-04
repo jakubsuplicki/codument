@@ -1,4 +1,5 @@
 import pc from "picocolors";
+import { withSelectedRepository } from "../lib/git.js";
 import { inspectWorkState, loadWorkPlan, workPlanSelection } from "../lib/work-state.js";
 import {
   resolveActivePlan,
@@ -8,6 +9,7 @@ import {
 } from "../lib/plan-steps.js";
 
 interface StepsCliOptions {
+  repo?: string;
   plan?: string;
   planId?: string;
   json?: boolean;
@@ -37,6 +39,11 @@ function resolvePlan(
 }
 
 export function stepsCommand(options: StepsCliOptions = {}): void {
+  withSelectedRepository(options.root ?? options.dir ?? process.cwd(), options.repo, (root) =>
+    stepsRepository(options.repo === undefined ? options : { ...options, root }));
+}
+
+function stepsRepository(options: StepsCliOptions): void {
   const root = options.root ?? options.dir ?? process.cwd();
   options = { ...options, ...workPlanSelection(root, options) };
   const resolved = resolvePlan(root, options.plan, options.planId);
@@ -46,19 +53,26 @@ export function stepsCommand(options: StepsCliOptions = {}): void {
     return;
   }
   const plan = resolved.plan;
-  const work = inspectWorkState(root);
+  const work = inspectWorkState(root, { plan: plan.path, planId: plan.planId ?? undefined });
+  const progress = work.progress;
   const selected =
     work.selected?.path === plan.path && work.selected?.planId === plan.planId
       ? work.selected
       : null;
   const canEmit =
     !work.selected ||
-    (selected?.status === "active" &&
-      selected.nextGate === "implement" &&
-      selected.step === plan.active?.n &&
-      work.issues.length === 0);
+    (progress?.selection === "selected" && progress.canExecute);
+  const current = progress?.step === null || progress?.step === undefined
+    ? null : progress.steps.find((step) => step.n === progress.step) ?? null;
+  const implementationStep = progress?.selection === "selected"
+    ? plan.steps.find((step) => step.n === progress.step) ?? null : plan.active;
+  const stepStatus = (step: ActivePlan["steps"][number]) =>
+    progress
+      ? progress.steps.find((item) => item.n === step.n)?.status ?? "pending"
+      : !canEmit && todoStatus(plan, step) === "in_progress" ? "pending" : todoStatus(plan, step);
   const emitted =
-    options.emit && plan.approved && canEmit ? emitActiveStep(root, plan).emitted : false;
+    options.emit && plan.approved && canEmit
+      ? emitActiveStep(root, { ...plan, active: implementationStep }).emitted : false;
 
   if (options.json) {
     console.log(
@@ -71,12 +85,13 @@ export function stepsCommand(options: StepsCliOptions = {}): void {
           planId: plan.planId ?? null,
           approval: plan.approval,
           ...(selected ? { work: { ...selected, issues: work.issues } } : {}),
-          active: plan.active && canEmit ? { n: plan.active.n, text: plan.active.text } : null,
+          progress,
+          current: current ? { n: current.n, text: current.text, nextGate: progress?.nextGate } : null,
+          active: implementationStep && canEmit ? { n: implementationStep.n, text: implementationStep.text } : null,
           steps: plan.steps.map((s) => ({
             n: s.n,
             text: s.text,
-            status:
-              !canEmit && todoStatus(plan, s) === "in_progress" ? "pending" : todoStatus(plan, s),
+            status: stepStatus(s),
           })),
           ...(options.emit ? { emitted } : {}),
         },
@@ -91,16 +106,17 @@ export function stepsCommand(options: StepsCliOptions = {}): void {
   if (plan.approval) console.log(pc.dim(`  ${plan.approval.reason}`));
   if (selected)
     console.log(
-      `  Work: ${selected.status}; next gate: ${selected.nextGate}${selected.reason ? ` — ${selected.reason}` : ""}`,
+      `  Work: ${progress?.status ?? selected.status}; next gate: ${progress?.nextGate ?? selected.nextGate}${selected.reason ? ` — ${selected.reason}` : ""}`,
     );
   if (!plan.approved)
     console.log(
       pc.yellow("  Preview only — not approved for implementation; no step event is emitted."),
     );
   for (const s of plan.steps) {
-    const isActive = canEmit && !!plan.active && s.n === plan.active.n;
-    const box = s.done ? pc.green("☑") : isActive ? pc.cyan("◐") : "☐";
-    const label = isActive ? pc.bold(s.text) : s.done ? pc.dim(s.text) : s.text;
+    const status = stepStatus(s);
+    const isActive = status === "in_progress";
+    const box = status === "completed" ? pc.green("☑") : isActive ? pc.cyan("◐") : "☐";
+    const label = isActive ? pc.bold(s.text) : status === "completed" ? pc.dim(s.text) : s.text;
     console.log(`  ${box} ${label}`);
   }
   console.log("");

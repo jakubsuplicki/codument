@@ -1,13 +1,15 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { appendEvent, readRecentEvents } from "../src/lib/events.js";
 import {
   renderFrame as renderFrameRaw,
+  buildFrame,
+  watch,
   sessionStats,
   animDelayFor,
   ANIM_FAST_MS,
@@ -16,6 +18,8 @@ import {
 } from "../src/commands/watch.js";
 import { MODEL_RATES, mergeRates } from "../src/lib/token-cost.js";
 import type { CodumentEvent } from "../src/lib/events.js";
+import { approvePlan } from "../src/lib/plan-approval.js";
+import { transitionWork, type WorkProgress, type WorkRecord } from "../src/lib/work-state.js";
 
 // These tests assert on the frame's textual content, not its color. The color
 // environment is not stable across machines (GitHub Actions sets FORCE_COLOR,
@@ -24,6 +28,32 @@ import type { CodumentEvent } from "../src/lib/events.js";
 const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
 const renderFrame = (...args: Parameters<typeof renderFrameRaw>): string =>
   stripAnsi(renderFrameRaw(...args));
+
+type Review = Parameters<typeof renderFrame>[0];
+const gitReview = (): Review =>
+  ({
+    version: 1,
+    isGitRepo: true,
+    changedFileCount: 0,
+    plan: null,
+    state: {
+      changedSources: [],
+      changedDocs: [],
+      byFeature: [],
+      staleDocs: [],
+      riskTouches: [],
+      unmapped: [],
+      otherChanged: [],
+      excludedChanged: [],
+      outOfPlan: [],
+      highFanout: [],
+      dependents: [],
+      dependentsSummary: [],
+      planScoped: false,
+      registryPointers: [],
+      docPointers: [],
+    },
+  }) as unknown as Review;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, "..", "dist", "cli.js");
@@ -136,32 +166,107 @@ describe("renderFrame", () => {
   });
 });
 
-describe("renderFrame token block", () => {
-  type Review = Parameters<typeof renderFrame>[0];
-  const gitReview = (): Review =>
-    ({
-      version: 1,
-      isGitRepo: true,
-      changedFileCount: 0,
-      plan: null,
-      state: {
-        changedSources: [],
-        changedDocs: [],
-        byFeature: [],
-        staleDocs: [],
-        riskTouches: [],
-        unmapped: [],
-        otherChanged: [],
-        excludedChanged: [],
-        outOfPlan: [],
-        highFanout: [],
-        dependents: [],
-        dependentsSummary: [],
-        planScoped: false,
-        registryPointers: [],
-        docPointers: [],
+describe("renderFrame selected milestone", () => {
+  const coverage = { coverage: { percent: 80 } } as never;
+  const selected: WorkRecord = {
+    planId: "report",
+    path: "docs/features/report.md",
+    approvalDigest: "a".repeat(64),
+    status: "active",
+    step: 2,
+    nextGate: "implement",
+    reason: null,
+    resumeCondition: null,
+    replacement: null,
+    delivery: null,
+    updatedAt: "2026-06-16T10:00:00.000Z",
+  };
+  const progress = (): WorkProgress => ({
+    selection: "selected",
+    path: selected.path,
+    planId: selected.planId,
+    planName: "report",
+    status: "active",
+    step: 1,
+    nextGate: "verify",
+    canExecute: true,
+    steps: [
+      { n: 1, text: "Demonstrate the report", implemented: true, delivered: false, status: "in_progress" },
+      { n: 2, text: "Cover remaining inputs", implemented: false, delivered: false, status: "pending" },
+    ],
+    delivery: null,
+    interruption: null,
+  });
+  const frame = (value: WorkProgress) =>
+    renderFrame(gitReview(), coverage, [], "10:00", { work: { selected, issues: [], progress: value } });
+
+  it("keeps the implemented milestone current through verification, review and pending commit", () => {
+    for (const nextGate of ["verify", "review", "commit"] as const) {
+      const value = progress();
+      value.nextGate = nextGate;
+      if (nextGate === "commit") value.status = "ready";
+      const output = frame(value);
+      assert.match(output, new RegExp(`work\\s+${value.status}.*step 1 · ${nextGate}`));
+      assert.match(output, /milestone\s+Demonstrate the report · implemented, delivery pending/);
+      assert.match(output, /0\/2 milestones completed/);
+      assert.doesNotMatch(output, /milestone\s+Cover remaining inputs/);
+    }
+  });
+
+  it("shows committed advancement and structured interruption without replacing the pending milestone", () => {
+    const value = progress();
+    value.status = "blocked";
+    value.step = 2;
+    value.nextGate = "review";
+    value.canExecute = false;
+    value.steps[0].status = "completed";
+    value.steps[0].delivered = true;
+    value.steps[1].implemented = true;
+    value.interruption = {
+      status: "blocked",
+      reason: "Representative fixture unavailable",
+      resumeCondition: "Fixture restored",
+      replacement: null,
+    };
+    const output = frame(value);
+    assert.match(output, /work\s+blocked.*step 2 · review/);
+    assert.match(output, /milestone\s+Cover remaining inputs · implemented, delivery pending/);
+    assert.match(output, /1\/2 milestones completed/);
+    assert.match(output, /Representative fixture unavailable/);
+    assert.match(output, /Resume when: Fixture restored/);
+  });
+
+  it("distinguishes observed delivery from an interrupted milestone still awaiting delivery", () => {
+    const value = progress();
+    value.status = "paused";
+    value.canExecute = false;
+    value.steps[0].status = "pending";
+    value.steps[0].delivered = true;
+    value.delivery = { commit: "exact-commit", completedSteps: [1], nextStep: 2 };
+    value.interruption = { status: "paused", reason: "Wait for approval", resumeCondition: "Explicit resume", replacement: null };
+    const output = frame(value);
+    assert.match(output, /milestone\s+Demonstrate the report · delivery observed/);
+    assert.doesNotMatch(output, /implemented, delivery pending/);
+    assert.match(output, /Wait for approval/);
+    assert.match(output, /Resume when: Explicit resume/);
+    assert.equal(value.status, "paused");
+  });
+
+  it("retains the saved work display for older fixtures without progress", () => {
+    const output = renderFrame(gitReview(), coverage, [], "10:00", {
+      work: {
+        selected: { ...selected, status: "paused", nextGate: "review", reason: "User requested a break" },
+        issues: ["Approval needs attention"],
       },
-    }) as unknown as Review;
+    });
+    assert.match(output, /work\s+paused.*step 2 · review/);
+    assert.match(output, /User requested a break/);
+    assert.match(output, /Approval needs attention/);
+    assert.doesNotMatch(output, /milestones completed/);
+  });
+});
+
+describe("renderFrame token block", () => {
   const coverage = { coverage: { percent: 80 } } as never;
   const tok = (data: Record<string, unknown>, ts = "2026-06-16T10:00:00.000Z") => ({
     type: "tokens",
@@ -703,6 +808,115 @@ describe("codument watch --once (CLI, temp git repo)", () => {
     run(["add", "-A"]);
     run(["commit", "-m", "baseline"]);
   }
+
+  it("keeps an explicit repository view across async refresh without changing nested indices", async () => {
+    const member = join(tmp, "child");
+    for (const [root, name] of [[tmp, "outer"], [member, "member"]] as const) {
+      await mkdir(join(root, "src"), { recursive: true });
+      await mkdir(join(root, "docs", "features"), { recursive: true });
+      await writeFile(join(root, "docs", ".registry.json"), JSON.stringify({
+        features: {
+          [name]: {
+            doc: `docs/features/${name}.md`,
+            type: "feature",
+            primary_sources: [`src/${name}.ts`],
+            related_sources: [], docs: [], depends_on: [], risk: [],
+            last_updated: "2026-06-16", status: "current",
+          },
+        },
+      }));
+      await writeFile(join(root, "docs", "features", `${name}.md`), `# ${name}\n`);
+      await writeFile(join(root, "src", `${name}.ts`), `export const ${name} = 1;\n`);
+      if (root === tmp) await writeFile(join(root, ".gitignore"), "child/\n");
+      gitInit(root);
+      await writeFile(join(root, "src", `${name}.ts`), `export const ${name} = 2;\n`);
+      execFileSync("git", ["add", `src/${name}.ts`], { cwd: root, stdio: "ignore" });
+    }
+    const tree = (root: string) =>
+      execFileSync("git", ["write-tree"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const outerIndex = tree(tmp);
+    const memberIndex = tree(member);
+    const frame = async (repo?: string): Promise<string> => {
+      const output: string[] = [];
+      const original = console.log;
+      try {
+        console.log = (...args: unknown[]) => { output.push(args.join(" ")); };
+        await watch({ root: tmp, repo, once: true, feed: false });
+      } finally {
+        console.log = original;
+      }
+      return stripAnsi(output.join("\n"));
+    };
+    const selectedRoot = await frame(".");
+    assert.match(selectedRoot, /touched\s+1 feature · 1 file/);
+    assert.match(selectedRoot, /outer\.ts/);
+    assert.doesNotMatch(selectedRoot, /member\.ts/);
+    const selectedMember = await frame("child");
+    assert.match(selectedMember, /touched\s+1 feature · 1 file/);
+    assert.match(selectedMember, /member\.ts/);
+    assert.doesNotMatch(selectedMember, /outer\.ts/);
+    const aggregate = await frame();
+    assert.match(aggregate, /touched\s+1 feature · 2 files/);
+    assert.match(aggregate, /outer\.ts/);
+    assert.match(aggregate, /member\.ts/);
+    assert.equal(tree(tmp), outerIndex);
+    assert.equal(tree(member), memberIndex);
+  });
+
+  it("reads the current checked milestone and interruption without advancing or rewriting work", async () => {
+    const planPath = "docs/features/report.md";
+    const planFile = join(tmp, planPath);
+    const stateFile = join(tmp, ".codument/work-state.json");
+    await mkdir(join(tmp, "src"), { recursive: true });
+    await mkdir(join(tmp, "docs", "features"), { recursive: true });
+    await writeFile(join(tmp, "docs", ".registry.json"), JSON.stringify({
+      features: {
+        report: {
+          doc: planPath,
+          type: "feature",
+          primary_sources: ["src/report.ts"],
+          related_sources: [],
+          docs: [],
+          depends_on: [],
+          risk: [],
+          last_updated: "2026-06-16",
+          status: "current",
+        },
+      },
+    }));
+    await writeFile(join(tmp, "src", "report.ts"), "export const report = 1;\n");
+    await writeFile(planFile, [
+      "# Report", "", "## Delivery Plan", "Status: approved", "Plan-ID: report", "",
+      "- [ ] Demonstrate valid input and an actionable invalid-input diagnostic",
+      "- [ ] Cover remaining inputs", "", "### Scope", "- `src/report.ts`", "",
+    ].join("\n"));
+    gitInit(tmp);
+    approvePlan(tmp, planPath, { signer: "human" });
+    transitionWork(tmp, "start", { plan: planPath });
+    await writeFile(planFile, (await readFile(planFile, "utf8")).replace("- [ ] Demonstrate", "- [x] Demonstrate"));
+
+    const saved = await readFile(stateFile, "utf8");
+    const frame = stripAnsi(buildFrame(tmp, "10:00"));
+    assert.match(frame, /work\s+active.*step 1 · verify/);
+    assert.match(frame, /milestone\s+Demonstrate valid input and an actionable invalid-input diagnostic · implemented, delivery pending/);
+    assert.match(frame, /0\/2 milestones completed/);
+    assert.equal(await readFile(stateFile, "utf8"), saved);
+
+    transitionWork(tmp, "block", {
+      gate: "review",
+      reason: "Representative fixture unavailable",
+      resumeCondition: "Fixture restored",
+    });
+    const blocked = await readFile(stateFile, "utf8");
+    const plan = await readFile(planFile, "utf8");
+    const refreshed = stripAnsi(buildFrame(tmp, "10:01"));
+    assert.match(refreshed, /work\s+blocked.*step 1 · review/);
+    assert.match(refreshed, /milestone\s+Demonstrate valid input and an actionable invalid-input diagnostic/);
+    assert.match(refreshed, /Representative fixture unavailable/);
+    assert.match(refreshed, /Resume when: Fixture restored/);
+    assert.equal(await readFile(stateFile, "utf8"), blocked);
+    assert.equal(await readFile(planFile, "utf8"), plan);
+  });
 
   it("renders one frame with coverage and a change summary", async () => {
     await mkdir(join(tmp, "src", "auth"), { recursive: true });

@@ -2,22 +2,22 @@
 title: Plan step mirroring
 status: current
 type: feature
-last_reviewed: 2026-09-25
+last_reviewed: 2026-10-04
 ---
 
 # Plan step mirroring
 
 ## In plain terms
 
-A delivery-plan checklist normally lives only in a markdown file you have to open. This feature surfaces it where the agent already looks while coding: it reads the plan doc's checklist and projects the steps two ways, into the host agent's native to-do panel and into `codument watch`'s activity tape. The plan doc stays the one source of truth, so a step is never "done" until its checkbox is, and both projections are re-derived from the doc rather than written back to it. Open this when you want to understand how the live step view stays honest to the plan.
+The plan supplies milestone promises and implementation checkboxes; selected work supplies the pending gate and interruption, and Git supplies observed delivery. Checklist, status, context and the live monitor share one generated view. A checked implementation remains the current milestone until its verification, review and commit are settled. Native panels and event displays are read-only projections.
 
 ## Design approach
 
-Saved work selects the plan and section across sessions. Paused or pending-review work is displayed without an in-progress claim or start event.
+Saved work selects the plan and milestone across sessions. An interrupted or undelivered milestone stays visible without granting execution or emitting a start event.
 
 Approval is also checked against its recorded contract when present or required by project policy. Legacy status-only approval is identified explicitly. An identified section can be selected consistently across checklist, scope and ownership projections; progress notes never become executable work.
 
-The plan doc is authoritative and the projections are strictly one-way. Completion lives in the checkbox; the panel and the tape are read-only mirrors re-derived at each step start, never a place where progress is recorded. This is the whole point: a checklist that can be edited from two places becomes two sources of truth that drift, the exact failure the change-control discipline exists to prevent. So no path writes step completion back from a panel.
+The authored plan, local interruption record and observed Git boundary remain distinct evidence. Generated progress reconciles them without writing another checklist. Saved advancement supplies the prior-step checkpoint when exact older delivery proof is no longer retained; that limit is disclosed rather than filled from dirty or later checkboxes.
 
 The work splits into a pure core and thin side-effecting seams, because the checkbox-and-status logic is the part worth testing exhaustively on plain strings. Pure parsing turns plan markdown into an ordered step list with a status and an active (first-unchecked) step; small filesystem discovery finds plans on disk; a single emit seam logs to the event tape. The step ordinal is positional, assigned by checklist order, not lifted from any "Step N" label in the text, so human-authored labels can be anything without throwing off the mirror.
 
@@ -62,7 +62,7 @@ authorization nor work to perform.
 - A section is scoped by heading depth: it runs to the next heading at the same or a shallower level, so a checklist filed under a subheading still belongs to the plan while a sibling section's checkboxes never do. Depth is what makes "outside the section" mean something — ending a section at any heading at all made every plan that files its steps under `### As-built`-style subheadings report no checklist, which silently hid unfinished work from plan discovery. *(test: `plan-steps.test.ts` "reads a checklist filed under a subheading that does not itself match" + "still ends a section at a sibling heading, not just a shallower one")*
 - A doc may carry more than one Delivery Plan section, because a long-lived feature doc accumulates one per shipped effort. The chosen section is the first with an unchecked step, falling back to the last when every plan is complete — the same "has unfinished work" predicate plan discovery uses, so a single doc and a directory of docs can never disagree about which plan is active. *(test: `plan-steps.test.ts` `parseDeliveryPlan across multiple plan sections`)*
 - The step ordinal is positional within the checklist, not parsed from any "Step N" label in the step text. *(test: `plan-steps.test.ts` `parseDeliveryPlan` "extracts ordered steps with done flags from the Delivery Plan section")*
-- The active step is the first unchecked one, and a fully-checked plan has no active step. *(test: `plan-steps.test.ts` `activeStep / todoStatus` "returns the first unchecked step" + "returns null when every step is done")*
+- Pure parsing finds the first unchecked implementation. Selected-work projection instead retains its saved current milestone through verification, review and commit; uncommitted checkbox changes cannot advance delivery. *(tests: `plan-steps.test.ts`, `steps.test.ts`, `work.test.ts`)*
 - Approval means EXACTLY the status "approved" (markdown-stripped): "awaiting approval", "not approved", and "never approved" are all not approved — an explicitly rejected plan can never drive the workflow. The predicate is the single shared one the scope gate also uses. *(tests: `plan-steps.test.ts` `extractStatus / isApproved` including "an explicitly REJECTED plan is never approved"; `change-state.test.ts` "detectApprovedPlanScope — one approval predicate with steps")*
 - Approval is bound to the selected checklist. Feature metadata cannot hide its explicit approval,
   and completed work cannot authorize a later draft or a plan missing its own declaration. Repeated
@@ -76,7 +76,7 @@ authorization nor work to perform.
 - An explicit plan via `--plan` does not require approval, so the approval gate never blocks reading a named plan (e.g. the plan-approval summary path). *(test: `steps.test.ts` `codument steps (CLI, temp repo)` "renders an awaiting-approval plan via --plan (the plan-approval summary path)")*
 - The tape projection is idempotent: it appends a step event only when the active step changed, and emits the next step once the plan advances. *(test: `plan-steps.test.ts` `emitActiveStep (idempotent step events)` "appends a step event for the active step, then is a no-op on repeat" + "emits the next step once the plan advances")*
 - An emitted step event renders in the `watch` activity tape, keeping the cross-agent surface in sync with the plan. *(test: `plan-steps.test.ts` `watch tape integration` "the emitted step event renders in the watch activity tape")*
-- The projections are one-way: completion is read from the doc's checkboxes, never written back from a panel or tape. *(structural boundary — no code path writes completion back; the to-do status is a pure derivation of doc state, covered by `plan-steps.test.ts` `activeStep / todoStatus` "maps done/active/pending to native to-do statuses")*
+- Projections never write completion from a panel or tape back into the plan. Implementation and delivered evidence remain distinct, and identified plans on one page cannot suppress each other's start event. *(tests: `steps.test.ts`, `plan-steps.test.ts`)*
 
 ## Key files
 
