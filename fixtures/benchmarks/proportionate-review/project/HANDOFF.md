@@ -1,0 +1,1 @@
+The original human approved Step 1 of docs/plans/repair-report.md. That exact legacy scope is bound in docs/.approvals.json. Implement and review it to verified staged ready with the commit pending; no commit is authorized. Leave future Step 2 untouched.

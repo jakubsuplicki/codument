@@ -212,7 +212,7 @@ Approval-Model: outcome-v1
 
 - [x] Step 1: Remove unnecessary review for harmless documentation additions and restore the portable test baseline.
 - [x] Step 2: Use focused review for well-grounded changes within one feature, preserving risks and attribution from both snapshots.
-- [ ] Step 3: Compare real agent delivery against 0.20.1 and retain working-output and administration evidence.
+- [x] Step 3: Compare real agent delivery against 0.20.1 and retain working-output and administration evidence.
 - [ ] Step 4: Finish the verified 0.21.0 release with a local commit and tag.
 
 ### Outcome
@@ -260,17 +260,17 @@ output and administration evidence, then leaves npm publishing to the user.
    attributable test-only changes, receive focused review. Unknown or changed attribution, old or
    selected risk, cross-feature changes, source additions, signatures, deletions and renames receive
    adversarial review. Changing a staged snapshot or covering evidence reopens the verdict.
-3. Four fresh agent attempts form two matched pairs on the same small working-CLI repair. Released
-   0.20.1 and the frozen candidate get identical code, documented behavior, approved task scope,
-   host/model settings and no-commit endpoint. Every attempt retains its status and evidence,
-   including failure or timeout. Candidate attempts must deliver the promised valid/invalid CLI
-   behavior and verified staged readiness with fewer unnecessary adversarial-review handoffs than
-   their matched controls and no unnecessary human approval stops. Missing output or no reduction
-   leaves acceptance open. Operator-observed reviewer starts establish the handoff count; common
-   CLI observations and elapsed time are reported separately rather than assumed to fall.
-   Protected-case regression checks remain green. Measured elapsed time is reported as observed,
-   including noise; unavailable token usage is explicit. A bounded fixture does not establish
-   universal speed, token savings or higher output across all projects.
+3. Retain all four fresh agent attempts and their original two-pair result. Both candidate
+   repetitions must have correct valid/invalid CLI output, verified staged readiness and no
+   unnecessary approval stops. The completed first matched pair must show fewer actual adversarial
+   reviewer starts for the candidate. The second baseline's host-capacity timeout remains an
+   incomplete control, with zero actual reviewer starts; it cannot establish a second handoff
+   reduction or be completed retroactively. The user explicitly approved this limited acceptance
+   on 2026-10-05. Original acceptance remains recorded as unmet; release claims are confined to
+   the completed pair and the two successful candidate repetitions.
+   Keep protected-case regressions green, unavailable usage explicit, observed timing qualified by
+   environment interventions, and all frozen inputs/provenance unchanged. This does not establish
+   universal speed, token savings or higher output across projects. No new attempts are authorized.
 4. Package and scaffold versions agree on 0.21.0. The full suite, typecheck, build, lint, strict
    documentation health, exact staged verification and npm packing lifecycle pass before the local
    release commit and tag. The package contains its CLI, library and managed workflow assets.
@@ -305,7 +305,8 @@ uses a fresh reviewer, and its work is included in the attempt's observed admini
 self-review remains available only where the policy and understood behavior permit it. Run the
 attempts serially, in two pairs with order reversed, each attempt capped at ten minutes. Keep all
 four observations and provenance outside agent-controlled result claims. Stop at the cap, retain
-failures, and leave missing evidence open rather than silently substitute a scripted replay.
+failures, and never silently substitute a scripted replay. The approved limited release acceptance
+uses the completed pair and both candidate repetitions while preserving the incomplete control.
 No public benchmark API or permanent runner is needed; retain compact reproducible fixture and
 observation artifacts under the existing benchmark area, with scope and limitations in its docs.
 
@@ -340,10 +341,11 @@ lighter treatment together with protected counterexamples before broadening focu
 
 ### Resume checkpoint
 
-Step 1 is committed. Step 2 implementation and CLI protection checks pass. The full suite's two
-subprocess timeouts passed isolated rechecks without source changes; all remaining cases passed.
-Independent staged review is pending before the second commit. Prepared 0.21.0 release metadata
-remains outside the source slices and is reserved for Step 4.
+Steps 1 and 2 are reviewed, verified and committed. All four agent attempts are retained. The user
+approved limited acceptance on 2026-10-05: both candidates and one completed matched pair pass;
+the second baseline remains a disclosed host-capacity timeout. Record this revised approval and
+resume the saved Step 3, review and commit its evidence, then finish the local 0.21.0 release.
+Prepared release metadata remains outside the evidence slice until Step 4.
 
 ### Grounding limitations
 

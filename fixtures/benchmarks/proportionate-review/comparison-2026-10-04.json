@@ -1,0 +1,3843 @@
+{
+  "version": 1,
+  "fixture": "proportionate-review",
+  "recordedAt": "2026-10-04T16:34:40.810Z",
+  "kind": "four real serial agent attempts; external operator observations and deterministic output grading",
+  "protocolSha256": "216ae71060351abdf5813409b266b8cb3aa00e5729342c072a2f24b64280bdf8",
+  "order": [
+    "pair1-baseline",
+    "pair1-candidate",
+    "pair2-candidate",
+    "pair2-baseline"
+  ],
+  "host": {
+    "model": "inherited; no override",
+    "reasoning": "inherited; no override",
+    "delegation": "same tools and fresh reviewer capability",
+    "usage": null,
+    "usageUnavailableReason": "Host does not expose attributable per-attempt token counts"
+  },
+  "environment": {
+    "node": "v22.22.2",
+    "platform": "darwin",
+    "arch": "arm64",
+    "compiler": "same already-installed TypeScript 6.0.2 and tsx runner; no installation/network"
+  },
+  "provenance": {
+    "frozenAt": "2026-10-04T15:40:17.806Z",
+    "baseline": {
+      "version": "0.20.1",
+      "tag": "v0.20.1",
+      "commit": "b4c6c98560f05356f67d37f5c7c4b2a324f47890",
+      "origin": "Built locally from the released annotated source tag using the shared installed dependencies; npm tarball not downloaded",
+      "treeSha256": "e16dc3131970dd7f790f5fb4e6e6d6de9f6c91b5a2818ea1ffeb569450d68dd3"
+    },
+    "candidate": {
+      "version": "0.21.0",
+      "commit": "8593be328b691f5388593e4e515d7e0d67acc18e",
+      "origin": "Frozen current built executable and managed assets after approved source steps1/2",
+      "treeSha256": "f1b765fc9ebb5d6d7cfe9fd8f0f09eea7b33cae8a1cb54a34a76a3ed64043548"
+    },
+    "commonInputsEquivalent": true,
+    "commonInputHashes": {
+      ".codument-cli.mjs": "19d283ec39e8c1a9328ac7f14fdca7a97deefd21ad31bc070a84de424daabbf0",
+      ".gitignore": "192c77e7613c3f8ffcf36484e5654325df72cf3107b5c5b01c9b166051b1dc16",
+      "APPROVAL_HISTORY.md": "d9c4fd47a4b397132893e09374dbe6c9f8b12d9942b70b4592fda38ea000b35d",
+      "HANDOFF.md": "9a78d11c62735e6eba34599e058fdb78c48c1e6429ff39ceb374e36ee66d50fe",
+      "PROTOCOL.md": "216ae71060351abdf5813409b266b8cb3aa00e5729342c072a2f24b64280bdf8",
+      "docs/.approvals.json": "0a37c22d0472ede791624cdd2be872a7661d5ee12b81b3a7497eeb95b6c49192",
+      "docs/.registry.json": "e29405a28fa47b0e2939f5aadfddc70286afd442700646427b9529b2c599e4f7",
+      "docs/charter.md": "f5abd00277302932af57d047f8c0ca7d246cdffbcde14fbd0f76859420aeae74",
+      "docs/features/report.md": "1b7fc273e1d72973446eef647486d2c839d315867b067b2a1bb71df129222400",
+      "docs/getting-started.md": "372010323a91c518f0fb683d10d6f6a43859d9e99b6fd74c17c1fff716ae653b",
+      "docs/overview.md": "c2f1f4de4b87f4d835b9bb9ce509135b5be8918748ae27a48908df41b369367f",
+      "docs/plans/repair-report.md": "1004e29a667f1c27122c84850502a0f9c60ac410b2469ac503b5c04bb93574a4",
+      "package.json": "f1e6c564d41e90e2f834577de51cb83f49762421d58eac4222ecb2c981633583",
+      "src/count.ts": "db573b653d107fc4362fa4f1740b3348bcc5b33d8447a7906f5c0ce9657a80ec",
+      "src/report.ts": "a967f3910ecaf625d0341d44041edee71a11079e076cd164fe730feb7d717543",
+      "tests/report.test.ts": "d0c7f8c8bd751d526f50e76dac9be9b29d973d25acf4513a27634f0739637651",
+      "tsconfig.json": "ce9dd11bd70f7a3a273c4339eb9358bdfaef44c02ba5c45316d559925a3b2c79"
+    },
+    "rawRecords": {
+      "root": "/private/tmp/codument-review-trial",
+      "inputs": "inputs.json",
+      "freeze": "freeze.json",
+      "commands": "cli-observations.jsonl",
+      "operator": "operator.jsonl",
+      "grader": "grade.mjs",
+      "graderSha256": "fd2eee547a11442accaa551e6dc33a9cfbc872f629aff32f44a19eada3e7e020",
+      "observer": "observer.mjs",
+      "observerSha256": "5bb3f17b4f774ef9fdb77c63fcb7e3331e401a3a87cba161867a84f20c158a8a"
+    }
+  },
+  "preflight": {
+    "baseline": {
+      "passed": false,
+      "documentationPassed": true,
+      "review": {
+        "required": true,
+        "covered": false,
+        "blockingFindings": [],
+        "advisoryFindings": [],
+        "passed": false,
+        "reason": "no current adversarial review covers this diff",
+        "adjudicated": 0,
+        "unjudged": 0
+      },
+      "stagedPaths": [
+        "docs/notes/result.md",
+        "docs/plans/repair-report.md",
+        "src/count.ts",
+        "src/report.ts",
+        "tests/report.test.ts"
+      ],
+      "rawOutputSha256": "02b98b4249fb54f3def5fdf857557b441fde129444013795ea4be8310981c507"
+    },
+    "candidate": {
+      "passed": false,
+      "documentationPassed": true,
+      "review": {
+        "reviewPolicy": {
+          "version": 4,
+          "minimum": "focused",
+          "reasons": [],
+          "factsFingerprint": "ba679912ec3dde6ce7416b34ee38099fa211b8cce5daae615f8c391ca9ce68b2"
+        },
+        "required": true,
+        "covered": false,
+        "blockingFindings": [],
+        "advisoryFindings": [],
+        "passed": false,
+        "reason": "no current focused review covers this diff",
+        "adjudicated": 0,
+        "unjudged": 0
+      },
+      "stagedPaths": [
+        "docs/notes/result.md",
+        "docs/plans/repair-report.md",
+        "src/count.ts",
+        "src/report.ts",
+        "tests/report.test.ts"
+      ],
+      "rawOutputSha256": "81fb6090c2ebe5612005a63d355a3330171999428da2fc854f1114322a477196"
+    }
+  },
+  "attempts": [
+    {
+      "id": "pair1-baseline",
+      "condition": "baseline",
+      "actor": "/root/finish_delivery/pair1_baseline",
+      "status": "completed",
+      "startedAt": "2026-10-04T15:40:34.199Z",
+      "capMs": 600000,
+      "requiredReadinessObservedAt": "2026-10-04T15:49:34.580Z",
+      "timeToRequiredReadinessMs": 540381,
+      "withinReadinessCap": true,
+      "finalTurnCompletedAt": null,
+      "finalTurnTimeUnavailableReason": "Host does not expose an attributable final-turn completion timestamp; the operator separately records its completion observation",
+      "operatorCompletionObservedAt": "2026-10-04T15:51:29.856Z",
+      "timeoutObservedClockSample": null,
+      "nominalDeadlineAt": "2026-10-04T15:50:34.199Z",
+      "timeToTimeoutClockSampleMs": null,
+      "usage": null,
+      "usageUnavailableReason": "Host does not expose attributable per-attempt token counts",
+      "humanApprovalStops": 0,
+      "humanApprovalStopsEvidence": "Operator observed no human approval question or approval stop during this attempt; the bound task scope stayed unchanged",
+      "adversarialReviewerStarts": 1,
+      "reviewers": [
+        {
+          "event": "reviewer-start",
+          "id": "pair1-baseline",
+          "observedAt": "2026-10-04T15:50:47.898Z",
+          "actor": "/root/trial_baseline_reviewer",
+          "provenance": "Root reports actual fresh spawn after interrupting controller, completed clean independent review; canonical collaboration actor and review messages; generated worksheet context preserved",
+          "exactStartTimeAvailable": false
+        }
+      ],
+      "interventions": [
+        {
+          "event": "environment-intervention",
+          "id": "pair1-baseline",
+          "observedAt": "2026-10-04T15:45:30.361Z",
+          "detail": "Worker fresh reviewer spawn and operator fresh reviewer spawn both rejected with agent thread limit reached; interrupting completed prior agent did not free capacity; no reviewer started"
+        },
+        {
+          "event": "environment-intervention",
+          "id": "pair1-baseline",
+          "observedAt": "2026-10-04T15:50:47.901Z",
+          "detail": "Root interrupted controller to release active host slot, spawned fresh /root/trial_baseline_reviewer, relayed actual clean verdict and resumed controller; no attempt restart or self-review substitution"
+        }
+      ],
+      "cli": {
+        "invocations": 17,
+        "observedActionDurationMs": 6352.253332999999,
+        "actions": [
+          {
+            "argv": [
+              "--help"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:41:22.816Z",
+            "finishedAt": "2026-10-04T15:41:22.989Z",
+            "durationMs": 170.93287500000002,
+            "stdoutSha256": "d1be51c6aac25f29b75674044b68c57c128aa1e7bb282e5634f55133927eea30",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "status",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:41:32.269Z",
+            "finishedAt": "2026-10-04T15:41:32.441Z",
+            "durationMs": 171.305125,
+            "stdoutSha256": "707c9bc68ccd0506b7d519307b79b08b063abc43e43c1c897b3495ad77e04dd1",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "steps",
+              "--plan",
+              "docs/plans/repair-report.md",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:41:32.269Z",
+            "finishedAt": "2026-10-04T15:41:32.441Z",
+            "durationMs": 171.50258399999998,
+            "stdoutSha256": "f5b454de161717ea91842147af3da5c9264da5364f91ac43754e6fbcf027e0ff",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "context",
+              "--feature",
+              "report"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:41:50.908Z",
+            "finishedAt": "2026-10-04T15:41:51.136Z",
+            "durationMs": 227.205625,
+            "stdoutSha256": "bf13540da4c7585c05a9c2230c61b303a89cdc2e54467794f5afa404c1cebe65",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "context",
+              "--file",
+              "src/count.ts",
+              "--owner"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:41:50.908Z",
+            "finishedAt": "2026-10-04T15:41:51.141Z",
+            "durationMs": 232.345958,
+            "stdoutSha256": "c2b61b49d0cfc6c63a7cba540db96bb09fb4d9bd7b0bd8ec1a69ce9ccfe1305f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "steps",
+              "--plan",
+              "docs/plans/repair-report.md",
+              "--emit"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:41:50.908Z",
+            "finishedAt": "2026-10-04T15:41:51.142Z",
+            "durationMs": 233.302875,
+            "stdoutSha256": "028612493ded08a140abc3f6f9c05f526ab6ce4812dde311cb08fc48c6a85f06",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "context",
+              "--file",
+              "src/report.ts",
+              "--owner"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:41:50.908Z",
+            "finishedAt": "2026-10-04T15:41:51.147Z",
+            "durationMs": 238.83170800000002,
+            "stdoutSha256": "a6dd648af06e29427e241c304df8489c31b7befc32700283f31aeeaec42a15a5",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "context",
+              "--file",
+              "src/count.ts",
+              "--owner"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:42:57.418Z",
+            "finishedAt": "2026-10-04T15:42:57.635Z",
+            "durationMs": 217.47345900000002,
+            "stdoutSha256": "c2b61b49d0cfc6c63a7cba540db96bb09fb4d9bd7b0bd8ec1a69ce9ccfe1305f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "context",
+              "--file",
+              "src/report.ts",
+              "--owner"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:42:57.417Z",
+            "finishedAt": "2026-10-04T15:42:57.641Z",
+            "durationMs": 223.365042,
+            "stdoutSha256": "a6dd648af06e29427e241c304df8489c31b7befc32700283f31aeeaec42a15a5",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "resume",
+              "--gate",
+              "review"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:43:16.726Z",
+            "finishedAt": "2026-10-04T15:43:16.898Z",
+            "durationMs": 171.092583,
+            "stdoutSha256": "5e38069a02cca742a102fe7426cd217fb84a5e8a457257ef91cda14571375430",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "verify"
+            ],
+            "status": 1,
+            "signal": null,
+            "startedAt": "2026-10-04T15:43:17.480Z",
+            "finishedAt": "2026-10-04T15:43:18.670Z",
+            "durationMs": 1188.857209,
+            "stdoutSha256": "85e2a45d5d3f99c800f85275ee3aab4f5b2ea97d1e26f0536670df05b8baef6f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "verify",
+              "--help"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:44:13.270Z",
+            "finishedAt": "2026-10-04T15:44:13.440Z",
+            "durationMs": 168.335667,
+            "stdoutSha256": "744d707655a5f85c7942ff72ec9582474b697d4d6f67f65e798e61beb1677aff",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "review",
+              "--help"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:44:13.459Z",
+            "finishedAt": "2026-10-04T15:44:13.617Z",
+            "durationMs": 157.13416600000002,
+            "stdoutSha256": "5d2a2ceb9baf4a7937ea79588207e31c7aff9f02157a498172a5ecfb068613c8",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "status",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:46:15.780Z",
+            "finishedAt": "2026-10-04T15:46:15.965Z",
+            "durationMs": 185.382958,
+            "stdoutSha256": "039661862437d6fcb4b4dd3da6366de06eae4faba5f2d2a512feab9a4934fff6",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "verify",
+              "--plan",
+              "docs/plans/repair-report.md",
+              "--plan-id",
+              "matched-report-repair",
+              "--record",
+              ".codument/review-worksheet.json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:49:31.318Z",
+            "finishedAt": "2026-10-04T15:49:32.793Z",
+            "durationMs": 1475.061791,
+            "stdoutSha256": "d2ef5a290e9ff58c3f6c55813863b9a1b4fe7a7070ec07b4d83c58d05deb7475",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "finish"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:49:33.085Z",
+            "finishedAt": "2026-10-04T15:49:33.909Z",
+            "durationMs": 823.563208,
+            "stdoutSha256": "f625115917b7bca4be23b29360db9ee41ed860019e52f71723ced14d9f3800c5",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "status",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:49:34.283Z",
+            "finishedAt": "2026-10-04T15:49:34.580Z",
+            "durationMs": 296.56050000000005,
+            "stdoutSha256": "da5b58c03f44a80afb07dc1b3eba5c16c885de412312b6d9f8d02f3150699ba4",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          }
+        ]
+      },
+      "grade": {
+        "passed": true,
+        "gradedAt": "2026-10-04T15:51:35.539Z",
+        "checks": [
+          {
+            "name": "immutable worktree inputs",
+            "passed": true,
+            "evidence": "SHA-256 comparison of all original tracked inputs outside permitted repair paths"
+          },
+          {
+            "name": "no extra worktree files",
+            "passed": true,
+            "evidence": []
+          },
+          {
+            "name": "unchanged HEAD",
+            "passed": true,
+            "evidence": "ecfa95de36c5150a05092e49b3c98031ee9ae156"
+          },
+          {
+            "name": "exact staged scope",
+            "passed": true,
+            "evidence": [
+              "docs/notes/result.md",
+              "docs/plans/repair-report.md",
+              "src/count.ts",
+              "src/report.ts",
+              "tests/report.test.ts"
+            ]
+          },
+          {
+            "name": "immutable staged inputs",
+            "passed": true,
+            "evidence": "Original immutable hashes checked against actual index blobs"
+          },
+          {
+            "name": "worktree only first checkbox changed",
+            "passed": true,
+            "evidence": "Future milestone and legacy approval contract preserved byte-for-byte"
+          },
+          {
+            "name": "worktree body-only src/count.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "worktree body-only src/report.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "worktree compiler",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "ee1208d72342e695e775ec08bb071c2b833b69d40cf075ffeb1b75810bec4a97",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "worktree regression tests",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "72410d6f3a177cbbbe6cd53caa921b967e2639a28d5ef6bcb5cf09a69c86875d",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": [
+                "# tests 5",
+                "# suites 0",
+                "# pass 5",
+                "# fail 0",
+                "# cancelled 0",
+                "# skipped 0",
+                "# todo 0",
+                "# duration_ms 542.773792"
+              ]
+            }
+          },
+          {
+            "name": "worktree typecheck",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "8e5dd601343e7d8b1339738f20292b902c9c691cd7e2f411e84de10a0ac971ba",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "worktree emitted CLI valid/invalid contract",
+            "passed": true,
+            "evidence": [
+              {
+                "input": "1",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "3",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 3\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "20",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "001",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "00020",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "0",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "21",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3x",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3.5",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "1e1",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "+3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "-3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": " 3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3 ",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "Infinity",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "NaN",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "999999999999999999999",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": null,
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              }
+            ]
+          },
+          {
+            "name": "staged only first checkbox changed",
+            "passed": true,
+            "evidence": "Future milestone and legacy approval contract preserved byte-for-byte"
+          },
+          {
+            "name": "staged body-only src/count.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "staged body-only src/report.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "staged compiler",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "ee1208d72342e695e775ec08bb071c2b833b69d40cf075ffeb1b75810bec4a97",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "staged regression tests",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "2ae836b3b228d5d2e33e8d87b580559d3852f321c0e80bb55911bea68bf57de4",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": [
+                "# tests 5",
+                "# suites 0",
+                "# pass 5",
+                "# fail 0",
+                "# cancelled 0",
+                "# skipped 0",
+                "# todo 0",
+                "# duration_ms 538.352333"
+              ]
+            }
+          },
+          {
+            "name": "staged typecheck",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "8e5dd601343e7d8b1339738f20292b902c9c691cd7e2f411e84de10a0ac971ba",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "staged emitted CLI valid/invalid contract",
+            "passed": true,
+            "evidence": [
+              {
+                "input": "1",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "3",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 3\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "20",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "001",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "00020",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "0",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "21",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3x",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3.5",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "1e1",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "+3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "-3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": " 3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3 ",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "Infinity",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "NaN",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "999999999999999999999",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": null,
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              }
+            ]
+          },
+          {
+            "name": "current exact staged verification",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "fe80fe441e90096306d86e4fd8de6185c311c35e11cc889bf80904d72ce0024f",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "saved milestone ready with commit pending",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "da5b58c03f44a80afb07dc1b3eba5c16c885de412312b6d9f8d02f3150699ba4",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          }
+        ]
+      },
+      "initialHead": "ecfa95de36c5150a05092e49b3c98031ee9ae156",
+      "finalFileHashes": {
+        ".agents/skills/code-reviewer/SKILL.md": "0b6af091ff129017b12b5f625eb80b4afc551dac119d98f06263726e7ec229d7",
+        ".agents/skills/commit-work/SKILL.md": "15e615877ab03379517027ad25bb8c89eeb21806fd8783bbe150d12e009e5e27",
+        ".agents/skills/establish-charter/SKILL.md": "e8786af9685ac0f640786d94681d634d2d7a3bf4261bd38171251662e4ca7cf6",
+        ".agents/skills/frontend-design/SKILL.md": "d2b106e79af21f94597d07d8db5dc7f64d5d7c8d72b7e91c96481e6d3a242072",
+        ".agents/skills/grill-with-docs/SKILL.md": "71fd1b6446ef22468ba1d6972617943092c8f64c97df44cca5f415b0ca3ca5c5",
+        ".agents/skills/motion-craft/SKILL.md": "05870c362f9385058bebbbab157bcbd953fc0dc7b5470718c9c34ed093f2d214",
+        ".agents/skills/motion-craft/references/bridges.md": "a35553cdc8baf12ea554ed84cfb466efb80c488ecb46be4a13a407476faa6666",
+        ".agents/skills/motion-craft/references/examples.md": "3cee9051b805bfa3d0fe564709718eb40f3c4aad0e326688676c05c3ba947350",
+        ".agents/skills/motion-craft/references/react-native.md": "5cf61b2c1554d5897a4bf9d4f9505b7c43ed7a7d75c08e1ef763b3a547f2c338",
+        ".agents/skills/motion-craft/references/web.md": "054c6d3aec1717c62dedad974e7cdf749a7aa5b4c1b42498ee393d9e854d9bab",
+        ".agents/skills/plan-with-docs/SKILL.md": "ab38ea194a6805e1aaabfd9ff131da9748d3d158e9d9120fa8ec58208160a238",
+        ".agents/skills/review-codebase/SKILL.md": "eb23604440b802c245695febbf35c643b6ff1b0b1af5f451866a853c363f1d67",
+        ".agents/skills/review-work/SKILL.md": "f4fed02e0da92807b877596825924b06b1180df5ecc4caeb092da935b5ca8a93",
+        ".agents/skills/senior-architect/SKILL.md": "b02916ac6fbe3ddf67eff26cc0bf244f0a342b4ebaf78f8ffbf6002e3db42ca5",
+        ".agents/skills/senior-backend/SKILL.md": "375f94888bcc6b8275d51cb6e61fc9070abebe941966e7738a73473468acb02f",
+        ".agents/skills/senior-frontend/SKILL.md": "448703eeec62d1bd933356af4d32e736091821624aae433c0a86d291b3f31b27",
+        ".agents/skills/senior-frontend/references/react-native.md": "e26ce7e9a853154dd82e5b67dced5e8265c09784b81b670321da4c24900adcf9",
+        ".agents/skills/senior-frontend/references/react.md": "41cb484fbe5d7c0dbcab19c9b52ca5b7b26d354958d455c49b3437c81e79c44f",
+        ".agents/skills/tdd/SKILL.md": "74f5b3831a98be73fb28bf120e1807703cbe36fd4f80c6cf7abfc5e4aa5a6079",
+        ".agents/skills/update-docs/SKILL.md": "55407cdc5259e1031b39f49b5a2a12938fd489b0f2045030779f6e797ece8b62",
+        ".agents/skills/work-step/SKILL.md": "bd36b2010aa3f53ae515804a3e3db7085799e9be08aaa2ab98cad812f548a87b",
+        ".codument-cli.mjs": "19d283ec39e8c1a9328ac7f14fdca7a97deefd21ad31bc070a84de424daabbf0",
+        ".codument-meta.json": "f774dbd7b684dae65d408fcc04c655a177c52f333876974d9808961c8289907c",
+        ".gitignore": "192c77e7613c3f8ffcf36484e5654325df72cf3107b5c5b01c9b166051b1dc16",
+        "AGENTS.md": "c3603a1e2b14679ead93fccf0f38e1c0c7a1734da90f1c8b3229763c6b9b0c62",
+        "APPROVAL_HISTORY.md": "d9c4fd47a4b397132893e09374dbe6c9f8b12d9942b70b4592fda38ea000b35d",
+        "HANDOFF.md": "9a78d11c62735e6eba34599e058fdb78c48c1e6429ff39ceb374e36ee66d50fe",
+        "PROTOCOL.md": "216ae71060351abdf5813409b266b8cb3aa00e5729342c072a2f24b64280bdf8",
+        "docs/.approvals.json": "0a37c22d0472ede791624cdd2be872a7661d5ee12b81b3a7497eeb95b6c49192",
+        "docs/.registry.json": "e29405a28fa47b0e2939f5aadfddc70286afd442700646427b9529b2c599e4f7",
+        "docs/charter.md": "f5abd00277302932af57d047f8c0ca7d246cdffbcde14fbd0f76859420aeae74",
+        "docs/features/report.md": "1b7fc273e1d72973446eef647486d2c839d315867b067b2a1bb71df129222400",
+        "docs/getting-started.md": "372010323a91c518f0fb683d10d6f6a43859d9e99b6fd74c17c1fff716ae653b",
+        "docs/notes/result.md": "86e5431dae140f54d89c08f27c8806e51a5381bd64108c88fdb801f4a021b79c",
+        "docs/overview.md": "c2f1f4de4b87f4d835b9bb9ce509135b5be8918748ae27a48908df41b369367f",
+        "docs/plans/repair-report.md": "d75b5098d068bbe608b06bfe3b9b9c493c66c30b256026e8fd4954d111630491",
+        "package.json": "f1e6c564d41e90e2f834577de51cb83f49762421d58eac4222ecb2c981633583",
+        "src/count.ts": "c96a51169626ad885bff14959e624d9c2affba9b803a8da8f9f82790493d3dc4",
+        "src/report.ts": "a257d01dba574d20727bbc46bf834ba03cff69de264713aa17667baeb67f1c67",
+        "tests/report.test.ts": "b5990d875a3416f17eea60fe6eaf2314184b97e75dd2152db372e0f15bdffdda",
+        "tsconfig.json": "ce9dd11bd70f7a3a273c4339eb9358bdfaef44c02ba5c45316d559925a3b2c79"
+      },
+      "verifiedBoundary": {
+        "version": 1,
+        "mode": "staged",
+        "bases": [
+          {
+            "prefix": "",
+            "sha": "ecfa95de36c5150a05092e49b3c98031ee9ae156"
+          }
+        ],
+        "head": "INDEX",
+        "paths": [
+          "docs/notes/result.md",
+          "docs/plans/repair-report.md",
+          "src/count.ts",
+          "src/report.ts",
+          "tests/report.test.ts"
+        ],
+        "fingerprint": "986435224eb7e2b691751390515784741947d4eb6cf976e4bd70e01aa016e73b",
+        "complete": true,
+        "unselectedStagedPaths": []
+      },
+      "verifiedReview": {
+        "required": true,
+        "covered": true,
+        "blockingFindings": [],
+        "advisoryFindings": [],
+        "passed": true,
+        "reason": null,
+        "adjudicated": 0,
+        "unjudged": 0
+      },
+      "actualStagedOutput": {
+        "src/count.ts": "export function parseCount(raw: string): number | null {\n  if (raw.length === 0 || /[^0-9]/.test(raw)) return null;\n  const count = Number.parseInt(raw, 10);\n  if (!Number.isSafeInteger(count) || count < 1 || count > 20) return null;\n  return count;\n}\n",
+        "src/report.ts": "import { parseCount } from \"./count.js\";\n\nexport function renderCount(count: number): string {\n  return `Pieces: ${count}`;\n}\n\nconst count = parseCount(process.argv[2] ?? \"\");\nif (count === null) {\n  console.error(\"Count must contain only decimal digits and be between 1 and 20.\");\n  process.exitCode = 1;\n} else {\n  console.log(renderCount(count));\n}\n",
+        "tests/report.test.ts": "import assert from \"node:assert/strict\";\nimport { spawnSync } from \"node:child_process\";\nimport { test } from \"node:test\";\nimport { fileURLToPath } from \"node:url\";\nimport { parseCount } from \"../src/count.js\";\n\ntest(\"the parser accepts a count in range\", () => {\n  assert.equal(parseCount(\"3\"), 3);\n});\n\nconst validCounts = [\n  [\"1\", 1],\n  [\"20\", 20],\n  [\"003\", 3],\n  [\"00020\", 20],\n] as const;\n\nconst invalidCounts = [\n  \"\", \"0\", \"000\", \"21\", \"9007199254740992\", \"9\".repeat(400),\n  \"+3\", \"-3\", \" 3\", \"3 \", \"3\\t\", \"3\\n\", \"3\\r\\n\",\n  \"3.5\", \"3.0\", \"3e0\", \"3junk\", \"0x3\", \"\uff13\", \"\u0663\",\n];\n\ntest(\"the parser accepts the inclusive boundaries and leading zeroes\", () => {\n  for (const [raw, expected] of validCounts) {\n    assert.equal(parseCount(raw), expected, JSON.stringify(raw));\n  }\n});\n\ntest(\"the parser rejects anything outside the decimal count contract\", () => {\n  for (const raw of invalidCounts) {\n    assert.equal(parseCount(raw), null, JSON.stringify(raw));\n  }\n});\n\nconst commandPath = fileURLToPath(new URL(\"../dist/report.js\", import.meta.url));\n\ntest(\"the emitted CLI prints the requested count exactly\", () => {\n  for (const [raw, expected] of validCounts) {\n    const result = spawnSync(process.execPath, [commandPath, raw], { encoding: \"utf8\" });\n    assert.equal(result.error, undefined);\n    assert.equal(result.status, 0, JSON.stringify(raw));\n    assert.equal(result.stdout, `Pieces: ${expected}\\n`, JSON.stringify(raw));\n    assert.equal(result.stderr, \"\", JSON.stringify(raw));\n  }\n});\n\ntest(\"the emitted CLI rejects invalid and missing input with the diagnostic\", () => {\n  for (const args of [[], ...invalidCounts.map((raw) => [raw])]) {\n    const result = spawnSync(process.execPath, [commandPath, ...args], { encoding: \"utf8\" });\n    assert.equal(result.error, undefined);\n    assert.equal(result.status, 1, JSON.stringify(args));\n    assert.equal(result.stdout, \"\", JSON.stringify(args));\n    assert.equal(result.stderr, \"Count must contain only decimal digits and be between 1 and 20.\\n\", JSON.stringify(args));\n  }\n});\n",
+        "docs/notes/result.md": "The piece report now follows its existing decimal input and exact output contract. Regression coverage includes emitted command behavior, input boundaries and leading zeroes.\n"
+      },
+      "finalResponse": "Step 1 is reviewed and verified at READY, with commit gate pending. Build/typecheck/tests pass. No commit; Step 2 and locked inputs unchanged."
+    },
+    {
+      "id": "pair1-candidate",
+      "condition": "candidate",
+      "actor": "/root/finish_delivery/pair1_candidate",
+      "status": "completed",
+      "startedAt": "2026-10-04T15:51:54.691Z",
+      "capMs": 600000,
+      "requiredReadinessObservedAt": "2026-10-04T15:55:22.236Z",
+      "timeToRequiredReadinessMs": 207545,
+      "withinReadinessCap": true,
+      "finalTurnCompletedAt": null,
+      "finalTurnTimeUnavailableReason": "Host does not expose an attributable final-turn completion timestamp; the operator separately records its completion observation",
+      "operatorCompletionObservedAt": "2026-10-04T15:55:37.512Z",
+      "timeoutObservedClockSample": null,
+      "nominalDeadlineAt": "2026-10-04T16:01:54.691Z",
+      "timeToTimeoutClockSampleMs": null,
+      "usage": null,
+      "usageUnavailableReason": "Host does not expose attributable per-attempt token counts",
+      "humanApprovalStops": 0,
+      "humanApprovalStopsEvidence": "Operator observed no human approval question or approval stop during this attempt; the bound task scope stayed unchanged",
+      "adversarialReviewerStarts": 0,
+      "reviewers": [],
+      "interventions": [],
+      "cli": {
+        "invocations": 11,
+        "observedActionDurationMs": 5425.141541,
+        "actions": [
+          {
+            "argv": [
+              "--help"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:52:34.770Z",
+            "finishedAt": "2026-10-04T15:52:34.935Z",
+            "durationMs": 164.76516700000002,
+            "stdoutSha256": "bd5df10fad4f702dcbcea4b5532993dc241762a118503cfdce21dee8969fedc2",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "context",
+              "--paths",
+              "src/count.ts",
+              "src/report.ts",
+              "tests/report.test.ts",
+              "docs/plans/repair-report.md",
+              "docs/notes/result.md"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:52:45.910Z",
+            "finishedAt": "2026-10-04T15:52:46.131Z",
+            "durationMs": 220.677208,
+            "stdoutSha256": "ed1b52f88c1644b2615ba976e84e0688b9a933b4ca7fbdaf380a3fca77c415c1",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "status",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:52:45.910Z",
+            "finishedAt": "2026-10-04T15:52:46.135Z",
+            "durationMs": 224.61433399999999,
+            "stdoutSha256": "498c0329c3395ad794c1d2c39adbf12b27290749718ffb556b17c1c66939fbe6",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "steps",
+              "--plan",
+              "docs/plans/repair-report.md",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:52:45.910Z",
+            "finishedAt": "2026-10-04T15:52:46.135Z",
+            "durationMs": 224.810958,
+            "stdoutSha256": "f91e8ee779dae6337d70e2ad671ab0060bb659e0020d95116cc5adf9b1cbef48",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "steps",
+              "--plan",
+              "docs/plans/repair-report.md",
+              "--emit"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:53:13.874Z",
+            "finishedAt": "2026-10-04T15:53:14.039Z",
+            "durationMs": 162.403542,
+            "stdoutSha256": "028612493ded08a140abc3f6f9c05f526ab6ce4812dde311cb08fc48c6a85f06",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "resume",
+              "--gate",
+              "review"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:54:27.161Z",
+            "finishedAt": "2026-10-04T15:54:27.332Z",
+            "durationMs": 171.284583,
+            "stdoutSha256": "f0d00bc30b80c41cf3cd95a72c1f67a385586d2c4439f09de617618feed13eb9",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "verify"
+            ],
+            "status": 1,
+            "signal": null,
+            "startedAt": "2026-10-04T15:54:27.626Z",
+            "finishedAt": "2026-10-04T15:54:28.894Z",
+            "durationMs": 1268.0130000000001,
+            "stdoutSha256": "f02a996a4e67f983aad6b936475e30f3f47d1e82bd945c5c77c5bbfa27d34fbb",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "status",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:54:41.794Z",
+            "finishedAt": "2026-10-04T15:54:41.955Z",
+            "durationMs": 160.539875,
+            "stdoutSha256": "2e5cec7545267b4b3cb67aec501ecbaeeb98f44b8e6ff8623a737b703a9f60cd",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "verify",
+              "--plan",
+              "docs/plans/repair-report.md",
+              "--plan-id",
+              "matched-report-repair",
+              "--record",
+              ".codument/review-worksheet.json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:55:05.679Z",
+            "finishedAt": "2026-10-04T15:55:07.223Z",
+            "durationMs": 1543.2884999999999,
+            "stdoutSha256": "e59dc7261a47c2d3cada813b01e202a57098b5776e5cc576509191389639dc54",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "finish"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:55:20.605Z",
+            "finishedAt": "2026-10-04T15:55:21.372Z",
+            "durationMs": 765.187416,
+            "stdoutSha256": "fb4c7b91ad3cd077b77f9166a7a527ab091001339b939bde46b6a62c4c6a2ed4",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "status",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:55:21.716Z",
+            "finishedAt": "2026-10-04T15:55:22.236Z",
+            "durationMs": 519.556958,
+            "stdoutSha256": "b9afdb0ff41ac660eb8cc819d74d93daf193f18f2c3c0ab745a9ed6efd5a6e7e",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          }
+        ]
+      },
+      "grade": {
+        "passed": true,
+        "gradedAt": "2026-10-04T15:55:44.675Z",
+        "checks": [
+          {
+            "name": "immutable worktree inputs",
+            "passed": true,
+            "evidence": "SHA-256 comparison of all original tracked inputs outside permitted repair paths"
+          },
+          {
+            "name": "no extra worktree files",
+            "passed": true,
+            "evidence": []
+          },
+          {
+            "name": "unchanged HEAD",
+            "passed": true,
+            "evidence": "502f49ed624d0e1fee1d380a702447b8c3e6488f"
+          },
+          {
+            "name": "exact staged scope",
+            "passed": true,
+            "evidence": [
+              "docs/notes/result.md",
+              "docs/plans/repair-report.md",
+              "src/count.ts",
+              "src/report.ts",
+              "tests/report.test.ts"
+            ]
+          },
+          {
+            "name": "immutable staged inputs",
+            "passed": true,
+            "evidence": "Original immutable hashes checked against actual index blobs"
+          },
+          {
+            "name": "worktree only first checkbox changed",
+            "passed": true,
+            "evidence": "Future milestone and legacy approval contract preserved byte-for-byte"
+          },
+          {
+            "name": "worktree body-only src/count.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "worktree body-only src/report.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "worktree compiler",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "ee1208d72342e695e775ec08bb071c2b833b69d40cf075ffeb1b75810bec4a97",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "worktree regression tests",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "59280687ac8bcd94f5bd27028c94d2481a3a2854c334c177cad44afe81d71dd3",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": [
+                "# tests 5",
+                "# suites 0",
+                "# pass 5",
+                "# fail 0",
+                "# cancelled 0",
+                "# skipped 0",
+                "# todo 0",
+                "# duration_ms 972.622625"
+              ]
+            }
+          },
+          {
+            "name": "worktree typecheck",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "8e5dd601343e7d8b1339738f20292b902c9c691cd7e2f411e84de10a0ac971ba",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "worktree emitted CLI valid/invalid contract",
+            "passed": true,
+            "evidence": [
+              {
+                "input": "1",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "3",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 3\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "20",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "001",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "00020",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "0",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "21",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3x",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3.5",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "1e1",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "+3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "-3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": " 3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3 ",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "Infinity",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "NaN",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "999999999999999999999",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": null,
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              }
+            ]
+          },
+          {
+            "name": "staged only first checkbox changed",
+            "passed": true,
+            "evidence": "Future milestone and legacy approval contract preserved byte-for-byte"
+          },
+          {
+            "name": "staged body-only src/count.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "staged body-only src/report.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "staged compiler",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "ee1208d72342e695e775ec08bb071c2b833b69d40cf075ffeb1b75810bec4a97",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "staged regression tests",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "30d32a9cda5e183f1d518e08605426a7f9fbe06a86f4b5dd5908d0a2d2b43eba",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": [
+                "# tests 5",
+                "# suites 0",
+                "# pass 5",
+                "# fail 0",
+                "# cancelled 0",
+                "# skipped 0",
+                "# todo 0",
+                "# duration_ms 955.060709"
+              ]
+            }
+          },
+          {
+            "name": "staged typecheck",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "8e5dd601343e7d8b1339738f20292b902c9c691cd7e2f411e84de10a0ac971ba",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "staged emitted CLI valid/invalid contract",
+            "passed": true,
+            "evidence": [
+              {
+                "input": "1",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "3",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 3\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "20",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "001",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "00020",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "0",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "21",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3x",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3.5",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "1e1",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "+3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "-3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": " 3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3 ",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "Infinity",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "NaN",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "999999999999999999999",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": null,
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              }
+            ]
+          },
+          {
+            "name": "current exact staged verification",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "755b354c1785edf212653e8b30e92b295d418ea3349c8d00fa4c0e2bf904b7e9",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "saved milestone ready with commit pending",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "b9afdb0ff41ac660eb8cc819d74d93daf193f18f2c3c0ab745a9ed6efd5a6e7e",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          }
+        ]
+      },
+      "initialHead": "502f49ed624d0e1fee1d380a702447b8c3e6488f",
+      "finalFileHashes": {
+        ".agents/skills/code-reviewer/SKILL.md": "0b6af091ff129017b12b5f625eb80b4afc551dac119d98f06263726e7ec229d7",
+        ".agents/skills/commit-work/SKILL.md": "d31f8d5663310ba431f3e2f649086a2ed884225e9de125e817cb0fd853992954",
+        ".agents/skills/establish-charter/SKILL.md": "e8786af9685ac0f640786d94681d634d2d7a3bf4261bd38171251662e4ca7cf6",
+        ".agents/skills/frontend-design/SKILL.md": "d2b106e79af21f94597d07d8db5dc7f64d5d7c8d72b7e91c96481e6d3a242072",
+        ".agents/skills/grill-with-docs/SKILL.md": "709070c96a67c3f9ca5d04113f239789a354553aa3016bdceed7bee432466d31",
+        ".agents/skills/motion-craft/SKILL.md": "05870c362f9385058bebbbab157bcbd953fc0dc7b5470718c9c34ed093f2d214",
+        ".agents/skills/motion-craft/references/bridges.md": "a35553cdc8baf12ea554ed84cfb466efb80c488ecb46be4a13a407476faa6666",
+        ".agents/skills/motion-craft/references/examples.md": "3cee9051b805bfa3d0fe564709718eb40f3c4aad0e326688676c05c3ba947350",
+        ".agents/skills/motion-craft/references/react-native.md": "5cf61b2c1554d5897a4bf9d4f9505b7c43ed7a7d75c08e1ef763b3a547f2c338",
+        ".agents/skills/motion-craft/references/web.md": "054c6d3aec1717c62dedad974e7cdf749a7aa5b4c1b42498ee393d9e854d9bab",
+        ".agents/skills/plan-with-docs/SKILL.md": "43850b588701097d101af54b066ef282289cc9230571d97429847a2b4d03d8a3",
+        ".agents/skills/review-codebase/SKILL.md": "eb23604440b802c245695febbf35c643b6ff1b0b1af5f451866a853c363f1d67",
+        ".agents/skills/review-work/SKILL.md": "11286b137796e5f9d998a895cf873038e5de0505085cc524f942f84ec65387ce",
+        ".agents/skills/senior-architect/SKILL.md": "b02916ac6fbe3ddf67eff26cc0bf244f0a342b4ebaf78f8ffbf6002e3db42ca5",
+        ".agents/skills/senior-backend/SKILL.md": "375f94888bcc6b8275d51cb6e61fc9070abebe941966e7738a73473468acb02f",
+        ".agents/skills/senior-frontend/SKILL.md": "448703eeec62d1bd933356af4d32e736091821624aae433c0a86d291b3f31b27",
+        ".agents/skills/senior-frontend/references/react-native.md": "e26ce7e9a853154dd82e5b67dced5e8265c09784b81b670321da4c24900adcf9",
+        ".agents/skills/senior-frontend/references/react.md": "41cb484fbe5d7c0dbcab19c9b52ca5b7b26d354958d455c49b3437c81e79c44f",
+        ".agents/skills/tdd/SKILL.md": "bd6321af2a616d61f79c922e5ced401f334ecac774dc6cb69f9cbee5df47c17a",
+        ".agents/skills/update-docs/SKILL.md": "55407cdc5259e1031b39f49b5a2a12938fd489b0f2045030779f6e797ece8b62",
+        ".agents/skills/work-step/SKILL.md": "f84bc424a6d543e10e5b0760e9ad1f67b5f0d753efdfa83a3c870c94436c62ae",
+        ".codument-cli.mjs": "19d283ec39e8c1a9328ac7f14fdca7a97deefd21ad31bc070a84de424daabbf0",
+        ".codument-meta.json": "72a4ed24e379aa757d3a2053be8de0031565bcaddfdd6c472e5678c5e08bcfea",
+        ".gitignore": "192c77e7613c3f8ffcf36484e5654325df72cf3107b5c5b01c9b166051b1dc16",
+        "AGENTS.md": "8c32e14c5449ee1b502fae9dfd6a52bf0eeb60e5e6b684b1de3339863495f2a8",
+        "APPROVAL_HISTORY.md": "d9c4fd47a4b397132893e09374dbe6c9f8b12d9942b70b4592fda38ea000b35d",
+        "HANDOFF.md": "9a78d11c62735e6eba34599e058fdb78c48c1e6429ff39ceb374e36ee66d50fe",
+        "PROTOCOL.md": "216ae71060351abdf5813409b266b8cb3aa00e5729342c072a2f24b64280bdf8",
+        "docs/.approvals.json": "0a37c22d0472ede791624cdd2be872a7661d5ee12b81b3a7497eeb95b6c49192",
+        "docs/.registry.json": "e29405a28fa47b0e2939f5aadfddc70286afd442700646427b9529b2c599e4f7",
+        "docs/charter.md": "f5abd00277302932af57d047f8c0ca7d246cdffbcde14fbd0f76859420aeae74",
+        "docs/features/report.md": "1b7fc273e1d72973446eef647486d2c839d315867b067b2a1bb71df129222400",
+        "docs/getting-started.md": "372010323a91c518f0fb683d10d6f6a43859d9e99b6fd74c17c1fff716ae653b",
+        "docs/notes/result.md": "b43fd29499012642b6abfb58b88691f3fe4ac785e7e613324442049de3386371",
+        "docs/overview.md": "c2f1f4de4b87f4d835b9bb9ce509135b5be8918748ae27a48908df41b369367f",
+        "docs/plans/repair-report.md": "d75b5098d068bbe608b06bfe3b9b9c493c66c30b256026e8fd4954d111630491",
+        "package.json": "f1e6c564d41e90e2f834577de51cb83f49762421d58eac4222ecb2c981633583",
+        "src/count.ts": "c96a51169626ad885bff14959e624d9c2affba9b803a8da8f9f82790493d3dc4",
+        "src/report.ts": "a257d01dba574d20727bbc46bf834ba03cff69de264713aa17667baeb67f1c67",
+        "tests/report.test.ts": "702e7eb9820e5834dc6376daab2049052e5e03372cdc29bc7b3a060ffed636dc",
+        "tsconfig.json": "ce9dd11bd70f7a3a273c4339eb9358bdfaef44c02ba5c45316d559925a3b2c79"
+      },
+      "verifiedBoundary": {
+        "version": 1,
+        "mode": "staged",
+        "bases": [
+          {
+            "prefix": "",
+            "sha": "502f49ed624d0e1fee1d380a702447b8c3e6488f"
+          }
+        ],
+        "head": "INDEX",
+        "paths": [
+          "docs/notes/result.md",
+          "docs/plans/repair-report.md",
+          "src/count.ts",
+          "src/report.ts",
+          "tests/report.test.ts"
+        ],
+        "fingerprint": "1bcd3d32ae12d68c649502834587d6d573bd1a9742b7ea4e7914754afd98dbe0",
+        "complete": true,
+        "unselectedStagedPaths": []
+      },
+      "verifiedReview": {
+        "reviewPolicy": {
+          "version": 4,
+          "minimum": "focused",
+          "reasons": [],
+          "factsFingerprint": "f2215a3280b6dda36bb293e6e611f5f2557456e8dd1e4ab17172d8b814a2b6bf"
+        },
+        "required": true,
+        "covered": true,
+        "blockingFindings": [],
+        "advisoryFindings": [],
+        "passed": true,
+        "reason": null,
+        "adjudicated": 0,
+        "unjudged": 0
+      },
+      "actualStagedOutput": {
+        "src/count.ts": "export function parseCount(raw: string): number | null {\n  if (raw.length === 0 || /[^0-9]/.test(raw)) return null;\n  const count = Number.parseInt(raw, 10);\n  if (!Number.isSafeInteger(count) || count < 1 || count > 20) return null;\n  return count;\n}\n",
+        "src/report.ts": "import { parseCount } from \"./count.js\";\n\nexport function renderCount(count: number): string {\n  return `Pieces: ${count}`;\n}\n\nconst count = parseCount(process.argv[2] ?? \"\");\nif (count === null) {\n  console.error(\"Count must contain only decimal digits and be between 1 and 20.\");\n  process.exitCode = 1;\n} else {\n  console.log(renderCount(count));\n}\n",
+        "tests/report.test.ts": "import assert from \"node:assert/strict\";\nimport { spawnSync } from \"node:child_process\";\nimport { fileURLToPath } from \"node:url\";\nimport { test } from \"node:test\";\nimport { parseCount } from \"../src/count.js\";\n\nconst cliPath = fileURLToPath(new URL(\"../dist/report.js\", import.meta.url));\nconst validInputs = [\n  ...Array.from({ length: 20 }, (_, index) => String(index + 1)),\n  \"01\", \"0003\", \"020\", `${\"0\".repeat(100)}1`,\n];\nconst invalidInputs = [\n  \"\", \"0\", \"00\", \"21\", \"999999999999999999999999999999\",\n  \"-1\", \"+1\", \" 1\", \"1 \", \"\\t1\", \"1\\n\", \"1\\r\\n\", \"1\\u2028\",\n  \"1.5\", \"1e1\", \"0x10\", \"1piece\", \"3junk\", \"\u0661\", \"\uff11\",\n  \"NaN\", \"Infinity\",\n];\n\ntest(\"the parser accepts a count in range\", () => {\n  assert.equal(parseCount(\"3\"), 3);\n});\n\ntest(\"the parser accepts every count boundary and leading zeroes\", () => {\n  for (const input of validInputs) {\n    assert.equal(parseCount(input), Number(input), JSON.stringify(input));\n  }\n});\n\ntest(\"the parser rejects nondecimal input and out-of-range counts\", () => {\n  for (const input of [...invalidInputs, \"1\\u0000\"]) {\n    assert.equal(parseCount(input), null, JSON.stringify(input));\n  }\n});\n\ntest(\"the emitted CLI prints exactly the requested count\", () => {\n  for (const input of validInputs) {\n    const result = spawnSync(process.execPath, [cliPath, input], { encoding: \"utf8\" });\n    assert.equal(result.error, undefined, JSON.stringify(input));\n    assert.equal(result.signal, null, JSON.stringify(input));\n    assert.equal(result.status, 0, JSON.stringify(input));\n    assert.equal(result.stdout, `Pieces: ${Number(input)}\\n`, JSON.stringify(input));\n    assert.equal(result.stderr, \"\", JSON.stringify(input));\n  }\n});\n\ntest(\"the emitted CLI diagnoses invalid and missing input\", () => {\n  for (const args of [[], ...invalidInputs.map((input) => [input])]) {\n    const result = spawnSync(process.execPath, [cliPath, ...args], { encoding: \"utf8\" });\n    assert.equal(result.error, undefined, JSON.stringify(args));\n    assert.equal(result.signal, null, JSON.stringify(args));\n    assert.equal(result.status, 1, JSON.stringify(args));\n    assert.equal(result.stdout, \"\", JSON.stringify(args));\n    assert.equal(result.stderr, \"Count must contain only decimal digits and be between 1 and 20.\\n\", JSON.stringify(args));\n  }\n});\n",
+        "docs/notes/result.md": "# Piece report repair\n\nStep 1 repairs the existing parser and presentation within their documented contract. Regression coverage exercises the emitted command, count boundaries, leading zeroes, and invalid or missing input.\n\nThe future presentation milestone remains untouched.\n"
+      },
+      "finalResponse": "Step1 READY with commit pending; build/typecheck/tests/staged verification pass; focused self-review no findings; HEAD unchanged; Step2 unchecked; no commit"
+    },
+    {
+      "id": "pair2-candidate",
+      "condition": "candidate",
+      "actor": "/root/finish_delivery/pair2_candidate",
+      "status": "completed",
+      "startedAt": "2026-10-04T15:56:30.568Z",
+      "capMs": 600000,
+      "requiredReadinessObservedAt": "2026-10-04T15:59:14.169Z",
+      "timeToRequiredReadinessMs": 163601,
+      "withinReadinessCap": true,
+      "finalTurnCompletedAt": null,
+      "finalTurnTimeUnavailableReason": "Host does not expose an attributable final-turn completion timestamp; the operator separately records its completion observation",
+      "operatorCompletionObservedAt": "2026-10-04T15:59:42.343Z",
+      "timeoutObservedClockSample": null,
+      "nominalDeadlineAt": "2026-10-04T16:06:30.568Z",
+      "timeToTimeoutClockSampleMs": null,
+      "usage": null,
+      "usageUnavailableReason": "Host does not expose attributable per-attempt token counts",
+      "humanApprovalStops": 0,
+      "humanApprovalStopsEvidence": "Operator observed no human approval question or approval stop during this attempt; the bound task scope stayed unchanged",
+      "adversarialReviewerStarts": 0,
+      "reviewers": [],
+      "interventions": [],
+      "cli": {
+        "invocations": 11,
+        "observedActionDurationMs": 5138.339752,
+        "actions": [
+          {
+            "argv": [
+              "--help"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:57:13.210Z",
+            "finishedAt": "2026-10-04T15:57:13.409Z",
+            "durationMs": 198.729209,
+            "stdoutSha256": "bd5df10fad4f702dcbcea4b5532993dc241762a118503cfdce21dee8969fedc2",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "status",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:57:13.707Z",
+            "finishedAt": "2026-10-04T15:57:13.876Z",
+            "durationMs": 168.852833,
+            "stdoutSha256": "c9f8b9cf3914d57f83a676abc2c8e7bf3f11fa81ff23ca5ee9fdc3a270b6b801",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "steps",
+              "--plan",
+              "docs/plans/repair-report.md",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:57:13.896Z",
+            "finishedAt": "2026-10-04T15:57:14.061Z",
+            "durationMs": 164.70075,
+            "stdoutSha256": "317c2eea14eb0afc7293e01b461add0f49b0d40baac63a0b14ff5cef140b624b",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "steps",
+              "--plan",
+              "docs/plans/repair-report.md",
+              "--emit"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:57:25.051Z",
+            "finishedAt": "2026-10-04T15:57:25.216Z",
+            "durationMs": 165.190584,
+            "stdoutSha256": "028612493ded08a140abc3f6f9c05f526ab6ce4812dde311cb08fc48c6a85f06",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "context",
+              "--paths",
+              "src/count.ts",
+              "src/report.ts",
+              "tests/report.test.ts",
+              "docs/plans/repair-report.md",
+              "docs/notes/result.md"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:57:25.236Z",
+            "finishedAt": "2026-10-04T15:57:25.398Z",
+            "durationMs": 161.783084,
+            "stdoutSha256": "ed1b52f88c1644b2615ba976e84e0688b9a933b4ca7fbdaf380a3fca77c415c1",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "resume",
+              "--gate",
+              "review"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:58:34.866Z",
+            "finishedAt": "2026-10-04T15:58:35.042Z",
+            "durationMs": 175.894125,
+            "stdoutSha256": "f0d00bc30b80c41cf3cd95a72c1f67a385586d2c4439f09de617618feed13eb9",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "status",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:58:35.062Z",
+            "finishedAt": "2026-10-04T15:58:35.225Z",
+            "durationMs": 162.188333,
+            "stdoutSha256": "f936680d61e331bc20ef011284151d6ccd74572e92cca4280726ab118253a195",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "verify"
+            ],
+            "status": 1,
+            "signal": null,
+            "startedAt": "2026-10-04T15:58:35.257Z",
+            "finishedAt": "2026-10-04T15:58:36.509Z",
+            "durationMs": 1251.7554169999999,
+            "stdoutSha256": "f02a996a4e67f983aad6b936475e30f3f47d1e82bd945c5c77c5bbfa27d34fbb",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "verify",
+              "--plan",
+              "docs/plans/repair-report.md",
+              "--plan-id",
+              "matched-report-repair",
+              "--record",
+              ".codument/review-worksheet.json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:59:11.442Z",
+            "finishedAt": "2026-10-04T15:59:12.964Z",
+            "durationMs": 1522.428208,
+            "stdoutSha256": "a470e8730906d2d2f5b0173bedb34484b2bd42f9f6548e2c89368f29098aee85",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "finish"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:59:12.983Z",
+            "finishedAt": "2026-10-04T15:59:13.657Z",
+            "durationMs": 674.0293340000001,
+            "stdoutSha256": "fb4c7b91ad3cd077b77f9166a7a527ab091001339b939bde46b6a62c4c6a2ed4",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "status",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T15:59:13.676Z",
+            "finishedAt": "2026-10-04T15:59:14.169Z",
+            "durationMs": 492.787875,
+            "stdoutSha256": "0818431167beee5a51a57b7a630e7e398c874ef2b47fbf6e287a322dcfdddbaa",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          }
+        ]
+      },
+      "grade": {
+        "passed": true,
+        "gradedAt": "2026-10-04T15:59:48.260Z",
+        "checks": [
+          {
+            "name": "immutable worktree inputs",
+            "passed": true,
+            "evidence": "SHA-256 comparison of all original tracked inputs outside permitted repair paths"
+          },
+          {
+            "name": "no extra worktree files",
+            "passed": true,
+            "evidence": []
+          },
+          {
+            "name": "unchanged HEAD",
+            "passed": true,
+            "evidence": "3bf527f26a337fb7204e31688ded2c6a898bfdaa"
+          },
+          {
+            "name": "exact staged scope",
+            "passed": true,
+            "evidence": [
+              "docs/notes/result.md",
+              "docs/plans/repair-report.md",
+              "src/count.ts",
+              "src/report.ts",
+              "tests/report.test.ts"
+            ]
+          },
+          {
+            "name": "immutable staged inputs",
+            "passed": true,
+            "evidence": "Original immutable hashes checked against actual index blobs"
+          },
+          {
+            "name": "worktree only first checkbox changed",
+            "passed": true,
+            "evidence": "Future milestone and legacy approval contract preserved byte-for-byte"
+          },
+          {
+            "name": "worktree body-only src/count.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "worktree body-only src/report.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "worktree compiler",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "ee1208d72342e695e775ec08bb071c2b833b69d40cf075ffeb1b75810bec4a97",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "worktree regression tests",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "55acf5c15c07c96f89075ae04a2111c54bc087ac6dfd6641700682e755bbd7d4",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": [
+                "# tests 5",
+                "# suites 0",
+                "# pass 5",
+                "# fail 0",
+                "# cancelled 0",
+                "# skipped 0",
+                "# todo 0",
+                "# duration_ms 450.240125"
+              ]
+            }
+          },
+          {
+            "name": "worktree typecheck",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "8e5dd601343e7d8b1339738f20292b902c9c691cd7e2f411e84de10a0ac971ba",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "worktree emitted CLI valid/invalid contract",
+            "passed": true,
+            "evidence": [
+              {
+                "input": "1",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "3",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 3\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "20",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "001",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "00020",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "0",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "21",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3x",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3.5",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "1e1",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "+3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "-3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": " 3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3 ",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "Infinity",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "NaN",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "999999999999999999999",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": null,
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              }
+            ]
+          },
+          {
+            "name": "staged only first checkbox changed",
+            "passed": true,
+            "evidence": "Future milestone and legacy approval contract preserved byte-for-byte"
+          },
+          {
+            "name": "staged body-only src/count.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "staged body-only src/report.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "staged compiler",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "ee1208d72342e695e775ec08bb071c2b833b69d40cf075ffeb1b75810bec4a97",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "staged regression tests",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "b3ad7f7511c254c0a49560c29c938b0bf6b42afb580bc3873bf5608fde2424e6",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": [
+                "# tests 5",
+                "# suites 0",
+                "# pass 5",
+                "# fail 0",
+                "# cancelled 0",
+                "# skipped 0",
+                "# todo 0",
+                "# duration_ms 416.765208"
+              ]
+            }
+          },
+          {
+            "name": "staged typecheck",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "8e5dd601343e7d8b1339738f20292b902c9c691cd7e2f411e84de10a0ac971ba",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "staged emitted CLI valid/invalid contract",
+            "passed": true,
+            "evidence": [
+              {
+                "input": "1",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "3",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 3\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "20",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "001",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "00020",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "0",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "21",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3x",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3.5",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "1e1",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "+3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "-3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": " 3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3 ",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "Infinity",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "NaN",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "999999999999999999999",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": null,
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              }
+            ]
+          },
+          {
+            "name": "current exact staged verification",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "8052a2a5b944cff2fdd5424fdeb4e7481eaabf5b065f6484a545a0d934b2d58f",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "saved milestone ready with commit pending",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "0818431167beee5a51a57b7a630e7e398c874ef2b47fbf6e287a322dcfdddbaa",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          }
+        ]
+      },
+      "initialHead": "3bf527f26a337fb7204e31688ded2c6a898bfdaa",
+      "finalFileHashes": {
+        ".agents/skills/code-reviewer/SKILL.md": "0b6af091ff129017b12b5f625eb80b4afc551dac119d98f06263726e7ec229d7",
+        ".agents/skills/commit-work/SKILL.md": "d31f8d5663310ba431f3e2f649086a2ed884225e9de125e817cb0fd853992954",
+        ".agents/skills/establish-charter/SKILL.md": "e8786af9685ac0f640786d94681d634d2d7a3bf4261bd38171251662e4ca7cf6",
+        ".agents/skills/frontend-design/SKILL.md": "d2b106e79af21f94597d07d8db5dc7f64d5d7c8d72b7e91c96481e6d3a242072",
+        ".agents/skills/grill-with-docs/SKILL.md": "709070c96a67c3f9ca5d04113f239789a354553aa3016bdceed7bee432466d31",
+        ".agents/skills/motion-craft/SKILL.md": "05870c362f9385058bebbbab157bcbd953fc0dc7b5470718c9c34ed093f2d214",
+        ".agents/skills/motion-craft/references/bridges.md": "a35553cdc8baf12ea554ed84cfb466efb80c488ecb46be4a13a407476faa6666",
+        ".agents/skills/motion-craft/references/examples.md": "3cee9051b805bfa3d0fe564709718eb40f3c4aad0e326688676c05c3ba947350",
+        ".agents/skills/motion-craft/references/react-native.md": "5cf61b2c1554d5897a4bf9d4f9505b7c43ed7a7d75c08e1ef763b3a547f2c338",
+        ".agents/skills/motion-craft/references/web.md": "054c6d3aec1717c62dedad974e7cdf749a7aa5b4c1b42498ee393d9e854d9bab",
+        ".agents/skills/plan-with-docs/SKILL.md": "43850b588701097d101af54b066ef282289cc9230571d97429847a2b4d03d8a3",
+        ".agents/skills/review-codebase/SKILL.md": "eb23604440b802c245695febbf35c643b6ff1b0b1af5f451866a853c363f1d67",
+        ".agents/skills/review-work/SKILL.md": "11286b137796e5f9d998a895cf873038e5de0505085cc524f942f84ec65387ce",
+        ".agents/skills/senior-architect/SKILL.md": "b02916ac6fbe3ddf67eff26cc0bf244f0a342b4ebaf78f8ffbf6002e3db42ca5",
+        ".agents/skills/senior-backend/SKILL.md": "375f94888bcc6b8275d51cb6e61fc9070abebe941966e7738a73473468acb02f",
+        ".agents/skills/senior-frontend/SKILL.md": "448703eeec62d1bd933356af4d32e736091821624aae433c0a86d291b3f31b27",
+        ".agents/skills/senior-frontend/references/react-native.md": "e26ce7e9a853154dd82e5b67dced5e8265c09784b81b670321da4c24900adcf9",
+        ".agents/skills/senior-frontend/references/react.md": "41cb484fbe5d7c0dbcab19c9b52ca5b7b26d354958d455c49b3437c81e79c44f",
+        ".agents/skills/tdd/SKILL.md": "bd6321af2a616d61f79c922e5ced401f334ecac774dc6cb69f9cbee5df47c17a",
+        ".agents/skills/update-docs/SKILL.md": "55407cdc5259e1031b39f49b5a2a12938fd489b0f2045030779f6e797ece8b62",
+        ".agents/skills/work-step/SKILL.md": "f84bc424a6d543e10e5b0760e9ad1f67b5f0d753efdfa83a3c870c94436c62ae",
+        ".codument-cli.mjs": "19d283ec39e8c1a9328ac7f14fdca7a97deefd21ad31bc070a84de424daabbf0",
+        ".codument-meta.json": "72a4ed24e379aa757d3a2053be8de0031565bcaddfdd6c472e5678c5e08bcfea",
+        ".gitignore": "192c77e7613c3f8ffcf36484e5654325df72cf3107b5c5b01c9b166051b1dc16",
+        "AGENTS.md": "8c32e14c5449ee1b502fae9dfd6a52bf0eeb60e5e6b684b1de3339863495f2a8",
+        "APPROVAL_HISTORY.md": "d9c4fd47a4b397132893e09374dbe6c9f8b12d9942b70b4592fda38ea000b35d",
+        "HANDOFF.md": "9a78d11c62735e6eba34599e058fdb78c48c1e6429ff39ceb374e36ee66d50fe",
+        "PROTOCOL.md": "216ae71060351abdf5813409b266b8cb3aa00e5729342c072a2f24b64280bdf8",
+        "docs/.approvals.json": "0a37c22d0472ede791624cdd2be872a7661d5ee12b81b3a7497eeb95b6c49192",
+        "docs/.registry.json": "e29405a28fa47b0e2939f5aadfddc70286afd442700646427b9529b2c599e4f7",
+        "docs/charter.md": "f5abd00277302932af57d047f8c0ca7d246cdffbcde14fbd0f76859420aeae74",
+        "docs/features/report.md": "1b7fc273e1d72973446eef647486d2c839d315867b067b2a1bb71df129222400",
+        "docs/getting-started.md": "372010323a91c518f0fb683d10d6f6a43859d9e99b6fd74c17c1fff716ae653b",
+        "docs/notes/result.md": "cbe40c533f6aef4be47b3589339b7e1aeca4adc6f3450c4c502bec5d938e8e90",
+        "docs/overview.md": "c2f1f4de4b87f4d835b9bb9ce509135b5be8918748ae27a48908df41b369367f",
+        "docs/plans/repair-report.md": "d75b5098d068bbe608b06bfe3b9b9c493c66c30b256026e8fd4954d111630491",
+        "package.json": "f1e6c564d41e90e2f834577de51cb83f49762421d58eac4222ecb2c981633583",
+        "src/count.ts": "1efc562ea8b9ee749be814149dd34b754d76180ae5a20e6587c83a766e6652ac",
+        "src/report.ts": "a257d01dba574d20727bbc46bf834ba03cff69de264713aa17667baeb67f1c67",
+        "tests/report.test.ts": "b51960fa0ff46b2934bf9457cbfb5fcf0cf30357a77363926a194fd08119fbc0",
+        "tsconfig.json": "ce9dd11bd70f7a3a273c4339eb9358bdfaef44c02ba5c45316d559925a3b2c79"
+      },
+      "verifiedBoundary": {
+        "version": 1,
+        "mode": "staged",
+        "bases": [
+          {
+            "prefix": "",
+            "sha": "3bf527f26a337fb7204e31688ded2c6a898bfdaa"
+          }
+        ],
+        "head": "INDEX",
+        "paths": [
+          "docs/notes/result.md",
+          "docs/plans/repair-report.md",
+          "src/count.ts",
+          "src/report.ts",
+          "tests/report.test.ts"
+        ],
+        "fingerprint": "bbc90031e56ebde953782e3f252b805c2c184b9c6de6db84152b3752207c7b2f",
+        "complete": true,
+        "unselectedStagedPaths": []
+      },
+      "verifiedReview": {
+        "reviewPolicy": {
+          "version": 4,
+          "minimum": "focused",
+          "reasons": [],
+          "factsFingerprint": "9217a28317eec2f3dee02f55d9ab733fb64517d56d900b57f61e625f9004d61b"
+        },
+        "required": true,
+        "covered": true,
+        "blockingFindings": [],
+        "advisoryFindings": [],
+        "passed": true,
+        "reason": null,
+        "adjudicated": 0,
+        "unjudged": 0
+      },
+      "actualStagedOutput": {
+        "src/count.ts": "export function parseCount(raw: string): number | null {\n  if (raw === \"\" || /[^0-9]/.test(raw)) return null;\n  const count = Number.parseInt(raw, 10);\n  if (!Number.isSafeInteger(count) || count < 1 || count > 20) return null;\n  return count;\n}\n",
+        "src/report.ts": "import { parseCount } from \"./count.js\";\n\nexport function renderCount(count: number): string {\n  return `Pieces: ${count}`;\n}\n\nconst count = parseCount(process.argv[2] ?? \"\");\nif (count === null) {\n  console.error(\"Count must contain only decimal digits and be between 1 and 20.\");\n  process.exitCode = 1;\n} else {\n  console.log(renderCount(count));\n}\n",
+        "tests/report.test.ts": "import assert from \"node:assert/strict\";\nimport { spawnSync } from \"node:child_process\";\nimport { test } from \"node:test\";\nimport { fileURLToPath } from \"node:url\";\nimport { parseCount } from \"../src/count.js\";\n\ntest(\"the parser accepts a count in range\", () => {\n  assert.equal(parseCount(\"3\"), 3);\n});\n\ntest(\"the parser accepts decimal boundaries and leading zeroes\", () => {\n  for (const [raw, count] of [[\"1\", 1], [\"20\", 20], [\"0003\", 3], [\"020\", 20]] as const) {\n    assert.equal(parseCount(raw), count, raw);\n  }\n});\n\ntest(\"the parser rejects invalid syntax and out-of-range input\", () => {\n  for (const raw of [\"\", \"0\", \"00\", \"21\", \"999999999999999999999\", \"3pieces\", \"3.0\", \"1e1\", \"+3\", \"-3\", \" 3\", \"3 \", \"3\\n\", \"3\\t\", \"\uff13\", \"\u0663\"]) {\n    assert.equal(parseCount(raw), null, JSON.stringify(raw));\n  }\n});\n\ntest(\"the emitted CLI prints exactly the requested count\", () => {\n  for (const [raw, count] of [[\"1\", 1], [\"3\", 3], [\"20\", 20], [\"0003\", 3], [\"020\", 20]] as const) {\n    const result = spawnSync(process.execPath, [fileURLToPath(new URL(\"../dist/report.js\", import.meta.url)), raw], { encoding: \"utf8\" });\n    assert.ifError(result.error);\n    assert.equal(result.status, 0, raw);\n    assert.equal(result.stdout, `Pieces: ${count}\\n`, raw);\n    assert.equal(result.stderr, \"\", raw);\n  }\n});\n\ntest(\"the emitted CLI rejects invalid and missing counts\", () => {\n  for (const args of [[], [\"\"], [\"0\"], [\"21\"], [\"3pieces\"], [\"3.0\"], [\"1e1\"], [\"+3\"], [\"-3\"], [\" 3\"], [\"3 \"], [\"3\\n\"], [\"\uff13\"], [\"999999999999999999999\"]]) {\n    const result = spawnSync(process.execPath, [fileURLToPath(new URL(\"../dist/report.js\", import.meta.url)), ...args], { encoding: \"utf8\" });\n    assert.ifError(result.error);\n    assert.equal(result.status, 1, JSON.stringify(args));\n    assert.equal(result.stdout, \"\", JSON.stringify(args));\n    assert.equal(result.stderr, \"Count must contain only decimal digits and be between 1 and 20.\\n\", JSON.stringify(args));\n  }\n});\n",
+        "docs/notes/result.md": "# Repair result\n\nThe piece report validates the complete input and prints the requested count.\n"
+      },
+      "finalResponse": "Step1 READY. Build/typecheck/tests/focused self-review/staged verification passed. Commit pending, no commit. Step2 untouched."
+    },
+    {
+      "id": "pair2-baseline",
+      "condition": "baseline",
+      "actor": "/root/finish_delivery/pair2_baseline",
+      "status": "timeout",
+      "startedAt": "2026-10-04T15:59:53.118Z",
+      "capMs": 600000,
+      "requiredReadinessObservedAt": null,
+      "timeToRequiredReadinessMs": null,
+      "withinReadinessCap": null,
+      "finalTurnCompletedAt": null,
+      "finalTurnTimeUnavailableReason": "Host does not expose an attributable final-turn completion timestamp; the operator separately records its completion observation",
+      "operatorCompletionObservedAt": "2026-10-04T16:31:19.680Z",
+      "timeoutObservedClockSample": "2026-10-04T16:25:20Z",
+      "nominalDeadlineAt": "2026-10-04T16:09:53.118Z",
+      "timeToTimeoutClockSampleMs": 1526882,
+      "usage": null,
+      "usageUnavailableReason": "Host does not expose attributable per-attempt token counts",
+      "humanApprovalStops": 0,
+      "humanApprovalStopsEvidence": "Operator observed no human approval question or approval stop during this attempt; the bound task scope stayed unchanged",
+      "adversarialReviewerStarts": 0,
+      "reviewers": [],
+      "interventions": [
+        {
+          "event": "environment-intervention",
+          "id": "pair2-baseline",
+          "observedAt": "2026-10-04T16:03:05.383Z",
+          "detail": "Worker fresh reviewer spawn rejected agent thread limit; operator requests same controller-slot handoff as first baseline, with fresh root-spawned reviewer and no attempt retry"
+        },
+        {
+          "event": "environment-intervention",
+          "id": "pair2-baseline",
+          "observedAt": "2026-10-04T16:31:19.678Z",
+          "spawnClockSample": "2026-10-04T16:03:41Z",
+          "detail": "Root interrupted controller and attempted fresh reviewer spawn; host rejected agent thread limit again. No actual reviewer started, no verdict was substituted, no attempt retry."
+        }
+      ],
+      "cli": {
+        "invocations": 11,
+        "observedActionDurationMs": 2824.709417,
+        "actions": [
+          {
+            "argv": [
+              "--help"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T16:00:31.405Z",
+            "finishedAt": "2026-10-04T16:00:31.572Z",
+            "durationMs": 163.35845799999998,
+            "stdoutSha256": "d1be51c6aac25f29b75674044b68c57c128aa1e7bb282e5634f55133927eea30",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "status",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T16:00:41.622Z",
+            "finishedAt": "2026-10-04T16:00:41.783Z",
+            "durationMs": 160.51304199999998,
+            "stdoutSha256": "b205cf046622a288a5203b52325152aeed43d623583ec6e3cc6455959f4aa035",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "steps",
+              "--plan",
+              "docs/plans/repair-report.md",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T16:00:42.080Z",
+            "finishedAt": "2026-10-04T16:00:42.243Z",
+            "durationMs": 161.976334,
+            "stdoutSha256": "47062050fb861b2f76b85319814fabe84ca50d728586c82b30ab4d0f8a1db0b5",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "context",
+              "--file",
+              "src/count.ts",
+              "--owner"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T16:00:42.536Z",
+            "finishedAt": "2026-10-04T16:00:42.694Z",
+            "durationMs": 157.731292,
+            "stdoutSha256": "c2b61b49d0cfc6c63a7cba540db96bb09fb4d9bd7b0bd8ec1a69ce9ccfe1305f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "context",
+              "--file",
+              "src/report.ts",
+              "--owner"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T16:00:42.990Z",
+            "finishedAt": "2026-10-04T16:00:43.148Z",
+            "durationMs": 158.092916,
+            "stdoutSha256": "a6dd648af06e29427e241c304df8489c31b7befc32700283f31aeeaec42a15a5",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "steps",
+              "--plan",
+              "docs/plans/repair-report.md",
+              "--emit"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T16:01:00.631Z",
+            "finishedAt": "2026-10-04T16:01:00.806Z",
+            "durationMs": 174.579208,
+            "stdoutSha256": "028612493ded08a140abc3f6f9c05f526ab6ce4812dde311cb08fc48c6a85f06",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "context",
+              "--file",
+              "src/count.ts",
+              "--owner"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T16:01:50.396Z",
+            "finishedAt": "2026-10-04T16:01:50.558Z",
+            "durationMs": 161.458709,
+            "stdoutSha256": "c2b61b49d0cfc6c63a7cba540db96bb09fb4d9bd7b0bd8ec1a69ce9ccfe1305f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "context",
+              "--file",
+              "src/report.ts",
+              "--owner"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T16:01:50.855Z",
+            "finishedAt": "2026-10-04T16:01:51.017Z",
+            "durationMs": 161.57850000000002,
+            "stdoutSha256": "a6dd648af06e29427e241c304df8489c31b7befc32700283f31aeeaec42a15a5",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "resume",
+              "--gate",
+              "review"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T16:02:07.906Z",
+            "finishedAt": "2026-10-04T16:02:08.076Z",
+            "durationMs": 169.065875,
+            "stdoutSha256": "5e38069a02cca742a102fe7426cd217fb84a5e8a457257ef91cda14571375430",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "work",
+              "status",
+              "--json"
+            ],
+            "status": 0,
+            "signal": null,
+            "startedAt": "2026-10-04T16:02:08.380Z",
+            "finishedAt": "2026-10-04T16:02:08.539Z",
+            "durationMs": 158.76266700000002,
+            "stdoutSha256": "9ed66371d15ba86866ab7253d79671a91d72bdde3c6c70c1927d3c149744cdf9",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          },
+          {
+            "argv": [
+              "verify"
+            ],
+            "status": 1,
+            "signal": null,
+            "startedAt": "2026-10-04T16:02:08.830Z",
+            "finishedAt": "2026-10-04T16:02:10.028Z",
+            "durationMs": 1197.592416,
+            "stdoutSha256": "85e2a45d5d3f99c800f85275ee3aab4f5b2ea97d1e26f0536670df05b8baef6f",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "error": null
+          }
+        ]
+      },
+      "grade": {
+        "passed": false,
+        "gradedAt": "2026-10-04T16:31:26.546Z",
+        "checks": [
+          {
+            "name": "immutable worktree inputs",
+            "passed": true,
+            "evidence": "SHA-256 comparison of all original tracked inputs outside permitted repair paths"
+          },
+          {
+            "name": "no extra worktree files",
+            "passed": true,
+            "evidence": []
+          },
+          {
+            "name": "unchanged HEAD",
+            "passed": true,
+            "evidence": "a45e95e012363bafd998fae2e8703865fd353ff3"
+          },
+          {
+            "name": "exact staged scope",
+            "passed": true,
+            "evidence": [
+              "docs/notes/result.md",
+              "docs/plans/repair-report.md",
+              "src/count.ts",
+              "src/report.ts",
+              "tests/report.test.ts"
+            ]
+          },
+          {
+            "name": "immutable staged inputs",
+            "passed": true,
+            "evidence": "Original immutable hashes checked against actual index blobs"
+          },
+          {
+            "name": "worktree only first checkbox changed",
+            "passed": true,
+            "evidence": "Future milestone and legacy approval contract preserved byte-for-byte"
+          },
+          {
+            "name": "worktree body-only src/count.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "worktree body-only src/report.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "worktree compiler",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "ee1208d72342e695e775ec08bb071c2b833b69d40cf075ffeb1b75810bec4a97",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "worktree regression tests",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "13695a9ed814b4e94c3bf7b3b31f77fd90a7d7929c363e56adab3ec6193c5d85",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": [
+                "# tests 4",
+                "# suites 0",
+                "# pass 4",
+                "# fail 0",
+                "# cancelled 0",
+                "# skipped 0",
+                "# todo 0",
+                "# duration_ms 1001.391459"
+              ]
+            }
+          },
+          {
+            "name": "worktree typecheck",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "8e5dd601343e7d8b1339738f20292b902c9c691cd7e2f411e84de10a0ac971ba",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "worktree emitted CLI valid/invalid contract",
+            "passed": true,
+            "evidence": [
+              {
+                "input": "1",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "3",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 3\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "20",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "001",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "00020",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "0",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "21",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3x",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3.5",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "1e1",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "+3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "-3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": " 3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3 ",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "Infinity",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "NaN",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "999999999999999999999",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": null,
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              }
+            ]
+          },
+          {
+            "name": "staged only first checkbox changed",
+            "passed": true,
+            "evidence": "Future milestone and legacy approval contract preserved byte-for-byte"
+          },
+          {
+            "name": "staged body-only src/count.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "staged body-only src/report.ts",
+            "passed": true,
+            "evidence": "TypeScript AST removes only existing function bodies; signatures/imports/module initialization must match"
+          },
+          {
+            "name": "staged compiler",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "ee1208d72342e695e775ec08bb071c2b833b69d40cf075ffeb1b75810bec4a97",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "staged regression tests",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "e4b7712188d235a7d7acd21e1933692ceab8b24d9473fccf3b3702d32d75c50b",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": [
+                "# tests 4",
+                "# suites 0",
+                "# pass 4",
+                "# fail 0",
+                "# cancelled 0",
+                "# skipped 0",
+                "# todo 0",
+                "# duration_ms 991.069542"
+              ]
+            }
+          },
+          {
+            "name": "staged typecheck",
+            "passed": true,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "8e5dd601343e7d8b1339738f20292b902c9c691cd7e2f411e84de10a0ac971ba",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "staged emitted CLI valid/invalid contract",
+            "passed": true,
+            "evidence": [
+              {
+                "input": "1",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "3",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 3\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "20",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "001",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 1\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "00020",
+                "passed": true,
+                "status": 0,
+                "signal": null,
+                "stdout": "Pieces: 20\n",
+                "stderr": "",
+                "error": null
+              },
+              {
+                "input": "",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "0",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "21",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3x",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3.5",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "1e1",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "+3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "-3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": " 3",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "3 ",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "Infinity",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "NaN",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": "999999999999999999999",
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              },
+              {
+                "input": null,
+                "passed": true,
+                "status": 1,
+                "signal": null,
+                "stdout": "",
+                "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+                "error": null
+              }
+            ]
+          },
+          {
+            "name": "current exact staged verification",
+            "passed": false,
+            "evidence": {
+              "status": 1,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "5b4623f894dcf63013fbbb59a7035485c4feb4b2408b4b158da29c21373162e8",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          },
+          {
+            "name": "saved milestone ready with commit pending",
+            "passed": false,
+            "evidence": {
+              "status": 0,
+              "signal": null,
+              "error": null,
+              "stdoutSha256": "9ed66371d15ba86866ab7253d79671a91d72bdde3c6c70c1927d3c149744cdf9",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "tapSummary": []
+            }
+          }
+        ]
+      },
+      "initialHead": "a45e95e012363bafd998fae2e8703865fd353ff3",
+      "finalFileHashes": {
+        ".agents/skills/code-reviewer/SKILL.md": "0b6af091ff129017b12b5f625eb80b4afc551dac119d98f06263726e7ec229d7",
+        ".agents/skills/commit-work/SKILL.md": "15e615877ab03379517027ad25bb8c89eeb21806fd8783bbe150d12e009e5e27",
+        ".agents/skills/establish-charter/SKILL.md": "e8786af9685ac0f640786d94681d634d2d7a3bf4261bd38171251662e4ca7cf6",
+        ".agents/skills/frontend-design/SKILL.md": "d2b106e79af21f94597d07d8db5dc7f64d5d7c8d72b7e91c96481e6d3a242072",
+        ".agents/skills/grill-with-docs/SKILL.md": "71fd1b6446ef22468ba1d6972617943092c8f64c97df44cca5f415b0ca3ca5c5",
+        ".agents/skills/motion-craft/SKILL.md": "05870c362f9385058bebbbab157bcbd953fc0dc7b5470718c9c34ed093f2d214",
+        ".agents/skills/motion-craft/references/bridges.md": "a35553cdc8baf12ea554ed84cfb466efb80c488ecb46be4a13a407476faa6666",
+        ".agents/skills/motion-craft/references/examples.md": "3cee9051b805bfa3d0fe564709718eb40f3c4aad0e326688676c05c3ba947350",
+        ".agents/skills/motion-craft/references/react-native.md": "5cf61b2c1554d5897a4bf9d4f9505b7c43ed7a7d75c08e1ef763b3a547f2c338",
+        ".agents/skills/motion-craft/references/web.md": "054c6d3aec1717c62dedad974e7cdf749a7aa5b4c1b42498ee393d9e854d9bab",
+        ".agents/skills/plan-with-docs/SKILL.md": "ab38ea194a6805e1aaabfd9ff131da9748d3d158e9d9120fa8ec58208160a238",
+        ".agents/skills/review-codebase/SKILL.md": "eb23604440b802c245695febbf35c643b6ff1b0b1af5f451866a853c363f1d67",
+        ".agents/skills/review-work/SKILL.md": "f4fed02e0da92807b877596825924b06b1180df5ecc4caeb092da935b5ca8a93",
+        ".agents/skills/senior-architect/SKILL.md": "b02916ac6fbe3ddf67eff26cc0bf244f0a342b4ebaf78f8ffbf6002e3db42ca5",
+        ".agents/skills/senior-backend/SKILL.md": "375f94888bcc6b8275d51cb6e61fc9070abebe941966e7738a73473468acb02f",
+        ".agents/skills/senior-frontend/SKILL.md": "448703eeec62d1bd933356af4d32e736091821624aae433c0a86d291b3f31b27",
+        ".agents/skills/senior-frontend/references/react-native.md": "e26ce7e9a853154dd82e5b67dced5e8265c09784b81b670321da4c24900adcf9",
+        ".agents/skills/senior-frontend/references/react.md": "41cb484fbe5d7c0dbcab19c9b52ca5b7b26d354958d455c49b3437c81e79c44f",
+        ".agents/skills/tdd/SKILL.md": "74f5b3831a98be73fb28bf120e1807703cbe36fd4f80c6cf7abfc5e4aa5a6079",
+        ".agents/skills/update-docs/SKILL.md": "55407cdc5259e1031b39f49b5a2a12938fd489b0f2045030779f6e797ece8b62",
+        ".agents/skills/work-step/SKILL.md": "bd36b2010aa3f53ae515804a3e3db7085799e9be08aaa2ab98cad812f548a87b",
+        ".codument-cli.mjs": "19d283ec39e8c1a9328ac7f14fdca7a97deefd21ad31bc070a84de424daabbf0",
+        ".codument-meta.json": "f774dbd7b684dae65d408fcc04c655a177c52f333876974d9808961c8289907c",
+        ".gitignore": "192c77e7613c3f8ffcf36484e5654325df72cf3107b5c5b01c9b166051b1dc16",
+        "AGENTS.md": "c3603a1e2b14679ead93fccf0f38e1c0c7a1734da90f1c8b3229763c6b9b0c62",
+        "APPROVAL_HISTORY.md": "d9c4fd47a4b397132893e09374dbe6c9f8b12d9942b70b4592fda38ea000b35d",
+        "HANDOFF.md": "9a78d11c62735e6eba34599e058fdb78c48c1e6429ff39ceb374e36ee66d50fe",
+        "PROTOCOL.md": "216ae71060351abdf5813409b266b8cb3aa00e5729342c072a2f24b64280bdf8",
+        "docs/.approvals.json": "0a37c22d0472ede791624cdd2be872a7661d5ee12b81b3a7497eeb95b6c49192",
+        "docs/.registry.json": "e29405a28fa47b0e2939f5aadfddc70286afd442700646427b9529b2c599e4f7",
+        "docs/charter.md": "f5abd00277302932af57d047f8c0ca7d246cdffbcde14fbd0f76859420aeae74",
+        "docs/features/report.md": "1b7fc273e1d72973446eef647486d2c839d315867b067b2a1bb71df129222400",
+        "docs/getting-started.md": "372010323a91c518f0fb683d10d6f6a43859d9e99b6fd74c17c1fff716ae653b",
+        "docs/notes/result.md": "8dda6e8bffa7265c9fdb9e293ea70a580c551feb11c02279762646d70cbe7c7a",
+        "docs/overview.md": "c2f1f4de4b87f4d835b9bb9ce509135b5be8918748ae27a48908df41b369367f",
+        "docs/plans/repair-report.md": "d75b5098d068bbe608b06bfe3b9b9c493c66c30b256026e8fd4954d111630491",
+        "package.json": "f1e6c564d41e90e2f834577de51cb83f49762421d58eac4222ecb2c981633583",
+        "src/count.ts": "c96a51169626ad885bff14959e624d9c2affba9b803a8da8f9f82790493d3dc4",
+        "src/report.ts": "a257d01dba574d20727bbc46bf834ba03cff69de264713aa17667baeb67f1c67",
+        "tests/report.test.ts": "0fc3b62d95fc50ec9dc369766ff8e182d40fc1b2d5e7fd6f514aaf385cb49844",
+        "tsconfig.json": "ce9dd11bd70f7a3a273c4339eb9358bdfaef44c02ba5c45316d559925a3b2c79"
+      },
+      "verifiedBoundary": {
+        "version": 1,
+        "mode": "staged",
+        "bases": [
+          {
+            "prefix": "",
+            "sha": "a45e95e012363bafd998fae2e8703865fd353ff3"
+          }
+        ],
+        "head": "INDEX",
+        "paths": [
+          "docs/notes/result.md",
+          "docs/plans/repair-report.md",
+          "src/count.ts",
+          "src/report.ts",
+          "tests/report.test.ts"
+        ],
+        "fingerprint": "568381b15f28093febf1531970c40f1274e8eff5138cb3b52682c9be82311e10",
+        "complete": true,
+        "unselectedStagedPaths": []
+      },
+      "verifiedReview": {
+        "required": true,
+        "covered": false,
+        "blockingFindings": [],
+        "advisoryFindings": [],
+        "passed": false,
+        "reason": "no current adversarial review covers this diff",
+        "adjudicated": 0,
+        "unjudged": 0
+      },
+      "actualStagedOutput": {
+        "src/count.ts": "export function parseCount(raw: string): number | null {\n  if (raw.length === 0 || /[^0-9]/.test(raw)) return null;\n  const count = Number.parseInt(raw, 10);\n  if (!Number.isSafeInteger(count) || count < 1 || count > 20) return null;\n  return count;\n}\n",
+        "src/report.ts": "import { parseCount } from \"./count.js\";\n\nexport function renderCount(count: number): string {\n  return `Pieces: ${count}`;\n}\n\nconst count = parseCount(process.argv[2] ?? \"\");\nif (count === null) {\n  console.error(\"Count must contain only decimal digits and be between 1 and 20.\");\n  process.exitCode = 1;\n} else {\n  console.log(renderCount(count));\n}\n",
+        "tests/report.test.ts": "import assert from \"node:assert/strict\";\nimport { spawnSync } from \"node:child_process\";\nimport { test } from \"node:test\";\nimport { fileURLToPath } from \"node:url\";\nimport { parseCount } from \"../src/count.js\";\n\nconst validInputs = [\n  ...Array.from({ length: 20 }, (_, index) => String(index + 1)),\n  \"01\", \"0003\", \"00020\", `${\"0\".repeat(100)}1`,\n];\nconst invalidInputs = [\n  \"\", \"0\", \"00\", \"21\", \"999999999999999999999999999999\",\n  \"-1\", \"+1\", \" 1\", \"1 \", \"\\t1\", \"1\\n\", \"1\\r\\n\", \"1\\u00a0\",\n  \"1.5\", \"1.0\", \"1e1\", \"1E1\", \"0x10\", \"0b10\", \"3pieces\", \"3_0\", \"\u0661\", \"\uff11\",\n];\nconst reportPath = fileURLToPath(new URL(\"../dist/report.js\", import.meta.url));\n\ntest(\"the parser accepts decimal counts throughout the inclusive range and leading zeroes\", () => {\n  for (const raw of validInputs) assert.equal(parseCount(raw), Number(raw), JSON.stringify(raw));\n});\n\ntest(\"the parser rejects missing, out-of-range and non-decimal input\", () => {\n  for (const raw of invalidInputs) assert.equal(parseCount(raw), null, JSON.stringify(raw));\n});\n\ntest(\"the emitted CLI prints the exact valid count without error output\", () => {\n  for (const raw of validInputs) {\n    const result = spawnSync(process.execPath, [reportPath, raw], { encoding: \"utf8\" });\n    assert.ifError(result.error);\n    assert.equal(result.status, 0, JSON.stringify(raw));\n    assert.equal(result.stdout, `Pieces: ${Number(raw)}\\n`, JSON.stringify(raw));\n    assert.equal(result.stderr, \"\", JSON.stringify(raw));\n  }\n});\n\ntest(\"the emitted CLI rejects invalid and missing input with the documented diagnostic\", () => {\n  for (const args of [...invalidInputs.map((raw) => [raw]), []]) {\n    const result = spawnSync(process.execPath, [reportPath, ...args], { encoding: \"utf8\" });\n    assert.ifError(result.error);\n    assert.equal(result.status, 1, JSON.stringify(args));\n    assert.equal(result.stdout, \"\", JSON.stringify(args));\n    assert.equal(result.stderr, \"Count must contain only decimal digits and be between 1 and 20.\\n\", JSON.stringify(args));\n  }\n});\n",
+        "docs/notes/result.md": "# Result\n\nThe piece report accepts the documented decimal counts and prints the requested count. Regression checks cover valid boundaries, leading zeroes, invalid input and the emitted command. Build, typecheck and tests pass.\n"
+      },
+      "finalResponse": "Step1 staged and build/tests/typecheck pass, but not READY. Independent review remains required; host thread limit refused reviewer and deadline elapsed. No commit; Step2 untouched."
+    }
+  ],
+  "pairs": [
+    {
+      "baseline": "pair1-baseline",
+      "candidate": "pair1-candidate",
+      "correctAndReady": true,
+      "fewerCandidateAdversarialHandoffs": true,
+      "baselineAdversarialHandoffs": 1,
+      "candidateAdversarialHandoffs": 0,
+      "timeToReadinessDifferenceMs": -332836
+    },
+    {
+      "baseline": "pair2-baseline",
+      "candidate": "pair2-candidate",
+      "correctAndReady": false,
+      "fewerCandidateAdversarialHandoffs": false,
+      "baselineAdversarialHandoffs": 0,
+      "candidateAdversarialHandoffs": 0,
+      "timeToReadinessDifferenceMs": null
+    }
+  ],
+  "supplemental": [
+    {
+      "kind": "post-attempt supplemental contract inspection",
+      "observedAt": "2026-10-04T15:56:30.550Z",
+      "limitation": "Added control-character and Unicode coverage after primary grader was frozen; primary grader and all attempt inputs remain unchanged. An initial supplemental probe rejected a NUL argument at OS spawn validation, so NUL is excluded as unrepresentable in CLI argv.",
+      "results": [
+        {
+          "id": "pair1-baseline",
+          "passed": true,
+          "outputs": [
+            {
+              "input": "3\n",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "3\r",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "3\r\n",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\t3",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "3\t",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\u00a03",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\u0663",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\uff13",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            }
+          ]
+        },
+        {
+          "id": "pair1-candidate",
+          "passed": true,
+          "outputs": [
+            {
+              "input": "3\n",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "3\r",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "3\r\n",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\t3",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "3\t",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\u00a03",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\u0663",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\uff13",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "post-attempt supplemental contract inspection",
+      "observedAt": "2026-10-04T16:32:04.488Z",
+      "limitation": "Same supplementary control/Unicode cases as pair1; these are post-attempt inspection, not changes to immutable primary grader or frozen inputs",
+      "results": [
+        {
+          "id": "pair2-candidate",
+          "passed": true,
+          "outputs": [
+            {
+              "input": "3\n",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "3\r",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "3\r\n",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\t3",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "3\t",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\u00a03",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\u0663",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\uff13",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            }
+          ]
+        },
+        {
+          "id": "pair2-baseline",
+          "passed": true,
+          "outputs": [
+            {
+              "input": "3\n",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "3\r",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "3\r\n",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\t3",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "3\t",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\u00a03",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\u0663",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            },
+            {
+              "input": "\uff13",
+              "status": 1,
+              "stdout": "",
+              "stderr": "Count must contain only decimal digits and be between 1 and 20.\n",
+              "passed": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "accepted": false,
+  "limitations": [
+    "One small two-source repair under one nonrisk owner; no universal speed, quality, token-saving or productivity claim",
+    "Each attempt ends at first-step verified staged readiness with commit pending; future milestone and final compaction are excluded",
+    "Time-to-required-readiness includes host scheduling and reviewer-capacity intervention; CLI action durations are separate observations and may overlap",
+    "Precise final-turn completion timestamps and attributable token counts are unavailable",
+    "Fresh reviewer starts are operator observed through actual collaboration actors, not cryptographically authenticated",
+    "Baseline was rebuilt from the released source tag using the same installed dependencies, rather than installing the published npm tarball",
+    "Supplemental control/Unicode CLI inspection is explicitly post-attempt evidence; the primary grader and frozen agent inputs remained unchanged",
+    "The second baseline missed its nominal ten-minute deadline while the controller was interrupted and reviewer creation remained refused; the worker stopped when its next clock sample showed the cap exceeded. It is retained as timeout, never completed or retroactively ready"
+  ],
+  "approvedReleaseAcceptance": {
+    "approvedDate": "2026-10-05",
+    "signer": "User explicitly approved finishing 0.21.0 with the incomplete control disclosed and claims limited to the completed pair",
+    "accepted": true,
+    "originalTwoPairAcceptance": false,
+    "requiredEvidence": {
+      "bothCandidatesCorrectAndReady": true,
+      "completedFirstPairFewerCandidateReviewerStarts": true,
+      "allFourAttemptStatusesRetained": true
+    },
+    "scope": "Completed first matched pair and both successful candidate repetitions only; second baseline remains timeout and is not a completed control",
+    "limitations": [
+      "No retroactive readiness or reviewer start for the timed-out baseline",
+      "No universal speed, token, quality or project-wide productivity claim"
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "matched-piece-report",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node node_modules/typescript/bin/tsc -p tsconfig.json",
+    "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --import tsx --test --test-reporter=tap tests/report.test.ts"
+  }
+}

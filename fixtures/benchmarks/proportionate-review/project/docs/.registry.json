@@ -1,0 +1,17 @@
+{
+  "features": {
+    "report": {
+      "doc": "docs/features/report.md",
+      "type": "feature",
+      "primary_sources": [
+        "src/count.ts",
+        "src/report.ts"
+      ],
+      "related_sources": [],
+      "docs": [],
+      "depends_on": [],
+      "risk": [],
+      "status": "current"
+    }
+  }
+}

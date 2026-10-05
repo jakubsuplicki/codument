@@ -2,7 +2,7 @@
 title: Proof benchmarks
 status: current
 type: feature
-last_reviewed: 2026-09-14
+last_reviewed: 2026-10-05
 ---
 
 # Proof benchmarks
@@ -10,6 +10,8 @@ last_reviewed: 2026-09-14
 ## In plain terms
 
 Package-native fixtures measure whether documentation and workflow guardrails help on bounded tasks. Context routing, final-state quality and planted-bug checks are deterministic. Session comparisons add actual agent attempts at contract retrieval, changed approval and interrupted work, with valid controls that reveal unnecessary stops. Codument initializes and scores these fixtures locally; an external operator supplies the agent attempts. No scorer calls a model or uses a human or AI judge. Results describe the observed fixtures, never universal quality or token savings.
+
+A matched repair trial also checks whether lighter review retains working command output and staged readiness. Its administration evidence counts actual independent reviewer starts, separately from elapsed time and unavailable usage.
 
 ## Design approach
 
@@ -20,6 +22,10 @@ The **context benchmark** runs over a fixed fixture with relevant, adjacent, and
 The **quality benchmark** ships a dependency-free fixture app with a constrained, realistic task. `init` copies the fixture, installs the agent profile assets, writes the task prompt to disk, and prints it; the agent does the work; `score` evaluates the final directory with deterministic checks — tests pass, typecheck, black-box behavior, the registry still maps touched sources, required docs updated, source boundaries respected, locked fixture files untouched, and forbidden shortcuts absent. The score is a transparent evidence bundle plus a numeric summary; the bundle is the real proof, the number is for a README screenshot.
 
 Scoring never needs a network, model or hosted telemetry. Observed session duration and available usage are reported separately from the grade: a small task may spend more on workflow than it saves. Missing measurements retain their reason.
+
+The repair comparison holds code, durable promises, approved legacy scope, compiler and host settings equal between a released source-tag build and a frozen candidate. Fresh attempts deliver the first milestone of a two-step plan without committing or touching the future milestone. Both conditions can delegate; required adversarial review uses a fresh reviewer, while an understood focused boundary permits disclosed self-review. This compares step readiness rather than final-plan compaction.
+
+An external common invocation observer retains CLI output, status and action duration for both versions. An external grader compiles and exercises working and staged files, checks immutable inputs and unchanged public signatures, and requires current verified readiness with an unchanged commit. Operator-observed collaboration actors establish reviewer handoffs; self-reported result notes cannot establish them. Time to readiness includes scheduling and environment interventions and remains distinct from CLI duration and final-turn timing.
 
 Session fixtures keep their behavioral detectors outside the worker directory. An external observer retains the initialization binding, then records the actual attempt and its final file binding. Scoring checks immutable task inputs, approved contracts, permitted changes and black-box behavior. It distinguishes failed constraints from failures of an authorized control, including unnecessary permission stops. Different correct implementations can pass. A changed approval blocks only the dependent request; a resumed step must recheck changed work while retaining usable existing work.
 
@@ -59,6 +65,9 @@ The **catch-rate benchmark** is the ground-truth proof behind the review gate (s
 - Commit-ready work must satisfy behavior, scope and protected-contract checks in the actual index, including staged changes hidden by restored working files; unrequested commits fail. Coding errors in an authorized control remain missed constraints, independently of reported unnecessary stops. *(test: `benchmark-sessions.test.ts`)*
 - Agent observations remain distinct from deterministic test fixtures; duration, usage availability and interventions are evidence, not scoring weights. No autonomous agent runner is included. *(test: `benchmark-sessions.test.ts`; independent attempts are recorded separately)*
 
+- Matched repair evidence preserves every attempt and its deadline, identical engineering inputs, required independent reviewer starts, and working plus staged CLI checks. Each comparison judges only complete controls; failed attempts remain recorded. An explicit
+  human acceptance amendment can permit a limited release claim without rewriting the original result. Timing noise and unavailable usage remain explicit. *(evidence: `fixtures/benchmarks/proportionate-review/comparison-2026-10-04.json`; bounded observations, not a general guarantee)*
+
 - Context collection preserves real filename characters when converting native separators; it
   never trims a filename or rewrites a literal POSIX backslash before reading or scoring it. *(test:
   `benchmark.test.ts` "preserves real filename characters while collecting context")*
@@ -81,7 +90,20 @@ The **catch-rate benchmark** is the ground-truth proof behind the review gate (s
   reported finalization friction; a passing fixture score does not prove a smooth workflow.
   The small sample and interrupted timing support no general quality, speed or token-savings claim.
 
+- The [matched repair comparison](../../fixtures/benchmarks/proportionate-review/comparison-2026-10-04.json)
+  retains reversed pair order and separate output, readiness, review-handoff and administration
+  observations. Its baseline is rebuilt from the released source tag with shared installed
+  dependencies. Host capacity interventions and post-attempt supplemental inspection are disclosed;
+  the record supports only the observed local repair, not universal speed or token savings.
+  Both candidates and the first baseline reached correct staged readiness. The second baseline
+  retained correct output but timed out before independent review when reviewer creation was
+  refused. Only the first pair established a handoff reduction. The original two-pair acceptance remains
+  unmet; the user approved limited release acceptance using that completed pair and both successful
+  candidate repetitions, with the second control's failure disclosed.
+
 ## Key files
+
+- `fixtures/benchmarks/proportionate-review/` — reusable repair inputs, locked trial protocol and externally observed matched-delivery evidence.
 
 - `src/commands/benchmark.ts` — the `benchmark` command family wiring the `context`, `init <dir>`, and `score <dir>` subcommands.
 - `src/lib/benchmark-context.ts` — the deterministic context-routing scorer: naive vs registry-guided selection, the token estimator, and relevance coverage.
