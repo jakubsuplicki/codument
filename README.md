@@ -10,7 +10,7 @@ Two independent adversarial gates, and the docs-backed workflow that produces th
 [![npm](https://img.shields.io/npm/v/codument?style=flat&logo=npm&label=npm&color=CB3837)](https://www.npmjs.com/package/codument)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A518-339933?style=flat&logo=nodedotjs&logoColor=white)](package.json)
-[![Tests](https://img.shields.io/badge/tests-1650%2B_passing-brightgreen?style=flat)](tests)
+[![Tests](https://img.shields.io/badge/tests-2120%2B_passing-brightgreen?style=flat)](tests)
 
 [![Claude Code · native](https://img.shields.io/badge/Claude_Code-native-D97757?style=flat&logo=anthropic&logoColor=white)](#install)
 [![Codex · portable](https://img.shields.io/badge/Codex-portable-412991?style=flat&logo=openai&logoColor=white)](#install)
@@ -33,6 +33,11 @@ npx codument init
 ```
 
 Then **start a new agent session** and chat normally. Describe what you want built; your agent grills the idea against your docs, writes a plan, and stops for your approval. **Approve it once and it builds the thing** — implementing, reviewing, documenting and committing each step on its own, and telling you where it is at every step.
+
+Review effort follows the change. Harmless documentation needs diff self-review; understood changes
+within one stable feature and attributable tests can use recorded focused review. Protected contracts,
+declared risks and uncertain analysis retain stronger review, with every delivery checked against its
+exact staged boundary.
 
 - **Already have code?** Same command — `init` also maps your existing source to the docs that will own it. In that new session, say **`/update-docs`** once so those docs describe the code you already have.
 - **Want it to slow down?** Say **"step by step"** and it stops at every gate for your say-so, and stays there until you say "keep going".
@@ -913,6 +918,12 @@ npx codument benchmark score /tmp/session-run --session-record /tmp/observed-run
 ```
 
 Choose `retrieval`, `approval-change` or `interrupted-work`, and `plain` or `integrated`. Scores include missed constraints and unnecessary stops; observed time, interventions and available usage remain separate. Initialization and synthetic tests do not count as agent attempts. See the [observation format and limits](docs/features/proof-benchmarks.md).
+
+The [0.21.0 repair comparison](fixtures/benchmarks/proportionate-review/comparison-2026-10-04.json)
+retains four real attempts. Both candidates delivered correct verified staged output; one completed
+matched pair observed fewer reviewer handoffs. The other baseline timed out when the host refused
+reviewer creation. Release uses explicitly approved limited acceptance; the original two-pair result
+remains unmet, and the record establishes no universal speed or token savings.
 
 </details>
 

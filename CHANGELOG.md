@@ -5,6 +5,77 @@ All notable changes to Codument are recorded here. The format follows
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while it
 remains pre-1.0.
 
+## [Unreleased]
+
+## [0.21.0] - 2026-10-05
+
+Routine documentation and well-grounded work within one feature now use lighter
+review while protected contracts and uncertain changes keep stronger gates. This
+release also carries outcome-based approval, batch ownership work and clearer
+milestone delivery.
+
+### Added
+
+- Outcome-based approval binds promised behavior, milestones, constraints and
+  acceptance evidence independently of file routing. Existing approvals retain
+  their original scope unless explicitly renewed.
+- Batch ownership context and source materialization preserve every affected
+  owner, report missing inputs and identify completed writes after partial failure.
+- Unified milestone progress across work status, steps, context and watch keeps
+  pending verification, review, commit and saved interruptions visible.
+- Optional local workflow timing reports observed action duration separately from
+  complete session time and unavailable usage.
+- A representative CLI delivery replay exercises outcome approval, discovered
+  helpers, integration repair, staged review and committed delivery.
+- Four fresh repair attempts compare a released 0.20.1 source-tag build with the
+  frozen candidate. Both candidates delivered correct working and staged output
+  with verified readiness and no reviewer handoffs. One completed matched pair
+  observed one baseline handoff versus zero candidate handoffs; the second
+  baseline timed out when the host refused a fresh reviewer. The original
+  two-pair criterion remains unmet, and the user approved release on this limited
+  evidence. The retained record includes the failure, timing noise and unavailable
+  token counts; it establishes no universal speed, quality or token savings.
+
+### Changed
+
+- Harmless ordinary documentation additions need a diff self-review when readable
+  snapshots establish that no protected contract changed. Instructions,
+  configuration, declared risks and unreadable evidence retain stronger review.
+- Precise body-only edits across existing files of one stable nonrisk feature,
+  and stable attributable test-only changes, may use recorded focused self-review.
+  Public signatures, new sources or exports, deletions, renames, cross-feature
+  changes and unknown analysis keep the adversarial floor.
+- Review preserves ownership, test attribution and risk from both selected and
+  base snapshots. Removing an old oracle cannot erase its required review.
+- Plans demonstrate a representative working experience early. Routine failed
+  checks are repaired within the approved contract; missing acceptance stays open
+  unless the user explicitly changes it.
+- Workflow guidance continues through routine review and commit gates after
+  approval, preserves explicit pauses and single-step requests, and checks whole
+  repository health at plan completion.
+
+### Fixed
+
+- Review-policy changes invalidate incompatible cached pass receipts while older
+  artifact formats remain readable. Changed staged content or covering review
+  evidence reopens the exact verdict, and reproduced failures continue to block.
+- Renamed tests retain stronger review even when the old name no longer matches
+  test discovery; removing or changing attribution cannot grant focused review.
+- Portable work fixtures use canonical temporary-directory paths without weakening
+  checkout containment or delivery assertions.
+- Plan scope and approval checks agree across delivery surfaces, including retained
+  final-delivery contracts and nested plan paths.
+- Repository-local work refuses a child directory inside another checkout instead
+  of selecting the enclosing repository's delivery state or installing its hook.
+
+### Upgrading
+
+- Run `codument update` after installing to refresh managed workflow files.
+- Existing legacy approvals are not automatically converted to outcome approval;
+  adopting that model requires renewed human approval.
+- Re-run staged verification and re-record required review evidence for in-flight
+  work; review policy and package version are part of the evidence boundary.
+
 ## [0.20.1] - 2026-09-25
 
 ### Fixed

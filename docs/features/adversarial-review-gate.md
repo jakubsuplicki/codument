@@ -2,7 +2,7 @@
 title: Adversarial review gate
 status: in-progress
 type: feature
-last_reviewed: 2026-10-04
+last_reviewed: 2026-10-05
 ---
 
 # Adversarial review gate
@@ -59,7 +59,7 @@ reruns those tests under the existing finding policy. Attribution is self-report
 
 **Independence by context, degraded gracefully.** A second agent that still receives the author's transcript re-anchors to the same mental model and rubber-stamps; completion bias is why self-review fails. So the adversary gets the diff plus the bundle, never the author's chain of thought. Where the host has subagents, a fresh Task delivers that for free. Where it does not, the same-agent pass is the honest floor (option A): the independence is weaker, but the artifact and the deterministic confirm are unchanged, so it is not theater.
 
-**Proportionality is mandatory, not optional.** Two extra agent passes on every one-line edit is how a good gate gets disabled. Bundle depth is gated on blast radius, which Codument already computes: a trivial single-symbol edit touching no documented invariant skips the heavy pass; a risk-tagged, invariant-touching, or multi-file diff gets the full adversary.
+**Proportionality is mandatory, not optional.** Positive snapshot evidence determines the structural floor. Harmless prose needs diff self-review; precise contract-neutral changes within one stable nonrisk feature and stable attributable tests can use recorded focused review. File count alone does not raise that floor. Protected contracts, declared risks, lost attribution and uncertain analysis retain adversarial review; semantic uncertainty can always raise the effort.
 
 ## Invariants & boundaries
 
@@ -150,6 +150,8 @@ These are the contracts the build commits to. Tests land with the step that buil
 
 ## Decisions
 
+- Routine review is reduced only when positive selected and base evidence establishes unchanged contracts, stable ownership and test attribution. The exact staged receipt and reproduced-failure gates remain in force.
+- The 0.21.0 release uses the [limited comparison acceptance](../../fixtures/benchmarks/proportionate-review/comparison-2026-10-04.json) explicitly approved on 2026-10-05. Both candidates delivered correct verified staged output; one completed pair observed fewer adversarial handoffs. The other baseline timed out when reviewer creation was refused. Its failed observation and the unmet original two-pair criterion remain visible; no universal speed or token-saving claim follows.
 - Deferred: remote review enforcement needs private artifact transport and a review identity matching the exact CI change range before enabling a required-review gate. Local ignored receipts do not travel with a checkout or establish review of an aggregate pull request. A zero-finding record alone does not demonstrate reviewer independence.
 - Adversarial review is independent by context and degrades without subagents (option A: same-agent pass on Codex) — honors the [agent-delivery-workflow.md](agent-delivery-workflow.md) non-goal that no profile may *require* subagents. To be recorded in a future ADR when step 6 lands (011 and 012 were since taken by the plan adversary and file-grain acks).
 - A finding blocks only when confirmed by a runnable failing test; judgment findings stay advisory — the deterministic-not-judge line of [008](../architecture/decisions/008-benchmark-proof-deterministic-not-judge.md) and the detect-test-verify line of [010](../architecture/decisions/010-freshness-resolution-detect-test-verify-agent-driven.md), applied to implementation review. To be recorded in the same future ADR.
@@ -203,161 +205,3 @@ Status: approved (2026-06-30). Implementing manually, one gated step at a time. 
 ### Open questions
 
 - The feature's registry entry was added in step 1 alongside its first source file (a registered feature with empty `primary_sources` would read as undocumented).
-
-## Delivery Plan — proportionate review and 0.21.0
-
-Plan-ID: proportionate-review-0-21-0
-Status: approved
-Approval-Model: outcome-v1
-
-- [x] Step 1: Remove unnecessary review for harmless documentation additions and restore the portable test baseline.
-- [x] Step 2: Use focused review for well-grounded changes within one feature, preserving risks and attribution from both snapshots.
-- [x] Step 3: Compare real agent delivery against 0.20.1 and retain working-output and administration evidence.
-- [ ] Step 4: Finish the verified 0.21.0 release with a local commit and tag.
-
-### Outcome
-
-Routine work spends less effort satisfying Codument without losing its working deliverables.
-Harmless documentation additions need diff self-review rather than a recorded adversarial pass.
-Precise, contract-neutral edits to existing files within one stable feature, and attributable
-changes to that feature's tests, can use recorded focused self-review. Real risks, protected
-contracts and meaningful uncertainty retain stronger review. The release includes observed agent
-output and administration evidence, then leaves npm publishing to the user.
-
-### Constraints & non-goals
-
-- Positive snapshot evidence determines the structural floor. A filename, missing contract record,
-  file count or informal low-risk label alone does not establish safety. The host still raises
-  effort for substantial behavior or semantic uncertainty.
-- Documentation housekeeping must be positively established from readable selected and base inputs
-  where present. Material protected layers, instructions, declared risks, deletions and renames
-  retain stronger review. New durable contracts and executable or instruction inputs cannot pass
-  as harmless prose merely because their extension is Markdown.
-- Existing-source focused candidates have precise unchanged signatures, one stable owner and
-  attributable test evidence. New production sources, new or removed exports, changed signatures,
-  residual or unknown analysis, changed ownership, cross-feature behavior, configuration and
-  dependency changes retain stronger review.
-- Test-only focused candidates retain stable attribution to one nonrisk feature. Existing evidence
-  is checked against both base and selected snapshots; new tests require selected attribution.
-  Lost, changed, unknown or cross-feature attribution and removed or renamed tests retain the
-  stronger pass. Removing an import, invariant pin or risk declaration cannot erase the old oracle.
-- Preserve staged isolation, documentation synchronization, source mapping, approval boundaries,
-  reproduced-red findings, exact artifact/receipt binding and independent branch/portable review.
-  Policy changes invalidate incompatible cached evidence; old artifact formats remain readable.
-- Add no dependency, bypass flag, universal risk score, permanent timer or autonomous agent runner.
-  The existing explicit-root alias limitation is outside scope; normalize fixture paths without
-  changing runtime containment rules. Preserve explicit pauses and gated mode.
-- Keep release actions local. No npm publication, push or remote release. The old test-only release
-  proposal is replaced on approval; its prepared metadata is retained for the final release slice.
-
-### Acceptance evidence
-
-1. A real managed hook accepts a harmless new documentation note without a required review artifact.
-   The same staged gate still requires stronger review for a new protected contract or instruction,
-   declared risk, unreadable analysis and control-plane/configuration changes. Existing covering
-   reproduced failures still block even when the structural minimum is none.
-2. Representative body-only edits across two existing files owned by one feature, and stable
-   attributable test-only changes, receive focused review. Unknown or changed attribution, old or
-   selected risk, cross-feature changes, source additions, signatures, deletions and renames receive
-   adversarial review. Changing a staged snapshot or covering evidence reopens the verdict.
-3. Retain all four fresh agent attempts and their original two-pair result. Both candidate
-   repetitions must have correct valid/invalid CLI output, verified staged readiness and no
-   unnecessary approval stops. The completed first matched pair must show fewer actual adversarial
-   reviewer starts for the candidate. The second baseline's host-capacity timeout remains an
-   incomplete control, with zero actual reviewer starts; it cannot establish a second handoff
-   reduction or be completed retroactively. The user explicitly approved this limited acceptance
-   on 2026-10-05. Original acceptance remains recorded as unmet; release claims are confined to
-   the completed pair and the two successful candidate repetitions.
-   Keep protected-case regressions green, unavailable usage explicit, observed timing qualified by
-   environment interventions, and all frozen inputs/provenance unchanged. This does not establish
-   universal speed, token savings or higher output across projects. No new attempts are authorized.
-4. Package and scaffold versions agree on 0.21.0. The full suite, typecheck, build, lint, strict
-   documentation health, exact staged verification and npm packing lifecycle pass before the local
-   release commit and tag. The package contains its CLI, library and managed workflow assets.
-
-### Verification
-
-Run red/green cases in review policy, bundle, test-impact, boundary, verifier and managed-hook suites.
-Exercise source-count independence, both-snapshot attribution/risk, instruction and configuration
-controls, missing inputs, artifact invalidation and covering reproduced failures through the CLI.
-Normalize the two work fixtures that currently mix macOS temporary-directory spellings; keep their
-containment and delivery assertions intact. Run the project checks for each source slice and record
-independent staged review before its focused commit.
-
-For agent evidence, derive a small dependency-free CLI fixture from the existing milestone example,
-using precisely analyzed TypeScript sources under one owner, broken behavior and unchanged
-documented contracts. Use the same already-installed compiler in both conditions and exercise its
-emitted CLI; no dependency installation is needed. Preflight the exact representative staged change
-as adversarial on the baseline and focused on the candidate before spending the live-attempt budget.
-The identical task requires repairs within existing function bodies and regression-test changes
-attributable to that owner; it preserves exported signatures and module-level initialization.
-Freeze the same legacy scoped approval in both conditions to avoid an approval-model confound.
-An immutable external grader exercises actual output, tests and staged blobs, checks authorized
-changes, and requires verified readiness for the first milestone of the same two-step plan.
-The future milestone stays untouched. Both conditions prohibit commits and edits to locked task
-inputs. Final-plan compaction is outside this step-level comparison: it would add approval-state
-configuration changes and measure a different review boundary. This trial establishes real working
-output and staged step readiness, not complete plan finalization.
-Use a common external invocation record for both versions; candidate-only timing cannot serve as
-a matched baseline. Record actual observed CLI actions, reviewer starts and attempt elapsed time rather than infer time
-from ledger gaps. Give both versions the same delegation capability; required adversarial review
-uses a fresh reviewer, and its work is included in the attempt's observed administration. Focused
-self-review remains available only where the policy and understood behavior permit it. Run the
-attempts serially, in two pairs with order reversed, each attempt capped at ten minutes. Keep all
-four observations and provenance outside agent-controlled result claims. Stop at the cap, retain
-failures, and never silently substitute a scripted replay. The approved limited release acceptance
-uses the completed pair and both candidate repetitions while preserving the incomplete control.
-No public benchmark API or permanent runner is needed; retain compact reproducible fixture and
-observation artifacts under the existing benchmark area, with scope and limitations in its docs.
-
-Finish with the complete suite and package lifecycle, review the exact final release boundary,
-compact this plan through the tracked final-delivery binding and commit/tag locally.
-
-### Scope
-
-Routing guidance; outcome permission does not depend on this initial file list:
-
-- `src/lib/review-gate.ts`, `src/lib/review-bundle.ts` — proportional structural review and positive contract grounding.
-- `src/commands/review.ts`, `src/lib/test-impact.ts` — selected/base evidence and risk retained consistently.
-- `src/commands/verify.ts` — existing worksheet and exact receipt path if compatibility needs adjustment.
-- `tests/review-gate.test.ts`, `tests/review-bundle.test.ts`, `tests/test-impact.test.ts`,
-  `tests/review-boundary.test.ts`, `tests/verify.test.ts`, `tests/hooks-command.test.ts`,
-  `tests/work.test.ts` — policy, boundary and portable fixture evidence.
-- `docs/features/adversarial-review-gate.md`, `docs/features/change-control-gate.md`,
-  `docs/features/step-verification.md`, `docs/features/proof-benchmarks.md`, `docs/concepts/lib.md`
-  — mapped intent, compatibility and evidence limits.
-- `fixtures/benchmarks/` — small matched-delivery fixture and recorded observations, without a new runtime benchmark command.
-- `package.json`, `package-lock.json`, `.codument-meta.json`, `CHANGELOG.md`, `README.md`,
-  `docs/guides/releasing.md`, `docs/.approvals.json` — final local release preparation and approval evidence.
-
-No new runtime source files are required. Tests and benchmark fixture files are evidence rather
-than runtime source ownership; materialize genuine new source discoveries if routing changes.
-
-### Effort & cheapest useful experiment
-
-Two source slices, four ten-minute-capped agent attempts and final release checks. The harmless-note
-hook failure already supplies the cheapest counterexample to the current policy; first prove its
-lighter treatment together with protected counterexamples before broadening focused candidates.
-
-### Resume checkpoint
-
-Steps 1 and 2 are reviewed, verified and committed. All four agent attempts are retained. The user
-approved limited acceptance on 2026-10-05: both candidates and one completed matched pair pass;
-the second baseline remains a disclosed host-capacity timeout. Record this revised approval and
-resume the saved Step 3, review and commit its evidence, then finish the local 0.21.0 release.
-Prepared release metadata remains outside the evidence slice until Step 4.
-
-### Grounding limitations
-
-Tests, release metadata and benchmark fixtures are outside runtime source ownership and require
-direct inspection. The existing owner docs cover the runtime policy, staged boundary and evidence
-contracts. A missing Feature Map is expected because this plan adds no runtime source. Existing
-session fixtures have a different locked endpoint; the small comparison fixture defines equal
-milestone readiness inputs and cannot weaken those existing controls.
-
-### Open questions
-
-No product boundary is left open in this proposal. The recommended choice is the three bounded
-routine exceptions above, unchanged stronger checks, and a matched output/administration trial
-before local release. Independent plan review checked the grounded contracts and evidence
-feasibility; no material objections were found.
